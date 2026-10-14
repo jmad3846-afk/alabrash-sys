@@ -1,0 +1,1699 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../core/database/erp_provider.dart';
+import '../core/models/models.dart';
+import '../core/theme/app_theme.dart';
+
+const _fixedAssetCategories = [
+  'أراضي',
+  'مباني وعقارات',
+  'آلات ومعدات',
+  'آليات ونقل',
+  'أثاث',
+];
+
+class OpeningStockItemsPanel extends StatelessWidget {
+  final List<OpeningStockItemModel> items;
+  final String category;
+
+  const OpeningStockItemsPanel({
+    super.key,
+    required this.items,
+    required this.category,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final matching = items.where((item) => item.category == category).toList();
+    if (matching.isEmpty) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.all(12),
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        title: Text('رصيد القيد الافتتاحي • $category'),
+        subtitle: Text(
+          'الإجمالي: ${matching.fold<double>(0, (sum, item) => sum + item.totalPrice).fmt}',
+        ),
+        children: [
+          for (final item in matching)
+            ListTile(
+              dense: true,
+              title: Text(item.typeName),
+              subtitle: Text(
+                'الكمية ${item.quantity.fmt} × ${item.unitPrice.fmt} ${AppCurrency.symbol(item.currency)} للوحدة • ${item.description}',
+              ),
+              trailing: Text(
+                '${item.totalPrice.fmt} ${AppCurrency.symbol(item.currency)}',
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class ChartOfAccountsScreen extends StatelessWidget {
+  const ChartOfAccountsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final erp = context.watch<ERPProvider>();
+    final allAssets = erp.openingEntry.fixedAssets;
+    final assets = allAssets.where((a) => !a.isSold).toList();
+    final currentStockValue =
+        erp.factoryBlocks.fold<double>(0, (sum, item) => sum + item.totalCost) +
+        erp.factoryWarehouse.fold<double>(
+          0,
+          (sum, item) => sum + item.totalInventoryValue,
+        ) +
+        erp.workshopStock.fold<double>(
+          0,
+          (sum, item) => sum + item.availableQty * item.netCostPerUnit,
+        );
+    final historical = erp.openingEntry.legacyFinancials;
+    final suppliers = historical
+        .where((r) => r.category == 'suppliers')
+        .toList();
+    final employees = historical
+        .where((r) => r.category == 'employees')
+        .toList();
+    final customers = historical.where((r) => r.category == 'clients').toList();
+    final supplierAmount =
+        '${suppliers.where((r) => r.currency == AppCurrency.usd).fold<double>(0, (sum, r) => sum + r.amount).fmt} \$ • ${suppliers.where((r) => r.currency == AppCurrency.syp).fold<double>(0, (sum, r) => sum + r.amount).fmt} ل.س';
+    final employeeAmount =
+        '${employees.where((r) => r.currency == AppCurrency.usd).fold<double>(0, (sum, r) => sum + r.amount).fmt} \$ • ${employees.where((r) => r.currency == AppCurrency.syp).fold<double>(0, (sum, r) => sum + r.amount).fmt} ل.س';
+    final clientAmount =
+        '${customers.where((r) => r.currency == AppCurrency.usd).fold<double>(0, (sum, r) => sum + r.amount).fmt} \$ • ${customers.where((r) => r.currency == AppCurrency.syp).fold<double>(0, (sum, r) => sum + r.amount).fmt} ل.س';
+    final assetUsd = assets
+        .where((a) => a.currency == AppCurrency.usd)
+        .fold<double>(0, (sum, a) => sum + a.amount);
+    final assetSyp = assets
+        .where((a) => a.currency == AppCurrency.syp)
+        .fold<double>(0, (sum, a) => sum + a.amount);
+    final openingFixedUsd = assets.isEmpty
+        ? erp.openingEntry.totalFixedAssets
+        : assetUsd;
+    final openingStockUsd = erp.openingEntry.openingStock
+        .where((item) => item.currency == AppCurrency.usd)
+        .fold<double>(0, (sum, item) => sum + item.totalPrice);
+    final openingStockSyp = erp.openingEntry.openingStock
+        .where((item) => item.currency == AppCurrency.syp)
+        .fold<double>(0, (sum, item) => sum + item.totalPrice);
+    final stockUsd =
+        currentStockValue +
+        openingStockUsd +
+        (erp.openingEntry.openingStock.isEmpty
+            ? erp.openingEntry.inventoryValue
+            : 0);
+    final historicalClientsUsd = customers
+        .where((record) => record.currency == AppCurrency.usd)
+        .fold<double>(0, (sum, record) => sum + record.amount);
+    final historicalClientsSyp = customers
+        .where((record) => record.currency == AppCurrency.syp)
+        .fold<double>(0, (sum, record) => sum + record.amount);
+    final clientsUsd = customers.isEmpty
+        ? (erp.clientsTotalDebts > erp.openingEntry.customerDebtsValue
+              ? erp.clientsTotalDebts
+              : erp.openingEntry.customerDebtsValue)
+        : historicalClientsUsd + erp.clientsTotalDebts;
+    final clientsSyp =
+        historicalClientsSyp +
+        (customers.isEmpty
+            ? erp.clientsTotalDebtsSyp
+            : erp.clientsTotalDebtsSyp);
+    final historicalSuppliersUsd = suppliers
+        .where((record) => record.currency == AppCurrency.usd)
+        .fold<double>(0, (sum, record) => sum + record.amount);
+    final historicalSuppliersSyp = suppliers
+        .where((record) => record.currency == AppCurrency.syp)
+        .fold<double>(0, (sum, record) => sum + record.amount);
+    final suppliersUsd = suppliers.isEmpty
+        ? (erp.suppliersTotalDebts > erp.openingEntry.supplierPayablesValue
+              ? erp.suppliersTotalDebts
+              : erp.openingEntry.supplierPayablesValue)
+        : historicalSuppliersUsd + erp.suppliersTotalDebts;
+    final suppliersSyp = historicalSuppliersSyp + erp.suppliersTotalDebtsSyp;
+    final historicalEmployeesUsd = employees
+        .where((record) => record.currency == AppCurrency.usd)
+        .fold<double>(0, (sum, record) => sum + record.amount);
+    final historicalEmployeesSyp = employees
+        .where((record) => record.currency == AppCurrency.syp)
+        .fold<double>(0, (sum, record) => sum + record.amount);
+    final employeesUsd = employees.isEmpty
+        ? (erp.workersTotalDebts > erp.openingEntry.workerSalariesValue
+              ? erp.workersTotalDebts
+              : erp.openingEntry.workerSalariesValue)
+        : historicalEmployeesUsd + erp.workersTotalDebts;
+    final employeesSyp = historicalEmployeesSyp + erp.workersTotalDebtsSyp;
+    final assetsUsdNow =
+        openingFixedUsd +
+        erp.mainCashBox +
+        erp.scrapCashBox +
+        erp.orderCashBox +
+        stockUsd +
+        clientsUsd;
+    final assetsSypNow =
+        assetSyp +
+        erp.mainCashBoxSyp +
+        erp.scrapCashBoxSyp +
+        erp.orderCashBoxSyp +
+        openingStockSyp +
+        clientsSyp;
+    final liabilitiesUsdNow = suppliersUsd + employeesUsd;
+    final liabilitiesSypNow = suppliersSyp + employeesSyp;
+    final expenseUsd = erp.expenseRecords
+        .where((e) => e.currency == AppCurrency.usd)
+        .fold<double>(0, (sum, e) => sum + e.amount);
+    final expenseSyp = erp.expenseRecords
+        .where((e) => e.currency == AppCurrency.syp)
+        .fold<double>(0, (sum, e) => sum + e.amount);
+    double adjustmentAmount(String kind, String currency) => erp
+        .adjustmentInvoices
+        .where(
+          (invoice) => invoice.kind == kind && invoice.currency == currency,
+        )
+        .fold<double>(0, (sum, invoice) => sum + invoice.amount);
+    double salesDiscount(String currency) =>
+        erp.factoryInvoices
+            .where(
+              (invoice) =>
+                  invoice.invoiceType == 'بيع_معتمد' &&
+                  invoice.currency == currency,
+            )
+            .fold<double>(0, (sum, invoice) => sum + invoice.discountAmount) +
+        erp.workshopInvoices
+            .where((invoice) => invoice.currency == currency)
+            .fold<double>(0, (sum, invoice) => sum + invoice.salesDiscount);
+    double purchaseDiscount(String currency) => erp.factoryInvoices
+        .where(
+          (invoice) =>
+              invoice.invoiceType == 'شراء_مورد' &&
+              invoice.currency == currency,
+        )
+        .fold<double>(0, (sum, invoice) => sum + invoice.discountAmount);
+    double serviceRevenue(String currency) =>
+        erp.factoryInvoices
+            .where((invoice) => invoice.currency == currency)
+            .fold<double>(
+              0,
+              (sum, invoice) =>
+                  sum + invoice.servicesTotal + invoice.itemsServicesTotal,
+            ) +
+        erp.workshopInvoices
+            .where((invoice) => invoice.currency == currency)
+            .fold<double>(0, (sum, invoice) => sum + invoice.servicesTotal);
+    double factoryPurchaseAmount(String currency) => erp.factoryInvoices
+        .where(
+          (invoice) =>
+              invoice.invoiceType == 'شراء_مورد' &&
+              invoice.currency == currency,
+        )
+        .fold<double>(0, (sum, invoice) => sum + invoice.grandTotal);
+    String fixedAssetDetails(String category) {
+      final categoryAssets = assets
+          .where((asset) => asset.category == category)
+          .toList();
+      if (categoryAssets.isNotEmpty) {
+        return categoryAssets
+            .map(
+              (asset) =>
+                  '${asset.name} • ${asset.amount.fmt} ${AppCurrency.symbol(asset.currency)}',
+            )
+            .join('\n');
+      }
+      final legacyAmount = switch (category) {
+        'أراضي' => erp.openingEntry.landValue,
+        'مباني وعقارات' => erp.openingEntry.buildingsValue,
+        'آلات ومعدات' => erp.openingEntry.machineryValue,
+        'آليات ونقل' => erp.openingEntry.vehiclesValue,
+        'أثاث' => erp.openingEntry.furnitureValue,
+        _ => 0.0,
+      };
+      return legacyAmount > 0 ? '${legacyAmount.fmt} \$ • رصيد مجمع' : '';
+    }
+
+    return Scaffold(
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          Text('دليل الحسابات', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 4),
+          const Text(
+            'ملخص موحد للحسابات الافتتاحية والحركات المسجلة في المصنع والمعمل والمالية.',
+          ),
+          const SizedBox(height: 18),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'الميزانية العمومية الحالية • مباشرة',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 20,
+                    runSpacing: 8,
+                    children: [
+                      _accountLine(
+                        'إجمالي الأصول • USD',
+                        '${assetsUsdNow.fmt} \$',
+                      ),
+                      _accountLine(
+                        'إجمالي الالتزامات • USD',
+                        '${liabilitiesUsdNow.fmt} \$',
+                      ),
+                      _accountLine(
+                        'حقوق الملكية • USD',
+                        '${(assetsUsdNow - liabilitiesUsdNow).fmt} \$',
+                      ),
+                      _accountLine(
+                        'إجمالي الأصول • SYP',
+                        '${assetsSypNow.fmt} ل.س',
+                      ),
+                      _accountLine(
+                        'إجمالي الالتزامات • SYP',
+                        '${liabilitiesSypNow.fmt} ل.س',
+                      ),
+                      _accountLine(
+                        'حقوق الملكية • SYP',
+                        '${(assetsSypNow - liabilitiesSypNow).fmt} ل.س',
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          _accountGroup('الأصول', Icons.account_balance_wallet_outlined, [
+            _accountGroup(
+              'الأصول الثابتة • الإجمالي ${openingFixedUsd.fmt} \$ • ${assetSyp.fmt} ل.س',
+              Icons.apartment,
+              [
+                for (final category in _fixedAssetCategories)
+                  _accountLine(category, fixedAssetDetails(category)),
+              ],
+            ),
+            _accountGroup('الأصول المتداولة', Icons.payments_outlined, [
+              _accountLine(
+                'الصناديق • USD',
+                'رئيسي: ${erp.mainCashBox.fmt} \$ • خردة: ${erp.scrapCashBox.fmt} \$ • طلبيات: ${erp.orderCashBox.fmt} \$',
+              ),
+              _accountLine(
+                'الصناديق • SYP',
+                'رئيسي: ${erp.mainCashBoxSyp.fmt} ل.س • خردة: ${erp.scrapCashBoxSyp.fmt} ل.س • طلبيات: ${erp.orderCashBoxSyp.fmt} ل.س',
+              ),
+              _accountLine(
+                'البضائع والمخزون',
+                '${(currentStockValue + openingStockUsd + (erp.openingEntry.openingStock.isEmpty ? erp.openingEntry.inventoryValue : 0)).fmt} \$ • ${openingStockSyp.fmt} ل.س',
+              ),
+              _accountLine(
+                'ذمم العملاء الافتتاحية',
+                '$clientAmount • ${customers.length} حساب',
+              ),
+              _accountLine(
+                'أرصدة المخزون الافتتاحي',
+                erp.openingEntry.openingStock
+                    .map((item) {
+                      return '${item.typeName}: ${item.quantity.fmt} × ${item.unitPrice.fmt} = ${item.totalPrice.fmt} ${AppCurrency.symbol(item.currency)}';
+                    })
+                    .join('\n'),
+              ),
+            ]),
+          ]),
+          _accountGroup('الالتزامات', Icons.receipt_long_outlined, [
+            _accountGroup('الالتزامات المتداولة', Icons.pending_actions, [
+              _clickableLegacyLine(
+                context,
+                erp,
+                'ذمم الموردين',
+                supplierAmount,
+                suppliers,
+                'suppliers',
+              ),
+              _clickableLegacyLine(
+                context,
+                erp,
+                'الرواتب والأجور المستحقة',
+                employeeAmount,
+                employees,
+                'employees',
+              ),
+              _clickableCurrentDebts(
+                context,
+                'ديون الموردين التشغيلية',
+                '${erp.suppliersTotalDebts.fmt} \$ • ${erp.suppliersTotalDebtsSyp.fmt} ل.س',
+                [
+                  for (final supplier in erp.suppliers)
+                    if (supplier.debtBalance > 0 || supplier.debtBalanceSyp > 0)
+                      ListTile(
+                        title: Text(supplier.name),
+                        subtitle: Text(
+                          '${supplier.phone} • ${supplier.dualDebt}',
+                        ),
+                      ),
+                ],
+              ),
+              _clickableCurrentDebts(
+                context,
+                'مستحقات العاملين التشغيلية',
+                '${erp.workersTotalDebts.fmt} \$ • ${erp.workersTotalDebtsSyp.fmt} ل.س',
+                [
+                  for (final staff in erp.staffList)
+                    if (staff.netRemainingBalance > 0 ||
+                        staff.netRemainingBalanceSyp > 0)
+                      ListTile(
+                        title: Text(staff.name),
+                        subtitle: Text(
+                          '${staff.category} • ${staff.phone} • ${staff.dualNet}',
+                        ),
+                      ),
+                ],
+              ),
+            ]),
+          ]),
+          _accountGroup('حقوق الملكية', Icons.groups_2_outlined, [
+            _accountLine(
+              'رأس المال الحالي',
+              '${erp.partners.fold<double>(0, (sum, partner) => sum + partner.injectedCapital).fmt} \$',
+            ),
+            for (final partner in erp.partners)
+              _accountLine(
+                partner.name,
+                'الحصة ${partner.ratio * 100}٪ • رأس المال ${partner.injectedCapital.fmt} \$ • مسحوبات ${partner.totalWithdrawn.fmt} \$',
+              ),
+            _accountLine(
+              'الأرباح والخسائر الحالية',
+              '${erp.netOperatingProfit.fmt} \$ • ${erp.netOperatingProfitSyp.fmt} ل.س',
+            ),
+          ]),
+          _accountGroup('الإيرادات', Icons.trending_up, [
+            _accountLine(
+              'مبيعات البضائع',
+              '${(erp.totalFactoryRevenue - serviceRevenue(AppCurrency.usd)).fmt} \$ • ${(erp.totalFactoryRevenueSyp - serviceRevenue(AppCurrency.syp)).fmt} ل.س',
+            ),
+            _accountLine(
+              'الخدمات',
+              '${serviceRevenue(AppCurrency.usd).fmt} \$ • ${serviceRevenue(AppCurrency.syp).fmt} ل.س',
+            ),
+            _accountLine(
+              'مبيعات المعمل والقطع الزائدة',
+              '${(erp.totalWorkshopRevenue + erp.totalScrapRevenue - serviceRevenue(AppCurrency.usd)).fmt} \$ • ${(erp.totalWorkshopRevenueSyp + erp.totalScrapRevenueSyp - serviceRevenue(AppCurrency.syp)).fmt} ل.س',
+            ),
+            _accountLine(
+              'مرتجعات ومسموحات المشتريات',
+              '${(adjustmentAmount('purchase_return', AppCurrency.usd) + adjustmentAmount('purchase_allowance', AppCurrency.usd)).fmt} \$ • ${(adjustmentAmount('purchase_return', AppCurrency.syp) + adjustmentAmount('purchase_allowance', AppCurrency.syp)).fmt} ل.س',
+            ),
+            _accountLine(
+              'خصومات المبيعات المسموحة',
+              '${salesDiscount(AppCurrency.usd).fmt} \$ • ${salesDiscount(AppCurrency.syp).fmt} ل.س',
+            ),
+            _accountLine(
+              'إيرادات بيع الأصول',
+              allAssets
+                  .fold<double>(0, (sum, asset) => sum + asset.saleAmount)
+                  .fmt,
+            ),
+            _accountLine(
+              'الخصومات المكتسبة',
+              '${(purchaseDiscount(AppCurrency.usd) + adjustmentAmount('purchase_discount', AppCurrency.usd)).fmt} \$ • ${(purchaseDiscount(AppCurrency.syp) + adjustmentAmount('purchase_discount', AppCurrency.syp)).fmt} ل.س',
+            ),
+          ]),
+          _accountGroup('المصروفات', Icons.trending_down, [
+            _accountLine(
+              'المشتريات',
+              '${factoryPurchaseAmount(AppCurrency.usd).fmt} \$ • ${factoryPurchaseAmount(AppCurrency.syp).fmt} ل.س',
+            ),
+            _accountLine(
+              'تكلفة البضائع المباعة',
+              '${erp.totalCOGS.fmt} \$ • ${erp.totalCOGSSyp.fmt} ل.س',
+            ),
+            _accountLine(
+              'مرتجعات ومسموحات المبيعات',
+              '${(adjustmentAmount('sales_return', AppCurrency.usd) + adjustmentAmount('sales_allowance', AppCurrency.usd)).fmt} \$ • ${(adjustmentAmount('sales_return', AppCurrency.syp) + adjustmentAmount('sales_allowance', AppCurrency.syp)).fmt} ل.س',
+            ),
+            _accountLine(
+              'خصومات المبيعات',
+              '${salesDiscount(AppCurrency.usd).fmt} \$ • ${salesDiscount(AppCurrency.syp).fmt} ل.س',
+            ),
+            _accountLine(
+              'الرواتب والأجور',
+              '${erp.totalOperationalExpenses.fmt} \$ • ${erp.totalOperationalExpensesSyp.fmt} ل.س',
+            ),
+            _accountLine(
+              'المصروفات المباشرة',
+              '${expenseUsd.fmt} \$ • ${expenseSyp.fmt} ل.س',
+            ),
+            for (final type in erp.expenseTypes)
+              _accountLine(
+                type.name,
+                erp.expenseRecords
+                    .where((e) => e.typeId == type.id)
+                    .map(
+                      (e) =>
+                          '${e.amount.fmt} ${AppCurrency.symbol(e.currency)}',
+                    )
+                    .join(' • '),
+              ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _accountGroup(String title, IconData icon, List<Widget> children) =>
+      Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: ExpansionTile(
+          initiallyExpanded: true,
+          leading: Icon(icon, color: AppColors.accentPrimary),
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          children: children,
+        ),
+      );
+
+  Widget _accountLine(String title, String value) => ListTile(
+    dense: true,
+    title: Text(title),
+    subtitle: Text(value.isEmpty ? 'لا توجد أرصدة مسجلة' : value),
+  );
+
+  Widget _clickableLegacyLine(
+    BuildContext context,
+    ERPProvider erp,
+    String title,
+    String amount,
+    List<LegacyFinancialRecordModel> records,
+    String category,
+  ) => ListTile(
+    dense: true,
+    title: Text(title),
+    subtitle: Text('$amount • اضغط لعرض التفاصيل والتسوية'),
+    trailing: const Icon(Icons.open_in_new),
+    onTap: () => _showLegacyDetails(context, erp, title, records, category),
+  );
+
+  Widget _clickableCurrentDebts(
+    BuildContext context,
+    String title,
+    String amount,
+    List<Widget> details,
+  ) => ListTile(
+    dense: true,
+    title: Text(title),
+    subtitle: Text('$amount • اضغط لعرض التفاصيل'),
+    trailing: const Icon(Icons.open_in_new),
+    onTap: () => showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 520,
+          child: details.isEmpty
+              ? const Text('لا توجد أرصدة تشغيلية حالية.')
+              : ListView(shrinkWrap: true, children: details),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _showLegacyDetails(
+    BuildContext context,
+    ERPProvider erp,
+    String title,
+    List<LegacyFinancialRecordModel> records,
+    String category,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 560,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final record in records)
+                ListTile(
+                  title: Text(record.name),
+                  subtitle: Text(
+                    '${record.phone} • ${record.description}\nالمتبقي: ${record.amount.fmt} ${AppCurrency.symbol(record.currency)}',
+                  ),
+                  trailing: record.amount <= 0
+                      ? const Icon(Icons.check_circle, color: Colors.green)
+                      : IconButton(
+                          tooltip: category == 'clients' ? 'تحصيل' : 'تسديد',
+                          icon: const Icon(Icons.payments_outlined),
+                          onPressed: () async {
+                            final amount = await _askAmount(
+                              dialogContext,
+                              record.amount,
+                            );
+                            if (amount == null) return;
+                            final paid = erp.settleLegacyFinancialRecord(
+                              record.id,
+                              amount,
+                              'main',
+                            );
+                            if (!paid && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'تعذر التسديد: تحقق من الرصيد المتاح في الصندوق.',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<double?> _askAmount(BuildContext context, double max) async {
+    final controller = TextEditingController(text: max.fmt);
+    final result = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('مبلغ التسوية'),
+        content: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'المبلغ'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final amount = double.tryParse(controller.text);
+              if (amount != null && amount > 0 && amount <= max) {
+                Navigator.pop(dialogContext, amount);
+              }
+            },
+            child: const Text('تأكيد'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+}
+
+class FixedAssetsManagementScreen extends StatefulWidget {
+  const FixedAssetsManagementScreen({super.key});
+
+  @override
+  State<FixedAssetsManagementScreen> createState() =>
+      _FixedAssetsManagementScreenState();
+}
+
+class _FixedAssetsManagementScreenState
+    extends State<FixedAssetsManagementScreen> {
+  final _nameController = TextEditingController();
+  final _amountController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  String _category = _fixedAssetCategories.first;
+  String _currency = AppCurrency.usd;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _amountController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final erp = context.watch<ERPProvider>();
+    final assets = erp.openingEntry.fixedAssets;
+    return Scaffold(
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          Text(
+            'إدارة الأصول الثابتة',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'إضافة أصل تخصم كلفته من الصندوق الرئيسي، وبيع الأصل يوزع سعر البيع بالتساوي على الشركاء الثلاثة.',
+          ),
+          const SizedBox(height: 18),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 220,
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _category,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'نوع الأصل'),
+                      items: [
+                        for (final category in _fixedAssetCategories)
+                          DropdownMenuItem(
+                            value: category,
+                            child: Text(category),
+                          ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _category = value ?? _category),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 200,
+                    child: TextField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(labelText: 'اسم الأصل'),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 160,
+                    child: TextField(
+                      controller: _amountController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(labelText: 'الكلفة'),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 140,
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _currency,
+                      decoration: const InputDecoration(labelText: 'العملة'),
+                      items: const [
+                        DropdownMenuItem(value: 'USD', child: Text('USD')),
+                        DropdownMenuItem(value: 'SYP', child: Text('SYP')),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _currency = value ?? 'USD'),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 220,
+                    child: TextField(
+                      controller: _descriptionController,
+                      decoration: const InputDecoration(labelText: 'الوصف'),
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () {
+                      final amount = double.tryParse(_amountController.text);
+                      if (_nameController.text.trim().isEmpty ||
+                          _descriptionController.text.trim().isEmpty ||
+                          amount == null ||
+                          amount <= 0) {
+                        _message('أدخل اسم الأصل ووصفه ومبلغاً صحيحاً.');
+                        return;
+                      }
+                      final added = erp.purchaseFixedAsset(
+                        category: _category,
+                        name: _nameController.text,
+                        amount: amount,
+                        currency: _currency,
+                        description: _descriptionController.text,
+                      );
+                      if (!added) {
+                        _message('رصيد الصندوق الرئيسي لا يكفي لشراء الأصل.');
+                        return;
+                      }
+                      _nameController.clear();
+                      _amountController.clear();
+                      _descriptionController.clear();
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('إضافة وشراء'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final category in _fixedAssetCategories)
+            Card(
+              child: ExpansionTile(
+                initiallyExpanded: true,
+                title: Text(
+                  category,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  'الإجمالي: ${assets.where((a) => a.category == category && !a.isSold && a.currency == AppCurrency.usd).fold<double>(0, (sum, a) => sum + a.amount).fmt} \$ • ${assets.where((a) => a.category == category && !a.isSold && a.currency == AppCurrency.syp).fold<double>(0, (sum, a) => sum + a.amount).fmt} ل.س',
+                ),
+                children: [
+                  for (final asset in assets.where(
+                    (a) => a.category == category,
+                  ))
+                    ListTile(
+                      title: Text(asset.name),
+                      subtitle: Text(
+                        '${asset.description} • القيمة الدفترية: ${asset.amount.fmt} ${AppCurrency.symbol(asset.currency)}${asset.isSold ? ' • مباع بـ ${asset.saleAmount.fmt}' : ''}',
+                      ),
+                      trailing: asset.isSold
+                          ? const Icon(Icons.check_circle_outline)
+                          : TextButton.icon(
+                              onPressed: () => _sellAsset(erp, asset),
+                              icon: const Icon(Icons.sell_outlined),
+                              label: const Text('بيع'),
+                            ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _sellAsset(ERPProvider erp, FixedAssetModel asset) async {
+    final priceController = TextEditingController();
+    final transfers = {for (final p in erp.partners) p.id: true};
+    final salePrice = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('بيع الأصل • ${asset.name}'),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'سعر البيع يوزع بالتساوي: ${priceController.text.isEmpty ? '0' : ((double.tryParse(priceController.text) ?? 0) / 3).fmt} ${AppCurrency.symbol(asset.currency)} لكل شريك.',
+                ),
+                TextField(
+                  controller: priceController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText:
+                        'سعر البيع (${AppCurrency.symbol(asset.currency)})',
+                  ),
+                  onChanged: (_) => setDialogState(() {}),
+                ),
+                const SizedBox(height: 12),
+                for (final partner in erp.partners)
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(partner.name),
+                    subtitle: const Text(
+                      'مفعل: تحويل الحصة إلى الصندوق • متوقف: سحب الحصة',
+                    ),
+                    value: transfers[partner.id] ?? true,
+                    onChanged: (value) =>
+                        setDialogState(() => transfers[partner.id] = value),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final amount = double.tryParse(priceController.text);
+                if (amount != null && amount > 0) {
+                  Navigator.pop(dialogContext, amount);
+                }
+              },
+              child: const Text('تأكيد البيع'),
+            ),
+          ],
+        ),
+      ),
+    );
+    priceController.dispose();
+    if (salePrice == null) return;
+    final sold = erp.sellFixedAsset(
+      assetId: asset.id,
+      saleAmount: salePrice,
+      currency: asset.currency,
+      partnerTransfers: transfers,
+    );
+    if (!sold) {
+      _message('تعذر تسجيل البيع. تحقق من حالة الأصل والسعر.');
+      return;
+    }
+    final retainedAmount =
+        salePrice / 3 * transfers.values.where((v) => v).length;
+    final withdrawnAmount = salePrice - retainedAmount;
+    _message(
+      'تم البيع. إلى الصندوق: ${retainedAmount.fmt} ${AppCurrency.symbol(asset.currency)} • مسحوبات الشركاء: ${withdrawnAmount.fmt} ${AppCurrency.symbol(asset.currency)}.',
+    );
+  }
+
+  void _message(String value) => ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text(value)));
+}
+
+class ExpensesManagementScreen extends StatefulWidget {
+  const ExpensesManagementScreen({super.key});
+
+  @override
+  State<ExpensesManagementScreen> createState() =>
+      _ExpensesManagementScreenState();
+}
+
+class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
+  Future<void> _addType(ERPProvider erp) async {
+    final name = TextEditingController();
+    final description = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('إضافة نوع مصروف'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: name,
+              decoration: const InputDecoration(labelText: 'اسم النوع'),
+            ),
+            TextField(
+              controller: description,
+              decoration: const InputDecoration(labelText: 'الوصف'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (name.text.trim().isNotEmpty) {
+                erp.addExpenseType(
+                  ExpenseTypeModel(
+                    id: 'expense_type_${DateTime.now().microsecondsSinceEpoch}',
+                    name: name.text.trim(),
+                    description: description.text.trim(),
+                  ),
+                );
+                Navigator.pop(dialogContext, true);
+              }
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    name.dispose();
+    description.dispose();
+    if (result == true) setState(() {});
+  }
+
+  Future<void> _addExpense(ERPProvider erp, ExpenseTypeModel type) async {
+    final amountController = TextEditingController();
+    final shareController = TextEditingController();
+    final descriptionController = TextEditingController();
+    final personController = TextEditingController();
+    var currency = AppCurrency.usd;
+    String? staffId;
+    final shouldAdd = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('مصروف جديد • ${type.name}'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: amountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'مبلغ المصروف',
+                    ),
+                  ),
+                  DropdownButtonFormField<String>(
+                    initialValue: currency,
+                    decoration: const InputDecoration(labelText: 'العملة'),
+                    items: const [
+                      DropdownMenuItem(value: 'USD', child: Text('USD')),
+                      DropdownMenuItem(value: 'SYP', child: Text('SYP')),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => currency = value ?? 'USD'),
+                  ),
+                  DropdownButtonFormField<String?>(
+                    initialValue: staffId,
+                    decoration: const InputDecoration(
+                      labelText: 'موظف داخلي (اختياري)',
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('لا يوجد موظف داخلي'),
+                      ),
+                      for (final staff in erp.staffList)
+                        DropdownMenuItem<String?>(
+                          value: staff.id,
+                          child: Text(staff.name),
+                        ),
+                    ],
+                    onChanged: (value) => setDialogState(() {
+                      staffId = value;
+                      if (value != null) {
+                        personController.text = erp.staffList
+                            .firstWhere((s) => s.id == value)
+                            .name;
+                      }
+                    }),
+                  ),
+                  TextField(
+                    controller: personController,
+                    enabled: staffId == null,
+                    decoration: const InputDecoration(
+                      labelText: 'شخص خارجي / مستفيد (اختياري)',
+                    ),
+                  ),
+                  TextField(
+                    controller: shareController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(labelText: 'حصة الشخص'),
+                  ),
+                  TextField(
+                    controller: descriptionController,
+                    decoration: const InputDecoration(labelText: 'الوصف'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('إضافة مصروف'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (shouldAdd == true) {
+      final amount = double.tryParse(amountController.text) ?? 0;
+      final share = double.tryParse(shareController.text) ?? 0;
+      if (amount <= 0 ||
+          share < 0 ||
+          share > amount ||
+          (share > 0 && personController.text.trim().isEmpty)) {
+        _message('تحقق من المبلغ واسم المستفيد وحصته.');
+      } else {
+        final expense = ExpenseRecordModel(
+          id: 'expense_${DateTime.now().microsecondsSinceEpoch}',
+          typeId: type.id,
+          amount: amount,
+          currency: currency,
+          personName: personController.text.trim(),
+          staffId: staffId,
+          personShare: share,
+          description: descriptionController.text.trim(),
+        );
+        erp.addExpenseRecord(expense);
+        if (staffId != null && share > 0) {
+          erp.staffList
+              .firstWhere((staff) => staff.id == staffId)
+              .addEarning(currency, share);
+          erp.refresh();
+        }
+      }
+    }
+    amountController.dispose();
+    shareController.dispose();
+    descriptionController.dispose();
+    personController.dispose();
+  }
+
+  void _message(String value) => ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text(value)));
+
+  @override
+  Widget build(BuildContext context) {
+    final erp = context.watch<ERPProvider>();
+    return Scaffold(
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'المصروفات',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: () => _addType(erp),
+                icon: const Icon(Icons.create_new_folder_outlined),
+                label: const Text('إضافة نوع مصروف'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'أنشئ أنواع المصروفات، ثم أضف المصروفات ومبالغها والمستفيدين. حصة الموظف الداخلي تسجل في مالية القوى العاملة.',
+          ),
+          const SizedBox(height: 16),
+          if (erp.expenseTypes.isEmpty)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text('أضف نوع مصروف للبدء.'),
+              ),
+            ),
+          for (final type in erp.expenseTypes)
+            Card(
+              child: ExpansionTile(
+                initiallyExpanded: true,
+                title: Text(
+                  type.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(type.description),
+                trailing: IconButton(
+                  tooltip: 'إضافة مصروف',
+                  onPressed: () => _addExpense(erp, type),
+                  icon: const Icon(Icons.add_circle_outline),
+                ),
+                children: [
+                  for (final expense in erp.expenseRecords.where(
+                    (e) => e.typeId == type.id,
+                  ))
+                    ListTile(
+                      title: Text(
+                        '${expense.amount.fmt} ${AppCurrency.symbol(expense.currency)}',
+                      ),
+                      subtitle: Text(
+                        '${expense.description} • ${expense.personName.isEmpty ? 'دون مستفيد' : expense.personName}${expense.personShare > 0 ? ' • الحصة ${expense.personShare.fmt}' : ''}${expense.staffId != null ? ' • مسجل في القوى العاملة' : ''}',
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class ReturnsAllowancesScreen extends StatefulWidget {
+  final bool factoryOnly;
+  final bool workshopOnly;
+  final int initialTab;
+
+  const ReturnsAllowancesScreen({
+    super.key,
+    this.factoryOnly = false,
+    this.workshopOnly = false,
+    this.initialTab = 0,
+  });
+
+  @override
+  State<ReturnsAllowancesScreen> createState() =>
+      _ReturnsAllowancesScreenState();
+}
+
+class _ReturnsAllowancesScreenState extends State<ReturnsAllowancesScreen> {
+  static const _factoryTabs = [
+    'مرتجعات مشتريات المصنع',
+    'مرتجعات مبيعات المصنع',
+    'مسموحات مشتريات المصنع',
+    'مسموحات مبيعات المصنع',
+  ];
+  static const _workshopTabs = [
+    'مرتجعات مبيعات المعمل',
+    'مسموحات مبيعات المعمل',
+  ];
+  late int _selectedTab;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedTab = widget.initialTab;
+  }
+
+  List<String> get _tabs {
+    if (widget.factoryOnly) return _factoryTabs;
+    if (widget.workshopOnly) return _workshopTabs;
+    return [..._factoryTabs, ..._workshopTabs];
+  }
+
+  String get _kind {
+    if (widget.workshopOnly) {
+      return _selectedTab == 0 ? 'sales_return' : 'sales_allowance';
+    }
+    return [
+      'purchase_return',
+      'sales_return',
+      'purchase_allowance',
+      'sales_allowance',
+      'sales_return',
+      'sales_allowance',
+    ][_selectedTab];
+  }
+
+  String get _module =>
+      widget.workshopOnly || (!widget.factoryOnly && _selectedTab >= 4)
+      ? 'workshop'
+      : 'factory';
+
+  @override
+  Widget build(BuildContext context) {
+    final erp = context.watch<ERPProvider>();
+    final matching = erp.adjustmentInvoices
+        .where((invoice) => invoice.module == _module && invoice.kind == _kind)
+        .toList();
+    return Scaffold(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 4),
+            child: Text(
+              'مرتجعات ومسموحات وخصومات الفواتير',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+          SizedBox(
+            height: 58,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              children: [
+                for (var index = 0; index < _tabs.length; index++)
+                  Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: ChoiceChip(
+                      label: Text(_tabs[index]),
+                      selected: index == _selectedTab,
+                      onSelected: (_) => setState(() => _selectedTab = index),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
+            child: FilledButton.icon(
+              onPressed: () => _addInvoice(erp),
+              icon: const Icon(Icons.add),
+              label: const Text('إضافة فاتورة جديدة'),
+            ),
+          ),
+          Expanded(
+            child: matching.isEmpty
+                ? const Center(child: Text('لا توجد فواتير في هذا القسم.'))
+                : ListView.builder(
+                    itemCount: matching.length,
+                    itemBuilder: (context, index) {
+                      final invoice = matching[index];
+                      return Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.assignment_return_outlined),
+                          title: Text(
+                            '${invoice.invoiceNo} • ${invoice.targetInvoiceNo}',
+                          ),
+                          subtitle: Text(
+                            '${invoice.partyName} • ${invoice.description}',
+                          ),
+                          trailing: Text(
+                            '${invoice.amount.fmt} ${AppCurrency.symbol(invoice.currency)}',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addInvoice(ERPProvider erp) async {
+    final List<_InvoiceOption> candidates;
+    if (_module == 'factory') {
+      candidates = erp.factoryInvoices
+          .where((invoice) {
+            final purchase = invoice.invoiceType == 'شراء_مورد';
+            return _kind.startsWith('purchase') ? purchase : !purchase;
+          })
+          .map(
+            (invoice) => _InvoiceOption(
+              id: invoice.id,
+              invoiceNo: invoice.invoiceNo,
+              partyName: invoice.partyName,
+              currency: invoice.currency,
+              totalAmount: invoice.grandTotal,
+              items: [
+                for (var index = 0; index < invoice.items.length; index++)
+                  _AdjustmentItemOption(
+                    key: '$index',
+                    id: invoice.items[index].itemId,
+                    index: index,
+                    description: invoice.items[index].description,
+                    quantity: invoice.items[index].quantity,
+                  ),
+              ],
+            ),
+          )
+          .toList();
+    } else {
+      candidates = erp.workshopInvoices
+          .map(
+            (invoice) => _InvoiceOption(
+              id: invoice.id,
+              invoiceNo: invoice.invoiceNo,
+              partyName: invoice.clientName,
+              currency: invoice.currency,
+              totalAmount: invoice.grandTotal,
+              items: [
+                _AdjustmentItemOption(
+                  key: 'workshop',
+                  id: invoice.sourceId,
+                  index: -1,
+                  description: invoice.itemDescription,
+                  quantity: 0,
+                ),
+              ],
+            ),
+          )
+          .toList();
+    }
+    if (candidates.isEmpty) {
+      _message('أضف الفاتورة الأصلية أولاً حتى يمكن ربط الحركة بها.');
+      return;
+    }
+    var target = candidates.first;
+    var targetItem = target.items.first;
+    var paymentAction = 'تخفيض دين';
+    final numberController = TextEditingController(
+      text: 'ADJ-${DateTime.now().millisecondsSinceEpoch}',
+    );
+    final amountController = TextEditingController();
+    final quantityController = TextEditingController();
+    final descriptionController = TextEditingController();
+    final result = await showDialog<AdjustmentInvoiceModel>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(_tabs[_selectedTab]),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: target.id,
+                    decoration: const InputDecoration(
+                      labelText: 'الفاتورة الأصلية',
+                    ),
+                    items: [
+                      for (final invoice in candidates)
+                        DropdownMenuItem(
+                          value: invoice.id,
+                          child: Text(
+                            '${invoice.invoiceNo} • ${invoice.partyName}',
+                          ),
+                        ),
+                    ],
+                    onChanged: (id) {
+                      if (id == null) return;
+                      setDialogState(() {
+                        target = candidates.firstWhere(
+                          (invoice) => invoice.id == id,
+                        );
+                        targetItem = target.items.first;
+                      });
+                    },
+                  ),
+                  if (_kind.endsWith('return'))
+                    DropdownButtonFormField<String>(
+                      initialValue: targetItem.key,
+                      decoration: const InputDecoration(
+                        labelText: 'الصنف المرتجع',
+                      ),
+                      items: [
+                        for (final item in target.items)
+                          DropdownMenuItem(
+                            value: item.key,
+                            child: Text(
+                              item.quantity > 0
+                                  ? '${item.description} • المتاح: ${item.quantity.fmt}'
+                                  : item.description,
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(
+                          () => targetItem = target.items.firstWhere(
+                            (item) => item.key == value,
+                          ),
+                        );
+                      },
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'إجمالي الفاتورة: ${target.totalAmount.fmt} ${AppCurrency.symbol(target.currency)} • التعديلات السابقة: ${_adjustmentsFor(erp, target.id).fmt}',
+                    ),
+                  ),
+                  TextField(
+                    controller: numberController,
+                    decoration: const InputDecoration(
+                      labelText: 'رقم فاتورة الحركة',
+                    ),
+                  ),
+                  TextField(
+                    controller: amountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText:
+                          'المبلغ (${AppCurrency.symbol(target.currency)})',
+                    ),
+                  ),
+                  if (_kind.endsWith('return'))
+                    TextField(
+                      controller: quantityController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'الكمية المرتجعة',
+                      ),
+                    ),
+                  DropdownButtonFormField<String>(
+                    initialValue: paymentAction,
+                    decoration: const InputDecoration(
+                      labelText: 'طريقة التسوية',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'تخفيض دين',
+                        child: Text('تخفيض الدين'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'استرداد نقدي للصندوق الرئيسي',
+                        child: Text('تسوية نقدية من/إلى الصندوق الرئيسي'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => paymentAction = value);
+                      }
+                    },
+                  ),
+                  TextField(
+                    controller: descriptionController,
+                    decoration: const InputDecoration(labelText: 'التفاصيل'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final amount = double.tryParse(amountController.text);
+                final quantity = _kind.endsWith('return')
+                    ? double.tryParse(quantityController.text)
+                    : 0.0;
+                if (quantity != null &&
+                    targetItem.quantity > 0 &&
+                    quantity > targetItem.quantity) {
+                  _message('الكمية المرتجعة تتجاوز كمية الصنف في الفاتورة.');
+                  return;
+                }
+                if (amount == null ||
+                    amount <= 0 ||
+                    quantity == null ||
+                    (_kind.endsWith('return') && quantity <= 0) ||
+                    numberController.text.trim().isEmpty) {
+                  _message('أدخل مبلغاً صحيحاً ورقم فاتورة، وكمية للمرتجع.');
+                  return;
+                }
+                final remaining =
+                    (target.totalAmount - _adjustmentsFor(erp, target.id))
+                        .clamp(0.0, double.infinity);
+                if (amount > remaining) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'المبلغ يتجاوز المتبقي المتاح للفاتورة الأصلية (${remaining.fmt} ${AppCurrency.symbol(target.currency)}).',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(
+                  dialogContext,
+                  AdjustmentInvoiceModel(
+                    id: 'adjustment_${DateTime.now().microsecondsSinceEpoch}',
+                    invoiceNo: numberController.text.trim(),
+                    module: _module,
+                    kind: _kind,
+                    targetInvoiceId: target.id,
+                    targetInvoiceNo: target.invoiceNo,
+                    itemId: targetItem.id,
+                    itemDescription: targetItem.description,
+                    itemIndex: targetItem.index,
+                    partyName: target.partyName,
+                    description: descriptionController.text.trim(),
+                    amount: amount,
+                    quantity: quantity,
+                    paymentAction: paymentAction,
+                    currency: target.currency,
+                  ),
+                );
+              },
+              child: const Text('حفظ الفاتورة'),
+            ),
+          ],
+        ),
+      ),
+    );
+    numberController.dispose();
+    amountController.dispose();
+    quantityController.dispose();
+    descriptionController.dispose();
+    if (result != null && !erp.addAdjustmentInvoice(result)) {
+      _message(
+        'تعذر حفظ الحركة: تحقق من الرصيد، والكمية المتاحة، وطريقة التسوية.',
+      );
+    }
+  }
+
+  double _adjustmentsFor(ERPProvider erp, String targetId) => erp
+      .adjustmentInvoices
+      .where(
+        (invoice) =>
+            invoice.module == _module && invoice.targetInvoiceId == targetId,
+      )
+      .fold<double>(0, (sum, invoice) => sum + invoice.amount);
+
+  void _message(String text) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+}
+
+class _InvoiceOption {
+  final String id;
+  final String invoiceNo;
+  final String partyName;
+  final String currency;
+  final double totalAmount;
+  final List<_AdjustmentItemOption> items;
+
+  const _InvoiceOption({
+    required this.id,
+    required this.invoiceNo,
+    required this.partyName,
+    required this.currency,
+    required this.totalAmount,
+    required this.items,
+  });
+}
+
+class _AdjustmentItemOption {
+  final String key;
+  final String id;
+  final int index;
+  final String description;
+  final double quantity;
+
+  const _AdjustmentItemOption({
+    required this.key,
+    required this.id,
+    required this.index,
+    required this.description,
+    required this.quantity,
+  });
+}
+
+class HistoricalFinancialsScreen extends StatelessWidget {
+  const HistoricalFinancialsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final erp = context.watch<ERPProvider>();
+    final records = erp.openingEntry.legacyFinancials;
+    final categories = {
+      'suppliers': 'الذمم القديمة للموردين',
+      'clients': 'ديون العملاء المعتمدين وزبائن المفرق القديمة',
+      'employees': 'الذمم القديمة للموظفين',
+    };
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Text(
+          'المالية القديمة • أرصدة القيد الافتتاحي',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'سجل تاريخي دائم للذمم التي أُدخلت عند إعداد القيد الافتتاحي. تتم التسويات من هذا السجل.',
+        ),
+        const SizedBox(height: 12),
+        for (final category in categories.entries)
+          Card(
+            child: ExpansionTile(
+              initiallyExpanded: true,
+              title: Text(
+                category.value,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              children: [
+                for (final record in records.where(
+                  (item) => item.category == category.key,
+                ))
+                  ListTile(
+                    title: Text(record.name),
+                    subtitle: Text(
+                      '${record.phone} • ${record.description} • المتبقي ${record.amount.fmt} ${AppCurrency.symbol(record.currency)}',
+                    ),
+                    trailing: record.amount == 0
+                        ? const Chip(label: Text('مسدد'))
+                        : IconButton(
+                            tooltip: category.key == 'clients'
+                                ? 'تحصيل من العميل'
+                                : 'دفع',
+                            onPressed: () =>
+                                _settle(context, erp, record, category.key),
+                            icon: const Icon(Icons.payments_outlined),
+                          ),
+                  ),
+                if (records
+                    .where((item) => item.category == category.key)
+                    .isEmpty)
+                  const ListTile(title: Text('لا توجد أرصدة في هذا القسم.')),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _settle(
+    BuildContext context,
+    ERPProvider erp,
+    LegacyFinancialRecordModel record,
+    String category,
+  ) async {
+    final amountController = TextEditingController(text: record.amount.fmt);
+    final amount = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          category == 'clients'
+              ? 'تحصيل من ${record.name}'
+              : 'تسديد ${record.name}',
+        ),
+        content: TextField(
+          controller: amountController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(
+            labelText:
+                'المبلغ (حد أقصى ${record.amount.fmt} ${AppCurrency.symbol(record.currency)})',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = double.tryParse(amountController.text);
+              if (value != null && value > 0 && value <= record.amount) {
+                Navigator.pop(dialogContext, value);
+              }
+            },
+            child: const Text('تأكيد'),
+          ),
+        ],
+      ),
+    );
+    amountController.dispose();
+    if (amount == null) return;
+    final settled = erp.settleLegacyFinancialRecord(record.id, amount, 'main');
+    if (!settled && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('رصيد الصندوق لا يكفي لإتمام عملية الدفع.'),
+        ),
+      );
+    }
+  }
+}
