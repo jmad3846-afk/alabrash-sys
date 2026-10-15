@@ -88,11 +88,15 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
     String title,
     List<String> fields, {
     bool showCurrency = true,
+    Map<String, String> initialValues = const {},
+    Map<String, List<DropdownMenuItem<String>>> fieldOptions = const {},
+    String initialCurrency = AppCurrency.usd,
   }) async {
     final controllers = {
-      for (final field in fields) field: TextEditingController(),
+      for (final field in fields)
+        field: TextEditingController(text: initialValues[field] ?? ''),
     };
-    var currency = AppCurrency.usd;
+    var currency = initialCurrency;
     final result = await showDialog<Map<String, String>>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -107,21 +111,35 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                   for (final field in fields)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
-                      child: TextField(
-                        controller: controllers[field],
-                        keyboardType:
-                            field.contains('المبلغ') ||
-                                field.contains('الكمية') ||
-                                field.contains('سعر')
-                            ? const TextInputType.numberWithOptions(
-                                decimal: true,
-                              )
-                            : TextInputType.text,
-                        decoration: InputDecoration(
-                          labelText: field,
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
+                      child: fieldOptions.containsKey(field)
+                          ? DropdownButtonFormField<String>(
+                              initialValue:
+                                  initialValues[field]?.isNotEmpty == true
+                                  ? initialValues[field]
+                                  : null,
+                              decoration: InputDecoration(
+                                labelText: field,
+                                border: const OutlineInputBorder(),
+                              ),
+                              items: fieldOptions[field],
+                              onChanged: (value) =>
+                                  controllers[field]!.text = value ?? '',
+                            )
+                          : TextField(
+                              controller: controllers[field],
+                              keyboardType:
+                                  field.contains('المبلغ') ||
+                                      field.contains('الكمية') ||
+                                      field.contains('سعر')
+                                  ? const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    )
+                                  : TextInputType.text,
+                              decoration: InputDecoration(
+                                labelText: field,
+                                border: const OutlineInputBorder(),
+                              ),
+                            ),
                     ),
                   if (showCurrency)
                     DropdownButtonFormField<String>(
@@ -174,12 +192,20 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
     return result;
   }
 
-  Future<void> _addFixedAsset(ERPProvider erp, String category) async {
+  Future<void> _addFixedAsset(
+    ERPProvider erp,
+    String category, {
+    FixedAssetModel? existing,
+  }) async {
     final value = await _showEntryDialog('إضافة أصل ثابت • $category', const [
       'اسم الأصل',
       'المبلغ',
       'الوصف',
-    ]);
+    ], initialValues: {
+      'اسم الأصل': existing?.name ?? '',
+      'المبلغ': existing?.amount.fmt ?? '',
+      'الوصف': existing?.description ?? '',
+    }, initialCurrency: existing?.currency ?? AppCurrency.usd);
     if (value == null ||
         value['اسم الأصل']!.isEmpty ||
         value['الوصف']!.isEmpty) {
@@ -191,23 +217,111 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
       _showMessage('أدخل مبلغاً أكبر من الصفر.');
       return;
     }
-    erp.addOpeningFixedAsset(
-      FixedAssetModel(
-        id: 'opening_asset_${DateTime.now().microsecondsSinceEpoch}',
+    final asset = FixedAssetModel(
+        id: existing?.id ??
+            'opening_asset_${DateTime.now().microsecondsSinceEpoch}',
         category: category,
         name: value['اسم الأصل']!,
         amount: amount,
         description: value['الوصف'] ?? '',
         currency: value['currency']!,
-      ),
-    );
+      );
+    if (existing == null) {
+      erp.addOpeningFixedAsset(asset);
+    } else {
+      erp.updateOpeningFixedAsset(asset);
+    }
   }
 
-  Future<void> _addStockItem(ERPProvider erp, String category) async {
+  Future<void> _addStockItem(
+    ERPProvider erp,
+    String category, {
+    OpeningStockItemModel? existing,
+  }) async {
     final isBlock = category == 'بلوكات خام المصنع';
     final isMeter = category.contains('أمتار');
+    final isSimple = category == 'تفصيل بسيط';
+    final isComplex = category == 'تفصيل معقد';
+    if (isBlock && erp.blockTypes.isEmpty) {
+      _showMessage('أضف نوع بلوك من قسم «الأنواع» في المصنع أولاً.');
+      return;
+    }
+    if (isMeter && erp.meterTypes.isEmpty) {
+      _showMessage('أضف نوع متر من واجهة المصنع أولاً.');
+      return;
+    }
+    if (isSimple && erp.simpleTailorings.isEmpty) {
+      _showMessage('أنشئ نوع تفصيل بسيط من واجهة المعمل أولاً.');
+      return;
+    }
+    if (isComplex && erp.complexTailorings.isEmpty) {
+      _showMessage('أنشئ نوع تفصيل معقد من واجهة المعمل أولاً.');
+      return;
+    }
+    final typeField = isBlock || isMeter || isSimple || isComplex;
+    final existingTypeId = existing == null
+        ? null
+        : isBlock
+        ? _firstOrNull(
+            erp.blockTypes.where(
+              (type) =>
+                  type.id == existing.typeId ||
+                  (type.typeName == existing.typeName &&
+                      (existing.grade.isEmpty || type.grade == existing.grade)),
+            ),
+          )?.id
+        : isMeter
+        ? _firstOrNull(
+            erp.meterTypes.where(
+              (type) =>
+                  type.id == existing.typeId ||
+                  type.typeName == existing.typeName,
+            ),
+          )?.id
+        : isSimple || isComplex
+        ? _firstOrNull(
+            (isSimple ? erp.simpleTailorings : erp.complexTailorings).where(
+              (item) =>
+                  item.id == existing.typeId || item.name == existing.typeName,
+            ),
+          )?.id
+        : null;
+    final options = <DropdownMenuItem<String>>[];
+    if (isBlock) {
+      options.addAll(
+        erp.blockTypes.map(
+          (type) => DropdownMenuItem(
+            value: type.id,
+            child: Text('${type.typeName} • ${type.grade}'),
+          ),
+        ),
+      );
+    } else if (isMeter) {
+      options.addAll(
+        erp.meterTypes.map(
+          (type) => DropdownMenuItem(
+            value: type.id,
+            child: Text(
+              '${type.typeName} • ${type.grade} • ${type.thicknessCm} سم',
+            ),
+          ),
+        ),
+      );
+    } else if (isSimple || isComplex) {
+      final products = isSimple
+          ? erp.simpleTailorings
+          : erp.complexTailorings;
+      options.addAll(
+        products.map(
+          (product) => DropdownMenuItem(
+            value: product.id,
+            child: Text(product.name),
+          ),
+        ),
+      );
+    }
     final value = await _showEntryDialog('إضافة مخزون • $category', [
-      isBlock || isMeter ? 'النوع' : 'اسم الصنف / النوع',
+      typeField ? 'النوع' : 'اسم الصنف / النوع',
       isBlock
           ? 'الكمية بالطن'
           : isMeter
@@ -218,12 +332,51 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
           : isMeter
           ? 'سعر المتر'
           : 'سعر الوحدة',
+      if (isBlock) 'اسم المورد',
       'الوصف',
-    ]);
+    ], initialValues: {
+      if (existing != null)
+        'النوع': existingTypeId ?? '',
+      if (existing != null && !typeField) 'اسم الصنف / النوع': existing.typeName,
+      if (existing != null)
+        isBlock
+            ? 'الكمية بالطن'
+            : isMeter
+            ? 'الكمية بالأمتار'
+            : 'الكمية': existing.quantity.fmt,
+      if (existing != null)
+        isBlock
+            ? 'سعر الطن'
+            : isMeter
+            ? 'سعر المتر'
+            : 'سعر الوحدة': existing.unitPrice.fmt,
+      if (existing != null) 'اسم المورد': existing.supplierName,
+      if (existing != null) 'الوصف': existing.description,
+    },
+    showCurrency: false,
+    fieldOptions: typeField ? {'النوع': options} : const {},
+    initialCurrency: AppCurrency.usd,
+    );
     if (value == null ||
-        value[isBlock || isMeter ? 'النوع' : 'اسم الصنف / النوع']!.isEmpty) {
+        value[typeField ? 'النوع' : 'اسم الصنف / النوع']!.isEmpty) {
+      if (value != null) _showMessage('اختر نوع المخزون أو أدخل اسمه.');
       return;
     }
+    final selectedId = value['النوع'] ?? '';
+    final blockType = isBlock
+        ? _firstOrNull(erp.blockTypes.where((type) => type.id == selectedId))
+        : null;
+    final meterType = isMeter
+        ? _firstOrNull(erp.meterTypes.where((type) => type.id == selectedId))
+        : null;
+    final tailoringItems = isSimple
+        ? erp.simpleTailorings
+        : isComplex
+        ? erp.complexTailorings
+        : const <WorkshopTailoringModel>[];
+    final tailoredItem = (isSimple || isComplex)
+        ? _firstOrNull(tailoringItems.where((item) => item.id == selectedId))
+        : null;
     final quantity =
         double.tryParse(
           value[isBlock
@@ -242,24 +395,43 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
               : 'سعر الوحدة']!,
         ) ??
         0;
-    if (quantity <= 0 || unitPrice < 0) {
+    if (quantity <= 0 ||
+        unitPrice < 0 ||
+        (isBlock &&
+            (unitPrice <= 0 || (value['اسم المورد'] ?? '').isEmpty))) {
       _showMessage('تحقق من الكمية وسعر الوحدة.');
       return;
     }
-    erp.addOpeningStockItem(
-      OpeningStockItemModel(
-        id: 'opening_stock_${DateTime.now().microsecondsSinceEpoch}',
+    final item = OpeningStockItemModel(
+        id: existing?.id ??
+            'opening_stock_${DateTime.now().microsecondsSinceEpoch}',
         category: category,
-        typeName: value[isBlock || isMeter ? 'النوع' : 'اسم الصنف / النوع']!,
+        typeName: blockType?.typeName ??
+            meterType?.typeName ??
+            tailoredItem?.name ??
+            value['اسم الصنف / النوع']!,
+        typeId: blockType?.id ?? meterType?.id ?? tailoredItem?.id ?? '',
+        grade: blockType?.grade ?? meterType?.grade ?? '',
+        isGranite: blockType?.isGranite ?? meterType?.isGranite ?? false,
+        thicknessCm: meterType?.thicknessCm ?? 0,
+        supplierName: value['اسم المورد'] ?? '',
         quantity: quantity,
         unitPrice: unitPrice,
         description: value['الوصف'] ?? '',
-        currency: value['currency']!,
-      ),
-    );
+        currency: AppCurrency.usd,
+      );
+    if (existing == null) {
+      erp.addOpeningStockItem(item);
+    } else {
+      erp.updateOpeningStockItem(item);
+    }
   }
 
-  Future<void> _addLegacyRecord(ERPProvider erp, String category) async {
+  Future<void> _addLegacyRecord(
+    ERPProvider erp,
+    String category, {
+    LegacyFinancialRecordModel? existing,
+  }) async {
     final titles = {
       'clients': 'ذمة عميل / معتمد قديم',
       'suppliers': 'ذمة مورد قديمة',
@@ -270,24 +442,57 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
       'رقم الهاتف',
       'المبلغ',
       'الوصف',
-    ]);
+    ], initialValues: {
+      'الاسم': existing?.name ?? '',
+      'رقم الهاتف': existing?.phone ?? '',
+      'المبلغ': existing?.amount.fmt ?? '',
+      'الوصف': existing?.description ?? '',
+    }, initialCurrency: existing?.currency ?? AppCurrency.usd);
     if (value == null || value['الاسم']!.isEmpty) return;
     final amount = double.tryParse(value['المبلغ']!) ?? 0;
     if (amount <= 0) {
       _showMessage('أدخل مبلغاً أكبر من الصفر.');
       return;
     }
-    erp.addOpeningFinancialRecord(
-      LegacyFinancialRecordModel(
-        id: 'legacy_${DateTime.now().microsecondsSinceEpoch}',
+    final record = LegacyFinancialRecordModel(
+        id: existing?.id ?? 'legacy_${DateTime.now().microsecondsSinceEpoch}',
         category: category,
         name: value['الاسم']!,
         phone: value['رقم الهاتف'] ?? '',
         currency: value['currency']!,
         amount: amount,
         description: value['الوصف'] ?? '',
-      ),
-    );
+      );
+    if (existing == null) {
+      erp.addOpeningFinancialRecord(record);
+    } else {
+      erp.updateOpeningFinancialRecord(record);
+    }
+  }
+
+  Future<bool> _confirmDelete(String label) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('تأكيد الحذف'),
+          content: Text('هل تريد حذف $label من القيد الافتتاحي؟'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('حذف'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
+  T? _firstOrNull<T>(Iterable<T> values) {
+    final iterator = values.iterator;
+    return iterator.moveNext() ? iterator.current : null;
   }
 
   void _showMessage(String message) {
@@ -408,8 +613,36 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                         subtitle: Text(
                           '${asset.description} ${asset.isSold ? '• مباع' : ''}',
                         ),
-                        trailing: Text(
-                          '${asset.amount.fmt} ${AppCurrency.symbol(asset.currency)}',
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${asset.amount.fmt} ${AppCurrency.symbol(asset.currency)}',
+                            ),
+                            if (!entry.isLocked) ...[
+                              IconButton(
+                                tooltip: 'تعديل',
+                                onPressed: () => _addFixedAsset(
+                                  erp,
+                                  asset.category,
+                                  existing: asset,
+                                ),
+                                icon: const Icon(Icons.edit_outlined),
+                              ),
+                              IconButton(
+                                tooltip: 'حذف',
+                                onPressed: () async {
+                                  if (await _confirmDelete(asset.name)) {
+                                    erp.deleteOpeningFixedAsset(asset.id);
+                                  }
+                                },
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: AppColors.dangerWaste,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ),
@@ -435,7 +668,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
             _section(
               title: 'البضائع والمخزون الحالي',
               subtitle:
-                  'الكمية وسعر الوحدة والقيمة الإجمالية تحفظ ضمن النوع المخصص.',
+                  'الكمية وسعر الوحدة بالدولار USD والقيمة الإجمالية تحفظ ضمن النوع المخصص.',
               trailing: Text(
                 'قيمة المخزون التفصيلي: ${stockTotal.fmt} \$ • ${stockTotalSyp.fmt} ل.س',
                 style: const TextStyle(fontWeight: FontWeight.bold),
@@ -467,10 +700,38 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                         leading: const Icon(Icons.inventory_2_outlined),
                         title: Text('${item.typeName} • ${item.category}'),
                         subtitle: Text(
-                          'الكمية: ${item.quantity.fmt} • سعر الوحدة: ${item.unitPrice.fmt} ${AppCurrency.symbol(item.currency)} • ${item.description}',
+                          'الكمية: ${item.quantity.fmt} • سعر الوحدة: ${item.unitPrice.fmt} ${AppCurrency.symbol(item.currency)}${item.supplierName.isEmpty ? '' : ' • المورد: ${item.supplierName}'} • ${item.description}',
                         ),
-                        trailing: Text(
-                          '${item.totalPrice.fmt} ${AppCurrency.symbol(item.currency)}',
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${item.totalPrice.fmt} ${AppCurrency.symbol(item.currency)}',
+                            ),
+                            if (!entry.isLocked) ...[
+                              IconButton(
+                                tooltip: 'تعديل',
+                                onPressed: () => _addStockItem(
+                                  erp,
+                                  item.category,
+                                  existing: item,
+                                ),
+                                icon: const Icon(Icons.edit_outlined),
+                              ),
+                              IconButton(
+                                tooltip: 'حذف',
+                                onPressed: () async {
+                                  if (await _confirmDelete(item.typeName)) {
+                                    erp.deleteOpeningStockItem(item.id);
+                                  }
+                                },
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: AppColors.dangerWaste,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ),
@@ -519,8 +780,36 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                         subtitle: Text(
                           '${record.phone} • ${record.description} • ${record.category}',
                         ),
-                        trailing: Text(
-                          '${record.amount.fmt} ${AppCurrency.symbol(record.currency)}',
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${record.amount.fmt} ${AppCurrency.symbol(record.currency)}',
+                            ),
+                            if (!entry.isLocked) ...[
+                              IconButton(
+                                tooltip: 'تعديل',
+                                onPressed: () => _addLegacyRecord(
+                                  erp,
+                                  record.category,
+                                  existing: record,
+                                ),
+                                icon: const Icon(Icons.edit_outlined),
+                              ),
+                              IconButton(
+                                tooltip: 'حذف',
+                                onPressed: () async {
+                                  if (await _confirmDelete(record.name)) {
+                                    erp.deleteOpeningFinancialRecord(record.id);
+                                  }
+                                },
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: AppColors.dangerWaste,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ),
@@ -550,8 +839,12 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                 child: FilledButton.icon(
                   onPressed: entry.isBalanced
                       ? () {
-                          erp.lockOpeningEntry();
-                          _showMessage('تم اعتماد القيد الافتتاحي وحفظه.');
+                          try {
+                            erp.lockOpeningEntry();
+                            _showMessage('تم اعتماد القيد الافتتاحي وحفظه.');
+                          } on StateError catch (error) {
+                            _showMessage(error.message);
+                          }
                         }
                       : null,
                   icon: const Icon(Icons.lock_outline),

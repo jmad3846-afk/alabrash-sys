@@ -392,7 +392,7 @@ class ChartOfAccountsScreen extends StatelessWidget {
           _accountGroup('الإيرادات', Icons.trending_up, [
             _accountLine(
               'مبيعات البضائع',
-              '${(erp.totalFactoryRevenue - serviceRevenue(AppCurrency.usd)).fmt} \$ • ${(erp.totalFactoryRevenueSyp - serviceRevenue(AppCurrency.syp)).fmt} ل.س',
+              '${(erp.totalFactoryRevenue - erp.factoryServiceRevenueOf(AppCurrency.usd) + erp.factorySalesDiscountOf(AppCurrency.usd)).fmt} \$ • ${(erp.totalFactoryRevenueSyp - erp.factoryServiceRevenueOf(AppCurrency.syp) + erp.factorySalesDiscountOf(AppCurrency.syp)).fmt} ل.س',
             ),
             _accountLine(
               'الخدمات',
@@ -400,15 +400,11 @@ class ChartOfAccountsScreen extends StatelessWidget {
             ),
             _accountLine(
               'مبيعات المعمل والقطع الزائدة',
-              '${(erp.totalWorkshopRevenue + erp.totalScrapRevenue - serviceRevenue(AppCurrency.usd)).fmt} \$ • ${(erp.totalWorkshopRevenueSyp + erp.totalScrapRevenueSyp - serviceRevenue(AppCurrency.syp)).fmt} ل.س',
+              '${(erp.totalWorkshopRevenue - erp.workshopServiceRevenueOf(AppCurrency.usd) + erp.workshopSalesDiscountOf(AppCurrency.usd) + erp.totalScrapRevenue).fmt} \$ • ${(erp.totalWorkshopRevenueSyp - erp.workshopServiceRevenueOf(AppCurrency.syp) + erp.workshopSalesDiscountOf(AppCurrency.syp) + erp.totalScrapRevenueSyp).fmt} ل.س',
             ),
             _accountLine(
               'مرتجعات ومسموحات المشتريات',
               '${(adjustmentAmount('purchase_return', AppCurrency.usd) + adjustmentAmount('purchase_allowance', AppCurrency.usd)).fmt} \$ • ${(adjustmentAmount('purchase_return', AppCurrency.syp) + adjustmentAmount('purchase_allowance', AppCurrency.syp)).fmt} ل.س',
-            ),
-            _accountLine(
-              'خصومات المبيعات المسموحة',
-              '${salesDiscount(AppCurrency.usd).fmt} \$ • ${salesDiscount(AppCurrency.syp).fmt} ل.س',
             ),
             _accountLine(
               'إيرادات بيع الأصول',
@@ -621,6 +617,261 @@ class ChartOfAccountsScreen extends StatelessWidget {
     );
     controller.dispose();
     return result;
+  }
+}
+
+class BalanceSheetScreen extends StatelessWidget {
+  const BalanceSheetScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final erp = context.watch<ERPProvider>();
+    final entry = erp.openingEntry;
+    final fixedUsd = entry.totalFixedAssetsOf(AppCurrency.usd);
+    final fixedSyp = entry.totalFixedAssetsOf(AppCurrency.syp);
+    double openingTailoredInventoryValue(
+      List<WorkshopTailoringModel> products,
+      String category,
+    ) => products.fold<double>(0, (sum, product) {
+      final openingRows = entry.openingStock
+          .where(
+            (item) => item.category == category && item.typeId == product.id,
+          )
+          .toList();
+      if (openingRows.isEmpty) return sum;
+      final openingQuantity = openingRows.fold<double>(
+        0,
+        (rowSum, item) => rowSum + item.quantity,
+      );
+      if (openingQuantity <= 0) return sum;
+      final averageUnitCost = openingRows.fold<double>(
+            0,
+            (rowSum, item) => rowSum + item.totalPrice,
+          ) /
+          openingQuantity;
+      return sum + (product.quantity * averageUnitCost);
+    });
+    final inventoryUsd =
+        erp.factoryBlocks.fold<double>(0, (sum, item) => sum + item.totalCost) +
+        erp.factoryWarehouse.fold<double>(
+          0,
+          (sum, item) => sum + item.totalInventoryValue,
+        ) +
+        erp.workshopStock.fold<double>(
+          0,
+          (sum, item) => sum + item.availableQty * item.netCostPerUnit,
+        ) +
+        erp.scrapItems
+            .where((item) => !item.isSold && item.currency == AppCurrency.usd)
+            .fold<double>(0, (sum, item) => sum + item.baseCost) +
+        openingTailoredInventoryValue(erp.simpleTailorings, 'تفصيل بسيط') +
+        openingTailoredInventoryValue(erp.complexTailorings, 'تفصيل معقد') +
+        (entry.openingStockApplied
+            ? 0
+            : entry.openingStock.isEmpty
+            ? entry.inventoryValue
+            : entry.totalOpeningStockOf(AppCurrency.usd));
+    final inventorySyp = entry.totalOpeningStockOf(AppCurrency.syp);
+    final historicalClientsUsd = entry.legacyFinancials
+            .where(
+              (record) =>
+                  record.category == 'clients' &&
+                  record.currency == AppCurrency.usd,
+            )
+            .fold<double>(0, (sum, record) => sum + record.amount);
+    final historicalClientsSyp = entry.legacyFinancials
+            .where(
+              (record) =>
+                  record.category == 'clients' &&
+                  record.currency == AppCurrency.syp,
+            )
+            .fold<double>(0, (sum, record) => sum + record.amount);
+    final hasHistoricalClients = entry.legacyFinancials.any(
+      (record) => record.category == 'clients',
+    );
+    final clientsUsd = hasHistoricalClients
+        ? historicalClientsUsd + erp.clientsTotalDebts
+        : (entry.customerDebtsValue > erp.clientsTotalDebts
+              ? entry.customerDebtsValue
+              : erp.clientsTotalDebts);
+    final clientsSyp = historicalClientsSyp + erp.clientsTotalDebtsSyp;
+    final assetsUsd =
+        fixedUsd +
+        erp.mainCashBox +
+        erp.scrapCashBox +
+        erp.orderCashBox +
+        inventoryUsd +
+        clientsUsd;
+    final assetsSyp =
+        fixedSyp +
+        erp.mainCashBoxSyp +
+        erp.scrapCashBoxSyp +
+        erp.orderCashBoxSyp +
+        inventorySyp +
+        clientsSyp;
+    final historicalSuppliersUsd = entry.legacyFinancials
+            .where(
+              (record) =>
+                  record.category == 'suppliers' &&
+                  record.currency == AppCurrency.usd,
+            )
+            .fold<double>(0, (sum, record) => sum + record.amount);
+    final historicalSuppliersSyp = entry.legacyFinancials
+            .where(
+              (record) =>
+                  record.category == 'suppliers' &&
+                  record.currency == AppCurrency.syp,
+            )
+            .fold<double>(0, (sum, record) => sum + record.amount);
+    final hasHistoricalSuppliers = entry.legacyFinancials.any(
+      (record) => record.category == 'suppliers',
+    );
+    final suppliersUsd = hasHistoricalSuppliers
+        ? historicalSuppliersUsd + erp.suppliersTotalDebts
+        : (entry.supplierPayablesValue > erp.suppliersTotalDebts
+              ? entry.supplierPayablesValue
+              : erp.suppliersTotalDebts);
+    final suppliersSyp = historicalSuppliersSyp + erp.suppliersTotalDebtsSyp;
+    final historicalWagesUsd = entry.legacyFinancials
+            .where(
+              (record) =>
+                  record.category == 'employees' &&
+                  record.currency == AppCurrency.usd,
+            )
+            .fold<double>(0, (sum, record) => sum + record.amount);
+    final historicalWagesSyp = entry.legacyFinancials
+            .where(
+              (record) =>
+                  record.category == 'employees' &&
+                  record.currency == AppCurrency.syp,
+            )
+            .fold<double>(0, (sum, record) => sum + record.amount);
+    final hasHistoricalWages = entry.legacyFinancials.any(
+      (record) => record.category == 'employees',
+    );
+    final wagesUsd = hasHistoricalWages
+        ? historicalWagesUsd + erp.workersTotalDebts
+        : (entry.workerSalariesValue > erp.workersTotalDebts
+              ? entry.workerSalariesValue
+              : erp.workersTotalDebts);
+    final wagesSyp = historicalWagesSyp + erp.workersTotalDebtsSyp;
+    final liabilitiesUsd = suppliersUsd + wagesUsd;
+    final liabilitiesSyp = suppliersSyp + wagesSyp;
+    final capitalUsd = erp.partners.fold<double>(
+      0,
+      (sum, partner) => sum + partner.injectedCapital,
+    );
+    final capitalSyp = erp.partners.fold<double>(
+      0,
+      (sum, partner) => sum + partner.injectedCapitalSyp,
+    );
+    final retainedEarningsUsd = assetsUsd - liabilitiesUsd - capitalUsd;
+    final retainedEarningsSyp = assetsSyp - liabilitiesSyp - capitalSyp;
+    final debitRows = <(String, double, double)>[
+      ('الأصول الثابتة', fixedUsd, fixedSyp),
+      ('الصندوق الرئيسي', erp.mainCashBox, erp.mainCashBoxSyp),
+      ('صندوق الخردة', erp.scrapCashBox, erp.scrapCashBoxSyp),
+      ('صندوق الطلبيات', erp.orderCashBox, erp.orderCashBoxSyp),
+      ('المخزون', inventoryUsd, inventorySyp),
+      ('ذمم العملاء', clientsUsd, clientsSyp),
+    ];
+    final creditRows = <(String, double, double)>[
+      ('ذمم الموردين', suppliersUsd, suppliersSyp),
+      ('الأجور المستحقة', wagesUsd, wagesSyp),
+      ('رأس المال', capitalUsd, capitalSyp),
+      ('الأرباح والخسائر المتراكمة', retainedEarningsUsd, retainedEarningsSyp),
+    ];
+    final rowCount = debitRows.length > creditRows.length
+        ? debitRows.length
+        : creditRows.length;
+    return Scaffold(
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          Text(
+            'الميزانية العمومية',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'عرض للقراءة فقط يتحدث وفق أرصدة الصناديق والمخزون والذمم وحقوق الملكية.',
+          ),
+          if (!entry.isLocked) ...[
+            const SizedBox(height: 10),
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.info_outline),
+                title: Text('القيد الافتتاحي لم يعتمد بعد.'),
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Card(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: const [
+                  DataColumn(label: Text('مدين • الحساب')),
+                  DataColumn(label: Text('مدين • USD')),
+                  DataColumn(label: Text('مدين • SYP')),
+                  DataColumn(label: Text('دائن • الحساب')),
+                  DataColumn(label: Text('دائن • USD')),
+                  DataColumn(label: Text('دائن • SYP')),
+                ],
+                rows: [
+                  for (var index = 0; index < rowCount; index++)
+                    DataRow(
+                      cells: [
+                        DataCell(Text(
+                          index < debitRows.length ? debitRows[index].$1 : '',
+                        )),
+                        DataCell(Text(
+                          index < debitRows.length
+                              ? debitRows[index].$2.fmt
+                              : '',
+                        )),
+                        DataCell(Text(
+                          index < debitRows.length
+                              ? debitRows[index].$3.fmt
+                              : '',
+                        )),
+                        DataCell(Text(
+                          index < creditRows.length ? creditRows[index].$1 : '',
+                        )),
+                        DataCell(Text(
+                          index < creditRows.length
+                              ? creditRows[index].$2.fmt
+                              : '',
+                        )),
+                        DataCell(Text(
+                          index < creditRows.length
+                              ? creditRows[index].$3.fmt
+                              : '',
+                        )),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              title: const Text(
+                'إجمالي المدين = إجمالي الدائن',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                'USD: ${assetsUsd.fmt} • SYP: ${assetsSyp.fmt}',
+              ),
+              trailing: const Icon(
+                Icons.check_circle_outline,
+                color: AppColors.successGreen,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -890,6 +1141,8 @@ class ExpensesManagementScreen extends StatefulWidget {
 }
 
 class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
+  String _searchQuery = '';
+
   Future<void> _addType(ERPProvider erp) async {
     final name = TextEditingController();
     final description = TextEditingController();
@@ -1076,6 +1329,20 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
   @override
   Widget build(BuildContext context) {
     final erp = context.watch<ERPProvider>();
+    final query = _searchQuery.toLowerCase();
+    final matchingTypes = erp.expenseTypes.where((type) {
+      final typeMatches =
+          query.isEmpty ||
+          '${type.name} ${type.description}'.toLowerCase().contains(query);
+      return typeMatches ||
+          erp.expenseRecords.any(
+            (expense) =>
+                expense.typeId == type.id &&
+                '${expense.amount} ${expense.currency} ${expense.personName} ${expense.description}'
+                    .toLowerCase()
+                    .contains(query),
+          );
+    }).toList();
     return Scaffold(
       body: ListView(
         padding: const EdgeInsets.all(24),
@@ -1100,14 +1367,23 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
             'أنشئ أنواع المصروفات، ثم أضف المصروفات ومبالغها والمستفيدين. حصة الموظف الداخلي تسجل في مالية القوى العاملة.',
           ),
           const SizedBox(height: 16),
-          if (erp.expenseTypes.isEmpty)
+          TextField(
+            decoration: const InputDecoration(
+              labelText: 'بحث في أنواع المصروفات والمصروفات...',
+              prefixIcon: Icon(Icons.search),
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) => setState(() => _searchQuery = value.trim()),
+          ),
+          const SizedBox(height: 12),
+          if (matchingTypes.isEmpty)
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(20),
-                child: Text('أضف نوع مصروف للبدء.'),
+                child: Text('لا توجد نتائج مطابقة.'),
               ),
             ),
-          for (final type in erp.expenseTypes)
+          for (final type in matchingTypes)
             Card(
               child: ExpansionTile(
                 initiallyExpanded: true,
@@ -1122,9 +1398,18 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                   icon: const Icon(Icons.add_circle_outline),
                 ),
                 children: [
-                  for (final expense in erp.expenseRecords.where(
-                    (e) => e.typeId == type.id,
-                  ))
+                  for (final expense in erp.expenseRecords.where((expense) {
+                    if (expense.typeId != type.id) return false;
+                    if (query.isEmpty ||
+                        '${type.name} ${type.description}'
+                            .toLowerCase()
+                            .contains(query)) {
+                      return true;
+                    }
+                    return '${expense.amount} ${expense.currency} ${expense.personName} ${expense.description}'
+                        .toLowerCase()
+                        .contains(query);
+                  }))
                     ListTile(
                       title: Text(
                         '${expense.amount.fmt} ${AppCurrency.symbol(expense.currency)}',
@@ -1582,8 +1867,17 @@ class _AdjustmentItemOption {
   });
 }
 
-class HistoricalFinancialsScreen extends StatelessWidget {
+class HistoricalFinancialsScreen extends StatefulWidget {
   const HistoricalFinancialsScreen({super.key});
+
+  @override
+  State<HistoricalFinancialsScreen> createState() =>
+      _HistoricalFinancialsScreenState();
+}
+
+class _HistoricalFinancialsScreenState
+    extends State<HistoricalFinancialsScreen> {
+  String _searchQuery = '';
 
   @override
   Widget build(BuildContext context) {
@@ -1594,6 +1888,12 @@ class HistoricalFinancialsScreen extends StatelessWidget {
       'clients': 'ديون العملاء المعتمدين وزبائن المفرق القديمة',
       'employees': 'الذمم القديمة للموظفين',
     };
+    final query = _searchQuery.toLowerCase();
+    bool matches(LegacyFinancialRecordModel record) =>
+        query.isEmpty ||
+        '${record.name} ${record.phone} ${record.description} ${record.amount} ${record.currency} ${record.category}'
+            .toLowerCase()
+            .contains(query);
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -1606,6 +1906,18 @@ class HistoricalFinancialsScreen extends StatelessWidget {
           'سجل تاريخي دائم للذمم التي أُدخلت عند إعداد القيد الافتتاحي. تتم التسويات من هذا السجل.',
         ),
         const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: TextField(
+            decoration: const InputDecoration(
+              labelText: 'بحث بالاسم أو الهاتف أو الوصف أو المبلغ...',
+              prefixIcon: Icon(Icons.search),
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) => setState(() => _searchQuery = value.trim()),
+          ),
+        ),
+        const SizedBox(height: 12),
         for (final category in categories.entries)
           Card(
             child: ExpansionTile(
@@ -1616,7 +1928,7 @@ class HistoricalFinancialsScreen extends StatelessWidget {
               ),
               children: [
                 for (final record in records.where(
-                  (item) => item.category == category.key,
+                  (item) => item.category == category.key && matches(item),
                 ))
                   ListTile(
                     title: Text(record.name),
@@ -1635,7 +1947,10 @@ class HistoricalFinancialsScreen extends StatelessWidget {
                           ),
                   ),
                 if (records
-                    .where((item) => item.category == category.key)
+                    .where(
+                      (item) =>
+                          item.category == category.key && matches(item),
+                    )
                     .isEmpty)
                   const ListTile(title: Text('لا توجد أرصدة في هذا القسم.')),
               ],

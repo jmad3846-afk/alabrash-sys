@@ -212,7 +212,10 @@ class DashboardScreen extends StatelessWidget {
                 // Metric 1: Current Equity Capital
                 MetricCard(
                   title: 'رأس المال الحالي',
-                  value: '${erp.totalCurrentEquity.fmt} \$',
+                  value: AppCurrency.dual(
+                    erp.totalCurrentEquity,
+                    erp.totalCurrentEquitySyp,
+                  ),
                   icon: Icons.account_balance_rounded,
                   iconColor: AppColors.partnersEquityAccent,
                   bgColor: AppColors.chipBgAmber,
@@ -305,6 +308,11 @@ class DashboardScreen extends StatelessWidget {
                                 Text('النسبة: ${(partner.ratio * 100).fmt}%', style: const TextStyle(fontSize: 12, color: AppColors.brandSecondaryText)),
                                 const SizedBox(height: 6),
                                 Text(
+                                  'رأس المال: ${AppCurrency.dual(partner.injectedCapital, partner.injectedCapitalSyp)}',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
                                   'المستحق الصافي: ${AppCurrency.dual(partnerProfit, partnerProfitSyp)}',
                                   style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.partnersEquityAccent, fontSize: 13),
                                 ),
@@ -324,4 +332,3 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 }
-

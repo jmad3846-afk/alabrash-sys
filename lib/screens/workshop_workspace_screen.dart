@@ -23,7 +23,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
   @override
   void initState() {
     super.initState();
-    _workshopTabController = TabController(length: 8, vsync: this);
+    _workshopTabController = TabController(length: 9, vsync: this);
   }
 
   @override
@@ -61,6 +61,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                 Tab(text: '6. فاتورة معمل (Workshop Invoices)'),
                 Tab(text: '7. المشاريع (Projects)'),
                 Tab(text: '8. مرتجعات ومسموحات المبيعات'),
+                Tab(text: '9. فواتير المبيعات النقدية'),
               ],
             ),
           ),
@@ -78,6 +79,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                 _buildTab6Invoices(erp),
                 _buildTab7Projects(erp),
                 const ReturnsAllowancesScreen(workshopOnly: true),
+                _buildTab6Invoices(erp, cashOnly: true),
               ],
             ),
           ),
@@ -849,7 +851,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
   // -------------------------------------------------------------
   // SUB-TAB 6: WORKSHOP INVOICES
   // -------------------------------------------------------------
-  Widget _buildTab6Invoices(ERPProvider erp) {
+  Widget _buildTab6Invoices(ERPProvider erp, {bool cashOnly = false}) {
+    final invoices = cashOnly
+        ? erp.workshopInvoices
+              .where((invoice) => invoice.isCashInvoice)
+              .toList()
+        : erp.workshopInvoices;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -857,9 +864,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'فواتير مبيعات المعمل (Workshop Invoices)',
+                  cashOnly
+                      ? 'فواتير مبيعات المعمل النقدية (مسددة بالكامل)'
+                      : 'فواتير مبيعات المعمل (Workshop Invoices)',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ),
@@ -868,9 +877,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accentPrimary,
                 ),
-                onPressed: () => _showAddWorkshopInvoiceDialog(erp),
+                onPressed: () =>
+                    _showAddWorkshopInvoiceDialog(erp, cashInvoice: cashOnly),
                 icon: const Icon(Icons.receipt_long_rounded),
-                label: const Text('[إضافة فاتورة معمل]'),
+                label: Text(
+                  cashOnly ? '[إضافة فاتورة بيع نقدية]' : '[إضافة فاتورة معمل]',
+                ),
               ),
             ],
           ),
@@ -878,10 +890,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
           Expanded(
             child: Card(
               child: ListView.separated(
-                itemCount: erp.workshopInvoices.length,
+                itemCount: invoices.length,
                 separatorBuilder: (context, index) => const Divider(height: 1),
                 itemBuilder: (context, idx) {
-                  final inv = erp.workshopInvoices[idx];
+                  final inv = invoices[idx];
                   return ExpansionTile(
                     leading: CurrencyBadge(currency: inv.currency),
                     title: Text(
@@ -1135,6 +1147,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                   agreedPrice: old.agreedPrice,
                                   depositDeducted: old.depositDeducted,
                                   cashPaidNow: old.cashPaidNow,
+                                  isCashInvoice: old.isCashInvoice,
                                   netCost: old.netCost,
                                   salesDiscount: old.salesDiscount,
                                   adjustmentsAmount: old.adjustmentsAmount,
@@ -3112,6 +3125,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     ERPProvider erp, {
     String? presetProjectId,
     String? presetClientName,
+    bool cashInvoice = false,
   }) {
     String sourceType = 'طلبية معمل';
     String? selectedRecordId;
@@ -3154,11 +3168,37 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
               .toList();
         case 'تفصيل بسيط':
           return erp.simpleTailorings
-              .map((t) => {'id': t.id, 'label': t.name})
+              .where(
+                (t) =>
+                    !erp.openingEntry.openingStock.any(
+                      (item) =>
+                          item.category == 'تفصيل بسيط' && item.typeId == t.id,
+                    ) ||
+                    t.quantity > 0,
+              )
+              .map(
+                (t) => {
+                  'id': t.id,
+                  'label': '${t.name} • المتاح ${t.quantity.fmt}',
+                },
+              )
               .toList();
         case 'تفصيل معقد':
           return erp.complexTailorings
-              .map((t) => {'id': t.id, 'label': t.name})
+              .where(
+                (t) =>
+                    !erp.openingEntry.openingStock.any(
+                      (item) =>
+                          item.category == 'تفصيل معقد' && item.typeId == t.id,
+                    ) ||
+                    t.quantity > 0,
+              )
+              .map(
+                (t) => {
+                  'id': t.id,
+                  'label': '${t.name} • المتاح ${t.quantity.fmt}',
+                },
+              )
               .toList();
         case 'قطع زائدة':
           return erp.scrapItems
@@ -3600,31 +3640,45 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: depositCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'العربون المخصوم (\$)',
-                              isDense: true,
-                            ),
+                    if (cashInvoice)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          sourceType == 'طلبية معمل'
+                              ? 'فاتورة نقدية: يُحوّل عربون الطلبية إلى الصندوق الرئيسي ويُحصّل المتبقي نقداً؛ تسوى الفاتورة بالكامل.'
+                              : 'فاتورة نقدية: يُحصّل كامل الإجمالي نقداً في الصندوق.',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.accentPrimary,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: cashCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'النقد المدفوع الآن (\$)',
-                              isDense: true,
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: depositCtrl,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'العربون المخصوم (\$)',
+                                isDense: true,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: cashCtrl,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'النقد المدفوع الآن (\$)',
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: photoCtrl,
@@ -3805,9 +3859,24 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           );
                           return;
                         }
-                        final deposit =
+                        final invoiceTotal =
+                            (agreed + servicesTotal - salesDiscount).clamp(
+                              0.0,
+                              double.infinity,
+                            );
+                        final enteredDeposit =
                             double.tryParse(depositCtrl.text) ?? 0.0;
-                        final cash = double.tryParse(cashCtrl.text) ?? 0.0;
+                        final deposit = cashInvoice
+                            ? sourceType == 'طلبية معمل'
+                                  ? enteredDeposit
+                                  : 0.0
+                            : enteredDeposit;
+                        final cash = cashInvoice
+                            ? (invoiceTotal - deposit).clamp(
+                                0.0,
+                                double.infinity,
+                              )
+                            : (double.tryParse(cashCtrl.text) ?? 0.0);
                         final net = double.tryParse(netCtrl.text) ?? 0.0;
                         if (deposit < 0 ||
                             cash < 0 ||
@@ -3841,7 +3910,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               '${raw.typeName} ${raw.grade} ${raw.thicknessCm}سم';
                           granite = raw.isGranite;
                         }
-                        erp.createWorkshopInvoice(
+                        final created = erp.createWorkshopInvoice(
                           WorkshopInvoiceModel(
                             id: 'wi_${DateTime.now().millisecondsSinceEpoch}',
                             invoiceNo:
@@ -3862,16 +3931,27 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             services: List.of(draftServices),
                             photoPath: photoCtrl.text.trim(),
                             isGranite: granite,
+                            isCashInvoice: cashInvoice,
                             currency: invCurrency,
                           ),
                           deductStockId: deductId,
                           deductQty: deductQty,
                         );
+                        if (!created) {
+                          setSt(
+                            () => formError = cashInvoice
+                                ? 'تعذر اعتماد الفاتورة النقدية؛ تحقق من المخزون أو رصيد عربون الطلبية.'
+                                : 'المخزون غير كافٍ لإصدار هذه الفاتورة.',
+                          );
+                          return;
+                        }
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              sourceType == 'قطع زائدة'
+                              cashInvoice
+                                  ? 'تم إصدار فاتورة البيع النقدية وتحصيلها بالكامل.'
+                                  : sourceType == 'قطع زائدة'
                                   ? 'تم بيع القطعة وترحيل المبلغ إلى صندوق الزيادات.'
                                   : 'تم إصدار فاتورة المعمل بنجاح.',
                             ),
@@ -3899,5 +3979,5 @@ class _SurplusCostDraft {
   final TextEditingController nameCtrl = TextEditingController();
   final TextEditingController amountCtrl = TextEditingController();
 
-  _SurplusCostDraft({required this.kind, this.staffId});
+  _SurplusCostDraft({required this.kind});
 }

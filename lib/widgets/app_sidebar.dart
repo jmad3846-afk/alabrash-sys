@@ -28,6 +28,7 @@ class AppSidebar extends StatelessWidget {
     {'title': 'دليل الحسابات', 'icon': Icons.menu_book_rounded},
     {'title': 'إدارة الأصول الثابتة', 'icon': Icons.apartment_rounded},
     {'title': 'المصروفات', 'icon': Icons.request_quote_rounded},
+    {'title': 'الميزانية العمومية', 'icon': Icons.table_chart_rounded},
   ];
 
   @override

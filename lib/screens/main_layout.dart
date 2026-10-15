@@ -63,9 +63,9 @@ class _MainLayoutState extends State<MainLayout> {
                   // Screen Content
                   Expanded(
                     child: IndexedStack(
-                      // 0-12: sidebar screens, 13: cutting calculator (reached
+                      // 0-13: sidebar screens, 14: cutting calculator (reached
                       // via "Transfer to Cutting Process", not the sidebar).
-                      index: (_selectedIndex >= 0 && _selectedIndex <= 13)
+                      index: (_selectedIndex >= 0 && _selectedIndex <= 14)
                           ? _selectedIndex
                           : 0,
                       children: [
@@ -75,7 +75,7 @@ class _MainLayoutState extends State<MainLayout> {
                         FactoryWorkspaceScreen(
                           onNavigateToCutting: (idx) {
                             setState(() {
-                              _selectedIndex = 13; // Cutting Calculator Screen
+                              _selectedIndex = 14; // Cutting Calculator Screen
                             });
                           },
                         ), // 1: Factory Module
@@ -95,7 +95,8 @@ class _MainLayoutState extends State<MainLayout> {
                         const ChartOfAccountsScreen(), // 10: Chart of Accounts
                         const FixedAssetsManagementScreen(), // 11: Fixed assets
                         const ExpensesManagementScreen(), // 12: Expenses
-                        const CuttingCalculatorScreen(), // 13: Special Cutting Calculator
+                        const BalanceSheetScreen(), // 13: Balance Sheet
+                        const CuttingCalculatorScreen(), // 14: Special Cutting Calculator
                       ],
                     ),
                   ),

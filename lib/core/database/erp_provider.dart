@@ -678,6 +678,7 @@ class ERPProvider extends ChangeNotifier {
   // REAL-TIME FINANCIAL METRICS & CALCULATIONS
   // -------------------------------------------------------------
   double get totalCurrentEquity => openingEntry.totalEquity;
+  double get totalCurrentEquitySyp => openingEntry.totalEquitySyp;
 
   double get fixedAssetsBookValue => openingEntry.fixedAssets
       .where((asset) => !asset.isSold)
@@ -688,6 +689,28 @@ class ERPProvider extends ChangeNotifier {
       throw StateError('The opening entry is locked.');
     }
     openingEntry.fixedAssets.add(asset);
+    _syncOpeningAssetTotals();
+    refresh();
+  }
+
+  void updateOpeningFixedAsset(FixedAssetModel asset) {
+    if (openingEntry.isLocked) {
+      throw StateError('The opening entry is locked.');
+    }
+    final index = openingEntry.fixedAssets.indexWhere(
+      (item) => item.id == asset.id,
+    );
+    if (index < 0) throw StateError('Opening asset was not found.');
+    openingEntry.fixedAssets[index] = asset;
+    _syncOpeningAssetTotals();
+    refresh();
+  }
+
+  void deleteOpeningFixedAsset(String id) {
+    if (openingEntry.isLocked) {
+      throw StateError('The opening entry is locked.');
+    }
+    openingEntry.fixedAssets.removeWhere((item) => item.id == id);
     _syncOpeningAssetTotals();
     refresh();
   }
@@ -741,6 +764,7 @@ class ERPProvider extends ChangeNotifier {
     if (openingEntry.isLocked) {
       throw StateError('The opening entry is locked.');
     }
+    _validateOpeningStockType(item);
     openingEntry.openingStock.add(item);
     openingEntry.inventoryValue = openingEntry.openingStock.fold(
       0.0,
@@ -750,11 +774,95 @@ class ERPProvider extends ChangeNotifier {
     refresh();
   }
 
+  void updateOpeningStockItem(OpeningStockItemModel item) {
+    if (openingEntry.isLocked) {
+      throw StateError('The opening entry is locked.');
+    }
+    final index = openingEntry.openingStock.indexWhere(
+      (existing) => existing.id == item.id,
+    );
+    if (index < 0) throw StateError('Opening stock item was not found.');
+    _validateOpeningStockType(item);
+    openingEntry.openingStock[index] = item;
+    _syncOpeningInventoryTotal();
+    refresh();
+  }
+
+  void deleteOpeningStockItem(String id) {
+    if (openingEntry.isLocked) {
+      throw StateError('The opening entry is locked.');
+    }
+    openingEntry.openingStock.removeWhere((item) => item.id == id);
+    _syncOpeningInventoryTotal();
+    refresh();
+  }
+
+  void _syncOpeningInventoryTotal() {
+    openingEntry.inventoryValue = openingEntry.openingStock
+        .where((item) => item.currency == AppCurrency.usd)
+        .fold(0.0, (sum, item) => sum + item.totalPrice);
+  }
+
+  void _validateOpeningStockType(OpeningStockItemModel item) {
+    final typeExists = switch (item.category) {
+      'بلوكات خام المصنع' => blockTypes.any(
+        (type) =>
+            (item.typeId.isNotEmpty && type.id == item.typeId) ||
+            (type.typeName == item.typeName &&
+                (item.grade.isEmpty || type.grade == item.grade)),
+      ),
+      'أمتار المصنع' || 'أمتار المعمل' => meterTypes.any(
+        (type) =>
+            (item.typeId.isNotEmpty && type.id == item.typeId) ||
+            type.typeName == item.typeName,
+      ),
+      'تفصيل بسيط' => simpleTailorings.any(
+        (type) =>
+            (item.typeId.isNotEmpty && type.id == item.typeId) ||
+            type.name == item.typeName,
+      ),
+      'تفصيل معقد' => complexTailorings.any(
+        (type) =>
+            (item.typeId.isNotEmpty && type.id == item.typeId) ||
+            type.name == item.typeName,
+      ),
+      'قطع زائدة وخردة' => true,
+      _ => false,
+    };
+    if (!typeExists) {
+      throw ArgumentError(
+        'Choose a registered type before adding opening inventory: ${item.typeName}.',
+      );
+    }
+  }
+
   void addOpeningFinancialRecord(LegacyFinancialRecordModel record) {
     if (openingEntry.isLocked) {
       throw StateError('The opening entry is locked.');
     }
     openingEntry.legacyFinancials.add(record);
+    _syncOpeningFinancialTotals();
+    refresh();
+  }
+
+  void updateOpeningFinancialRecord(LegacyFinancialRecordModel record) {
+    if (openingEntry.isLocked) {
+      throw StateError('The opening entry is locked.');
+    }
+    final index = openingEntry.legacyFinancials.indexWhere(
+      (existing) => existing.id == record.id,
+    );
+    if (index < 0) throw StateError('Opening financial record was not found.');
+    openingEntry.legacyFinancials[index] = record;
+    _syncOpeningFinancialTotals();
+    refresh();
+  }
+
+  void deleteOpeningFinancialRecord(String id) {
+    if (openingEntry.isLocked) {
+      throw StateError('The opening entry is locked.');
+    }
+    openingEntry.legacyFinancials.removeWhere((record) => record.id == id);
     _syncOpeningFinancialTotals();
     refresh();
   }
@@ -1228,6 +1336,7 @@ class ERPProvider extends ChangeNotifier {
       );
     }
     final share = saleAmount / 3;
+    final c = AppCurrency.normalize(currency);
     final retained = partners.fold<double>(
       0,
       (sum, partner) =>
@@ -1235,12 +1344,16 @@ class ERPProvider extends ChangeNotifier {
     );
     for (final partner in partners) {
       if (partnerTransfers[partner.id] != true) {
-        partner.totalWithdrawn += share;
+        if (c == AppCurrency.syp) {
+          partner.totalWithdrawnSyp += share;
+        } else {
+          partner.totalWithdrawn += share;
+        }
       }
     }
     asset.isSold = true;
     asset.saleAmount = saleAmount;
-    addCash('main', currency, retained);
+    addCash('main', c, retained);
     notifyListeners();
     saveToDisk();
     return true;
@@ -1380,11 +1493,93 @@ class ERPProvider extends ChangeNotifier {
   double get totalKeptDepositsRevenueSyp =>
       totalKeptDepositsRevenueOf(AppCurrency.syp);
 
+  double serviceRevenueOf(String? currency) {
+    return factoryServiceRevenueOf(currency) +
+        workshopServiceRevenueOf(currency);
+  }
+
+  double factoryServiceRevenueOf(String? currency) => factoryInvoices
+      .where(
+        (invoice) =>
+            invoice.invoiceType == 'بيع_معتمد' &&
+            invoice.currency == AppCurrency.normalize(currency),
+      )
+      .fold<double>(
+        0,
+        (sum, invoice) =>
+            sum + invoice.servicesTotal + invoice.itemsServicesTotal,
+      );
+
+  double workshopServiceRevenueOf(String? currency) => workshopInvoices
+      .where((invoice) => invoice.currency == AppCurrency.normalize(currency))
+      .fold<double>(0, (sum, invoice) => sum + invoice.servicesTotal);
+
+  double factorySalesDiscountOf(String? currency) => factoryInvoices
+      .where(
+        (invoice) =>
+            invoice.invoiceType == 'بيع_معتمد' &&
+            invoice.currency == AppCurrency.normalize(currency),
+      )
+      .fold<double>(0, (sum, invoice) => sum + invoice.discountAmount);
+
+  double workshopSalesDiscountOf(String? currency) => workshopInvoices
+      .where((invoice) => invoice.currency == AppCurrency.normalize(currency))
+      .fold<double>(0, (sum, invoice) => sum + invoice.salesDiscount);
+
+  double get salesDiscounts => salesDiscountsOf(AppCurrency.usd);
+  double get salesDiscountsSyp => salesDiscountsOf(AppCurrency.syp);
+  double salesDiscountsOf(String? currency) =>
+      factorySalesDiscountOf(currency) + workshopSalesDiscountOf(currency);
+
+  double adjustmentTotalOf(String kind, String? currency) => adjustmentInvoices
+      .where(
+        (invoice) =>
+            invoice.kind == kind &&
+            invoice.currency == AppCurrency.normalize(currency),
+      )
+      .fold<double>(0, (sum, invoice) => sum + invoice.amount);
+
+  double get purchaseReturnsAndAllowances =>
+      adjustmentTotalOf('purchase_return', AppCurrency.usd) +
+      adjustmentTotalOf('purchase_allowance', AppCurrency.usd);
+  double get purchaseReturnsAndAllowancesSyp =>
+      adjustmentTotalOf('purchase_return', AppCurrency.syp) +
+      adjustmentTotalOf('purchase_allowance', AppCurrency.syp);
+  double get salesReturnsAndAllowances =>
+      adjustmentTotalOf('sales_return', AppCurrency.usd) +
+      adjustmentTotalOf('sales_allowance', AppCurrency.usd);
+  double get salesReturnsAndAllowancesSyp =>
+      adjustmentTotalOf('sales_return', AppCurrency.syp) +
+      adjustmentTotalOf('sales_allowance', AppCurrency.syp);
+  double supplierDiscountsOf(String? currency) => factoryInvoices
+      .where(
+        (invoice) =>
+            invoice.invoiceType == 'شراء_مورد' &&
+            invoice.currency == AppCurrency.normalize(currency),
+      )
+      .fold<double>(0, (sum, invoice) => sum + invoice.discountAmount);
+
+  double assetSaleRevenueOf(String? currency) => openingEntry.fixedAssets
+      .where(
+        (asset) =>
+            asset.isSold && asset.currency == AppCurrency.normalize(currency),
+      )
+      .fold<double>(0, (sum, asset) => sum + asset.saleAmount);
+
+  double expenseRecordsTotalOf(String? currency) => expenseRecords
+      .where((expense) => expense.currency == AppCurrency.normalize(currency))
+      .fold<double>(0, (sum, expense) => sum + expense.amount);
+
   double totalRevenuesOf(String? currency) =>
       totalFactoryRevenueOf(currency) +
       totalWorkshopRevenueOf(currency) +
       totalScrapRevenueOf(currency) +
-      totalKeptDepositsRevenueOf(currency);
+      totalKeptDepositsRevenueOf(currency) +
+      salesDiscountsOf(currency) +
+      adjustmentTotalOf('purchase_return', currency) +
+      adjustmentTotalOf('purchase_allowance', currency) +
+      supplierDiscountsOf(currency) +
+      assetSaleRevenueOf(currency);
   double get totalRevenues => totalRevenuesOf(AppCurrency.usd);
   double get totalRevenuesSyp => totalRevenuesOf(AppCurrency.syp);
 
@@ -1527,8 +1722,15 @@ class ERPProvider extends ChangeNotifier {
         totalOperationalExpensesOf(c) -
         totalUnnaturalWasteLossesOf(c) -
         totalSurplusInitialCostOf(c) -
-        accountantGraniteShareOf(c);
+        accountantGraniteShareOf(c) -
+        expenseRecordsTotalOf(c) -
+        salesReturnsAndAllowancesOf(c) -
+        salesDiscountsOf(c);
   }
+
+  double salesReturnsAndAllowancesOf(String? currency) =>
+      adjustmentTotalOf('sales_return', currency) +
+      adjustmentTotalOf('sales_allowance', currency);
 
   double get netOperatingProfit => netOperatingProfitOf(AppCurrency.usd);
   double get netOperatingProfitSyp => netOperatingProfitOf(AppCurrency.syp);
@@ -1539,6 +1741,7 @@ class ERPProvider extends ChangeNotifier {
 
   // 1. Opening Entry Lock
   void lockOpeningEntry() {
+    _applyOpeningStockToOperationalInventory();
     openingEntry.isLocked = true;
     openingEntry.lockedAt = DateTime.now();
     isOpeningEntryCompleted = true;
@@ -1548,31 +1751,207 @@ class ERPProvider extends ChangeNotifier {
     mainCashBoxSyp = openingEntry.mainCashValueSyp;
     scrapCashBoxSyp = openingEntry.scrapCashValueSyp;
     orderCashBoxSyp = openingEntry.orderCashValueSyp;
+    for (final partner in partners) {
+      partner.injectedCapital = openingEntry.totalEquity * partner.ratio;
+      partner.injectedCapitalSyp = openingEntry.totalEquitySyp * partner.ratio;
+    }
     notifyListeners();
     saveToDisk();
+  }
+
+  void _applyOpeningStockToOperationalInventory() {
+    if (openingEntry.openingStockApplied) return;
+    for (final item in openingEntry.openingStock) {
+      if (!const {
+        'بلوكات خام المصنع',
+        'أمتار المصنع',
+        'أمتار المعمل',
+        'تفصيل بسيط',
+        'تفصيل معقد',
+        'قطع زائدة وخردة',
+      }.contains(item.category)) {
+        throw StateError(
+          'Unsupported opening stock category: ${item.category}.',
+        );
+      }
+      if (item.category == 'بلوكات خام المصنع' &&
+          _firstOrNull(
+                blockTypes.where(
+                  (candidate) =>
+                      (item.typeId.isNotEmpty && candidate.id == item.typeId) ||
+                      (candidate.typeName == item.typeName &&
+                          (item.grade.isEmpty ||
+                              candidate.grade == item.grade)),
+                ),
+              ) ==
+              null) {
+        throw StateError(
+          'Register the factory block type before approving opening stock: ${item.typeName}.',
+        );
+      }
+      if ((item.category == 'أمتار المصنع' ||
+              item.category == 'أمتار المعمل') &&
+          _firstOrNull(
+                meterTypes.where(
+                  (candidate) =>
+                      (item.typeId.isNotEmpty && candidate.id == item.typeId) ||
+                      candidate.typeName == item.typeName,
+                ),
+              ) ==
+              null) {
+        throw StateError(
+          'Register the meter type before approving opening stock: ${item.typeName}.',
+        );
+      }
+      if ((item.category == 'تفصيل بسيط' || item.category == 'تفصيل معقد') &&
+          _firstOrNull(
+                (item.category == 'تفصيل بسيط'
+                        ? simpleTailorings
+                        : complexTailorings)
+                    .where(
+                      (candidate) =>
+                          (item.typeId.isNotEmpty &&
+                              candidate.id == item.typeId) ||
+                          candidate.name == item.typeName,
+                    ),
+              ) ==
+              null) {
+        throw StateError(
+          'Create the tailored item before approving opening stock: ${item.typeName}.',
+        );
+      }
+    }
+    for (final item in openingEntry.openingStock) {
+      switch (item.category) {
+        case 'بلوكات خام المصنع':
+          final type = _firstOrNull(
+            blockTypes.where(
+              (candidate) =>
+                  (item.typeId.isNotEmpty && candidate.id == item.typeId) ||
+                  (candidate.typeName == item.typeName &&
+                      (item.grade.isEmpty || candidate.grade == item.grade)),
+            ),
+          )!;
+          final supplier = _firstOrNull(
+            suppliers.where((candidate) => candidate.name == item.supplierName),
+          );
+          factoryBlocks.add(
+            FactoryBlockModel(
+              id: item.id,
+              blockCode: 'OPEN-${item.id}',
+              typeName: type.typeName,
+              grade: type.grade,
+              supplierId: supplier?.id ?? '',
+              supplierName: item.supplierName,
+              weightTons: item.quantity,
+              tonCost: item.unitPrice,
+              isGranite: type.isGranite,
+            ),
+          );
+          break;
+        case 'أمتار المصنع':
+        case 'أمتار المعمل':
+          final type = _firstOrNull(
+            meterTypes.where(
+              (candidate) =>
+                  (item.typeId.isNotEmpty && candidate.id == item.typeId) ||
+                  candidate.typeName == item.typeName,
+            ),
+          )!;
+          if (item.category == 'أمتار المصنع') {
+            factoryWarehouse.add(
+              FactoryWarehouseModel(
+                id: item.id,
+                typeName: type.typeName,
+                grade: type.grade,
+                thicknessCm: type.thicknessCm,
+                category: type.category,
+                availableQty: item.quantity,
+                netCostPerUnit: item.unitPrice,
+                recommendedSalePrice: item.unitPrice,
+                isGranite: type.isGranite,
+              ),
+            );
+          } else {
+            workshopStock.add(
+              WorkshopStockModel(
+                id: item.id,
+                typeName: type.typeName,
+                grade: type.grade,
+                thicknessCm: type.thicknessCm,
+                category: type.category,
+                availableQty: item.quantity,
+                netCostPerUnit: item.unitPrice,
+                recommendedSalePrice: item.unitPrice,
+                isGranite: type.isGranite,
+              ),
+            );
+          }
+          break;
+        case 'تفصيل بسيط':
+        case 'تفصيل معقد':
+          final tailoringItems = item.category == 'تفصيل بسيط'
+              ? simpleTailorings
+              : complexTailorings;
+          final product = _firstOrNull(
+            tailoringItems.where(
+              (candidate) =>
+                  (item.typeId.isNotEmpty && candidate.id == item.typeId) ||
+                  candidate.name == item.typeName,
+            ),
+          )!;
+          product.quantity += item.quantity;
+          break;
+        case 'قطع زائدة وخردة':
+          scrapItems.add(
+            ScrapItemModel(
+              id: item.id,
+              description: item.typeName,
+              baseCost: item.totalPrice,
+              sellingPrice: item.unitPrice,
+              currency: item.currency,
+            ),
+          );
+          break;
+        default:
+          throw StateError(
+            'Unsupported opening stock category: ${item.category}.',
+          );
+      }
+    }
+    openingEntry.openingStockApplied = true;
+  }
+
+  T? _firstOrNull<T>(Iterable<T> values) {
+    final iterator = values.iterator;
+    return iterator.moveNext() ? iterator.current : null;
   }
 
   // 2. Partner Management Actions
   void injectNewPartnerCapital(double newAmount, [String? currency]) {
     if (newAmount <= 0) return;
     final c = AppCurrency.normalize(currency ?? AppCurrency.usd);
-    // Calculate total capital before & after
-    double totalOldCap = partners.fold(0.0, (s, p) => s + p.injectedCapital);
-    double totalNewCap = totalOldCap + newAmount;
-
-    // Split injected capital proportionately or add to primary
-    partners[0].injectedCapital += newAmount * 0.42;
-    partners[1].injectedCapital += newAmount * 0.35;
-    partners[2].injectedCapital += newAmount * 0.23;
-
-    // Recalculate ratios
-    for (var p in partners) {
-      p.ratio = p.injectedCapital / totalNewCap;
+    if (partners.length != 3) {
+      throw StateError('Capital allocation requires exactly three partners.');
     }
-
-    openingEntry.hassanRatio = partners[0].ratio;
-    openingEntry.adnanRatio = partners[1].ratio;
-    openingEntry.abdelMoeenRatio = partners[2].ratio;
+    if (c == AppCurrency.syp) {
+      for (final partner in partners) {
+        partner.injectedCapitalSyp += newAmount * partner.ratio;
+      }
+    } else {
+      final totalOldCapital = partners.fold<double>(
+        0,
+        (sum, partner) => sum + partner.injectedCapital,
+      );
+      final totalNewCapital = totalOldCapital + newAmount;
+      for (final partner in partners) {
+        partner.injectedCapital += newAmount * partner.ratio;
+        partner.ratio = partner.injectedCapital / totalNewCapital;
+      }
+      openingEntry.hassanRatio = partners[0].ratio;
+      openingEntry.adnanRatio = partners[1].ratio;
+      openingEntry.abdelMoeenRatio = partners[2].ratio;
+    }
 
     addCash('main', c, newAmount);
 
@@ -1589,13 +1968,24 @@ class ERPProvider extends ChangeNotifier {
     final c = AppCurrency.normalize(currency ?? AppCurrency.usd);
     var p = partners.firstWhere((element) => element.id == partnerId);
     final net = netOperatingProfitOf(c);
-    double partnerProfitShare = net * p.ratio;
-    if (amount > (partnerProfitShare - p.totalWithdrawn)) {
-      outWarning.value =
-          "تحذير الأمان: المبلغ المطلوب ($amount${AppCurrency.symbol(c)}) يتجاوز حصة الشريك من الأرباح الصافية (${partnerProfitShare.fmt}${AppCurrency.symbol(c)})!";
+    final partnerProfitShare = net * p.ratio;
+    final alreadyWithdrawn = c == AppCurrency.syp
+        ? p.totalWithdrawnSyp
+        : p.totalWithdrawn;
+    if (amount <= 0 ||
+        amount > (partnerProfitShare - alreadyWithdrawn) ||
+        cashOf('main', c) < amount) {
+      outWarning.value = amount > (partnerProfitShare - alreadyWithdrawn)
+          ? "تحذير الأمان: المبلغ المطلوب ($amount${AppCurrency.symbol(c)}) يتجاوز حصة الشريك من الأرباح الصافية (${partnerProfitShare.fmt}${AppCurrency.symbol(c)})!"
+          : 'رصيد الصندوق الرئيسي لا يكفي للسحب.';
+      return false;
     }
 
-    p.totalWithdrawn += amount;
+    if (c == AppCurrency.syp) {
+      p.totalWithdrawnSyp += amount;
+    } else {
+      p.totalWithdrawn += amount;
+    }
     takeCash('main', c, amount);
     notifyListeners();
     saveToDisk();
@@ -1607,7 +1997,13 @@ class ERPProvider extends ChangeNotifier {
   // Shipping rule: when the shipment has NOT arrived, the shipping fee is
   // combined with the invoice capital cost and distributed over the stone
   // items proportionally to each item's capital cost.
-  void addSupplierPurchaseInvoice(FactoryInvoiceModel inv) {
+  bool addSupplierPurchaseInvoice(FactoryInvoiceModel inv) {
+    if (inv.isCashInvoice &&
+        (inv.invoiceType != 'شراء_مورد' ||
+            inv.remainingBalance > 0.01 ||
+            cashOf('main', inv.currency) + 0.0001 < inv.grandTotal)) {
+      return false;
+    }
     inv.paymentStatus = inv.remainingBalance > 0.01 ? 'مستحق الدفع' : 'مدفوعة';
     factoryInvoices.add(inv);
     if (inv.advancePayment > 0) {
@@ -1658,6 +2054,7 @@ class ERPProvider extends ChangeNotifier {
     }
     notifyListeners();
     saveToDisk();
+    return true;
   }
 
   // Staged cutting batch coming from the Factory Inventory aggregation step.
@@ -1899,7 +2296,11 @@ class ERPProvider extends ChangeNotifier {
   }
 
   // 6. POS Factory Invoice Sale (multi-item, Pending/Paid split)
-  void addFactoryPOSInvoice(FactoryInvoiceModel inv) {
+  bool addFactoryPOSInvoice(FactoryInvoiceModel inv) {
+    if (inv.isCashInvoice &&
+        (inv.invoiceType != 'بيع_معتمد' || inv.remainingBalance > 0.01)) {
+      return false;
+    }
     inv.paymentStatus = inv.remainingBalance > 0.01 ? 'مستحق الدفع' : 'مدفوعة';
     factoryInvoices.add(inv);
     if (inv.advancePayment > 0) {
@@ -1917,8 +2318,15 @@ class ERPProvider extends ChangeNotifier {
     // Deduct stock from Factory Warehouse
     if (factoryWarehouse.isNotEmpty) {
       for (var item in inv.items) {
-        var wh = factoryWarehouse.firstWhere(
-          (w) => w.id == item.itemId || w.typeName == item.description,
+        FactoryWarehouseModel? wh;
+        for (final warehouseItem in factoryWarehouse) {
+          if (warehouseItem.id == item.itemId) {
+            wh = warehouseItem;
+            break;
+          }
+        }
+        wh ??= factoryWarehouse.firstWhere(
+          (warehouseItem) => warehouseItem.typeName == item.description,
           orElse: () => factoryWarehouse.first,
         );
         wh.availableQty = (wh.availableQty - item.calculatedArea).clamp(
@@ -1930,6 +2338,7 @@ class ERPProvider extends ChangeNotifier {
 
     notifyListeners();
     saveToDisk();
+    return true;
   }
 
   // 7. Workshop Order & Isolated Order Cash Box
@@ -2014,12 +2423,51 @@ class ERPProvider extends ChangeNotifier {
   /// Creates a workshop invoice from any source with correct cash routing:
   /// scrap sales go to the Scrap Cash Box, everything else to Main Cash Box.
   /// When assigned from an order, the isolated deposit moves to Main Cash Box.
-  void createWorkshopInvoice(
+  bool createWorkshopInvoice(
     WorkshopInvoiceModel inv, {
     String deductStockId = '',
     double deductQty = 0.0,
   }) {
+    if (inv.isCashInvoice && inv.remainingBalance > 0.01) return false;
+    WorkshopTailoringModel? tailoringItem;
+    if (inv.sourceType == 'تفصيل بسيط' || inv.sourceType == 'تفصيل معقد') {
+      final category = inv.sourceType == 'تفصيل بسيط'
+          ? 'تفصيل بسيط'
+          : 'تفصيل معقد';
+      final isOpeningStockItem = openingEntry.openingStock.any(
+        (item) => item.category == category && item.typeId == inv.sourceId,
+      );
+      if (isOpeningStockItem) {
+        if (!openingEntry.isLocked || !openingEntry.openingStockApplied) {
+          return false;
+        }
+        final items = inv.sourceType == 'تفصيل بسيط'
+            ? simpleTailorings
+            : complexTailorings;
+        final matches = items.where((item) => item.id == inv.sourceId).toList();
+        if (matches.isEmpty || matches.first.quantity < 1) return false;
+        tailoringItem = matches.first;
+      }
+    }
+    if (deductStockId.isNotEmpty) {
+      final stock = workshopStock
+          .where((item) => item.id == deductStockId)
+          .toList();
+      if (stock.isEmpty || stock.first.availableQty < deductQty) return false;
+    }
+    if (inv.sourceType == 'طلبية معمل' &&
+        inv.depositDeducted > 0 &&
+        inv.sourceId.isNotEmpty) {
+      final orders = workshopOrders
+          .where((order) => order.id == inv.sourceId)
+          .toList();
+      if (orders.isNotEmpty &&
+          cashOf('order', inv.currency) + 0.0001 < inv.depositDeducted) {
+        return false;
+      }
+    }
     workshopInvoices.add(inv);
+    if (tailoringItem != null) tailoringItem.quantity -= 1;
     if (inv.sourceType == 'قطع زائدة') {
       if (inv.sourceId.isNotEmpty) {
         final matches = scrapItems.where((s) => s.id == inv.sourceId).toList();
@@ -2052,6 +2500,7 @@ class ERPProvider extends ChangeNotifier {
     }
     notifyListeners();
     saveToDisk();
+    return true;
   }
 
   // 7b. Factory Custom Orders (mirror the workshop deposit-box rules)
@@ -2424,6 +2873,7 @@ class ERPProvider extends ChangeNotifier {
         services: old.services,
         photoPath: old.photoPath,
         isGranite: old.isGranite,
+        isCashInvoice: old.isCashInvoice,
         currency: old.currency,
       );
     }
@@ -2537,6 +2987,46 @@ class ERPProvider extends ChangeNotifier {
     meterTypes.add(mt);
     notifyListeners();
     saveToDisk();
+  }
+
+  void updateMeterType(MeterTypeModel updated) {
+    final index = meterTypes.indexWhere((type) => type.id == updated.id);
+    if (index < 0) throw StateError('Meter type was not found.');
+    final previous = meterTypes[index];
+    meterTypes[index] = updated;
+    for (var i = 0; i < factoryWarehouse.length; i++) {
+      final item = factoryWarehouse[i];
+      if (item.typeName == previous.typeName && item.grade == previous.grade) {
+        factoryWarehouse[i] = FactoryWarehouseModel(
+          id: item.id,
+          typeName: updated.typeName,
+          grade: updated.grade,
+          thicknessCm: updated.thicknessCm,
+          category: updated.category,
+          availableQty: item.availableQty,
+          netCostPerUnit: item.netCostPerUnit,
+          recommendedSalePrice: item.recommendedSalePrice,
+          isGranite: updated.isGranite,
+        );
+      }
+    }
+    for (var i = 0; i < workshopStock.length; i++) {
+      final item = workshopStock[i];
+      if (item.typeName == previous.typeName && item.grade == previous.grade) {
+        workshopStock[i] = WorkshopStockModel(
+          id: item.id,
+          typeName: updated.typeName,
+          grade: updated.grade,
+          thicknessCm: updated.thicknessCm,
+          category: updated.category,
+          availableQty: item.availableQty,
+          netCostPerUnit: item.netCostPerUnit,
+          recommendedSalePrice: item.recommendedSalePrice,
+          isGranite: updated.isGranite,
+        );
+      }
+    }
+    refresh();
   }
 
   void addService(ServiceItemModel srv) {
@@ -2707,6 +3197,10 @@ class ERPProvider extends ChangeNotifier {
         jsonEncode(blockTypes.map((b) => b.toJson()).toList()),
       );
       await prefs.setString(
+        'meterTypes',
+        jsonEncode(meterTypes.map((m) => m.toJson()).toList()),
+      );
+      await prefs.setString(
         'factoryBlocks',
         jsonEncode(factoryBlocks.map((b) => b.toJson()).toList()),
       );
@@ -2715,8 +3209,26 @@ class ERPProvider extends ChangeNotifier {
         jsonEncode(factoryWarehouse.map((w) => w.toJson()).toList()),
       );
       await prefs.setString(
+        'factoryInvoices',
+        jsonEncode(factoryInvoices.map((invoice) => invoice.toJson()).toList()),
+      );
+      await prefs.setString(
+        'workshopInvoices',
+        jsonEncode(
+          workshopInvoices.map((invoice) => invoice.toJson()).toList(),
+        ),
+      );
+      await prefs.setString(
         'workshopStock',
         jsonEncode(workshopStock.map((w) => w.toJson()).toList()),
+      );
+      await prefs.setString(
+        'simpleTailorings',
+        jsonEncode(simpleTailorings.map((item) => item.toJson()).toList()),
+      );
+      await prefs.setString(
+        'complexTailorings',
+        jsonEncode(complexTailorings.map((item) => item.toJson()).toList()),
       );
       await prefs.setString(
         'scrapItems',
@@ -2773,6 +3285,78 @@ class ERPProvider extends ChangeNotifier {
         openingEntry = OpeningEntryModel.fromJson(jsonDecode(openingStr));
         isOpeningEntryCompleted = openingEntry.isLocked;
       }
+      final partnersJson = prefs.getString('partners');
+      if (partnersJson != null) {
+        partners = (jsonDecode(partnersJson) as List)
+            .map((item) => PartnerModel.fromJson(item))
+            .toList();
+      }
+      final suppliersJson = prefs.getString('suppliers');
+      if (suppliersJson != null) {
+        suppliers = (jsonDecode(suppliersJson) as List)
+            .map((item) => SupplierModel.fromJson(item))
+            .toList();
+      }
+      final clientsJson = prefs.getString('clients');
+      if (clientsJson != null) {
+        clients = (jsonDecode(clientsJson) as List)
+            .map((item) => ClientModel.fromJson(item))
+            .toList();
+      }
+      final blockTypesJson = prefs.getString('blockTypes');
+      if (blockTypesJson != null) {
+        blockTypes = (jsonDecode(blockTypesJson) as List)
+            .map((item) => BlockTypeModel.fromJson(item))
+            .toList();
+      }
+      final meterTypesJson = prefs.getString('meterTypes');
+      if (meterTypesJson != null) {
+        meterTypes = (jsonDecode(meterTypesJson) as List)
+            .map((item) => MeterTypeModel.fromJson(item))
+            .toList();
+      }
+      final factoryBlocksJson = prefs.getString('factoryBlocks');
+      if (factoryBlocksJson != null) {
+        factoryBlocks = (jsonDecode(factoryBlocksJson) as List)
+            .map((item) => FactoryBlockModel.fromJson(item))
+            .toList();
+      }
+      final factoryWarehouseJson = prefs.getString('factoryWarehouse');
+      if (factoryWarehouseJson != null) {
+        factoryWarehouse = (jsonDecode(factoryWarehouseJson) as List)
+            .map((item) => FactoryWarehouseModel.fromJson(item))
+            .toList();
+      }
+      final factoryInvoicesJson = prefs.getString('factoryInvoices');
+      if (factoryInvoicesJson != null) {
+        factoryInvoices = (jsonDecode(factoryInvoicesJson) as List)
+            .map((item) => FactoryInvoiceModel.fromJson(item))
+            .toList();
+      }
+      final workshopInvoicesJson = prefs.getString('workshopInvoices');
+      if (workshopInvoicesJson != null) {
+        workshopInvoices = (jsonDecode(workshopInvoicesJson) as List)
+            .map((item) => WorkshopInvoiceModel.fromJson(item))
+            .toList();
+      }
+      final workshopStockJson = prefs.getString('workshopStock');
+      if (workshopStockJson != null) {
+        workshopStock = (jsonDecode(workshopStockJson) as List)
+            .map((item) => WorkshopStockModel.fromJson(item))
+            .toList();
+      }
+      final simpleTailoringsJson = prefs.getString('simpleTailorings');
+      if (simpleTailoringsJson != null) {
+        simpleTailorings = (jsonDecode(simpleTailoringsJson) as List)
+            .map((item) => WorkshopTailoringModel.fromJson(item))
+            .toList();
+      }
+      final complexTailoringsJson = prefs.getString('complexTailorings');
+      if (complexTailoringsJson != null) {
+        complexTailorings = (jsonDecode(complexTailoringsJson) as List)
+            .map((item) => WorkshopTailoringModel.fromJson(item))
+            .toList();
+      }
       final expenseTypesJson = prefs.getString('expenseTypes');
       if (expenseTypesJson != null) {
         expenseTypes = (jsonDecode(expenseTypesJson) as List)
@@ -2824,6 +3408,12 @@ class ERPProvider extends ChangeNotifier {
         } catch (_) {}
       }
 
+      if (openingEntry.isLocked &&
+          openingEntry.openingStock.isNotEmpty &&
+          !openingEntry.openingStockApplied) {
+        _applyOpeningStockToOperationalInventory();
+        await saveToDisk();
+      }
       notifyListeners();
     } catch (_) {}
   }

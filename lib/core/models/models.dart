@@ -79,6 +79,7 @@ class OpeningEntryModel {
 
   bool isLocked;
   DateTime? lockedAt;
+  bool openingStockApplied;
 
   OpeningEntryModel({
     this.landValue = 120000.0,
@@ -104,6 +105,7 @@ class OpeningEntryModel {
     this.abdelMoeenRatio = 0.23,
     this.isLocked = true,
     this.lockedAt,
+    this.openingStockApplied = false,
   }) : fixedAssets = fixedAssets ?? [],
        openingStock = openingStock ?? [],
        legacyFinancials = legacyFinancials ?? [];
@@ -120,6 +122,20 @@ class OpeningEntryModel {
             )
             .fold(0.0, (sum, asset) => sum + asset.amount));
 
+  double totalFixedAssetsOf(String? currency) => fixedAssets.isEmpty
+      ? (AppCurrency.isSyp(currency) ? 0 : totalFixedAssets)
+      : fixedAssets
+            .where(
+              (asset) =>
+                  !asset.isSold &&
+                  asset.currency == AppCurrency.normalize(currency),
+            )
+            .fold(0.0, (sum, asset) => sum + asset.amount);
+
+  double totalOpeningStockOf(String? currency) => openingStock
+      .where((item) => item.currency == AppCurrency.normalize(currency))
+      .fold(0.0, (sum, item) => sum + item.totalPrice);
+
   double get totalCurrentAssets =>
       mainCashValue +
       scrapCashValue +
@@ -131,7 +147,31 @@ class OpeningEntryModel {
 
   double get totalLiabilities => supplierPayablesValue + workerSalariesValue;
 
+  double get totalAssetsSyp =>
+      totalFixedAssetsOf(AppCurrency.syp) +
+      mainCashValueSyp +
+      scrapCashValueSyp +
+      orderCashValueSyp +
+      totalOpeningStockOf(AppCurrency.syp) +
+      legacyFinancials
+          .where(
+            (record) =>
+                record.category == 'clients' &&
+                record.currency == AppCurrency.syp,
+          )
+          .fold(0.0, (sum, record) => sum + record.amount);
+
+  double get totalLiabilitiesSyp => legacyFinancials
+      .where(
+        (record) =>
+            (record.category == 'suppliers' ||
+                record.category == 'employees') &&
+            record.currency == AppCurrency.syp,
+      )
+      .fold(0.0, (sum, record) => sum + record.amount);
+
   double get totalEquity => totalAssets - totalLiabilities;
+  double get totalEquitySyp => totalAssetsSyp - totalLiabilitiesSyp;
 
   double get hassanCapital => totalEquity * hassanRatio;
   double get adnanCapital => totalEquity * adnanRatio;
@@ -166,6 +206,7 @@ class OpeningEntryModel {
     'abdelMoeenRatio': abdelMoeenRatio,
     'isLocked': isLocked,
     'lockedAt': lockedAt?.toIso8601String(),
+    'openingStockApplied': openingStockApplied,
   };
 
   factory OpeningEntryModel.fromJson(Map<String, dynamic> json) =>
@@ -202,6 +243,7 @@ class OpeningEntryModel {
         lockedAt: json['lockedAt'] != null
             ? DateTime.parse(json['lockedAt'])
             : null,
+        openingStockApplied: json['openingStockApplied'] ?? false,
       );
 }
 
@@ -254,7 +296,12 @@ class OpeningStockItemModel {
   final String id;
   final String category;
   final String typeName;
-  final double quantity;
+  final String typeId;
+  final String grade;
+  final bool isGranite;
+  final double thicknessCm;
+  final String supplierName;
+  double quantity;
   final double unitPrice;
   final String description;
   final String currency;
@@ -263,6 +310,11 @@ class OpeningStockItemModel {
     required this.id,
     required this.category,
     required this.typeName,
+    this.typeId = '',
+    this.grade = '',
+    this.isGranite = false,
+    this.thicknessCm = 0,
+    this.supplierName = '',
     required this.quantity,
     required this.unitPrice,
     this.description = '',
@@ -275,6 +327,11 @@ class OpeningStockItemModel {
     'id': id,
     'category': category,
     'typeName': typeName,
+    'typeId': typeId,
+    'grade': grade,
+    'isGranite': isGranite,
+    'thicknessCm': thicknessCm,
+    'supplierName': supplierName,
     'quantity': quantity,
     'unitPrice': unitPrice,
     'description': description,
@@ -286,6 +343,11 @@ class OpeningStockItemModel {
         id: json['id'],
         category: json['category'],
         typeName: json['typeName'],
+        typeId: json['typeId'] ?? '',
+        grade: json['grade'] ?? '',
+        isGranite: json['isGranite'] ?? false,
+        thicknessCm: (json['thicknessCm'] ?? 0).toDouble(),
+        supplierName: json['supplierName'] ?? '',
         quantity: (json['quantity'] as num).toDouble(),
         unitPrice: (json['unitPrice'] as num).toDouble(),
         description: json['description'] ?? '',
@@ -494,6 +556,8 @@ class PartnerModel {
   double ratio; // e.g. 0.42
   double injectedCapital;
   double totalWithdrawn;
+  double injectedCapitalSyp;
+  double totalWithdrawnSyp;
 
   PartnerModel({
     required this.id,
@@ -501,6 +565,8 @@ class PartnerModel {
     required this.ratio,
     required this.injectedCapital,
     this.totalWithdrawn = 0.0,
+    this.injectedCapitalSyp = 0.0,
+    this.totalWithdrawnSyp = 0.0,
   });
 
   Map<String, dynamic> toJson() => {
@@ -509,6 +575,8 @@ class PartnerModel {
     'ratio': ratio,
     'injectedCapital': injectedCapital,
     'totalWithdrawn': totalWithdrawn,
+    'injectedCapitalSyp': injectedCapitalSyp,
+    'totalWithdrawnSyp': totalWithdrawnSyp,
   };
 
   factory PartnerModel.fromJson(Map<String, dynamic> json) => PartnerModel(
@@ -517,6 +585,8 @@ class PartnerModel {
     ratio: (json['ratio'] as num).toDouble(),
     injectedCapital: (json['injectedCapital'] as num).toDouble(),
     totalWithdrawn: (json['totalWithdrawn'] as num).toDouble(),
+    injectedCapitalSyp: (json['injectedCapitalSyp'] ?? 0).toDouble(),
+    totalWithdrawnSyp: (json['totalWithdrawnSyp'] ?? 0).toDouble(),
   );
 }
 
@@ -1019,6 +1089,7 @@ class FactoryInvoiceModel {
   final double discountAmount;
   double adjustmentsAmount;
   final String photoUrl;
+  final bool isCashInvoice;
   String paymentStatus; // 'مستحق الدفع' | 'مدفوعة'
   final String
   currency; // AppCurrency.usd ('USD' $) | AppCurrency.syp ('SYP' ل.س)
@@ -1038,6 +1109,7 @@ class FactoryInvoiceModel {
     this.discountAmount = 0.0,
     this.adjustmentsAmount = 0.0,
     this.photoUrl = '',
+    this.isCashInvoice = false,
     this.paymentStatus = 'تم الدفع',
     this.currency = AppCurrency.usd,
   });
@@ -1092,6 +1164,7 @@ class FactoryInvoiceModel {
     'discountAmount': discountAmount,
     'adjustmentsAmount': adjustmentsAmount,
     'photoUrl': photoUrl,
+    'isCashInvoice': isCashInvoice,
     'paymentStatus': paymentStatus,
     'currency': currency,
   };
@@ -1118,6 +1191,7 @@ class FactoryInvoiceModel {
         discountAmount: (json['discountAmount'] ?? 0.0).toDouble(),
         adjustmentsAmount: (json['adjustmentsAmount'] ?? 0.0).toDouble(),
         photoUrl: json['photoUrl'] ?? '',
+        isCashInvoice: json['isCashInvoice'] ?? false,
         paymentStatus: json['paymentStatus'] ?? 'تم الدفع',
         currency: AppCurrency.normalize(json['currency']),
       );
@@ -1282,7 +1356,7 @@ class WorkshopTailoringModel {
   final double lengthCm;
   final double widthCm;
   final double heightCm;
-  final double quantity;
+  double quantity;
   final double materialNetCost;
   final double laborCostPerPiece;
   final List<ServiceAttachment> attachedServices;
@@ -1622,6 +1696,7 @@ class WorkshopInvoiceModel {
   final List<ServiceAttachment> services;
   final String photoPath;
   final bool isGranite;
+  final bool isCashInvoice;
   final String currency; // AppCurrency.usd | AppCurrency.syp
 
   WorkshopInvoiceModel({
@@ -1642,6 +1717,7 @@ class WorkshopInvoiceModel {
     this.services = const [],
     this.photoPath = '',
     this.isGranite = false,
+    this.isCashInvoice = false,
     this.currency = AppCurrency.usd,
   });
 
@@ -1671,6 +1747,7 @@ class WorkshopInvoiceModel {
     'services': services.map((s) => s.toJson()).toList(),
     'photoPath': photoPath,
     'isGranite': isGranite,
+    'isCashInvoice': isCashInvoice,
     'currency': currency,
   };
 
@@ -1697,6 +1774,7 @@ class WorkshopInvoiceModel {
             : [],
         photoPath: json['photoPath'] ?? '',
         isGranite: json['isGranite'] ?? false,
+        isCashInvoice: json['isCashInvoice'] ?? false,
         currency: AppCurrency.normalize(json['currency']),
       );
 }

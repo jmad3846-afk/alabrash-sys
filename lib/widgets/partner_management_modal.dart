@@ -13,8 +13,10 @@ class PartnerManagementModal extends StatefulWidget {
 
 class _PartnerManagementModalState extends State<PartnerManagementModal> {
   final TextEditingController injectCapitalController = TextEditingController();
-  final TextEditingController withdrawAmountController = TextEditingController();
+  final TextEditingController withdrawAmountController =
+      TextEditingController();
   String selectedPartnerForWithdrawal = 'p1';
+  String selectedCurrency = AppCurrency.usd;
   String warningMessage = '';
 
   @override
@@ -41,12 +43,17 @@ class _PartnerManagementModalState extends State<PartnerManagementModal> {
                           color: AppColors.chipBgAmber,
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(Icons.group_rounded, color: AppColors.partnersEquityAccent),
+                        child: const Icon(
+                          Icons.group_rounded,
+                          color: AppColors.partnersEquityAccent,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Text(
                         'إدارة حقوق الملكية والشركاء وتوزيع الأرباح',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 18),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.titleLarge?.copyWith(fontSize: 18),
                       ),
                     ],
                   ),
@@ -58,33 +65,78 @@ class _PartnerManagementModalState extends State<PartnerManagementModal> {
               ),
               const Divider(height: 24),
               // Partners Readout Grid
-              const Text('نسب الشركاء الحالية وتوزيع الأرباح الصافية:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              const Text(
+                'نسب الشركاء الحالية وتوزيع الأرباح الصافية:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
               const SizedBox(height: 10),
               Row(
                 children: erp.partners.map((partner) {
-                  double netProfitShare = erp.netOperatingProfit * partner.ratio;
+                  double netProfitShare =
+                      erp.netOperatingProfit * partner.ratio;
+                  double netProfitShareSyp =
+                      erp.netOperatingProfitSyp * partner.ratio;
                   double netAvailable = netProfitShare - partner.totalWithdrawn;
+                  double netAvailableSyp =
+                      netProfitShareSyp - partner.totalWithdrawnSyp;
                   return Expanded(
                     child: Card(
                       margin: const EdgeInsets.symmetric(horizontal: 4),
                       color: AppColors.chipBgAmber.withValues(alpha: 0.4),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: AppColors.partnersEquityAccent, width: 1),
+                        side: const BorderSide(
+                          color: AppColors.partnersEquityAccent,
+                          width: 1,
+                        ),
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(partner.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            Text(
+                              partner.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
                             const SizedBox(height: 4),
-                            Text('النسبة: ${(partner.ratio * 100).fmt}%', style: const TextStyle(color: AppColors.partnersEquityAccent, fontWeight: FontWeight.bold)),
-                            Text('رأس المال: ${partner.injectedCapital.fmt}\$', style: const TextStyle(fontSize: 11)),
+                            Text(
+                              'النسبة: ${(partner.ratio * 100).fmt}%',
+                              style: const TextStyle(
+                                color: AppColors.partnersEquityAccent,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'رأس المال: ${AppCurrency.dual(partner.injectedCapital, partner.injectedCapitalSyp)}',
+                              style: const TextStyle(fontSize: 11),
+                            ),
                             const Divider(height: 12),
-                            Text('حصة الأرباح: ${netProfitShare.fmt}\$', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                            Text('المسحوب: ${partner.totalWithdrawn.fmt}\$', style: const TextStyle(fontSize: 11, color: AppColors.dangerWaste)),
-                            Text('الصافي المتاح: ${netAvailable.fmt}\$', style: const TextStyle(fontSize: 11, color: AppColors.successGreen, fontWeight: FontWeight.bold)),
+                            Text(
+                              'حصة الأرباح: ${AppCurrency.dual(netProfitShare, netProfitShareSyp)}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              'المسحوب: ${AppCurrency.dual(partner.totalWithdrawn, partner.totalWithdrawnSyp)}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.dangerWaste,
+                              ),
+                            ),
+                            Text(
+                              'الصافي المتاح: ${AppCurrency.dual(netAvailable, netAvailableSyp)}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.successGreen,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -105,7 +157,13 @@ class _PartnerManagementModalState extends State<PartnerManagementModal> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('إضافة رأس مال جديد وتحديث النسب آلياً:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const Text(
+                      'إضافة رأس مال جديد وتحديث النسب آلياً:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -113,22 +171,58 @@ class _PartnerManagementModalState extends State<PartnerManagementModal> {
                           child: TextField(
                             controller: injectCapitalController,
                             keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'مبلغ رأس المال المضاف جديداً (\$)',
+                            decoration: InputDecoration(
+                              labelText:
+                                  'مبلغ رأس المال المضاف (${AppCurrency.symbol(selectedCurrency)})',
                               hintText: 'مثال: 50000',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 90,
+                          child: DropdownButtonFormField<String>(
+                            initialValue: selectedCurrency,
+                            decoration: const InputDecoration(
+                              labelText: 'العملة',
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: AppCurrency.usd,
+                                child: Text('USD'),
+                              ),
+                              DropdownMenuItem(
+                                value: AppCurrency.syp,
+                                child: Text('SYP'),
+                              ),
+                            ],
+                            onChanged: (value) => setState(
+                              () => selectedCurrency = value ?? AppCurrency.usd,
                             ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: AppColors.partnersEquityAccent),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.partnersEquityAccent,
+                          ),
                           onPressed: () {
-                            double amount = double.tryParse(injectCapitalController.text) ?? 0.0;
+                            double amount =
+                                double.tryParse(injectCapitalController.text) ??
+                                0.0;
                             if (amount > 0) {
-                              erp.injectNewPartnerCapital(amount);
+                              erp.injectNewPartnerCapital(
+                                amount,
+                                selectedCurrency,
+                              );
                               injectCapitalController.clear();
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('تمت إضافة رأس المال الجديد وتحديث نسب الشركاء آلياً!'), backgroundColor: AppColors.successGreen),
+                                const SnackBar(
+                                  content: Text(
+                                    'تمت إضافة رأس المال الجديد وتحديث نسب الشركاء آلياً!',
+                                  ),
+                                  backgroundColor: AppColors.successGreen,
+                                ),
                               );
                             }
                           },
@@ -154,7 +248,14 @@ class _PartnerManagementModalState extends State<PartnerManagementModal> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('سحب أرباح لشريك (مع فحص حدود الأمان للميزانية):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.partnersEquityAccent)),
+                    const Text(
+                      'سحب أرباح لشريك (مع فحص حدود الأمان للميزانية):',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: AppColors.partnersEquityAccent,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -162,12 +263,21 @@ class _PartnerManagementModalState extends State<PartnerManagementModal> {
                           flex: 2,
                           child: DropdownButtonFormField<String>(
                             initialValue: selectedPartnerForWithdrawal,
-                            decoration: const InputDecoration(labelText: 'اختر الشريك'),
+                            decoration: const InputDecoration(
+                              labelText: 'اختر الشريك',
+                            ),
                             items: erp.partners.map((p) {
-                              return DropdownMenuItem(value: p.id, child: Text(p.name));
+                              return DropdownMenuItem(
+                                value: p.id,
+                                child: Text(p.name),
+                              );
                             }).toList(),
                             onChanged: (val) {
-                              if (val != null) setState(() => selectedPartnerForWithdrawal = val);
+                              if (val != null) {
+                                setState(
+                                  () => selectedPartnerForWithdrawal = val,
+                                );
+                              }
                             },
                           ),
                         ),
@@ -177,17 +287,31 @@ class _PartnerManagementModalState extends State<PartnerManagementModal> {
                           child: TextField(
                             controller: withdrawAmountController,
                             keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(labelText: 'مبلغ المسحوبات (\$)'),
+                            decoration: InputDecoration(
+                              labelText:
+                                  'مبلغ المسحوبات (${AppCurrency.symbol(selectedCurrency)})',
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: AppColors.dangerWaste),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.dangerWaste,
+                          ),
                           onPressed: () {
-                            double amount = double.tryParse(withdrawAmountController.text) ?? 0.0;
+                            double amount =
+                                double.tryParse(
+                                  withdrawAmountController.text,
+                                ) ??
+                                0.0;
                             if (amount > 0) {
                               var outMsg = MutableWrapper('');
-                              erp.withdrawPartnerProfit(selectedPartnerForWithdrawal, amount, outMsg);
+                              erp.withdrawPartnerProfit(
+                                selectedPartnerForWithdrawal,
+                                amount,
+                                outMsg,
+                                selectedCurrency,
+                              );
                               if (outMsg.value.isNotEmpty) {
                                 setState(() {
                                   warningMessage = outMsg.value;
@@ -198,7 +322,12 @@ class _PartnerManagementModalState extends State<PartnerManagementModal> {
                                 });
                                 withdrawAmountController.clear();
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('تم تسجيل مسحوبات الأرباح للشريك بنجاح!'), backgroundColor: AppColors.successGreen),
+                                  const SnackBar(
+                                    content: Text(
+                                      'تم تسجيل مسحوبات الأرباح للشريك بنجاح!',
+                                    ),
+                                    backgroundColor: AppColors.successGreen,
+                                  ),
                                 );
                               }
                             }
@@ -218,12 +347,20 @@ class _PartnerManagementModalState extends State<PartnerManagementModal> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.warning_amber_rounded, color: AppColors.dangerWaste, size: 20),
+                            const Icon(
+                              Icons.warning_amber_rounded,
+                              color: AppColors.dangerWaste,
+                              size: 20,
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 warningMessage,
-                                style: const TextStyle(color: AppColors.dangerWaste, fontWeight: FontWeight.bold, fontSize: 12),
+                                style: const TextStyle(
+                                  color: AppColors.dangerWaste,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
                           ],
@@ -236,7 +373,9 @@ class _PartnerManagementModalState extends State<PartnerManagementModal> {
 
               const SizedBox(height: 20),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.brandPrimaryText),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.brandPrimaryText,
+                ),
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Text('إغلاق الشاشة'),
               ),
@@ -247,4 +386,3 @@ class _PartnerManagementModalState extends State<PartnerManagementModal> {
     );
   }
 }
-

@@ -1902,6 +1902,24 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   // TAB 8: INCOME STATEMENT (ملخص الدخل P&L)
   // -------------------------------------------------------------
   Widget _buildIncomeStatementTab(ERPProvider erp) {
+    final expensesUsd =
+        erp.totalCOGS +
+        erp.totalOperationalExpenses +
+        erp.totalUnnaturalWasteLosses +
+        erp.totalSurplusInitialCost +
+        erp.accountantGraniteShare +
+        erp.expenseRecordsTotalOf(AppCurrency.usd) +
+        erp.salesReturnsAndAllowancesOf(AppCurrency.usd) +
+        erp.salesDiscountsOf(AppCurrency.usd);
+    final expensesSyp =
+        erp.totalCOGSSyp +
+        erp.totalOperationalExpensesSyp +
+        erp.totalUnnaturalWasteLossesSyp +
+        erp.totalSurplusInitialCostSyp +
+        erp.accountantGraniteShareSyp +
+        erp.expenseRecordsTotalOf(AppCurrency.syp) +
+        erp.salesReturnsAndAllowancesOf(AppCurrency.syp) +
+        erp.salesDiscountsOf(AppCurrency.syp);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -1985,14 +2003,34 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ),
                   const Divider(height: 20),
                   _buildPlLine(
-                    'إيرادات مبيعات المصنع للمعتمدين:',
-                    erp.totalFactoryRevenue,
-                    syp: erp.totalFactoryRevenueSyp,
+                    'إجمالي مبيعات المصنع قبل الخصومات:',
+                    erp.totalFactoryRevenue -
+                        erp.factoryServiceRevenueOf(AppCurrency.usd) +
+                        erp.factorySalesDiscountOf(AppCurrency.usd),
+                    syp:
+                        erp.totalFactoryRevenueSyp -
+                        erp.factoryServiceRevenueOf(AppCurrency.syp) +
+                        erp.factorySalesDiscountOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
-                    'إيرادات مبيعات وتفصيل المعمل:',
-                    erp.totalWorkshopRevenue,
-                    syp: erp.totalWorkshopRevenueSyp,
+                    'خدمات المصنع:',
+                    erp.factoryServiceRevenueOf(AppCurrency.usd),
+                    syp: erp.factoryServiceRevenueOf(AppCurrency.syp),
+                  ),
+                  _buildPlLine(
+                    'إجمالي مبيعات وتفصيل المعمل قبل الخصومات:',
+                    erp.totalWorkshopRevenue -
+                        erp.workshopServiceRevenueOf(AppCurrency.usd) +
+                        erp.workshopSalesDiscountOf(AppCurrency.usd),
+                    syp:
+                        erp.totalWorkshopRevenueSyp -
+                        erp.workshopServiceRevenueOf(AppCurrency.syp) +
+                        erp.workshopSalesDiscountOf(AppCurrency.syp),
+                  ),
+                  _buildPlLine(
+                    'خدمات المعمل:',
+                    erp.workshopServiceRevenueOf(AppCurrency.usd),
+                    syp: erp.workshopServiceRevenueOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
                     'إيرادات مبيعات القطع الزائدة (صندوق الزيادات):',
@@ -2003,6 +2041,21 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     'إيرادات العربونات المحتفظ بها (الطلبيات الملغاة):',
                     erp.totalKeptDepositsRevenue,
                     syp: erp.totalKeptDepositsRevenueSyp,
+                  ),
+                  _buildPlLine(
+                    'مرتجعات ومسموحات المشتريات:',
+                    erp.purchaseReturnsAndAllowances,
+                    syp: erp.purchaseReturnsAndAllowancesSyp,
+                  ),
+                  _buildPlLine(
+                    'الخصومات المكتسبة من الموردين:',
+                    erp.supplierDiscountsOf(AppCurrency.usd),
+                    syp: erp.supplierDiscountsOf(AppCurrency.syp),
+                  ),
+                  _buildPlLine(
+                    'إيرادات بيع الأصول:',
+                    erp.assetSaleRevenueOf(AppCurrency.usd),
+                    syp: erp.assetSaleRevenueOf(AppCurrency.syp),
                   ),
                   const Divider(height: 16),
                   _buildPlLine(
@@ -2040,6 +2093,40 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     erp.totalOperationalExpenses,
                     syp: erp.totalOperationalExpensesSyp,
                   ),
+                  for (final type in erp.expenseTypes)
+                    _buildPlLine(
+                      'مصروفات ${type.name}:',
+                      erp.expenseRecords
+                          .where(
+                            (expense) =>
+                                expense.typeId == type.id &&
+                                expense.currency == AppCurrency.usd,
+                          )
+                          .fold<double>(
+                            0,
+                            (sum, expense) => sum + expense.amount,
+                          ),
+                      syp: erp.expenseRecords
+                          .where(
+                            (expense) =>
+                                expense.typeId == type.id &&
+                                expense.currency == AppCurrency.syp,
+                          )
+                          .fold<double>(
+                            0,
+                            (sum, expense) => sum + expense.amount,
+                          ),
+                    ),
+                  _buildPlLine(
+                    'مرتجعات ومسموحات المبيعات:',
+                    erp.salesReturnsAndAllowances,
+                    syp: erp.salesReturnsAndAllowancesSyp,
+                  ),
+                  _buildPlLine(
+                    'خصومات المبيعات الممنوحة:',
+                    erp.salesDiscountsOf(AppCurrency.usd),
+                    syp: erp.salesDiscountsOf(AppCurrency.syp),
+                  ),
                   _buildPlLine(
                     'خسائر الهدر غير الطبيعي (سندات الإتلاف):',
                     erp.totalUnnaturalWasteLosses,
@@ -2058,17 +2145,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   const Divider(height: 16),
                   _buildPlLine(
                     'مجموع التكاليف والمصاريف الكلية:',
-                    erp.totalCOGS +
-                        erp.totalOperationalExpenses +
-                        erp.totalUnnaturalWasteLosses +
-                        erp.totalSurplusInitialCost +
-                        erp.accountantGraniteShare,
-                    syp:
-                        erp.totalCOGSSyp +
-                        erp.totalOperationalExpensesSyp +
-                        erp.totalUnnaturalWasteLossesSyp +
-                        erp.totalSurplusInitialCostSyp +
-                        erp.accountantGraniteShareSyp,
+                    expensesUsd,
+                    syp: expensesSyp,
                     isTotal: true,
                     color: AppColors.dangerWaste,
                   ),

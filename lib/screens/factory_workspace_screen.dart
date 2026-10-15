@@ -45,7 +45,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   @override
   void initState() {
     super.initState();
-    _navTabController = TabController(length: 10, vsync: this);
+    _navTabController = TabController(length: 11, vsync: this);
   }
 
   @override
@@ -80,6 +80,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 Tab(text: '8. سجل عمليات القص'),
                 Tab(text: '9. طلبيات المصنع (Orders)'),
                 Tab(text: '10. المرتجعات والمسموحات'),
+                Tab(text: '11. الفواتير النقدية'),
               ],
             ),
           ),
@@ -99,6 +100,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 _buildSubTab8CuttingLog(erp),
                 _buildSubTab9FactoryOrders(erp),
                 const ReturnsAllowancesScreen(factoryOnly: true),
+                _buildCashFactoryInvoices(erp),
               ],
             ),
           ),
@@ -1108,14 +1110,235 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               },
             ),
           ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'أنواع الأمتار والمقاسات المتاحة في المستودع',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              FilledButton.icon(
+                onPressed: () => _showAddMeterTypeDialog(erp),
+                icon: const Icon(Icons.add),
+                label: const Text('إضافة نوع متر'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: erp.meterTypes.isEmpty
+                ? const ListTile(title: Text('لا توجد أنواع أمتار معرفة.'))
+                : ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: erp.meterTypes.length,
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final type = erp.meterTypes[index];
+                      return ListTile(
+                        leading: const Icon(Icons.straighten),
+                        title: Text(
+                          '${type.typeName} • ${type.grade}',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          '${type.thicknessCm.fmt} سم • ${type.category} • ${type.isGranite ? 'غرانيت' : 'رخام'}',
+                        ),
+                        trailing: IconButton(
+                          tooltip: 'تعديل نوع المتر',
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () =>
+                              _showAddMeterTypeDialog(erp, existing: type),
+                        ),
+                      );
+                    },
+                  ),
+          ),
         ],
       ),
     );
   }
 
+  Future<void> _showAddMeterTypeDialog(
+    ERPProvider erp, {
+    MeterTypeModel? existing,
+  }) async {
+    final nameController = TextEditingController(
+      text: existing?.typeName ?? '',
+    );
+    final gradeController = TextEditingController(
+      text: existing?.grade ?? 'درجة أولى',
+    );
+    final thicknessController = TextEditingController(
+      text: existing?.thicknessCm.fmt ?? '2',
+    );
+    var isGranite = existing?.isGranite ?? false;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(existing == null ? 'إضافة نوع متر' : 'تعديل نوع متر'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'اسم النوع'),
+                ),
+                TextField(
+                  controller: gradeController,
+                  decoration: const InputDecoration(labelText: 'الدرجة'),
+                ),
+                TextField(
+                  controller: thicknessController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(labelText: 'السماكة (سم)'),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('غرانيت'),
+                  value: isGranite,
+                  onChanged: (value) =>
+                      setDialogState(() => isGranite = value),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final thickness = double.tryParse(thicknessController.text);
+                if (nameController.text.trim().isEmpty ||
+                    gradeController.text.trim().isEmpty ||
+                    thickness == null ||
+                    thickness <= 0) {
+                  return;
+                }
+                final type = MeterTypeModel(
+                  id: existing?.id ??
+                      'meter_${DateTime.now().microsecondsSinceEpoch}',
+                  typeName: nameController.text.trim(),
+                  grade: gradeController.text.trim(),
+                  thicknessCm: thickness,
+                  category: thickness <= 5 ? 'متر مربع' : 'متر مكعب',
+                  isGranite: isGranite,
+                );
+                if (existing == null) {
+                  erp.addMeterType(type);
+                } else {
+                  erp.updateMeterType(type);
+                }
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    nameController.dispose();
+    gradeController.dispose();
+    thicknessController.dispose();
+    if (saved == true && mounted) setState(() {});
+  }
+
   // -------------------------------------------------------------
   // SUB-TAB 6: SUPPLIER PURCHASE INVOICES
   // -------------------------------------------------------------
+  Widget _buildCashFactoryInvoices(ERPProvider erp) {
+    final purchases = erp.factoryInvoices
+        .where((invoice) => invoice.isCashInvoice &&
+            invoice.invoiceType == 'شراء_مورد')
+        .toList();
+    final sales = erp.factoryInvoices
+        .where((invoice) => invoice.isCashInvoice &&
+            invoice.invoiceType == 'بيع_معتمد')
+        .toList();
+    return DefaultTabController(
+      length: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            const Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'فواتير نقدية مسددة بالكامل من/إلى الصندوق الرئيسي',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              color: const Color(0xFFF1F5F9),
+              child: const TabBar(
+                tabs: [
+                  Tab(text: 'مبيعات نقدية'),
+                  Tab(text: 'مشتريات نقدية'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  Column(
+                    children: [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton.icon(
+                          onPressed: () =>
+                              _showAddPOSInvoiceDialog(erp, cashInvoice: true),
+                          icon: const Icon(Icons.point_of_sale_rounded),
+                          label: const Text('إضافة فاتورة بيع نقدية'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: _buildPosInvoiceList(
+                          sales,
+                          emptyHint: 'لا توجد فواتير مبيعات نقدية.',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    children: [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton.icon(
+                          onPressed: () =>
+                              _showAddSupplierInvoiceDialog(erp, cashInvoice: true),
+                          icon: const Icon(Icons.payments_rounded),
+                          label: const Text('إضافة فاتورة شراء نقدية'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: _buildSupplierInvoiceList(
+                          purchases,
+                          emptyHint: 'لا توجد فواتير مشتريات نقدية.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSubTab6SupplierPurchases(ERPProvider erp) {
     final due = erp.factoryInvoices
         .where((i) => i.invoiceType == 'شراء_مورد' && i.isDue)
@@ -2190,7 +2413,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     );
   }
 
-  void _showAddSupplierInvoiceDialog(ERPProvider erp) {
+  void _showAddSupplierInvoiceDialog(
+    ERPProvider erp, {
+    bool cashInvoice = false,
+  }) {
     if (erp.suppliers.isEmpty || erp.blockTypes.isEmpty) {
       showDialog(
         context: context,
@@ -2667,27 +2893,37 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             ],
                           ),
                           const SizedBox(height: 8),
-                          const Text(
-                            'هل نريد الدفع له أم لا؟',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          Row(
-                            children: [
-                              yesNoOption(
-                                'نعم',
-                                true,
-                                wantsPay,
-                                (v) => setSt(() => wantsPay = v),
+                          if (cashInvoice)
+                            Text(
+                              'فاتورة نقدية: سيتم دفع كامل الإجمالي (${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}) من الصندوق الرئيسي.',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.accentPrimary,
                               ),
-                              yesNoOption(
-                                'لا',
-                                false,
-                                wantsPay,
-                                (v) => setSt(() => wantsPay = v),
-                              ),
-                            ],
-                          ),
-                          if (wantsPay == true)
+                            )
+                          else ...[
+                            const Text(
+                              'هل نريد الدفع له أم لا؟',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            Row(
+                              children: [
+                                yesNoOption(
+                                  'نعم',
+                                  true,
+                                  wantsPay,
+                                  (v) => setSt(() => wantsPay = v),
+                                ),
+                                yesNoOption(
+                                  'لا',
+                                  false,
+                                  wantsPay,
+                                  (v) => setSt(() => wantsPay = v),
+                                ),
+                              ],
+                            ),
+                          ],
+                          if (!cashInvoice && wantsPay == true)
                             TextField(
                               controller: downPayCtrl,
                               keyboardType: TextInputType.number,
@@ -2696,7 +2932,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               ),
                               onChanged: (_) => setSt(() {}),
                             ),
-                          if (wantsPay == true) ...[
+                          if (!cashInvoice && wantsPay == true) ...[
                             const SizedBox(height: 8),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2741,23 +2977,34 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           );
                           return;
                         }
-                        if (wantsPay == null) {
+                        if (!cashInvoice && wantsPay == null) {
                           setSt(
                             () => formError = 'أجب: هل نريد الدفع له أم لا؟',
                           );
                           return;
                         }
-                        double advance = wantsPay == true
+                        double advance = cashInvoice
+                            ? grandTotal
+                            : wantsPay == true
                             ? (double.tryParse(downPayCtrl.text) ?? 0.0)
                             : 0.0;
                         if (advance < 0) advance = 0.0;
                         if (advance > grandTotal) advance = grandTotal;
+                        if (cashInvoice &&
+                            erp.cashOf('main', invCurrency) + 0.0001 <
+                                grandTotal) {
+                          setSt(
+                            () => formError =
+                                'رصيد الصندوق الرئيسي غير كافٍ لتسديد الفاتورة النقدية بهذه العملة.',
+                          );
+                          return;
+                        }
 
                         final sup = erp.suppliers.firstWhere(
                           (s) => s.id == selectedSupplierId,
                           orElse: () => erp.suppliers.first,
                         );
-                        erp.addSupplierPurchaseInvoice(
+                        final created = erp.addSupplierPurchaseInvoice(
                           FactoryInvoiceModel(
                             id: 'fi_${DateTime.now().millisecondsSinceEpoch}',
                             invoiceNo:
@@ -2771,14 +3018,24 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             shippingFee: shipping,
                             advancePayment: advance,
                             discountAmount: discount,
+                            isCashInvoice: cashInvoice,
                             currency: invCurrency,
                           ),
                         );
+                        if (!created) {
+                          setSt(
+                            () => formError =
+                                'تعذر اعتماد الفاتورة. تحقق من رصيد الصندوق الرئيسي وتسديد كامل الإجمالي.',
+                          );
+                          return;
+                        }
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              advance >= grandTotal - 0.01
+                              cashInvoice
+                                  ? 'تم حفظ فاتورة الشراء النقدية وتسديدها بالكامل من الصندوق.'
+                                  : advance >= grandTotal - 0.01
                                   ? 'تم حفظ الفاتورة مدفوعة بالكامل وتسجيلها في المالية وقسم المدفوعة.'
                                   : 'تم حفظ الفاتورة وتسجيلها في المالية وقسم مستحق الدفع.',
                             ),
@@ -2798,7 +3055,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     );
   }
 
-  void _showAddPOSInvoiceDialog(ERPProvider erp) {
+  void _showAddPOSInvoiceDialog(
+    ERPProvider erp, {
+    bool cashInvoice = false,
+  }) {
     final approvedClients = erp.clients
         .where((c) => c.clientType == 'معتمد مصنع')
         .toList();
@@ -3464,16 +3724,25 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             ],
                           ),
                           const SizedBox(height: 8),
-                          TextField(
-                            controller: downPayCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'الدفعة الأولى / المقدمة (إن وجدت)',
-                              isDense: true,
+                          if (cashInvoice)
+                            Text(
+                              'فاتورة بيع نقدية: سيتم تحصيل كامل الإجمالي إلى الصندوق الرئيسي.',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.accentPrimary,
+                              ),
+                            )
+                          else
+                            TextField(
+                              controller: downPayCtrl,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'الدفعة الأولى / المقدمة (إن وجدت)',
+                                isDense: true,
+                              ),
+                              onChanged: (_) => setSt(() {}),
                             ),
-                            onChanged: (_) => setSt(() {}),
-                          ),
-                          if (downPayCtrl.text.isNotEmpty) ...[
+                          if (!cashInvoice && downPayCtrl.text.isNotEmpty) ...[
                             const SizedBox(height: 6),
                             Text(
                               'المتبقي: ${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} \$',
@@ -3577,8 +3846,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           );
                           return;
                         }
-                        double advance =
-                            double.tryParse(downPayCtrl.text) ?? 0.0;
+                        double advance = cashInvoice
+                            ? grandTotal
+                            : (double.tryParse(downPayCtrl.text) ?? 0.0);
                         if (advance < 0) advance = 0.0;
                         if (advance > grandTotal) {
                           advance = grandTotal;
@@ -3587,7 +3857,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           (c) => c.id == selectedClientId,
                           orElse: () => erp.clients.first,
                         );
-                        erp.addFactoryPOSInvoice(
+                        final created = erp.addFactoryPOSInvoice(
                           FactoryInvoiceModel(
                             id: 'fi_pos_${DateTime.now().millisecondsSinceEpoch}',
                             invoiceNo:
@@ -3601,15 +3871,25 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             shippingFee: shipping,
                             advancePayment: advance,
                             discountAmount: salesDiscount,
+                            isCashInvoice: cashInvoice,
                             photoUrl: photoCtrl.text.trim(),
                             currency: posCurrency,
                           ),
                         );
+                        if (!created) {
+                          setSt(
+                            () => formError =
+                                'تعذر اعتماد الفاتورة النقدية؛ تحقق من تسديد كامل الإجمالي.',
+                          );
+                          return;
+                        }
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              advance >= grandTotal - 0.01
+                              cashInvoice
+                                  ? 'تم إصدار فاتورة البيع النقدية وتحصيلها بالكامل في الصندوق الرئيسي.'
+                                  : advance >= grandTotal - 0.01
                                   ? 'تم حفظ الفاتورة مدفوعة بالكامل وتسجيلها في قسم المدفوعة.'
                                   : 'تم حفظ الفاتورة وتسجيلها في قسم التحصيل المعلق.',
                             ),
