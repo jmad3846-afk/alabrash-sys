@@ -315,7 +315,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         products.map(
           (product) => DropdownMenuItem(
             value: product.id,
-            child: Text(product.name),
+            child: Text('${product.name} • ${product.unitSymbol}'),
           ),
         ),
       );
@@ -326,10 +326,12 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
           ? 'الكمية بالطن'
           : isMeter
           ? 'الكمية بالأمتار'
+          : (isSimple || isComplex)
+          ? 'الكمية بالمتر المربع أو المكعب'
           : 'الكمية',
       isBlock
           ? 'سعر الطن'
-          : isMeter
+          : (isMeter || isSimple || isComplex)
           ? 'سعر المتر'
           : 'سعر الوحدة',
       if (isBlock) 'اسم المورد',
@@ -343,11 +345,13 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
             ? 'الكمية بالطن'
             : isMeter
             ? 'الكمية بالأمتار'
+            : (isSimple || isComplex)
+            ? 'الكمية بالمتر المربع أو المكعب'
             : 'الكمية': existing.quantity.fmt,
       if (existing != null)
         isBlock
             ? 'سعر الطن'
-            : isMeter
+            : (isMeter || isSimple || isComplex)
             ? 'سعر المتر'
             : 'سعر الوحدة': existing.unitPrice.fmt,
       if (existing != null) 'اسم المورد': existing.supplierName,
@@ -383,6 +387,8 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
               ? 'الكمية بالطن'
               : isMeter
               ? 'الكمية بالأمتار'
+              : (isSimple || isComplex)
+              ? 'الكمية بالمتر المربع أو المكعب'
               : 'الكمية']!,
         ) ??
         0;
@@ -390,7 +396,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         double.tryParse(
           value[isBlock
               ? 'سعر الطن'
-              : isMeter
+              : (isMeter || isSimple || isComplex)
               ? 'سعر المتر'
               : 'سعر الوحدة']!,
         ) ??
@@ -425,6 +431,26 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
     } else {
       erp.updateOpeningStockItem(item);
     }
+  }
+
+  String _openingStockUnit(ERPProvider erp, OpeningStockItemModel item) {
+    if (item.category == 'بلوكات خام المصنع') return 'طن';
+    if (item.category == 'أمتار المصنع' || item.category == 'أمتار المعمل') {
+      final type = _firstOrNull(
+        erp.meterTypes.where((candidate) => candidate.id == item.typeId),
+      );
+      return type?.category == 'متر مكعب' ? 'م³' : 'م²';
+    }
+    if (item.category == 'تفصيل بسيط' || item.category == 'تفصيل معقد') {
+      final products = item.category == 'تفصيل بسيط'
+          ? erp.simpleTailorings
+          : erp.complexTailorings;
+      return _firstOrNull(
+            products.where((candidate) => candidate.id == item.typeId),
+          )?.unitSymbol ??
+          'م²/م³';
+    }
+    return 'وحدة';
   }
 
   Future<void> _addLegacyRecord(
@@ -700,7 +726,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                         leading: const Icon(Icons.inventory_2_outlined),
                         title: Text('${item.typeName} • ${item.category}'),
                         subtitle: Text(
-                          'الكمية: ${item.quantity.fmt} • سعر الوحدة: ${item.unitPrice.fmt} ${AppCurrency.symbol(item.currency)}${item.supplierName.isEmpty ? '' : ' • المورد: ${item.supplierName}'} • ${item.description}',
+                          'الكمية: ${item.quantity.fmt} ${_openingStockUnit(erp, item)} • سعر الوحدة: ${item.unitPrice.fmt} ${AppCurrency.symbol(item.currency)}${item.supplierName.isEmpty ? '' : ' • المورد: ${item.supplierName}'} • ${item.description}',
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,

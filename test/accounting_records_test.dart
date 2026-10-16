@@ -507,6 +507,104 @@ void main() {
     );
   });
 
+  test('Tailoring inventory migrates legacy pieces to square/cubic meters', () {
+    final legacySimple = WorkshopTailoringModel.fromJson({
+      'id': 'legacy-simple',
+      'name': 'درج قديم',
+      'complexity': 'بسيط',
+      'rawMaterialDescription': 'رخام',
+      'lengthCm': 120,
+      'widthCm': 30,
+      'heightCm': 0,
+      'quantity': 5,
+      'materialNetCost': 0,
+      'laborCostPerPiece': 2,
+      'sellingPrice': 60,
+      'isGranite': false,
+    });
+    final measuredComplex = WorkshopTailoringModel(
+      id: 'measured-complex',
+      name: 'مغسلة',
+      complexity: 'معقد',
+      rawMaterialDescription: 'رخام',
+      lengthCm: 100,
+      widthCm: 50,
+      heightCm: 20,
+      unitCategory: 'متر مكعب',
+      measurementCount: 3,
+      quantity: 0.3,
+      materialNetCost: 0,
+      sellingPrice: 500,
+    );
+    final restored = WorkshopTailoringModel.fromJson(measuredComplex.toJson());
+
+    expect(legacySimple.unitCategory, 'متر مربع');
+    expect(legacySimple.quantity, closeTo(1.8, 0.0001));
+    expect(legacySimple.laborCostPerMeter, closeTo(5.5556, 0.001));
+    expect(legacySimple.sellingPrice, closeTo(166.6667, 0.001));
+    expect(restored.quantity, closeTo(0.3, 0.0001));
+    expect(restored.measurementPerCount, closeTo(0.1, 0.0001));
+    expect(restored.unitSymbol, 'م³');
+  });
+
+  test(
+    'Tailoring sales deduct requested square meters from available stock',
+    () {
+      SharedPreferences.setMockInitialValues({});
+      final erp = ERPProvider();
+      final product = WorkshopTailoringModel(
+        id: 'meter-tailoring-sale',
+        name: 'درج بالمتر',
+        complexity: 'بسيط',
+        rawMaterialDescription: 'رخام',
+        unitCategory: 'متر مربع',
+        quantity: 1.2,
+        materialNetCost: 0,
+        sellingPrice: 20,
+      );
+      erp.simpleTailorings.add(product);
+      final invoice = WorkshopInvoiceModel(
+        id: 'meter-tailoring-invoice',
+        invoiceNo: 'TAILOR-METER-1',
+        date: DateTime.now(),
+        clientName: 'زبون',
+        sourceType: 'تفصيل بسيط',
+        sourceId: product.id,
+        itemDescription: product.name,
+        sourceQuantity: 0.25,
+        sourceUnitCategory: product.unitCategory,
+        agreedPrice: 5,
+        depositDeducted: 0,
+        cashPaidNow: 5,
+        netCost: 0,
+      );
+
+      expect(erp.createWorkshopInvoice(invoice), isTrue);
+      expect(product.quantity, closeTo(0.95, 0.0001));
+      expect(invoice.remainingBalance, 0);
+      expect(
+        erp.createWorkshopInvoice(
+          WorkshopInvoiceModel(
+            id: 'meter-tailoring-invoice-too-large',
+            invoiceNo: 'TAILOR-METER-2',
+            date: DateTime.now(),
+            clientName: 'زبون',
+            sourceType: 'تفصيل بسيط',
+            sourceId: product.id,
+            itemDescription: product.name,
+            sourceQuantity: 1,
+            agreedPrice: 20,
+            depositDeducted: 0,
+            cashPaidNow: 20,
+            netCost: 0,
+          ),
+        ),
+        isFalse,
+      );
+      expect(product.quantity, closeTo(0.95, 0.0001));
+    },
+  );
+
   testWidgets('Factory and Workshop cash invoice sections are available', (
     tester,
   ) async {

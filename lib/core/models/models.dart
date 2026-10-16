@@ -1264,7 +1264,7 @@ class TailoringLineItem {
   double quantity;
   final double netCostPerMeter;
   final double sellingPricePerMeter;
-  final double laborPerPiece;
+  final double laborPerMeter;
   final List<ServiceAttachment> services;
 
   TailoringLineItem({
@@ -1281,7 +1281,7 @@ class TailoringLineItem {
     required this.quantity,
     required this.netCostPerMeter,
     required this.sellingPricePerMeter,
-    this.laborPerPiece = 0.0,
+    this.laborPerMeter = 0.0,
     this.services = const [],
   });
 
@@ -1302,9 +1302,7 @@ class TailoringLineItem {
   double get materialCost => area * netCostPerMeter;
   double get servicesTotal => services.fold(0.0, (s, e) => s + e.price);
   double get lineTotal =>
-      (area * sellingPricePerMeter) +
-      (laborPerPiece * quantity) +
-      servicesTotal;
+      (area * sellingPricePerMeter) + (laborPerMeter * area) + servicesTotal;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -1320,7 +1318,7 @@ class TailoringLineItem {
     'quantity': quantity,
     'netCostPerMeter': netCostPerMeter,
     'sellingPricePerMeter': sellingPricePerMeter,
-    'laborPerPiece': laborPerPiece,
+    'laborPerMeter': laborPerMeter,
     'services': services.map((s) => s.toJson()).toList(),
   };
 
@@ -1339,7 +1337,9 @@ class TailoringLineItem {
         quantity: (json['quantity'] as num).toDouble(),
         netCostPerMeter: (json['netCostPerMeter'] ?? 0.0).toDouble(),
         sellingPricePerMeter: (json['sellingPricePerMeter'] ?? 0.0).toDouble(),
-        laborPerPiece: (json['laborPerPiece'] ?? 0.0).toDouble(),
+        laborPerMeter: json['laborPerMeter'] != null
+            ? (json['laborPerMeter'] as num).toDouble()
+            : _legacyLaborPerMeter(json),
         services: json['services'] != null
             ? (json['services'] as List)
                   .map((s) => ServiceAttachment.fromJson(s))
@@ -1356,9 +1356,11 @@ class WorkshopTailoringModel {
   final double lengthCm;
   final double widthCm;
   final double heightCm;
+  final String unitCategory;
+  final double measurementCount;
   double quantity;
   final double materialNetCost;
-  final double laborCostPerPiece;
+  final double laborCostPerMeter;
   final List<ServiceAttachment> attachedServices;
   final List<TailoringLineItem> lineItems;
   final String photoPath;
@@ -1373,9 +1375,11 @@ class WorkshopTailoringModel {
     this.lengthCm = 0.0,
     this.widthCm = 0.0,
     this.heightCm = 0.0,
+    this.unitCategory = 'متر مربع',
+    this.measurementCount = 1.0,
     required this.quantity,
     required this.materialNetCost,
-    required this.laborCostPerPiece,
+    this.laborCostPerMeter = 0.0,
     this.attachedServices = const [],
     this.lineItems = const [],
     this.photoPath = '',
@@ -1383,7 +1387,18 @@ class WorkshopTailoringModel {
     this.isGranite = false,
   });
 
-  double get totalLaborCost => laborCostPerPiece * quantity;
+  double get totalLaborCost => laborCostPerMeter * quantity;
+  double get measurementPerCount {
+    if (lengthCm <= 0 || widthCm <= 0) return 0;
+    final area = (lengthCm / 100) * (widthCm / 100);
+    return unitCategory == 'متر مكعب'
+        ? heightCm <= 0
+              ? 0
+              : area * (heightCm / 100)
+        : area;
+  }
+
+  String get unitSymbol => unitCategory == 'متر مكعب' ? 'م³' : 'م²';
   double get totalServicesCost =>
       attachedServices.fold(0.0, (s, e) => s + e.price) +
       lineItems.fold(0.0, (s, l) => s + l.servicesTotal);
@@ -1400,9 +1415,11 @@ class WorkshopTailoringModel {
     'lengthCm': lengthCm,
     'widthCm': widthCm,
     'heightCm': heightCm,
+    'unitCategory': unitCategory,
+    'measurementCount': measurementCount,
     'quantity': quantity,
     'materialNetCost': materialNetCost,
-    'laborCostPerPiece': laborCostPerPiece,
+    'laborCostPerMeter': laborCostPerMeter,
     'attachedServices': attachedServices.map((s) => s.toJson()).toList(),
     'lineItems': lineItems.map((l) => l.toJson()).toList(),
     'photoPath': photoPath,
@@ -1410,32 +1427,87 @@ class WorkshopTailoringModel {
     'isGranite': isGranite,
   };
 
-  factory WorkshopTailoringModel.fromJson(Map<String, dynamic> json) =>
-      WorkshopTailoringModel(
-        id: json['id'],
-        name: json['name'],
-        complexity: json['complexity'] ?? 'بسيط',
-        rawMaterialDescription: json['rawMaterialDescription'] ?? '',
-        lengthCm: (json['lengthCm'] ?? 0.0).toDouble(),
-        widthCm: (json['widthCm'] ?? 0.0).toDouble(),
-        heightCm: (json['heightCm'] ?? 0.0).toDouble(),
-        quantity: (json['quantity'] as num).toDouble(),
-        materialNetCost: (json['materialNetCost'] as num).toDouble(),
-        laborCostPerPiece: (json['laborCostPerPiece'] as num).toDouble(),
-        attachedServices: json['attachedServices'] != null
-            ? (json['attachedServices'] as List)
-                  .map((s) => ServiceAttachment.fromJson(s))
-                  .toList()
-            : [],
-        lineItems: json['lineItems'] != null
-            ? (json['lineItems'] as List)
-                  .map((l) => TailoringLineItem.fromJson(l))
-                  .toList()
-            : [],
-        photoPath: json['photoPath'] ?? '',
-        sellingPrice: (json['sellingPrice'] as num).toDouble(),
-        isGranite: json['isGranite'] ?? false,
-      );
+  factory WorkshopTailoringModel.fromJson(Map<String, dynamic> json) {
+    final legacyQuantity = (json['quantity'] as num).toDouble();
+    final lengthCm = (json['lengthCm'] ?? 0.0).toDouble();
+    final widthCm = (json['widthCm'] ?? 0.0).toDouble();
+    final heightCm = (json['heightCm'] ?? 0.0).toDouble();
+    final legacyUnit = heightCm > 0 ? 'متر مكعب' : 'متر مربع';
+    final hasMeterUnit = json['unitCategory'] != null;
+    final unitCategory = json['unitCategory'] ?? legacyUnit;
+    final measurePerItem = _tailoredMeasure(
+      unitCategory,
+      lengthCm,
+      widthCm,
+      heightCm,
+    );
+    final legacyLabor = (json['laborCostPerPiece'] ?? 0.0).toDouble();
+    final legacySellingPrice = (json['sellingPrice'] as num).toDouble();
+    return WorkshopTailoringModel(
+      id: json['id'],
+      name: json['name'],
+      complexity: json['complexity'] ?? 'بسيط',
+      rawMaterialDescription: json['rawMaterialDescription'] ?? '',
+      lengthCm: lengthCm,
+      widthCm: widthCm,
+      heightCm: heightCm,
+      unitCategory: unitCategory,
+      measurementCount: (json['measurementCount'] ?? legacyQuantity).toDouble(),
+      quantity: hasMeterUnit || measurePerItem <= 0
+          ? legacyQuantity
+          : legacyQuantity * measurePerItem,
+      materialNetCost: (json['materialNetCost'] as num).toDouble(),
+      laborCostPerMeter: json['laborCostPerMeter'] != null
+          ? (json['laborCostPerMeter'] as num).toDouble()
+          : measurePerItem > 0
+          ? legacyLabor / measurePerItem
+          : legacyLabor,
+      attachedServices: json['attachedServices'] != null
+          ? (json['attachedServices'] as List)
+                .map((s) => ServiceAttachment.fromJson(s))
+                .toList()
+          : [],
+      lineItems: json['lineItems'] != null
+          ? (json['lineItems'] as List)
+                .map((l) => TailoringLineItem.fromJson(l))
+                .toList()
+          : [],
+      photoPath: json['photoPath'] ?? '',
+      sellingPrice: hasMeterUnit || measurePerItem <= 0
+          ? legacySellingPrice
+          : legacySellingPrice / measurePerItem,
+      isGranite: json['isGranite'] ?? false,
+    );
+  }
+
+  static double _tailoredMeasure(
+    String unit,
+    double lengthCm,
+    double widthCm,
+    double heightCm,
+  ) {
+    if (lengthCm <= 0 || widthCm <= 0) return 0;
+    final area = (lengthCm / 100) * (widthCm / 100);
+    if (unit == 'متر مكعب') {
+      return heightCm <= 0 ? 0 : area * (heightCm / 100);
+    }
+    return area;
+  }
+}
+
+double _legacyLaborPerMeter(Map<String, dynamic> json) {
+  final oldRate = (json['laborPerPiece'] ?? 0.0).toDouble();
+  final length = (json['lengthCm'] ?? 0.0).toDouble();
+  final width = (json['widthCm'] ?? 0.0).toDouble();
+  final height = (json['heightCm'] ?? 0.0).toDouble();
+  final unit = json['category'] ?? 'متر مربع';
+  if (length <= 0 || width <= 0) return oldRate;
+  var measure = (length / 100) * (width / 100);
+  if (unit == 'متر مكعب') {
+    if (height <= 0) return oldRate;
+    measure *= height / 100;
+  }
+  return measure > 0 ? oldRate / measure : oldRate;
 }
 
 // ==========================================
@@ -1687,6 +1759,8 @@ class WorkshopInvoiceModel {
   final String
   projectId; // workshop project id when the invoice belongs to a project
   final String itemDescription;
+  final double sourceQuantity;
+  final String sourceUnitCategory;
   final double agreedPrice;
   final double depositDeducted;
   final double cashPaidNow;
@@ -1708,6 +1782,8 @@ class WorkshopInvoiceModel {
     this.sourceId = '',
     this.projectId = '',
     required this.itemDescription,
+    this.sourceQuantity = 1.0,
+    this.sourceUnitCategory = 'متر مربع',
     required this.agreedPrice,
     required this.depositDeducted,
     required this.cashPaidNow,
@@ -1738,6 +1814,8 @@ class WorkshopInvoiceModel {
     'sourceId': sourceId,
     'projectId': projectId,
     'itemDescription': itemDescription,
+    'sourceQuantity': sourceQuantity,
+    'sourceUnitCategory': sourceUnitCategory,
     'agreedPrice': agreedPrice,
     'depositDeducted': depositDeducted,
     'cashPaidNow': cashPaidNow,
@@ -1761,6 +1839,8 @@ class WorkshopInvoiceModel {
         sourceId: json['sourceId'] ?? '',
         projectId: json['projectId'] ?? '',
         itemDescription: json['itemDescription'],
+        sourceQuantity: (json['sourceQuantity'] ?? 1.0).toDouble(),
+        sourceUnitCategory: json['sourceUnitCategory'] ?? 'متر مربع',
         agreedPrice: (json['agreedPrice'] as num).toDouble(),
         depositDeducted: (json['depositDeducted'] as num).toDouble(),
         cashPaidNow: (json['cashPaidNow'] as num).toDouble(),

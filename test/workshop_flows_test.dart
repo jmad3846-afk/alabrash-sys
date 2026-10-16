@@ -48,7 +48,10 @@ void main() {
       );
 
   Future<void> openWorkshopTab(
-      WidgetTester tester, ERPProvider erp, String tab) async {
+    WidgetTester tester,
+    ERPProvider erp,
+    String tab,
+  ) async {
     await setDesktop(tester);
     await tester.pumpWidget(workshopWrap(erp));
     await tester.pumpAndSettle();
@@ -59,18 +62,19 @@ void main() {
   }
 
   testWidgets('materials transfer dialog opens', (tester) async {
-    await openWorkshopTab(
-        tester, ERPProvider(), '1. مواد المعمل (Raw Stock)');
+    await openWorkshopTab(tester, ERPProvider(), '1. مواد المعمل (Raw Stock)');
     await tester.tap(find.text('تحويل كمية من مستودع المصنع'));
     await tester.pumpAndSettle();
-    expect(find.text('تحويل كمية من مستودع المصنع إلى المعمل'),
-        findsOneWidget);
+    expect(find.text('تحويل كمية من مستودع المصنع إلى المعمل'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('simple tailoring builder opens', (tester) async {
     await openWorkshopTab(
-        tester, ERPProvider(), '2. مفصل (تفصيلات بسيطة ومعقدة)');
+      tester,
+      ERPProvider(),
+      '2. مفصل (تفصيلات بسيطة ومعقدة)',
+    );
     await tester.tap(find.text('[إضافة تفصيل بسيط]'));
     await tester.pumpAndSettle();
     expect(find.text('إضافة تفصيل بسيط جديد'), findsOneWidget);
@@ -79,7 +83,10 @@ void main() {
 
   testWidgets('workshop invoice builder opens', (tester) async {
     await openWorkshopTab(
-        tester, ERPProvider(), '6. فاتورة معمل (Workshop Invoices)');
+      tester,
+      ERPProvider(),
+      '6. فاتورة معمل (Workshop Invoices)',
+    );
     await tester.tap(find.text('[إضافة فاتورة معمل]'));
     await tester.pumpAndSettle();
     expect(find.text('إنشاء فاتورة معمل'), findsOneWidget);
@@ -101,8 +108,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('financials shows new sections, projects tab works',
-      (tester) async {
+  testWidgets('financials shows new sections, projects tab works', (
+    tester,
+  ) async {
     await setDesktop(tester);
     await tester.pumpWidget(
       ChangeNotifierProvider<ERPProvider>.value(
@@ -126,8 +134,10 @@ void main() {
       expect(find.text(label), findsOneWidget);
     }
     // Old supplier tab is gone.
-    expect(find.textContaining('مالية الموردين (Supplier Finances)'),
-        findsNothing);
+    expect(
+      find.textContaining('مالية الموردين (Supplier Finances)'),
+      findsNothing,
+    );
 
     // Workforce tab renders its three inner tabs.
     await tester.tap(find.text('5. مالية القوى العاملة'));
@@ -145,8 +155,7 @@ void main() {
   });
 
   testWidgets('workshop projects section CRUD tabs render', (tester) async {
-    await openWorkshopTab(
-        tester, ERPProvider(), '7. المشاريع (Projects)');
+    await openWorkshopTab(tester, ERPProvider(), '7. المشاريع (Projects)');
     expect(find.text('بانتظار الدفع (Pending Payment)'), findsOneWidget);
     expect(find.text('مكتملة / مدفوعة (Completed)'), findsOneWidget);
     await tester.tap(find.text('إضافة مشروع'));
@@ -173,10 +182,8 @@ void main() {
       quantity: 10,
       netCostPerMeter: 14.5,
       sellingPricePerMeter: 24.0,
-      laborPerPiece: 5.0,
-      services: [
-        ServiceAttachment(serviceName: 'جلي', price: 45.0),
-      ],
+      laborPerMeter: 5.0,
+      services: [ServiceAttachment(serviceName: 'جلي', price: 45.0)],
     );
     expect(line.area, closeTo(1.2 * 0.33 * 10, 0.001));
     expect(erp.deductWorkshopStock('ws1', line.area), isTrue);
@@ -187,20 +194,207 @@ void main() {
     expect(erp.deductWorkshopStock('ws1', 1e9), isFalse);
   });
 
+  testWidgets('simple tailoring builder keeps only name and material items', (
+    tester,
+  ) async {
+    final erp = ERPProvider();
+    await openWorkshopTab(tester, erp, '2. مفصل (تفصيلات بسيطة ومعقدة)');
+    await tester.tap(find.text('[إضافة تفصيل بسيط]'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('اسم التفصيل'), findsOneWidget);
+    expect(find.text('بنود المواد (أضف كل بند بزر +):'), findsOneWidget);
+    expect(find.text('وحدة البيع'), findsNothing);
+    expect(find.text('الطول (سم)'), findsNothing);
+    expect(find.text('العرض (سم)'), findsNothing);
+    expect(find.text('الكمية الناتجة:'), findsNothing);
+    expect(find.textContaining('سعر البيع للمتر م²'), findsNothing);
+    expect(find.textContaining('صورة التفصيل'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'complex tailoring keeps only name before material lines and derives stock unit',
+    (tester) async {
+      final erp = ERPProvider();
+      final stockBefore = erp.workshopStock
+          .firstWhere((item) => item.id == 'ws1')
+          .availableQty;
+      await openWorkshopTab(tester, erp, '2. مفصل (تفصيلات بسيطة ومعقدة)');
+      await tester.tap(find.text('تفصيل معقد (Complex)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('[إضافة تفصيل معقد]'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('اسم التفصيل'), findsOneWidget);
+      expect(find.text('بنود المواد (أضف كل بند بزر +):'), findsOneWidget);
+      expect(find.text('وحدة البيع'), findsNothing);
+      expect(find.text('الطول (سم)'), findsNothing);
+      expect(find.text('العرض (سم)'), findsNothing);
+      expect(find.text('الارتفاع (سم)'), findsNothing);
+      expect(find.text('الكمية الناتجة:'), findsNothing);
+      expect(find.textContaining('صورة التفصيل'), findsNothing);
+
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField &&
+              widget.decoration?.labelText == 'اسم التفصيل',
+        ),
+        'تفصيل معقد اختبار',
+      );
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('رخام كاردينال').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField &&
+              widget.decoration?.labelText == 'الطول (سم)',
+        ),
+        '100',
+      );
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField &&
+              widget.decoration?.labelText == 'العرض (سم)',
+        ),
+        '100',
+      );
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField && widget.decoration?.labelText == 'الكمية',
+        ),
+        '2',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('إضافة بند المواد +'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('حفظ التفصيل بالمتر'));
+      await tester.pumpAndSettle();
+
+      final tailoring = erp.complexTailorings.last;
+      expect(tailoring.name, 'تفصيل معقد اختبار');
+      expect(tailoring.quantity, 2);
+      expect(tailoring.unitCategory, 'متر مربع');
+      expect(tailoring.lengthCm, 0);
+      expect(
+        erp.workshopStock.firstWhere((item) => item.id == 'ws1').availableQty,
+        closeTo(stockBefore - 2, 0.001),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'simple tailoring shows material consumption and blocks overselling stock',
+    (tester) async {
+      final erp = ERPProvider();
+      final originalStock = erp.workshopStock
+          .firstWhere((item) => item.id == 'ws1')
+          .availableQty;
+      final originalTailorings = erp.simpleTailorings.length;
+      await openWorkshopTab(tester, erp, '2. مفصل (تفصيلات بسيطة ومعقدة)');
+      await tester.tap(find.text('[إضافة تفصيل بسيط]'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField &&
+              widget.decoration?.labelText == 'اسم التفصيل',
+        ),
+        'تفصيل اختبار',
+      );
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('رخام كاردينال').last);
+      await tester.pumpAndSettle();
+
+      Future<void> enterMaterialDimensions(String quantity) async {
+        await tester.enterText(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is TextField &&
+                widget.decoration?.labelText == 'الطول (سم)',
+          ),
+          '100',
+        );
+        await tester.enterText(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is TextField &&
+                widget.decoration?.labelText == 'العرض (سم)',
+          ),
+          '100',
+        );
+        await tester.enterText(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is TextField && widget.decoration?.labelText == 'الكمية',
+          ),
+          quantity,
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await enterMaterialDimensions('50');
+      expect(
+        find.textContaining('استهلاك المادة المحددة: 50 م²'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('إضافة بند المواد +'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('رخام كاردينال').last);
+      await tester.pumpAndSettle();
+      await enterMaterialDimensions('36');
+      expect(find.textContaining('سبق تخصيصه: 50'), findsOneWidget);
+      expect(find.textContaining('المتبقي بعد هذا البند: -1'), findsOneWidget);
+      await tester.tap(find.text('إضافة بند المواد +'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('الكمية تتجاوز المتاح'), findsOneWidget);
+      expect(erp.simpleTailorings.length, originalTailorings);
+
+      await enterMaterialDimensions('35');
+      expect(find.textContaining('المتبقي بعد هذا البند: 0'), findsOneWidget);
+      await tester.tap(find.text('إضافة بند المواد +'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('حفظ التفصيل بالمتر'));
+      await tester.pumpAndSettle();
+
+      expect(erp.simpleTailorings.length, originalTailorings + 1);
+      expect(erp.simpleTailorings.last.name, 'تفصيل اختبار');
+      expect(erp.simpleTailorings.last.quantity, 85);
+      expect(
+        erp.workshopStock.firstWhere((item) => item.id == 'ws1').availableQty,
+        closeTo(originalStock - 85, 0.001),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   test('workshop invoice from order moves deposit to main box', () async {
     final erp = ERPProvider();
     final mainBefore = erp.mainCashBox;
     final orderBefore = erp.orderCashBox;
-    erp.createWorkshopOrder(WorkshopOrderModel(
-      id: 'wo_t1',
-      orderNo: 'ORD-T1',
-      date: DateTime(2026, 1, 10),
-      clientName: 'زبون اختبار',
-      clientPhone: '000',
-      customDimensionsText: 'درج',
-      agreedPrice: 750.0,
-      depositAmount: 300.0,
-    ));
+    erp.createWorkshopOrder(
+      WorkshopOrderModel(
+        id: 'wo_t1',
+        orderNo: 'ORD-T1',
+        date: DateTime(2026, 1, 10),
+        clientName: 'زبون اختبار',
+        clientPhone: '000',
+        customDimensionsText: 'درج',
+        agreedPrice: 750.0,
+        depositAmount: 300.0,
+      ),
+    );
     expect(erp.orderCashBox, closeTo(orderBefore + 300.0, 0.001));
 
     erp.createWorkshopInvoice(
@@ -221,10 +415,9 @@ void main() {
     expect(erp.orderCashBox, closeTo(orderBefore, 0.001));
     expect(erp.mainCashBox, closeTo(mainBefore + 750.0, 0.001));
     expect(
-        erp.workshopOrders
-            .firstWhere((o) => o.id == 'wo_t1')
-            .status,
-        'مكتملة ومرحلة');
+      erp.workshopOrders.firstWhere((o) => o.id == 'wo_t1').status,
+      'مكتملة ومرحلة',
+    );
   });
 
   test('scrap invoice routes to scrap box', () async {
@@ -249,38 +442,42 @@ void main() {
     expect(erp.scrapItems.firstWhere((s) => s.id == 'sc1').isSold, isTrue);
   });
 
-  test('factory order assign creates POS invoice and deducts stock',
-      () async {
+  test('factory order assign creates POS invoice and deducts stock', () async {
     final erp = ERPProvider();
     final whBefore = erp.factoryWarehouse
         .firstWhere((w) => w.id == 'fw1')
         .availableQty;
     final invBefore = erp.factoryInvoices.length;
-    erp.createFactoryOrder(FactoryOrderModel(
-      id: 'fo_t1',
-      orderNo: 'FORD-T1',
-      date: DateTime(2026, 1, 12),
-      clientName: 'معتمد اختبار',
-      clientPhone: '111',
-      warehouseItemId: 'fw1',
-      itemDescription: 'رخام كاردينال 2سم',
-      lengthCm: 200,
-      widthCm: 100,
-      quantity: 10,
-      unitPrice: 22.0,
-      agreedPrice: 440.0,
-      depositAmount: 100.0,
-    ));
+    erp.createFactoryOrder(
+      FactoryOrderModel(
+        id: 'fo_t1',
+        orderNo: 'FORD-T1',
+        date: DateTime(2026, 1, 12),
+        clientName: 'معتمد اختبار',
+        clientPhone: '111',
+        warehouseItemId: 'fw1',
+        itemDescription: 'رخام كاردينال 2سم',
+        lengthCm: 200,
+        widthCm: 100,
+        quantity: 10,
+        unitPrice: 22.0,
+        agreedPrice: 440.0,
+        depositAmount: 100.0,
+      ),
+    );
     erp.assignFactoryOrderToInvoice(
-        erp.factoryOrders.firstWhere((o) => o.id == 'fo_t1'), 340.0);
+      erp.factoryOrders.firstWhere((o) => o.id == 'fo_t1'),
+      340.0,
+    );
 
     expect(erp.factoryInvoices.length, invBefore + 1);
     final inv = erp.factoryInvoices.last;
     expect(inv.invoiceType, 'بيع_معتمد');
     expect(inv.isDue, isFalse);
     expect(
-        erp.factoryOrders.firstWhere((o) => o.id == 'fo_t1').status,
-        'مكتملة ومرحلة');
+      erp.factoryOrders.firstWhere((o) => o.id == 'fo_t1').status,
+      'مكتملة ومرحلة',
+    );
     final whAfter = erp.factoryWarehouse
         .firstWhere((w) => w.id == 'fw1')
         .availableQty;
@@ -322,26 +519,29 @@ void main() {
 
   test('supplier pay moves invoice toward Paid', () async {
     final erp = ERPProvider();
-    erp.addSupplierPurchaseInvoice(FactoryInvoiceModel(
-      id: 'fi_pay_1',
-      invoiceNo: 'FAC-PUR-PAY-1',
-      date: DateTime(2026, 2, 1),
-      partyId: 'sup1',
-      partyName: 'شركة مقالع الرخام الوطنية',
-      invoiceType: 'شراء_مورد',
-      items: [
-        FactoryInvoiceItem(
+    erp.addSupplierPurchaseInvoice(
+      FactoryInvoiceModel(
+        id: 'fi_pay_1',
+        invoiceNo: 'FAC-PUR-PAY-1',
+        date: DateTime(2026, 2, 1),
+        partyId: 'sup1',
+        partyName: 'شركة مقالع الرخام الوطنية',
+        invoiceType: 'شراء_مورد',
+        items: [
+          FactoryInvoiceItem(
             itemId: 'd1',
             description: 'بازلت',
             typeName: 'بازلت',
             grade: 'درجة أولى',
             quantity: 10.0,
             unitPrice: 100.0,
-            unitCost: 100.0),
-      ],
-      isGoodsDelivered: true,
-      advancePayment: 200.0,
-    ));
+            unitCost: 100.0,
+          ),
+        ],
+        isGoodsDelivered: true,
+        advancePayment: 200.0,
+      ),
+    );
     final inv = erp.factoryInvoices.last;
     expect(inv.isDue, isTrue);
     final mainBefore = erp.mainCashBox;
@@ -353,23 +553,25 @@ void main() {
     expect(inv.paymentStatus, 'مدفوعة');
     expect(erp.mainCashBox, closeTo(mainBefore - 800.0, 0.001));
     expect(
-        erp.suppliers.firstWhere((s) => s.id == 'sup1').debtBalance,
-        closeTo(debtBefore - 800.0, 0.001));
+      erp.suppliers.firstWhere((s) => s.id == 'sup1').debtBalance,
+      closeTo(debtBefore - 800.0, 0.001),
+    );
     // Overpay / empty payment rejected.
     expect(erp.paySupplierInvoice(inv, 10.0), isFalse);
   });
 
   test('factory client collect moves invoice toward Paid', () async {
     final erp = ERPProvider();
-    erp.addFactoryPOSInvoice(FactoryInvoiceModel(
-      id: 'fi_col_1',
-      invoiceNo: 'FAC-POS-COL-1',
-      date: DateTime(2026, 2, 2),
-      partyId: 'cli1',
-      partyName: 'شركة العمران للمقاولات',
-      invoiceType: 'بيع_معتمد',
-      items: [
-        FactoryInvoiceItem(
+    erp.addFactoryPOSInvoice(
+      FactoryInvoiceModel(
+        id: 'fi_col_1',
+        invoiceNo: 'FAC-POS-COL-1',
+        date: DateTime(2026, 2, 2),
+        partyId: 'cli1',
+        partyName: 'شركة العمران للمقاولات',
+        invoiceType: 'بيع_معتمد',
+        items: [
+          FactoryInvoiceItem(
             itemId: 'fw1',
             description: 'رخام',
             typeName: 'رخام كاردينال',
@@ -378,11 +580,13 @@ void main() {
             widthCm: 100,
             quantity: 10,
             unitPrice: 22.0,
-            unitCost: 14.5),
-      ],
-      isGoodsDelivered: true,
-      advancePayment: 100.0,
-    ));
+            unitCost: 14.5,
+          ),
+        ],
+        isGoodsDelivered: true,
+        advancePayment: 100.0,
+      ),
+    );
     final inv = erp.factoryInvoices.last;
     expect(inv.isDue, isTrue);
     final mainBefore = erp.mainCashBox;
@@ -403,11 +607,13 @@ void main() {
 
   test('project lifecycle: pending -> invoiced -> completed', () async {
     final erp = ERPProvider();
-    erp.addProject(WorkshopProjectModel(
-      id: 'prj_t1',
-      name: 'مشروع اختبار',
-      clientName: 'زبون مشروع',
-    ));
+    erp.addProject(
+      WorkshopProjectModel(
+        id: 'prj_t1',
+        name: 'مشروع اختبار',
+        clientName: 'زبون مشروع',
+      ),
+    );
     expect(erp.pendingProjects.map((p) => p.id), contains('prj_t1'));
 
     erp.createWorkshopInvoice(
@@ -431,10 +637,8 @@ void main() {
     final inv = erp.workshopInvoices.firstWhere((i) => i.id == 'wi_prj_1');
     expect(erp.collectWorkshopInvoice(inv, 400.0), isTrue);
     expect(erp.projectDue('prj_t1'), closeTo(0.0, 0.001));
-    expect(
-        erp.completedProjects.map((p) => p.id), contains('prj_t1'));
-    expect(
-        erp.pendingProjects.map((p) => p.id), isNot(contains('prj_t1')));
+    expect(erp.completedProjects.map((p) => p.id), contains('prj_t1'));
+    expect(erp.pendingProjects.map((p) => p.id), isNot(contains('prj_t1')));
 
     erp.deleteProject('prj_t1');
     expect(erp.workshopProjects, isEmpty);
@@ -444,32 +648,36 @@ void main() {
     final erp = ERPProvider();
     final fw = erp.factoryWarehouse.firstWhere((w) => w.id == 'fw1');
     final before = fw.availableQty;
-    erp.processReturnInvoice(ReturnInvoiceModel(
-      id: 'ret_t1',
-      returnNo: 'RET-T1',
-      date: DateTime(2026, 1, 13),
-      returnType: 'مرتجع مبيعات مصنع',
-      partyName: 'زبون',
-      itemDescription: 'رخام كاردينال 2سم مرتجع',
-      quantity: 5.0,
-      refundAmount: 110.0,
-      paymentAction: 'تخفيض دين',
-    ));
+    erp.processReturnInvoice(
+      ReturnInvoiceModel(
+        id: 'ret_t1',
+        returnNo: 'RET-T1',
+        date: DateTime(2026, 1, 13),
+        returnType: 'مرتجع مبيعات مصنع',
+        partyName: 'زبون',
+        itemDescription: 'رخام كاردينال 2سم مرتجع',
+        quantity: 5.0,
+        refundAmount: 110.0,
+        paymentAction: 'تخفيض دين',
+      ),
+    );
     expect(fw.availableQty, closeTo(before + 5.0, 0.001));
 
     final ws = erp.workshopStock.firstWhere((w) => w.id == 'ws1');
     final wsBefore = ws.availableQty;
-    erp.processReturnInvoice(ReturnInvoiceModel(
-      id: 'ret_t2',
-      returnNo: 'RET-T2',
-      date: DateTime(2026, 1, 13),
-      returnType: 'مرتجع مبيعات معمل',
-      partyName: 'زبون',
-      itemDescription: 'رخام كاردينال',
-      quantity: 2.0,
-      refundAmount: 50.0,
-      paymentAction: 'تخفيض دين',
-    ));
+    erp.processReturnInvoice(
+      ReturnInvoiceModel(
+        id: 'ret_t2',
+        returnNo: 'RET-T2',
+        date: DateTime(2026, 1, 13),
+        returnType: 'مرتجع مبيعات معمل',
+        partyName: 'زبون',
+        itemDescription: 'رخام كاردينال',
+        quantity: 2.0,
+        refundAmount: 50.0,
+        paymentAction: 'تخفيض دين',
+      ),
+    );
     expect(ws.availableQty, closeTo(wsBefore + 2.0, 0.001));
   });
 }

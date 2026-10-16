@@ -390,7 +390,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       final t = items[idx];
                       return ListTile(
                         title: Text(
-                          '${t.name} (عدد ${t.quantity.fmt})',
+                          '${t.name} • المتاح ${t.quantity.fmt} ${t.unitSymbol}',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
@@ -400,7 +400,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              'سعر البيع: ${t.sellingPrice}\$',
+                              'سعر البيع: ${t.sellingPrice.fmt}\$/${t.unitSymbol}',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
@@ -901,7 +901,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     subtitle: Text(
-                      'المصدر: ${inv.sourceType} • الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المدفوع: ${(inv.cashPaidNow + inv.depositDeducted).fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}${inv.photoPath.isEmpty ? "" : " • مرفق صورة"}',
+                      'المصدر: ${inv.sourceType}${inv.sourceType == 'تفصيل بسيط' || inv.sourceType == 'تفصيل معقد' ? ' • الكمية: ${inv.sourceQuantity.fmt} ${inv.sourceUnitCategory == 'متر مكعب' ? 'م³' : 'م²'}' : ''} • الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المدفوع: ${(inv.cashPaidNow + inv.depositDeducted).fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}${inv.photoPath.isEmpty ? "" : " • مرفق صورة"}',
                     ),
                     trailing: IconButton(
                       icon: const Icon(Icons.print_rounded),
@@ -919,7 +919,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               {
                                 'name': inv.itemDescription,
                                 'details': inv.sourceType,
-                                'qty': '1',
+                                'qty':
+                                    inv.sourceType == 'تفصيل بسيط' ||
+                                        inv.sourceType == 'تفصيل معقد'
+                                    ? '${inv.sourceQuantity.fmt} ${inv.sourceUnitCategory == 'متر مكعب' ? 'م³' : 'م²'}'
+                                    : '1',
                                 'total': inv.agreedPrice.fmt,
                               },
                               ...inv.services.map(
@@ -1146,6 +1150,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                   itemDescription: old.itemDescription,
                                   agreedPrice: old.agreedPrice,
                                   depositDeducted: old.depositDeducted,
+                                  sourceQuantity: old.sourceQuantity,
+                                  sourceUnitCategory: old.sourceUnitCategory,
                                   cashPaidNow: old.cashPaidNow,
                                   isCashInvoice: old.isCashInvoice,
                                   netCost: old.netCost,
@@ -1333,14 +1339,18 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       ),
                     ),
                   const SizedBox(height: 12),
+                  Text(
+                    'الكمية المتاحة: ${t.quantity.fmt} ${t.unitSymbol} • سعر البيع: ${t.sellingPrice.fmt}\$/${t.unitSymbol} • استهلاك المواد: ${t.lineItems.where((line) => line.category == 'متر مربع').fold<double>(0, (sum, line) => sum + line.area).fmt} م² + ${t.lineItems.where((line) => line.category == 'متر مكعب').fold<double>(0, (sum, line) => sum + line.area).fmt} م³',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const Text(
-                    'بنود القطعة:',
+                    'بنود المواد والخدمات:',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   if (t.lineItems.isEmpty)
                     Text(
-                      'بند قديم: ${t.lengthCm}x${t.widthCm}سم • الكمية ${t.quantity} • أجر القطعة ${t.laborCostPerPiece}\$',
+                      'الأبعاد: ${t.lengthCm}x${t.widthCm}${t.unitCategory == 'متر مكعب' ? 'x${t.heightCm}' : ''} سم • ${t.measurementCount.fmt} × ${t.measurementPerCount.fmt} ${t.unitSymbol}',
                     ),
                   ...t.lineItems.map(
                     (li) => Card(
@@ -1392,7 +1402,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               'الطول: ${li.lengthCm} • العرض: ${li.widthCm}${li.category == 'متر مكعب' ? ' • الارتفاع: ${li.heightCm}' : ''} • الكمية: ${li.quantity}',
                             ),
                             Text(
-                              'سعر القطعة (البند): ${li.lineTotal.fmt}\$',
+                              'سعر البند: ${li.lineTotal.fmt}\$',
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: AppColors.successGreen,
@@ -1412,7 +1422,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                       controller: qtyCtrls[li.id],
                                       keyboardType: TextInputType.number,
                                       decoration: const InputDecoration(
-                                        labelText: 'تعديل مخزون البند (الكمية)',
+                                        labelText:
+                                            'تعديل استهلاك البند (م²/م³)',
                                         isDense: true,
                                       ),
                                     ),
@@ -1475,7 +1486,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     controller: sellingCtrl,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
-                      labelText: 'سعر البيع النهائي (\$)',
+                      labelText: 'سعر البيع للمتر (\$)',
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -1596,9 +1607,6 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
   void _showTailoringBuilderDialog(ERPProvider erp, String complexity) {
     final bool allowScrap = complexity == 'معقد';
     final nameCtrl = TextEditingController();
-    final piecesCtrl = TextEditingController(text: '1');
-    final sellingCtrl = TextEditingController();
-    final photoCtrl = TextEditingController();
     String? formError;
 
     String lineSource = 'materials';
@@ -1618,6 +1626,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     final serviceNotesCtrl = TextEditingController();
     final List<ServiceAttachment> draftServices = [];
     final List<TailoringLineItem> draftLines = [];
+    String productUnit = complexity == 'معقد' ? 'متر مكعب' : 'متر مربع';
 
     double lineArea(
       WorkshopStockModel? ws,
@@ -1684,6 +1693,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
           final double w = double.tryParse(widCtrl.text) ?? 0.0;
           final double h = double.tryParse(heiCtrl.text) ?? 0.0;
           final double q = double.tryParse(qtyCtrl.text) ?? 0.0;
+          final double outputMeasure = draftLines
+              .where((line) => line.source == 'materials')
+              .fold<double>(0, (sum, line) => sum + line.area);
           final double area = lineSource == 'materials'
               ? lineArea(ws, l, w, h, q)
               : q;
@@ -1713,48 +1725,13 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     TextField(
                       controller: nameCtrl,
                       decoration: const InputDecoration(
-                        labelText: 'اسم القطعة المفصلة',
+                        labelText: 'اسم التفصيل',
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: piecesCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'عدد القطع المفصلة',
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: sellingCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'سعر البيع النهائي (\$)',
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          flex: 2,
-                          child: TextField(
-                            controller: photoCtrl,
-                            decoration: const InputDecoration(
-                              labelText: 'صورة القطعة (مسار — اختياري)',
-                              prefixIcon: Icon(Icons.attach_file_rounded),
-                              isDense: true,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
                     const SizedBox(height: 16),
                     const Text(
-                      'بنود القطعة (أضف كل بند بزر +):',
+                      'بنود المواد (أضف كل بند بزر +):',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     if (allowScrap) ...[
@@ -1872,6 +1849,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                 labelText: 'الطول (سم)',
                                 isDense: true,
                               ),
+                              onChanged: (_) => setSt(() => formError = null),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1883,6 +1861,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                 labelText: 'العرض (سم)',
                                 isDense: true,
                               ),
+                              onChanged: (_) => setSt(() => formError = null),
                             ),
                           ),
                           if (wsCube) ...[
@@ -1895,6 +1874,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                   labelText: 'الارتفاع (سم)',
                                   isDense: true,
                                 ),
+                                onChanged: (_) => setSt(() => formError = null),
                               ),
                             ),
                           ],
@@ -1907,6 +1887,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                 labelText: 'الكمية',
                                 isDense: true,
                               ),
+                              onChanged: (_) => setSt(() => formError = null),
                             ),
                           ),
                         ],
@@ -1928,6 +1909,37 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         ),
                       ),
                     ],
+                    if (lineSource == 'materials' && ws != null) ...[
+                      const SizedBox(height: 6),
+                      Builder(
+                        builder: (context) {
+                          final selectedStock = ws!;
+                          final alreadyAllocated = draftedFor(selectedStock.id);
+                          final remaining =
+                              selectedStock.availableQty - alreadyAllocated;
+                          final exceedsStock = area > remaining + 0.0001;
+                          return Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: exceedsStock
+                                  ? AppColors.dangerWaste.withValues(
+                                      alpha: 0.10,
+                                    )
+                                  : AppColors.chipBgBlue,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'استهلاك المادة المحددة: ${area.fmt} ${selectedStock.category == 'متر مكعب' ? 'م³' : 'م²'} • سبق تخصيصه: ${alreadyAllocated.fmt} • المتاح: ${selectedStock.availableQty.fmt} • المتبقي بعد هذا البند: ${(remaining - area).fmt}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.accentPrimary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                     if (lineSource == 'scrap' && sc != null) ...[
                       Row(
                         children: [
@@ -1936,7 +1948,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               controller: qtyCtrl,
                               keyboardType: TextInputType.number,
                               decoration: const InputDecoration(
-                                labelText: 'الكمية (قطع)',
+                                labelText: 'عدد وحدات الخردة',
                                 isDense: true,
                               ),
                             ),
@@ -1984,7 +1996,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             controller: laborCtrl,
                             keyboardType: TextInputType.number,
                             decoration: const InputDecoration(
-                              labelText: 'أجر القطعة الواحدة (\$)',
+                              labelText: 'أجر المتر (\$)',
                               isDense: true,
                             ),
                           ),
@@ -2148,6 +2160,18 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               );
                               return;
                             }
+                            final existingMaterialLines = draftLines
+                                .where((line) => line.source == 'materials')
+                                .toList();
+                            if (existingMaterialLines.isNotEmpty &&
+                                existingMaterialLines.first.category !=
+                                    stock.category) {
+                              setSt(
+                                () => formError =
+                                    'يجب أن تكون وحدة قياس مواد التفصيل متوافقة.',
+                              );
+                              return;
+                            }
                             final sell =
                                 double.tryParse(sellMeterCtrl.text) ??
                                 stock.recommendedSalePrice;
@@ -2155,6 +2179,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                 double.tryParse(laborCtrl.text) ?? 0.0;
                             setSt(() {
                               formError = null;
+                              if (existingMaterialLines.isEmpty) {
+                                productUnit = stock.category;
+                              }
                               draftLines.add(
                                 TailoringLineItem(
                                   id: 'tl_${DateTime.now().millisecondsSinceEpoch}_${draftLines.length}',
@@ -2170,7 +2197,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                   quantity: q,
                                   netCostPerMeter: stock.netCostPerUnit,
                                   sellingPricePerMeter: sell,
-                                  laborPerPiece: labor,
+                                  laborPerMeter: labor,
                                   services: List.of(draftServices),
                                 ),
                               );
@@ -2214,7 +2241,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                   quantity: q,
                                   netCostPerMeter: captured.baseCost,
                                   sellingPricePerMeter: sell,
-                                  laborPerPiece: labor,
+                                  laborPerMeter: labor,
                                   services: List.of(draftServices),
                                 ),
                               );
@@ -2227,7 +2254,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           }
                         },
                         icon: const Icon(Icons.add),
-                        label: const Text('إضافة البند للقطعة +'),
+                        label: const Text('إضافة بند المواد +'),
                       ),
                     ),
                     if (formError != null) ...[
@@ -2255,7 +2282,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             ),
                           ),
                           subtitle: Text(
-                            'المساحة: ${li.area.fmt} • أجر/قطعة: ${li.laborPerPiece}\$ • خدمات: ${li.servicesTotal.fmt}\$',
+                            'الاستهلاك: ${li.area.fmt} ${li.category == 'متر مكعب' ? 'م³' : 'م²'} • أجر/متر: ${li.laborPerMeter}\$ • خدمات: ${li.servicesTotal.fmt}\$',
                           ),
                           trailing: IconButton(
                             icon: const Icon(
@@ -2277,7 +2304,14 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       ),
                       onPressed: () {
                         if (nameCtrl.text.isEmpty) {
-                          setSt(() => formError = 'أدخل اسم القطعة.');
+                          setSt(() => formError = 'أدخل اسم التفصيل.');
+                          return;
+                        }
+                        if (outputMeasure <= 0) {
+                          setSt(
+                            () => formError =
+                                'أضف بند مواد بأبعاد وكمية صحيحة لحساب المتر المربع أو المكعب.',
+                          );
                           return;
                         }
                         if (draftLines.isEmpty) {
@@ -2287,13 +2321,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           );
                           return;
                         }
-                        final pieces = double.tryParse(piecesCtrl.text) ?? 1.0;
                         final selling =
-                            double.tryParse(sellingCtrl.text) ??
                             draftLines.fold<double>(
                               0.0,
-                              (s, li) => s + li.lineTotal,
-                            );
+                              (sum, line) => sum + line.lineTotal,
+                            ) /
+                            outputMeasure;
                         // Commit stock: deduct materials, consume scrap.
                         for (final li in draftLines) {
                           if (li.source == 'materials') {
@@ -2317,10 +2350,6 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             }
                           }
                         }
-                        final matCost = draftLines.fold(
-                          0.0,
-                          (s, li) => s + li.materialCost,
-                        );
                         final isGranite = draftLines.any(
                           (li) => li.typeName.contains('غرانيت'),
                         );
@@ -2331,12 +2360,17 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           rawMaterialDescription: draftLines
                               .map((li) => '${li.typeName} ${li.grade}')
                               .join(' + '),
-                          quantity: pieces,
-                          materialNetCost: matCost,
-                          laborCostPerPiece: 0.0,
+                          lengthCm: 0,
+                          widthCm: 0,
+                          heightCm: 0,
+                          unitCategory: productUnit,
+                          measurementCount: 1,
+                          quantity: outputMeasure,
+                          materialNetCost: 0,
+                          laborCostPerMeter: 0.0,
                           attachedServices: const [],
                           lineItems: List.of(draftLines),
-                          photoPath: photoCtrl.text.trim(),
+                          photoPath: '',
                           sellingPrice: selling,
                           isGranite: isGranite,
                         );
@@ -2348,15 +2382,15 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         erp.refresh();
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
+                          SnackBar(
                             content: Text(
-                              'تم حفظ القطعة المفصلة وخصم المواد من المخزون.',
+                              'تم حفظ التفصيل بكمية ${outputMeasure.fmt} ${productUnit == 'متر مكعب' ? 'م³' : 'م²'} وخصم استهلاك المواد من المخزون.',
                             ),
                             backgroundColor: AppColors.successGreen,
                           ),
                         );
                       },
-                      child: const Text('حفظ القطعة المفصلة'),
+                      child: const Text('حفظ التفصيل بالمتر'),
                     ),
                   ],
                 ),
@@ -3133,6 +3167,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     final clientCtrl = TextEditingController(text: presetClientName ?? '');
     final descCtrl = TextEditingController();
     final agreedCtrl = TextEditingController();
+    final tailoringQtyCtrl = TextEditingController(text: '1');
     final salesDiscountCtrl = TextEditingController(text: '0');
     final depositCtrl = TextEditingController();
     final cashCtrl = TextEditingController();
@@ -3168,35 +3203,23 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
               .toList();
         case 'تفصيل بسيط':
           return erp.simpleTailorings
-              .where(
-                (t) =>
-                    !erp.openingEntry.openingStock.any(
-                      (item) =>
-                          item.category == 'تفصيل بسيط' && item.typeId == t.id,
-                    ) ||
-                    t.quantity > 0,
-              )
+              .where((t) => t.quantity > 0)
               .map(
                 (t) => {
                   'id': t.id,
-                  'label': '${t.name} • المتاح ${t.quantity.fmt}',
+                  'label':
+                      '${t.name} • المتاح ${t.quantity.fmt} ${t.unitSymbol}',
                 },
               )
               .toList();
         case 'تفصيل معقد':
           return erp.complexTailorings
-              .where(
-                (t) =>
-                    !erp.openingEntry.openingStock.any(
-                      (item) =>
-                          item.category == 'تفصيل معقد' && item.typeId == t.id,
-                    ) ||
-                    t.quantity > 0,
-              )
+              .where((t) => t.quantity > 0)
               .map(
                 (t) => {
                   'id': t.id,
-                  'label': '${t.name} • المتاح ${t.quantity.fmt}',
+                  'label':
+                      '${t.name} • المتاح ${t.quantity.fmt} ${t.unitSymbol}',
                 },
               )
               .toList();
@@ -3235,9 +3258,18 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
         final t = m.first;
         descCtrl.text = t.name;
         agreedCtrl.text = t.sellingPrice.fmt;
+        tailoringQtyCtrl.text = (t.quantity < 1 ? t.quantity : 1).fmt;
         depositCtrl.text = '0';
-        cashCtrl.text = t.sellingPrice.fmt;
-        netCtrl.text = t.totalNetCost.fmt;
+        cashCtrl.text =
+            (t.sellingPrice * (double.tryParse(tailoringQtyCtrl.text) ?? 0))
+                .fmt;
+        netCtrl.text =
+            (t.quantity > 0
+                    ? t.totalNetCost /
+                          t.quantity *
+                          (double.tryParse(tailoringQtyCtrl.text) ?? 0)
+                    : 0)
+                .fmt;
         photoCtrl.text = t.photoPath;
       } else if (sourceType == 'قطع زائدة') {
         final m = erp.scrapItems
@@ -3314,6 +3346,24 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             (s, e) => s + e.price,
           );
           final double agreed = double.tryParse(agreedCtrl.text) ?? 0.0;
+          final bool tailoredSource =
+              sourceType == 'تفصيل بسيط' || sourceType == 'تفصيل معقد';
+          final double tailoringQuantity =
+              double.tryParse(tailoringQtyCtrl.text) ?? 0.0;
+          final double agreedTotal = tailoredSource
+              ? agreed * tailoringQuantity
+              : agreed;
+          final tailoredItems = sourceType == 'تفصيل بسيط'
+              ? erp.simpleTailorings
+              : erp.complexTailorings;
+          final tailoredMatches = tailoredSource
+              ? tailoredItems
+                    .where((item) => item.id == selectedRecordId)
+                    .toList()
+              : <WorkshopTailoringModel>[];
+          final selectedTailoring = tailoredMatches.isEmpty
+              ? null
+              : tailoredMatches.first;
           final double salesDiscount =
               double.tryParse(salesDiscountCtrl.text) ?? 0.0;
 
@@ -3551,6 +3601,38 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           prefillFromRecord(setSt);
                         }),
                       ),
+                      if ((sourceType == 'تفصيل بسيط' ||
+                              sourceType == 'تفصيل معقد') &&
+                          selectedTailoring != null) ...[
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: tailoringQtyCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText:
+                                'الكمية المراد بيعها (${selectedTailoring.unitSymbol})',
+                            helperText:
+                                'المتاح: ${selectedTailoring.quantity.fmt}',
+                          ),
+                          onChanged: (_) => setSt(() {
+                            final item = selectedTailoring;
+                            final requested =
+                                double.tryParse(tailoringQtyCtrl.text) ?? 0;
+                            final total = item.sellingPrice * requested;
+                            agreedCtrl.text = item.sellingPrice.fmt;
+                            cashCtrl.text = total.fmt;
+                            netCtrl.text =
+                                (item.quantity > 0
+                                        ? item.totalNetCost /
+                                              item.quantity *
+                                              requested
+                                        : 0)
+                                    .fmt;
+                          }),
+                        ),
+                      ],
                     ],
                     const SizedBox(height: 16),
                     const Text(
@@ -3620,10 +3702,13 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           child: TextField(
                             controller: agreedCtrl,
                             keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'السعر المتفق (\$)',
+                            decoration: InputDecoration(
+                              labelText: tailoredSource
+                                  ? 'سعر البيع للمتر (${selectedTailoring?.unitSymbol ?? 'م²'})'
+                                  : 'السعر المتفق (\$)',
                               isDense: true,
                             ),
+                            onChanged: (_) => setSt(() {}),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -3826,7 +3911,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     ],
                     const SizedBox(height: 8),
                     Text(
-                      'الإجمالي بعد الخصم: ${(agreed + servicesTotal - salesDiscount).fmt} ${AppCurrency.symbol(invCurrency)}',
+                      'الإجمالي بعد الخصم: ${(agreedTotal + servicesTotal - salesDiscount).fmt} ${AppCurrency.symbol(invCurrency)}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         color: AppColors.accentPrimary,
@@ -3845,14 +3930,22 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           );
                           return;
                         }
-                        if (clientCtrl.text.isEmpty || agreed <= 0) {
+                        if (clientCtrl.text.isEmpty ||
+                            agreedTotal <= 0 ||
+                            (tailoredSource &&
+                                (selectedTailoring == null ||
+                                    tailoringQuantity <= 0 ||
+                                    tailoringQuantity >
+                                        selectedTailoring.quantity + 0.0001))) {
                           setSt(
-                            () => formError = 'أدخل اسم الزبون وسعراً صحيحاً.',
+                            () => formError = tailoredSource
+                                ? 'تحقق من سعر المتر والكمية المتاحة للبيع.'
+                                : 'أدخل اسم الزبون وسعراً صحيحاً.',
                           );
                           return;
                         }
                         if (salesDiscount < 0 ||
-                            salesDiscount > agreed + servicesTotal) {
+                            salesDiscount > agreedTotal + servicesTotal) {
                           setSt(
                             () => formError =
                                 'قيمة خصم المبيعات يجب أن تكون بين صفر وإجمالي الفاتورة.',
@@ -3860,7 +3953,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           return;
                         }
                         final invoiceTotal =
-                            (agreed + servicesTotal - salesDiscount).clamp(
+                            (agreedTotal + servicesTotal - salesDiscount).clamp(
                               0.0,
                               double.infinity,
                             );
@@ -3881,7 +3974,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         if (deposit < 0 ||
                             cash < 0 ||
                             deposit + cash >
-                                agreed + servicesTotal - salesDiscount + 0.01) {
+                                agreedTotal +
+                                    servicesTotal -
+                                    salesDiscount +
+                                    0.01) {
                           setSt(
                             () => formError =
                                 'إجمالي العربون والنقد لا يمكن أن يتجاوز قيمة الفاتورة بعد الخصم.',
@@ -3923,7 +4019,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                 : (selectedRecordId ?? ''),
                             projectId: presetProjectId ?? '',
                             itemDescription: itemDesc,
-                            agreedPrice: agreed,
+                            sourceQuantity: tailoredSource
+                                ? tailoringQuantity
+                                : 1,
+                            sourceUnitCategory:
+                                selectedTailoring?.unitCategory ?? 'متر مربع',
+                            agreedPrice: agreedTotal,
                             depositDeducted: deposit,
                             cashPaidNow: cash,
                             netCost: net,

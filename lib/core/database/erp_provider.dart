@@ -490,13 +490,15 @@ class ERPProvider extends ChangeNotifier {
         rawMaterialDescription: 'رخام كاردينال 3سم',
         lengthCm: 120,
         widthCm: 33,
-        quantity: 15,
+        quantity: 5.94,
         materialNetCost: 124.7,
-        laborCostPerPiece: 5.0,
+        unitCategory: 'متر مربع',
+        measurementCount: 15,
+        laborCostPerMeter: 12.6262626263,
         attachedServices: [
           ServiceAttachment(serviceName: 'جلي وتلميع', price: 45.0),
         ],
-        sellingPrice: 320.0,
+        sellingPrice: 808.0808080808,
         isGranite: false,
       ),
     ];
@@ -510,13 +512,15 @@ class ERPProvider extends ChangeNotifier {
         lengthCm: 100,
         widthCm: 50,
         heightCm: 15,
-        quantity: 1,
+        quantity: 0.075,
         materialNetCost: 160.0,
-        laborCostPerPiece: 60.0,
+        unitCategory: 'متر مكعب',
+        measurementCount: 1,
+        laborCostPerMeter: 800.0,
         attachedServices: [
           ServiceAttachment(serviceName: 'ثقب وتفريغ مغاسل', price: 30.0),
         ],
-        sellingPrice: 450.0,
+        sellingPrice: 6000.0,
         isGranite: false,
       ),
     ];
@@ -940,6 +944,23 @@ class ERPProvider extends ChangeNotifier {
       return false;
     }
     if (!isFactory && purchase) return false;
+    if (!isFactory &&
+        invoice.kind == 'sales_return' &&
+        (workshopOriginal!.sourceType == 'تفصيل بسيط' ||
+            workshopOriginal.sourceType == 'تفصيل معقد')) {
+      final priorTailoringReturns = adjustmentInvoices
+          .where(
+            (item) =>
+                item.module == 'workshop' &&
+                item.targetInvoiceId == invoice.targetInvoiceId &&
+                item.kind == 'sales_return',
+          )
+          .fold<double>(0, (sum, item) => sum + item.quantity);
+      if (invoice.quantity >
+          workshopOriginal.sourceQuantity - priorTailoringReturns + 0.0001) {
+        return false;
+      }
+    }
 
     final originalTotal = original?.grandTotal ?? workshopOriginal!.grandTotal;
     final priorAmount = adjustmentInvoices
@@ -1123,6 +1144,15 @@ class ERPProvider extends ChangeNotifier {
               item.typeName == invoice.itemDescription,
         );
         stock.availableQty += invoice.quantity;
+      } else if (workshopOriginal.sourceType == 'تفصيل بسيط' ||
+          workshopOriginal.sourceType == 'تفصيل معقد') {
+        final products = workshopOriginal.sourceType == 'تفصيل بسيط'
+            ? simpleTailorings
+            : complexTailorings;
+        final product = _firstOrNull(
+          products.where((item) => item.id == workshopOriginal.sourceId),
+        );
+        if (product != null) product.quantity += invoice.quantity;
       }
     }
 
@@ -2373,6 +2403,7 @@ class ERPProvider extends ChangeNotifier {
         clientName: order.clientName,
         sourceType: 'طلبية معمل',
         itemDescription: order.customDimensionsText,
+        sourceQuantity: 1,
         agreedPrice: order.agreedPrice,
         depositDeducted: order.depositAmount,
         cashPaidNow: cashPaidNow,
@@ -2411,7 +2442,8 @@ class ERPProvider extends ChangeNotifier {
         rawMaterialDescription: order.customDimensionsText,
         quantity: 1,
         materialNetCost: order.agreedPrice * 0.60,
-        laborCostPerPiece: 0.0,
+        unitCategory: 'متر مربع',
+        laborCostPerMeter: 0.0,
         photoPath: order.photoPath,
         sellingPrice: order.agreedPrice,
       ),
@@ -2430,24 +2462,29 @@ class ERPProvider extends ChangeNotifier {
   }) {
     if (inv.isCashInvoice && inv.remainingBalance > 0.01) return false;
     WorkshopTailoringModel? tailoringItem;
-    if (inv.sourceType == 'تفصيل بسيط' || inv.sourceType == 'تفصيل معقد') {
+    if (inv.sourceId.isNotEmpty &&
+        (inv.sourceType == 'تفصيل بسيط' ||
+            inv.sourceType == 'تفصيل معقد')) {
       final category = inv.sourceType == 'تفصيل بسيط'
           ? 'تفصيل بسيط'
           : 'تفصيل معقد';
       final isOpeningStockItem = openingEntry.openingStock.any(
         (item) => item.category == category && item.typeId == inv.sourceId,
       );
-      if (isOpeningStockItem) {
-        if (!openingEntry.isLocked || !openingEntry.openingStockApplied) {
-          return false;
-        }
-        final items = inv.sourceType == 'تفصيل بسيط'
-            ? simpleTailorings
-            : complexTailorings;
-        final matches = items.where((item) => item.id == inv.sourceId).toList();
-        if (matches.isEmpty || matches.first.quantity < 1) return false;
-        tailoringItem = matches.first;
+      if (isOpeningStockItem &&
+          (!openingEntry.isLocked || !openingEntry.openingStockApplied)) {
+        return false;
       }
+      final items = inv.sourceType == 'تفصيل بسيط'
+          ? simpleTailorings
+          : complexTailorings;
+      final matches = items.where((item) => item.id == inv.sourceId).toList();
+      if (matches.isEmpty ||
+          inv.sourceQuantity <= 0 ||
+          matches.first.quantity + 0.0001 < inv.sourceQuantity) {
+        return false;
+      }
+      tailoringItem = matches.first;
     }
     if (deductStockId.isNotEmpty) {
       final stock = workshopStock
@@ -2467,7 +2504,9 @@ class ERPProvider extends ChangeNotifier {
       }
     }
     workshopInvoices.add(inv);
-    if (tailoringItem != null) tailoringItem.quantity -= 1;
+    if (tailoringItem != null) {
+      tailoringItem.quantity -= inv.sourceQuantity;
+    }
     if (inv.sourceType == 'قطع زائدة') {
       if (inv.sourceId.isNotEmpty) {
         final matches = scrapItems.where((s) => s.id == inv.sourceId).toList();
@@ -2864,6 +2903,7 @@ class ERPProvider extends ChangeNotifier {
         sourceId: old.sourceId,
         projectId: old.projectId,
         itemDescription: old.itemDescription,
+        sourceQuantity: old.sourceQuantity,
         agreedPrice: old.agreedPrice,
         depositDeducted: old.depositDeducted,
         cashPaidNow: old.cashPaidNow + take,
