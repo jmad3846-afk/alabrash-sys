@@ -9,6 +9,7 @@ import 'package:marble_granite_erp/core/models/models.dart';
 import 'package:marble_granite_erp/core/theme/app_theme.dart';
 import 'package:marble_granite_erp/screens/factory_workspace_screen.dart';
 import 'package:marble_granite_erp/screens/financials_screen.dart';
+import 'package:marble_granite_erp/screens/workforce_screen.dart';
 import 'package:marble_granite_erp/screens/workshop_workspace_screen.dart';
 
 void main() {
@@ -602,7 +603,180 @@ void main() {
     expect(stf.netRemainingBalance, greaterThan(0));
     expect(erp.settleStaffDue(stf), isTrue);
     expect(stf.netRemainingBalance, closeTo(0.0, 0.001));
+    expect(erp.expenseTypes.any((type) => type.name == 'أجور العمال'), isTrue);
+    expect(erp.expenseRecords.last.staffId, stf.id);
+    expect(erp.expenseRecords.last.amount, closeTo(1050, 0.001));
     expect(erp.settleStaffDue(stf), isFalse);
+    expect(erp.settleStaffDue(erp.staffList[1]), isTrue);
+    expect(
+      erp.expenseTypes.where((type) => type.name == 'أجور العمال'),
+      hasLength(1),
+    );
+  });
+
+  test(
+    'worker type attendance accrues its rate and opens a clean next week',
+    () async {
+      final erp = ERPProvider();
+      final type = StaffTypeModel(
+        id: 'worker_type_test',
+        category: 'عمال',
+        name: 'عامل قص',
+        dailyRate: 72,
+      );
+      expect(erp.addStaffType(type), isTrue);
+      final worker = StaffModel(
+        id: 'worker_test',
+        name: 'عامل اختبار',
+        category: 'عمال',
+        phone: '',
+        typeId: type.id,
+      );
+      erp.addStaff(worker);
+      final monday = erp.activeWorkweekStart;
+
+      expect(
+        erp.setStaffAttendance(staff: worker, date: monday, present: true),
+        isTrue,
+      );
+      expect(worker.netRemainingBalance, 72);
+      expect(
+        erp.setStaffAttendance(staff: worker, date: monday, present: true),
+        isTrue,
+      );
+      expect(worker.netRemainingBalance, 72);
+      expect(erp.staffAttendance, hasLength(1));
+
+      await erp.saveToDisk();
+      final reloaded = ERPProvider();
+      await reloaded.loadFromDisk();
+      final reloadedWorker = reloaded.staffList.firstWhere(
+        (item) => item.id == worker.id,
+      );
+      expect(reloaded.staffTypes.any((item) => item.id == type.id), isTrue);
+      expect(reloaded.staffAttendance, hasLength(1));
+      expect(reloadedWorker.netRemainingBalance, 72);
+
+      erp.openNextWorkweek();
+      expect(erp.activeWorkweekStart, monday.add(const Duration(days: 7)));
+      expect(erp.staffAttendance, hasLength(1));
+      expect(worker.netRemainingBalance, 72);
+      expect(
+        erp.setStaffAttendance(staff: worker, date: monday, present: false),
+        isTrue,
+      );
+      expect(worker.netRemainingBalance, 0);
+      expect(erp.staffAttendance, isEmpty);
+
+      final nextWeekDay = erp.activeWorkweekStart.add(const Duration(days: 1));
+      expect(
+        erp.setStaffAttendance(staff: worker, date: nextWeekDay, present: true),
+        isTrue,
+      );
+      expect(erp.settleStaffDue(worker), isTrue);
+      expect(
+        erp.setStaffAttendance(
+          staff: worker,
+          date: nextWeekDay,
+          present: false,
+        ),
+        isFalse,
+      );
+      expect(erp.staffAttendance, hasLength(1));
+    },
+  );
+
+  test('technician workday records agreed daily or fixed amount as a due', () {
+    final erp = ERPProvider();
+    final technician = erp.staffList.firstWhere(
+      (staff) => staff.category == 'معلمين',
+    );
+    final before = technician.totalEarned;
+    final operationalExpensesBefore = erp.totalOperationalExpenses;
+    expect(
+      erp.recordTechnicianWorkday(
+        WorkdayEntryModel(
+          id: 'technician_fixed_work_test',
+          date: erp.activeWorkweekStart,
+          staffNames: [technician.name],
+          staffId: technician.id,
+          workDescription: 'عقد ثابت',
+          rateType: 'حساب مقطوع',
+          agreedAmountPerPerson: 215,
+        ),
+      ),
+      isTrue,
+    );
+    expect(technician.totalEarned, before + 215);
+    expect(erp.workdayEntries.last.rateType, 'حساب مقطوع');
+    expect(erp.totalOperationalExpenses, operationalExpensesBefore);
+  });
+
+  testWidgets('workforce opens Labor Selection with the three work sections', (
+    tester,
+  ) async {
+    final erp = ERPProvider();
+    await setDesktop(tester);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ERPProvider>.value(
+        value: erp,
+        child: MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: const WorkforceScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('تحديد عمالة'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('العمال'), findsOneWidget);
+    expect(find.text('المعلمون'), findsOneWidget);
+    expect(find.text('الإداريون'), findsOneWidget);
+    expect(find.text('مسح الجدول وفتح أسبوع جديد'), findsOneWidget);
+    expect(find.text('الجمعة'), findsNothing);
+    expect(find.text('الأحد'), findsOneWidget);
+    await tester.tap(find.text('الإداريون'));
+    await tester.pumpAndSettle();
+    expect(find.text('الجمعة'), findsNothing);
+    expect(find.text('الأحد'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('fully paid workforce members disappear from Financials', (
+    tester,
+  ) async {
+    final erp = ERPProvider();
+    erp.mainCashBox = 100000;
+    final worker = erp.staffList.firstWhere(
+      (staff) => staff.category == 'عمال',
+    );
+    erp.staffList
+      ..clear()
+      ..add(worker);
+    expect(erp.settleStaffDue(worker), isTrue);
+
+    await setDesktop(tester);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ERPProvider>.value(
+        value: erp,
+        child: MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: const FinancialsScreen(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('5. مالية القوى العاملة'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(worker.name), findsNothing);
+    expect(find.text('لا يوجد العمال مسجلون.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   test('project lifecycle: pending -> invoiced -> completed', () async {

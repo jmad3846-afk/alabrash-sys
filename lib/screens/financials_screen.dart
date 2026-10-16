@@ -879,7 +879,12 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   Widget _buildWorkforceTab(ERPProvider erp) {
     Widget section(String category, String label) {
       final people = erp.staffList
-          .where((s) => s.category == category)
+          .where(
+            (s) =>
+                s.category == category &&
+                (s.netRemainingBalance.abs() > 0.01 ||
+                    s.netRemainingBalanceSyp.abs() > 0.01),
+          )
           .toList();
       final totalDue = people.fold<double>(
         0.0,
@@ -931,8 +936,16 @@ class _FinancialsScreenState extends State<FinancialsScreen>
           ),
           const SizedBox(height: 8),
           ...people.map((stf) {
+            final attendance = erp.staffAttendance
+                .where((entry) => entry.staffId == stf.id)
+                .toList()
+              ..sort((a, b) => a.date.compareTo(b.date));
             final days = erp.workdayEntries
-                .where((d) => d.staffNames.contains(stf.name))
+                .where(
+                  (d) =>
+                      d.staffId == stf.id ||
+                      (d.staffId.isEmpty && d.staffNames.contains(stf.name)),
+                )
                 .toList();
             return Card(
               margin: const EdgeInsets.only(bottom: 8),
@@ -1040,8 +1053,29 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         },
                         child: const Text('تسديد'),
                       )
-                    : const Chip(label: Text('خالص')),
+                    : Chip(
+                        label: Text(
+                          stf.netRemainingBalance < -0.01 ||
+                                  stf.netRemainingBalanceSyp < -0.01
+                              ? 'سلفة مستحقة لنا'
+                              : 'خالص',
+                        ),
+                      ),
                 children: [
+                  ...attendance.map(
+                    (entry) => ListTile(
+                      dense: true,
+                      leading: CurrencyBadge(currency: entry.currency),
+                      title: const Text('حضور يومي'),
+                      subtitle: Text(
+                        'التاريخ: ${entry.date.toString().substring(0, 10)} • الأجر حسب النوع',
+                      ),
+                      trailing: Text(
+                        AppCurrency.single(entry.dailyRate, entry.currency),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
                   ...days.map(
                     (d) => ListTile(
                       dense: true,
@@ -1056,7 +1090,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       ),
                     ),
                   ),
-                  if (days.isEmpty)
+                  if (days.isEmpty && attendance.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(12),
                       child: Text(

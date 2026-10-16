@@ -2048,11 +2048,40 @@ class ServiceItemModel {
 // ==========================================
 // 15. WORKFORCE & PAYROLL
 // ==========================================
+class StaffTypeModel {
+  final String id;
+  final String category; // 'عمال' | 'إداريين'
+  final String name;
+  final double dailyRate;
+
+  StaffTypeModel({
+    required this.id,
+    required this.category,
+    required this.name,
+    required this.dailyRate,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'category': category,
+    'name': name,
+    'dailyRate': dailyRate,
+  };
+
+  factory StaffTypeModel.fromJson(Map<String, dynamic> json) => StaffTypeModel(
+    id: json['id'],
+    category: json['category'],
+    name: json['name'],
+    dailyRate: (json['dailyRate'] as num).toDouble(),
+  );
+}
+
 class StaffModel {
   final String id;
   final String name;
   final String category; // 'عمال' | 'معلمين' | 'إداريين'
   final String phone;
+  String typeId;
   double totalEarned; // USD
   double cashAdvancesDisbursed; // USD — Disbursed from Main Cash Box
   double totalEarnedSyp; // SYP
@@ -2063,6 +2092,7 @@ class StaffModel {
     required this.name,
     required this.category,
     required this.phone,
+    this.typeId = '',
     this.totalEarned = 0.0,
     this.cashAdvancesDisbursed = 0.0,
     this.totalEarnedSyp = 0.0,
@@ -2085,6 +2115,14 @@ class StaffModel {
     }
   }
 
+  void removeEarning(String? currency, double amount) {
+    if (AppCurrency.isSyp(currency)) {
+      totalEarnedSyp = (totalEarnedSyp - amount).clamp(0.0, double.infinity);
+    } else {
+      totalEarned = (totalEarned - amount).clamp(0.0, double.infinity);
+    }
+  }
+
   void addAdvance(String? currency, double amount) {
     if (AppCurrency.isSyp(currency)) {
       cashAdvancesDisbursedSyp += amount;
@@ -2101,6 +2139,7 @@ class StaffModel {
     'name': name,
     'category': category,
     'phone': phone,
+    'typeId': typeId,
     'totalEarned': totalEarned,
     'cashAdvancesDisbursed': cashAdvancesDisbursed,
     'totalEarnedSyp': totalEarnedSyp,
@@ -2112,6 +2151,7 @@ class StaffModel {
     name: json['name'],
     category: json['category'],
     phone: json['phone'] ?? '',
+    typeId: json['typeId'] ?? '',
     totalEarned: (json['totalEarned'] as num).toDouble(),
     cashAdvancesDisbursed: (json['cashAdvancesDisbursed'] as num).toDouble(),
     totalEarnedSyp: (json['totalEarnedSyp'] ?? 0.0).toDouble(),
@@ -2120,10 +2160,44 @@ class StaffModel {
   );
 }
 
+class StaffAttendanceModel {
+  final String id;
+  final DateTime date;
+  final String staffId;
+  final double dailyRate;
+  final String currency;
+
+  StaffAttendanceModel({
+    required this.id,
+    required this.date,
+    required this.staffId,
+    required this.dailyRate,
+    this.currency = AppCurrency.usd,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'date': date.toIso8601String(),
+    'staffId': staffId,
+    'dailyRate': dailyRate,
+    'currency': currency,
+  };
+
+  factory StaffAttendanceModel.fromJson(Map<String, dynamic> json) =>
+      StaffAttendanceModel(
+        id: json['id'],
+        date: DateTime.parse(json['date']),
+        staffId: json['staffId'],
+        dailyRate: (json['dailyRate'] as num).toDouble(),
+        currency: AppCurrency.normalize(json['currency']),
+      );
+}
+
 class WorkdayEntryModel {
   final String id;
   final DateTime date;
   final List<String> staffNames;
+  final String staffId;
   final String workDescription;
   final String rateType; // 'حساب يومية' | 'حساب مقطوع'
   final double agreedAmountPerPerson;
@@ -2133,6 +2207,7 @@ class WorkdayEntryModel {
     required this.id,
     required this.date,
     required this.staffNames,
+    this.staffId = '',
     required this.workDescription,
     required this.rateType,
     required this.agreedAmountPerPerson,
@@ -2145,6 +2220,7 @@ class WorkdayEntryModel {
     'id': id,
     'date': date.toIso8601String(),
     'staffNames': staffNames,
+    'staffId': staffId,
     'workDescription': workDescription,
     'rateType': rateType,
     'agreedAmountPerPerson': agreedAmountPerPerson,
@@ -2156,6 +2232,7 @@ class WorkdayEntryModel {
         id: json['id'],
         date: DateTime.parse(json['date']),
         staffNames: List<String>.from(json['staffNames'] ?? []),
+        staffId: json['staffId'] ?? '',
         workDescription: json['workDescription'] ?? '',
         rateType: json['rateType'] ?? 'حساب يومية',
         agreedAmountPerPerson: (json['agreedAmountPerPerson'] as num)

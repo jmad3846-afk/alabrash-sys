@@ -138,8 +138,11 @@ class ERPProvider extends ChangeNotifier {
   List<ServiceItemModel> services = [];
 
   // Staff & Workdays
+  List<StaffTypeModel> staffTypes = [];
   List<StaffModel> staffList = [];
+  List<StaffAttendanceModel> staffAttendance = [];
   List<WorkdayEntryModel> workdayEntries = [];
+  late DateTime activeWorkweekStart;
 
   // Returns Log
   List<ReturnInvoiceModel> returnInvoices = [];
@@ -639,6 +642,7 @@ class ERPProvider extends ChangeNotifier {
         name: 'العامل ياسين (تحميل وتنزيل)',
         category: 'عمال',
         phone: '0944222333',
+        typeId: 'staff_type_worker_general',
         totalEarned: 850.0,
         cashAdvancesDisbursed: 200.0,
       ),
@@ -647,10 +651,27 @@ class ERPProvider extends ChangeNotifier {
         name: 'المحاسب نزار (إداري)',
         category: 'إداريين',
         phone: '0955333444',
+        typeId: 'staff_type_admin_general',
         totalEarned: 2100.0,
         cashAdvancesDisbursed: 500.0,
       ),
     ];
+
+    staffTypes = [
+      StaffTypeModel(
+        id: 'staff_type_worker_general',
+        category: 'عمال',
+        name: 'عمال عامون',
+        dailyRate: 45,
+      ),
+      StaffTypeModel(
+        id: 'staff_type_admin_general',
+        category: 'إداريين',
+        name: 'إداريون عامون',
+        dailyRate: 45,
+      ),
+    ];
+    activeWorkweekStart = _startOfWorkweek(DateTime.now());
 
     workdayEntries = [
       WorkdayEntryModel(
@@ -1640,8 +1661,12 @@ class ERPProvider extends ChangeNotifier {
       )
       .fold(0.0, (s, w) => s + w.cost);
   double totalOperationalExpensesOf(String? currency) => workdayEntries
-      .where((w) => w.currency == AppCurrency.normalize(currency))
-      .fold(0.0, (s, w) => s + w.grandTotal);
+      .where(
+        (entry) =>
+            entry.staffId.isEmpty &&
+            entry.currency == AppCurrency.normalize(currency),
+      )
+      .fold(0.0, (sum, entry) => sum + entry.grandTotal);
   double get totalUnnaturalWasteLosses =>
       totalUnnaturalWasteLossesOf(AppCurrency.usd);
   double get totalUnnaturalWasteLossesSyp =>
@@ -2743,6 +2768,108 @@ class ERPProvider extends ChangeNotifier {
     saveToDisk();
   }
 
+  static DateTime _startOfWorkweek(DateTime date) {
+    final day = DateTime(date.year, date.month, date.day);
+    return day.subtract(Duration(days: day.weekday - DateTime.monday));
+  }
+
+  bool addStaffType(StaffTypeModel type) {
+    if ((type.category != 'عمال' && type.category != 'إداريين') ||
+        type.name.trim().isEmpty ||
+        !type.dailyRate.isFinite ||
+        type.dailyRate <= 0 ||
+        staffTypes.any(
+          (item) =>
+              item.category == type.category &&
+              item.name.trim().toLowerCase() == type.name.trim().toLowerCase(),
+        )) {
+      return false;
+    }
+    staffTypes.add(type);
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  bool setStaffAttendance({
+    required StaffModel staff,
+    required DateTime date,
+    required bool present,
+  }) {
+    if (staff.category != 'عمال' && staff.category != 'إداريين') return false;
+    final day = DateTime(date.year, date.month, date.day);
+    final existing = staffAttendance.where(
+      (entry) =>
+          entry.staffId == staff.id &&
+          entry.date.year == day.year &&
+          entry.date.month == day.month &&
+          entry.date.day == day.day,
+    );
+    if (present && existing.isNotEmpty) return true;
+    if (!present && existing.isEmpty) return true;
+
+    if (present) {
+      final matchingTypes = staffTypes.where(
+        (type) => type.id == staff.typeId && type.category == staff.category,
+      );
+      if (matchingTypes.isEmpty) return false;
+      final rate = matchingTypes.first.dailyRate;
+      final attendance = StaffAttendanceModel(
+        id: 'attendance_${staff.id}_${day.toIso8601String()}',
+        date: day,
+        staffId: staff.id,
+        dailyRate: rate,
+      );
+      staffAttendance.add(attendance);
+      staff.addEarning(attendance.currency, rate);
+    } else {
+      final attendanceEntries = existing.toList();
+      if (attendanceEntries.any(
+        (entry) =>
+            staff.netOf(entry.currency) + 0.0001 < entry.dailyRate,
+      )) {
+        return false;
+      }
+      for (final attendance in attendanceEntries) {
+        staff.removeEarning(attendance.currency, attendance.dailyRate);
+        staffAttendance.remove(attendance);
+      }
+    }
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  void openNextWorkweek() {
+    activeWorkweekStart = activeWorkweekStart.add(const Duration(days: 7));
+    notifyListeners();
+    saveToDisk();
+  }
+
+  bool recordTechnicianWorkday(WorkdayEntryModel entry) {
+    if (entry.staffNames.length != 1 ||
+        !entry.agreedAmountPerPerson.isFinite ||
+        entry.agreedAmountPerPerson <= 0) {
+      return false;
+    }
+    final staffMatches = staffList
+        .where(
+          (staff) =>
+              (entry.staffId.isNotEmpty
+                  ? staff.id == entry.staffId
+                  : staff.name == entry.staffNames.single) &&
+              staff.category == 'معلمين',
+        )
+        .toList();
+    if (staffMatches.isEmpty) return false;
+    final staff = staffMatches.first;
+    workdayEntries.add(entry);
+    staff.addEarning(entry.currency, entry.agreedAmountPerPerson);
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
   void disburseCashAdvance(
     StaffModel staff,
     double amount, [
@@ -2948,6 +3075,36 @@ class ERPProvider extends ChangeNotifier {
     if (due <= 0.01) return false;
     if (!takeCash('main', c, due)) return false;
     staff.addAdvance(c, due);
+    const defaultWageTypeId = 'workforce_wages_expense';
+    final matchingWageTypes = expenseTypes
+        .where(
+          (type) =>
+              type.id == defaultWageTypeId || type.name.trim() == 'أجور العمال',
+        )
+        .toList();
+    final wageTypeId = matchingWageTypes.isEmpty
+        ? defaultWageTypeId
+        : matchingWageTypes.first.id;
+    if (matchingWageTypes.isEmpty) {
+      expenseTypes.add(
+        ExpenseTypeModel(
+          id: wageTypeId,
+          name: 'أجور العمال',
+          description: 'تسديد مستحقات العمال والمعلمين والإداريين',
+        ),
+      );
+    }
+    expenseRecords.add(
+      ExpenseRecordModel(
+        id: 'wage_payment_${DateTime.now().microsecondsSinceEpoch}',
+        typeId: wageTypeId,
+        amount: due,
+        currency: c,
+        personName: staff.name,
+        staffId: staff.id,
+        description: 'تسديد مستحقات ${staff.name}',
+      ),
+    );
     notifyListeners();
     saveToDisk();
     return true;
@@ -3076,6 +3233,12 @@ class ERPProvider extends ChangeNotifier {
   }
 
   void addStaff(StaffModel stf) {
+    if ((stf.category == 'عمال' || stf.category == 'إداريين') &&
+        !staffTypes.any(
+          (type) => type.id == stf.typeId && type.category == stf.category,
+        )) {
+      throw ArgumentError('A valid worker or administrative staff type is required.');
+    }
     staffList.add(stf);
     notifyListeners();
     saveToDisk();
@@ -3108,8 +3271,11 @@ class ERPProvider extends ChangeNotifier {
     workshopOrders.clear();
     workshopInvoices.clear();
     services.clear();
+    staffTypes.clear();
     staffList.clear();
+    staffAttendance.clear();
     workdayEntries.clear();
+    activeWorkweekStart = _startOfWorkweek(DateTime.now());
     workshopProjects.clear();
     returnInvoices.clear();
     expenseTypes.clear();
@@ -3295,8 +3461,24 @@ class ERPProvider extends ChangeNotifier {
         jsonEncode(workshopProjects.map((p) => p.toJson()).toList()),
       );
       await prefs.setString(
+        'staffTypes',
+        jsonEncode(staffTypes.map((type) => type.toJson()).toList()),
+      );
+      await prefs.setString(
         'staffList',
         jsonEncode(staffList.map((s) => s.toJson()).toList()),
+      );
+      await prefs.setString(
+        'staffAttendance',
+        jsonEncode(staffAttendance.map((entry) => entry.toJson()).toList()),
+      );
+      await prefs.setString(
+        'workdayEntries',
+        jsonEncode(workdayEntries.map((entry) => entry.toJson()).toList()),
+      );
+      await prefs.setString(
+        'activeWorkweekStart',
+        activeWorkweekStart.toIso8601String(),
       );
       await prefs.setString(
         'services',
@@ -3414,6 +3596,44 @@ class ERPProvider extends ChangeNotifier {
         adjustmentInvoices = (jsonDecode(adjustmentInvoicesJson) as List)
             .map((item) => AdjustmentInvoiceModel.fromJson(item))
             .toList();
+      }
+      final staffTypesJson = prefs.getString('staffTypes');
+      if (staffTypesJson != null) {
+        staffTypes = (jsonDecode(staffTypesJson) as List)
+            .map((item) => StaffTypeModel.fromJson(item))
+            .toList();
+      }
+      final staffListJson = prefs.getString('staffList');
+      if (staffListJson != null) {
+        staffList = (jsonDecode(staffListJson) as List)
+            .map((item) => StaffModel.fromJson(item))
+            .toList();
+        for (final staff in staffList) {
+          if (staff.category != 'معلمين' && staff.typeId.isEmpty) {
+            final matchingTypes = staffTypes.where(
+              (type) => type.category == staff.category,
+            );
+            if (matchingTypes.isNotEmpty) {
+              staff.typeId = matchingTypes.first.id;
+            }
+          }
+        }
+      }
+      final staffAttendanceJson = prefs.getString('staffAttendance');
+      if (staffAttendanceJson != null) {
+        staffAttendance = (jsonDecode(staffAttendanceJson) as List)
+            .map((item) => StaffAttendanceModel.fromJson(item))
+            .toList();
+      }
+      final workdayEntriesJson = prefs.getString('workdayEntries');
+      if (workdayEntriesJson != null) {
+        workdayEntries = (jsonDecode(workdayEntriesJson) as List)
+            .map((item) => WorkdayEntryModel.fromJson(item))
+            .toList();
+      }
+      final activeWeek = prefs.getString('activeWorkweekStart');
+      if (activeWeek != null) {
+        activeWorkweekStart = DateTime.parse(activeWeek);
       }
       final mainCash = prefs.getDouble('mainCashBox');
       if (mainCash != null) mainCashBox = mainCash;
