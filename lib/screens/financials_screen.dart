@@ -282,16 +282,46 @@ class _FinancialsScreenState extends State<FinancialsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'نظرة عامة على الصناديق المعزولة ورصيد السيولة النقدية',
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontSize: 20),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'يضمن النظام الفصل التام بين الصندوق الرئيسي وصندوق الزيادات وصندوق عربونات الطلبيات مع حماية ACID',
-            style: TextStyle(color: AppColors.brandSecondaryText),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'نظرة عامة على الصناديق المعزولة ورصيد السيولة النقدية',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleLarge?.copyWith(fontSize: 20),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'يضمن النظام الفصل التام بين الصناديق الستة (الرئيسي، الزيادات، الطلبيات) بالدولار والليرة مع حماية ACID',
+                      style: TextStyle(color: AppColors.brandSecondaryText),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accentPrimary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 14,
+                  ),
+                ),
+                onPressed: () => _showCashBoxTransferDialog(erp),
+                icon: const Icon(Icons.compare_arrows_rounded),
+                label: const Text(
+                  'التحويل بين الصناديق (6 صناديق)',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 24),
 
@@ -308,6 +338,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   accentColor: AppColors.accentPrimary,
                   bgColor: AppColors.chipBgBlue,
                   icon: Icons.account_balance_wallet_rounded,
+                  boxKey: 'main',
+                  erp: erp,
                 ),
               ),
               const SizedBox(width: 16),
@@ -323,6 +355,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   accentColor: AppColors.scrapBoxAccent,
                   bgColor: AppColors.chipBgGreen,
                   icon: Icons.inventory_2_rounded,
+                  boxKey: 'scrap',
+                  erp: erp,
                 ),
               ),
               const SizedBox(width: 16),
@@ -338,6 +372,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   accentColor: AppColors.orderDepositBoxAccent,
                   bgColor: AppColors.chipBgSky,
                   icon: Icons.assignment_turned_in_rounded,
+                  boxKey: 'order',
+                  erp: erp,
                 ),
               ),
             ],
@@ -2335,6 +2371,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
     required Color accentColor,
     required Color bgColor,
     required IconData icon,
+    String? boxKey,
+    ERPProvider? erp,
   }) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -2401,7 +2439,483 @@ class _FinancialsScreenState extends State<FinancialsScreen>
               ),
             ],
           ),
+          if (boxKey != null && erp != null) ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: accentColor,
+                      side: BorderSide(color: accentColor.withOpacity(0.5)),
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _showCashBoxTransferDialog(
+                      erp,
+                      presetBoxKey: boxKey,
+                      presetCurrency: AppCurrency.usd,
+                    ),
+                    icon: const Icon(Icons.send_rounded, size: 14),
+                    label: const Text(
+                      'تحويل (\$)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: accentColor,
+                      side: BorderSide(color: accentColor.withOpacity(0.5)),
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _showCashBoxTransferDialog(
+                      erp,
+                      presetBoxKey: boxKey,
+                      presetCurrency: AppCurrency.syp,
+                    ),
+                    icon: const Icon(Icons.send_rounded, size: 14),
+                    label: const Text(
+                      'تحويل (ل.س)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  void _showCashBoxTransferDialog(
+    ERPProvider erp, {
+    String? presetBoxKey,
+    String? presetCurrency,
+  }) {
+    final boxes = [
+      {
+        'id': 'main_usd',
+        'box': 'main',
+        'currency': AppCurrency.usd,
+        'name': 'الصندوق الرئيسي',
+        'symbol': '\$',
+        'label': '1. الصندوق الرئيسي — بالدولار (\$)',
+      },
+      {
+        'id': 'main_syp',
+        'box': 'main',
+        'currency': AppCurrency.syp,
+        'name': 'الصندوق الرئيسي',
+        'symbol': 'ل.س',
+        'label': '2. الصندوق الرئيسي — بالليرة السورية (ل.س)',
+      },
+      {
+        'id': 'scrap_usd',
+        'box': 'scrap',
+        'currency': AppCurrency.usd,
+        'name': 'صندوق الزيادات',
+        'symbol': '\$',
+        'label': '3. صندوق الزيادات — بالدولار (\$)',
+      },
+      {
+        'id': 'scrap_syp',
+        'box': 'scrap',
+        'currency': AppCurrency.syp,
+        'name': 'صندوق الزيادات',
+        'symbol': 'ل.س',
+        'label': '4. صندوق الزيادات — بالليرة السورية (ل.س)',
+      },
+      {
+        'id': 'order_usd',
+        'box': 'order',
+        'currency': AppCurrency.usd,
+        'name': 'صندوق الطلبيات',
+        'symbol': '\$',
+        'label': '5. صندوق الطلبيات — بالدولار (\$)',
+      },
+      {
+        'id': 'order_syp',
+        'box': 'order',
+        'currency': AppCurrency.syp,
+        'name': 'صندوق الطلبيات',
+        'symbol': 'ل.س',
+        'label': '6. صندوق الطلبيات — بالليرة السورية (ل.س)',
+      },
+    ];
+
+    double getBoxBalance(Map<String, dynamic> b) {
+      return erp.cashOf(b['box'] as String, b['currency'] as String);
+    }
+
+    String initialFromId = presetBoxKey != null && presetCurrency != null
+        ? '${presetBoxKey}_${presetCurrency.toLowerCase()}'
+        : 'main_usd';
+    if (!boxes.any((b) => b['id'] == initialFromId)) {
+      initialFromId = 'main_usd';
+    }
+
+    String fromId = initialFromId;
+    String toId = fromId == 'scrap_usd' ? 'main_usd' : 'scrap_usd';
+    final amountCtrl = TextEditingController();
+    final rateCtrl = TextEditingController();
+    String? formError;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          final fromBox = boxes.firstWhere((b) => b['id'] == fromId);
+          final toBox = boxes.firstWhere((b) => b['id'] == toId);
+
+          final fromBalance = getBoxBalance(fromBox);
+          final toBalance = getBoxBalance(toBox);
+
+          final fromCurrency = fromBox['currency'] as String;
+          final toCurrency = toBox['currency'] as String;
+          final sameCurrency = fromCurrency == toCurrency;
+
+          final amount = double.tryParse(amountCtrl.text) ?? 0.0;
+          final rate = double.tryParse(rateCtrl.text) ?? 0.0;
+
+          double convertedAmount = amount;
+          if (!sameCurrency) {
+            if (fromCurrency == AppCurrency.usd) {
+              convertedAmount = amount * rate;
+            } else {
+              convertedAmount = rate > 0 ? (amount / rate) : 0.0;
+            }
+          }
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Row(
+              children: const [
+                Icon(
+                  Icons.compare_arrows_rounded,
+                  color: AppColors.accentPrimary,
+                  size: 26,
+                ),
+                SizedBox(width: 10),
+                Text(
+                  'التحويل بين الصناديق المعزولة (الستة صناديق)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 540,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'تحويل الأموال بين الصناديق الستة (الرئيسي، الزيادات، الطلبيات) بالدولار والليرة السورية:',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.brandSecondaryText,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Source Box Dropdown
+                    DropdownButtonFormField<String>(
+                      initialValue: fromId,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'من الصندوق المصدر',
+                        helperText:
+                            'الرصيد المتاح: ${fromBalance.fmt} ${fromBox['symbol']}',
+                        helperStyle: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      items: boxes.map((b) {
+                        final bal = getBoxBalance(b);
+                        return DropdownMenuItem<String>(
+                          value: b['id'] as String,
+                          child: Text(
+                            '${b['label']} (الرصيد: ${bal.fmt} ${b['symbol']})',
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (v) => setSt(() {
+                        fromId = v!;
+                        if (fromId == toId) {
+                          toId = boxes.firstWhere(
+                            (b) => b['id'] != fromId,
+                          )['id'] as String;
+                        }
+                        formError = null;
+                      }),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Target Box Dropdown
+                    DropdownButtonFormField<String>(
+                      initialValue: toId,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'إلى الصندوق المستلم',
+                        helperText:
+                            'الرصيد الحالي: ${toBalance.fmt} ${toBox['symbol']}',
+                        helperStyle: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      items: boxes.map((b) {
+                        final bal = getBoxBalance(b);
+                        return DropdownMenuItem<String>(
+                          value: b['id'] as String,
+                          child: Text(
+                            '${b['label']} (الرصيد: ${bal.fmt} ${b['symbol']})',
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (v) => setSt(() {
+                        toId = v!;
+                        formError = null;
+                      }),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Amount TextField with Quick Max Button
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              TextField(
+                                controller: amountCtrl,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText:
+                                      'المبلغ المراد تحويله (${fromBox['symbol']})',
+                                  prefixIcon:
+                                      const Icon(Icons.payments_outlined),
+                                ),
+                                onChanged: (_) =>
+                                    setSt(() => formError = null),
+                              ),
+                              Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: TextButton(
+                                  style: TextButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  onPressed: () {
+                                    amountCtrl.text = fromBalance.fmt;
+                                    setSt(() => formError = null);
+                                  },
+                                  child: const Text('كامل الرصيد المتاح'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (!sameCurrency) ...[
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: rateCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: const InputDecoration(
+                                labelText: 'سعر الصرف (1\$ = ... ل.س)',
+                                prefixIcon: Icon(Icons.price_change_outlined),
+                              ),
+                              onChanged: (_) =>
+                                  setSt(() => formError = null),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Live Transfer Summary Card
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.panelBorder),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'ملخص العملية وأرصدة الصناديق المتوقعة:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'المبلغ المخصوم: ${amount.fmt} ${fromBox['symbol']}',
+                              ),
+                              Text(
+                                'الرصيد بعد التحويل: ${(fromBalance - amount).fmt} ${fromBox['symbol']}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: (fromBalance - amount) < 0
+                                      ? AppColors.dangerWaste
+                                      : AppColors.brandPrimaryText,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'المبلغ المودع: ${convertedAmount.fmt} ${toBox['symbol']}',
+                              ),
+                              Text(
+                                'الرصيد بعد التحويل: ${(toBalance + convertedAmount).fmt} ${toBox['symbol']}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.successGreen,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (!sameCurrency && rate > 0) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              fromCurrency == AppCurrency.usd
+                                  ? 'حسبة التصريف: ${amount.fmt} \$ × ${rate.fmt} = ${convertedAmount.fmt} ل.س'
+                                  : 'حسبة التصريف: ${amount.fmt} ل.س ÷ ${rate.fmt} = ${convertedAmount.fmt} \$',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.brandSecondaryText,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (formError != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        formError!,
+                        style: const TextStyle(
+                          color: AppColors.dangerWaste,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accentPrimary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                ),
+                onPressed: () {
+                  if (fromId == toId) {
+                    setSt(() => formError = 'لا يمكن التحويل لنفس الصندوق.');
+                    return;
+                  }
+                  if (amount <= 0) {
+                    setSt(() => formError = 'أدخل مبلغاً صحيحاً أكبر من الصفر.');
+                    return;
+                  }
+                  if (amount > fromBalance + 0.0001) {
+                    setSt(
+                      () =>
+                          formError =
+                              'المبلغ يتجاوز رصيد الصندوق المصدر.',
+                    );
+                    return;
+                  }
+                  if (!sameCurrency && rate <= 0) {
+                    setSt(
+                      () =>
+                          formError =
+                              'أدخل سعر صرف صحيح لاختلاف العملتين.',
+                    );
+                    return;
+                  }
+
+                  bool success = false;
+                  if (sameCurrency) {
+                    success = erp.transferCash(
+                      fromBox: fromBox['box'] as String,
+                      toBox: toBox['box'] as String,
+                      currency: fromCurrency,
+                      amount: amount,
+                    );
+                  } else {
+                    success = erp.convertCurrency(
+                      fromBox: fromBox['box'] as String,
+                      toBox: toBox['box'] as String,
+                      fromCurrency: fromCurrency,
+                      amount: amount,
+                      exchangeRate: rate,
+                    );
+                  }
+
+                  if (!success) {
+                    setSt(
+                      () => formError = 'تعذر تنفيذ عملية التحويل.',
+                    );
+                    return;
+                  }
+
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'تم تحويل ${amount.fmt} ${fromBox['symbol']} من (${fromBox['name']}) إلى (${toBox['name']}) بنجاح.',
+                      ),
+                      backgroundColor: AppColors.successGreen,
+                      duration: const Duration(seconds: 4),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.check_circle_rounded),
+                label: const Text('تأكيد التحويل بين الصناديق'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

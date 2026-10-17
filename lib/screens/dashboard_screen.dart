@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
@@ -54,9 +54,24 @@ class DashboardScreen extends StatelessWidget {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentPrimary),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D9488),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () =>
+                            _showCurrencyConversionDialog(context, erp),
+                        icon: const Icon(Icons.currency_exchange_rounded),
+                        label: const Text('تصريف وتحويل العملات (USD ⇄ SYP)'),
+                      ),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.accentPrimary,
+                        ),
                         onPressed: () {
-                          showDialog(context: context, builder: (_) => const WorkdayModal());
+                          showDialog(
+                            context: context,
+                            builder: (_) => const WorkdayModal(),
+                          );
                         },
                         icon: const Icon(Icons.date_range),
                         label: const Text('أيام عمل'),
@@ -328,6 +343,482 @@ class DashboardScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showCurrencyConversionDialog(BuildContext context, ERPProvider erp) {
+    String convertCurrencyChoice =
+        AppCurrency.usd; // Currency to convert (SYP or USD)
+    String fromBox = 'main';
+    String targetBox = 'main';
+    final amountCtrl = TextEditingController();
+    final rateCtrl = TextEditingController();
+    String? formError;
+
+    String boxName(String b) {
+      switch (b) {
+        case 'scrap':
+          return 'صندوق الزيادات';
+        case 'order':
+          return 'صندوق الطلبيات';
+        default:
+          return 'الصندوق الرئيسي';
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          final isUsd = convertCurrencyChoice == AppCurrency.usd;
+          final fromSymbol = isUsd ? '\$' : 'ل.س';
+          final toSymbol = isUsd ? 'ل.س' : '\$';
+          final sourceBalance = erp.cashOf(fromBox, convertCurrencyChoice);
+          final targetBalance = erp.cashOf(
+            targetBox,
+            isUsd ? AppCurrency.syp : AppCurrency.usd,
+          );
+
+          final amount = double.tryParse(amountCtrl.text) ?? 0.0;
+          final rate = double.tryParse(rateCtrl.text) ?? 0.0;
+          final double convertedAmount = isUsd
+              ? (amount * rate)
+              : (rate > 0 ? (amount / rate) : 0.0);
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Row(
+              children: const [
+                Icon(
+                  Icons.currency_exchange_rounded,
+                  color: Color(0xFF0D9488),
+                  size: 26,
+                ),
+                SizedBox(width: 10),
+                Text(
+                  'تصريف العملات والتحويل بين الصناديق',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 520,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'اختر اتجاه تصريف العملة، وحدد الصناديق والمبلغ وسعر الصرف اليوم:',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.brandSecondaryText,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 1. Currency Direction Toggle
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.panelBorder),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () => setSt(
+                                () => convertCurrencyChoice = AppCurrency.usd,
+                              ),
+                              child: Container(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                                decoration: BoxDecoration(
+                                  color:
+                                      isUsd ? Colors.white : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: isUsd
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(
+                                              0.06,
+                                            ),
+                                            blurRadius: 4,
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'تحويل من دولار (\$) إلى ليرة (ل.س)',
+                                    style: TextStyle(
+                                      fontWeight: isUsd
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                      color: isUsd
+                                          ? const Color(0xFF0D9488)
+                                          : AppColors.brandPrimaryText,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () => setSt(
+                                () => convertCurrencyChoice = AppCurrency.syp,
+                              ),
+                              child: Container(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: !isUsd
+                                      ? Colors.white
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: !isUsd
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(
+                                              0.06,
+                                            ),
+                                            blurRadius: 4,
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'تحويل من ليرة (ل.س) إلى دولار (\$)',
+                                    style: TextStyle(
+                                      fontWeight: !isUsd
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                      color: !isUsd
+                                          ? const Color(0xFF0D9488)
+                                          : AppColors.brandPrimaryText,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 2. Source Box & Target Box
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: fromBox,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: 'الصندوق المصدر ($fromSymbol)',
+                              helperText:
+                                  'الرصيد: ${sourceBalance.fmt} $fromSymbol',
+                              helperStyle: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            items: [
+                              DropdownMenuItem(
+                                value: 'main',
+                                child: Text(
+                                  'الصندوق الرئيسي (${erp.cashOf('main', convertCurrencyChoice).fmt} $fromSymbol)',
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'scrap',
+                                child: Text(
+                                  'صندوق الزيادات (${erp.cashOf('scrap', convertCurrencyChoice).fmt} $fromSymbol)',
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'order',
+                                child: Text(
+                                  'صندوق الطلبيات (${erp.cashOf('order', convertCurrencyChoice).fmt} $fromSymbol)',
+                                ),
+                              ),
+                            ],
+                            onChanged: (v) =>
+                                setSt(() => fromBox = v ?? 'main'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: targetBox,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: 'صندوق الاستلام المستهدف ($toSymbol)',
+                              helperText:
+                                  'الرصيد: ${targetBalance.fmt} $toSymbol',
+                              helperStyle: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            items: [
+                              DropdownMenuItem(
+                                value: 'main',
+                                child: Text(
+                                  'الصندوق الرئيسي (${erp.cashOf('main', isUsd ? AppCurrency.syp : AppCurrency.usd).fmt} $toSymbol)',
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'scrap',
+                                child: Text(
+                                  'صندوق الزيادات (${erp.cashOf('scrap', isUsd ? AppCurrency.syp : AppCurrency.usd).fmt} $toSymbol)',
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'order',
+                                child: Text(
+                                  'صندوق الطلبيات (${erp.cashOf('order', isUsd ? AppCurrency.syp : AppCurrency.usd).fmt} $toSymbol)',
+                                ),
+                              ),
+                            ],
+                            onChanged: (v) =>
+                                setSt(() => targetBox = v ?? 'main'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 3. Amount & Rate
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              TextField(
+                                controller: amountCtrl,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText:
+                                      'المبلغ المراد تصريفه ($fromSymbol)',
+                                  prefixIcon:
+                                      const Icon(Icons.payments_outlined),
+                                ),
+                                onChanged: (_) =>
+                                    setSt(() => formError = null),
+                              ),
+                              Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: TextButton(
+                                  style: TextButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  onPressed: () {
+                                    amountCtrl.text = sourceBalance.fmt;
+                                    setSt(() => formError = null);
+                                  },
+                                  child: const Text('كامل الرصيد المتاح'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: rateCtrl,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                            decoration: const InputDecoration(
+                              labelText: 'سعر الصرف اليوم (1\$ = ... ل.س)',
+                              prefixIcon: Icon(Icons.price_change_outlined),
+                            ),
+                            onChanged: (_) =>
+                                setSt(() => formError = null),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // 4. Live Converted Amount Preview Box
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFF0FDFA), Color(0xFFCCFBF1)],
+                          begin: Alignment.topRight,
+                          end: Alignment.bottomLeft,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFF99F6E4),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'المبلغ المحوّل الناتج (Live Converted Amount):',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0F766E),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0D9488),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  toSymbol,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '${convertedAmount.fmt} $toSymbol',
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF134E4A),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            isUsd
+                                ? 'الحسبة: ${amount.fmt} \$ × ${rate.fmt} ل.س/دولار = ${convertedAmount.fmt} ل.س'
+                                : 'الحسبة: ${amount.fmt} ل.س ÷ ${rate.fmt} = ${convertedAmount.fmt} \$',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF0F766E),
+                            ),
+                          ),
+                          const Divider(
+                            height: 16,
+                            color: Color(0xFF99F6E4),
+                          ),
+                          Text(
+                            '• سيتم خصم: ${amount.fmt} $fromSymbol من (${boxName(fromBox)})\n'
+                            '• سيتم إيداع: ${convertedAmount.fmt} $toSymbol في (${boxName(targetBox)})',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF115E59),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (formError != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        formError!,
+                        style: const TextStyle(
+                          color: AppColors.dangerWaste,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D9488),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                ),
+                onPressed: () {
+                  if (amount <= 0) {
+                    setSt(() => formError = 'أدخل مبلغاً صحيحاً أكبر من الصفر.');
+                    return;
+                  }
+                  if (rate <= 0) {
+                    setSt(
+                      () =>
+                          formError =
+                              'أدخل سعر صرف صحيح اليوم أكبر من الصفر.',
+                    );
+                    return;
+                  }
+                  if (amount > sourceBalance + 0.0001) {
+                    setSt(
+                      () => formError =
+                          'المبلغ يتجاوز رصيد ${boxName(fromBox)} المتوفر (${sourceBalance.fmt} $fromSymbol).',
+                    );
+                    return;
+                  }
+                  final ok = erp.convertCurrency(
+                    fromBox: fromBox,
+                    toBox: targetBox,
+                    fromCurrency: convertCurrencyChoice,
+                    amount: amount,
+                    exchangeRate: rate,
+                  );
+                  if (!ok) {
+                    setSt(
+                      () => formError = 'تعذر تنفيذ عملية التحويل والتصريف.',
+                    );
+                    return;
+                  }
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'تم تحويل وتصريف ${amount.fmt} $fromSymbol بسعر ${rate.fmt} ل.س بنجاح، وإيداع ${convertedAmount.fmt} $toSymbol في (${boxName(targetBox)}).',
+                      ),
+                      backgroundColor: AppColors.successGreen,
+                      duration: const Duration(seconds: 4),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.check_circle_rounded),
+                label: const Text('تأكيد التحويل (Confirm Transfer)'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

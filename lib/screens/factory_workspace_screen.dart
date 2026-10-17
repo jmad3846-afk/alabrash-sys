@@ -761,6 +761,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   children: [
                     Expanded(
                       child: _buildWarehouseGrid(
+                        erp,
                         erp.factoryWarehouse
                             .where((w) => w.category == 'متر مربع')
                             .toList(),
@@ -778,6 +779,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   children: [
                     Expanded(
                       child: _buildWarehouseGrid(
+                        erp,
                         erp.factoryWarehouse
                             .where((w) => w.category == 'متر مكعب')
                             .toList(),
@@ -799,6 +801,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   }
 
   Widget _buildWarehouseGrid(
+    ERPProvider erp,
     List<FactoryWarehouseModel> items, {
     required bool isM2,
   }) {
@@ -808,7 +811,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
         crossAxisCount: 3,
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
-        childAspectRatio: 1.6,
+        childAspectRatio: 1.35,
       ),
       itemCount: items.length,
       itemBuilder: (context, idx) {
@@ -908,11 +911,184 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     ),
                   ],
                 ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.accentPrimary,
+                      side: const BorderSide(color: AppColors.accentPrimary),
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () =>
+                        _showEditWarehouseSalePriceDialog(erp, item, isM2),
+                    icon: const Icon(Icons.edit_note_rounded, size: 18),
+                    label: const Text(
+                      'تعديل سعر البيع',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  void _showEditWarehouseSalePriceDialog(
+    ERPProvider erp,
+    FactoryWarehouseModel item,
+    bool isM2,
+  ) {
+    final priceCtrl =
+        TextEditingController(text: item.recommendedSalePrice.fmt);
+    final unit = isM2 ? 'م²' : 'م³';
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          final newPrice = double.tryParse(priceCtrl.text) ?? 0.0;
+          final margin = newPrice - item.netCostPerUnit;
+          final marginPct = newPrice > 0 ? (margin / newPrice * 100) : 0.0;
+
+          return AlertDialog(
+            title: Row(
+              children: const [
+                Icon(Icons.edit_note_rounded, color: AppColors.accentPrimary),
+                SizedBox(width: 8),
+                Text('تعديل سعر بيع الأمتار بالمستودع'),
+              ],
+            ),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.panelBorder),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${item.typeName} • ${item.grade}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'السماكة: ${item.thicknessCm} سم • المتاح: ${item.availableQty.fmt} $unit',
+                          style: const TextStyle(
+                            color: AppColors.brandSecondaryText,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          'التكلفة الصافية للوحدة: ${item.netCostPerUnit.fmt} \$',
+                          style: const TextStyle(
+                            color: AppColors.brandSecondaryText,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: priceCtrl,
+                    autofocus: true,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'سعر البيع الجديد (\$ لكل $unit)',
+                      prefixIcon: const Icon(Icons.attach_money_rounded),
+                    ),
+                    onChanged: (_) => setSt(() {}),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: margin >= 0
+                          ? AppColors.chipBgGreen
+                          : AppColors.chipBgRed,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'هامش الربح المتوقع:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: margin >= 0
+                                ? AppColors.successGreen
+                                : AppColors.dangerWaste,
+                          ),
+                        ),
+                        Text(
+                          '${margin >= 0 ? "+" : ""}${margin.fmt}\$ (${marginPct.toStringAsFixed(1)}%)',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: margin >= 0
+                                ? AppColors.successGreen
+                                : AppColors.dangerWaste,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accentPrimary,
+                ),
+                onPressed: () {
+                  if (newPrice < 0) return;
+                  erp.updateFactoryWarehouseSalePrice(item.id, newPrice);
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'تم تحديث سعر بيع (${item.typeName}) إلى ${newPrice.fmt} \$ بنجاح.',
+                      ),
+                      backgroundColor: AppColors.successGreen,
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('حفظ السعر الجديد'),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -2893,6 +3069,46 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             ],
                           ),
                           const SizedBox(height: 8),
+                          Align(
+                            alignment: AlignmentDirectional.centerEnd,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF4F46E5),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                              ),
+                              onPressed: () {
+                                final currentNet = grandTotal;
+                                final truncated = currentNet.truncateToDouble();
+                                final diff = currentNet - truncated;
+                                if (diff > 0.0001) {
+                                  final curDisc =
+                                      double.tryParse(discountCtrl.text) ??
+                                      0.0;
+                                  discountCtrl.text = (curDisc + diff).fmt;
+                                  if (cashInvoice) {
+                                    downPayCtrl.text = truncated.fmt;
+                                  }
+                                  setSt(() {});
+                                }
+                              },
+                              icon: const Icon(
+                                Icons.content_cut_rounded,
+                                size: 16,
+                              ),
+                              label: const Text(
+                                'تجاهل القروش (Ignore Cents)',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
                           if (cashInvoice)
                             Text(
                               'فاتورة نقدية: سيتم دفع كامل الإجمالي (${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}) من الصندوق الرئيسي.',
@@ -3722,6 +3938,44 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                 ],
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: AlignmentDirectional.centerEnd,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF4F46E5),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                              ),
+                              onPressed: () {
+                                final currentNet = grandTotal;
+                                final truncated = currentNet.truncateToDouble();
+                                final diff = currentNet - truncated;
+                                if (diff > 0.0001) {
+                                  final newDisc = salesDiscount + diff;
+                                  salesDiscountCtrl.text = newDisc.fmt;
+                                  if (cashInvoice) {
+                                    downPayCtrl.text = truncated.fmt;
+                                  }
+                                  setSt(() {});
+                                }
+                              },
+                              icon: const Icon(
+                                Icons.content_cut_rounded,
+                                size: 16,
+                              ),
+                              label: const Text(
+                                'تجاهل القروش (Ignore Cents)',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
                           ),
                           const SizedBox(height: 8),
                           if (cashInvoice)

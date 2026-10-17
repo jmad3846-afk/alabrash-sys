@@ -106,6 +106,47 @@ class ERPProvider extends ChangeNotifier {
   String get dualScrapCash => AppCurrency.dual(scrapCashBox, scrapCashBoxSyp);
   String get dualOrderCash => AppCurrency.dual(orderCashBox, orderCashBoxSyp);
 
+  /// Direct transfer between cash boxes of the same currency.
+  /// [fromBox] and [toBox] are 'main' | 'scrap' | 'order'.
+  bool transferCash({
+    required String fromBox,
+    required String toBox,
+    required String currency,
+    required double amount,
+  }) {
+    if (amount <= 0 || fromBox == toBox) return false;
+    if (!takeCash(fromBox, currency, amount)) return false;
+    addCash(toBox, currency, amount);
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  /// Converts currency between funds/cash boxes.
+  /// [fromCurrency]: 'USD' or 'SYP'
+  /// If [fromCurrency] == 'USD', converts to SYP: converted = amount * exchangeRate.
+  /// If [fromCurrency] == 'SYP', converts to USD: converted = amount / exchangeRate.
+  bool convertCurrency({
+    required String fromBox,
+    required String toBox,
+    required String fromCurrency,
+    required double amount,
+    required double exchangeRate,
+  }) {
+    if (amount <= 0 || exchangeRate <= 0) return false;
+    final toCurrency =
+        AppCurrency.isSyp(fromCurrency) ? AppCurrency.usd : AppCurrency.syp;
+    final double convertedAmount = AppCurrency.isSyp(fromCurrency)
+        ? (amount / exchangeRate)
+        : (amount * exchangeRate);
+
+    if (!takeCash(fromBox, fromCurrency, amount)) return false;
+    addCash(toBox, toCurrency, convertedAmount);
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
   // Printer Status
   bool isThermalPrinterConnected = true;
   String printerName = "Xprinter XP-N160II (Esc/POS Thermal)";
@@ -2348,6 +2389,49 @@ class ERPProvider extends ChangeNotifier {
     existingWs.availableQty += qty;
     notifyListeners();
     saveToDisk();
+  }
+
+  // Transfer Stock back from Workshop to Factory
+  bool transferWorkshopToFactory(WorkshopStockModel wsItem, double qty) {
+    if (qty <= 0 || wsItem.availableQty + 0.0001 < qty) return false;
+    wsItem.availableQty =
+        (wsItem.availableQty - qty).clamp(0.0, double.infinity);
+
+    var existingWh = factoryWarehouse.firstWhere(
+      (wh) =>
+          wh.typeName == wsItem.typeName &&
+          wh.grade == wsItem.grade &&
+          wh.thicknessCm == wsItem.thicknessCm,
+      orElse: () {
+        var newWh = FactoryWarehouseModel(
+          id: 'wh_${DateTime.now().millisecondsSinceEpoch}',
+          typeName: wsItem.typeName,
+          grade: wsItem.grade,
+          thicknessCm: wsItem.thicknessCm,
+          category: wsItem.category,
+          availableQty: 0.0,
+          netCostPerUnit: wsItem.netCostPerUnit,
+          recommendedSalePrice: wsItem.recommendedSalePrice,
+          isGranite: wsItem.isGranite,
+        );
+        factoryWarehouse.add(newWh);
+        return newWh;
+      },
+    );
+    existingWh.availableQty += qty;
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  // Update recommended selling price for factory warehouse item
+  void updateFactoryWarehouseSalePrice(String whId, double newPrice) {
+    final idx = factoryWarehouse.indexWhere((w) => w.id == whId);
+    if (idx != -1 && newPrice >= 0) {
+      factoryWarehouse[idx].recommendedSalePrice = newPrice;
+      notifyListeners();
+      saveToDisk();
+    }
   }
 
   // 6. POS Factory Invoice Sale (multi-item, Pending/Paid split)

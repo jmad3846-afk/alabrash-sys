@@ -121,6 +121,15 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                   icon: const Icon(Icons.swap_horiz_rounded),
                   label: const Text('تحويل كمية من مستودع المصنع'),
                 ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accentPrimary,
+                  ),
+                  onPressed: () => _showReturnWorkshopToFactoryDialog(erp),
+                  icon: const Icon(Icons.keyboard_return_rounded),
+                  label: const Text('إرجاع أمتار إلى المصنع'),
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -139,7 +148,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                 children: [
                   Column(
                     children: [
-                      Expanded(child: _buildWorkshopStockGrid(m2, 'م²')),
+                      Expanded(child: _buildWorkshopStockGrid(erp, m2, 'م²')),
                       OpeningStockItemsPanel(
                         items: erp.openingEntry.openingStock,
                         category: 'أمتار المعمل',
@@ -148,7 +157,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                   ),
                   Column(
                     children: [
-                      Expanded(child: _buildWorkshopStockGrid(m3, 'م³')),
+                      Expanded(child: _buildWorkshopStockGrid(erp, m3, 'م³')),
                       OpeningStockItemsPanel(
                         items: erp.openingEntry.openingStock,
                         category: 'أمتار المعمل',
@@ -164,7 +173,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     );
   }
 
-  Widget _buildWorkshopStockGrid(List<WorkshopStockModel> items, String unit) {
+  Widget _buildWorkshopStockGrid(
+    ERPProvider erp,
+    List<WorkshopStockModel> items,
+    String unit,
+  ) {
     if (items.isEmpty) {
       return const Card(
         child: Center(child: Text('لا توجد مواد في هذا القسم بعد.')),
@@ -175,7 +188,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
         crossAxisCount: 3,
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
-        childAspectRatio: 1.6,
+        childAspectRatio: 1.35,
       ),
       itemCount: items.length,
       itemBuilder: (context, idx) {
@@ -255,6 +268,30 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.accentPrimary,
+                      side: const BorderSide(color: AppColors.accentPrimary),
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _showReturnWorkshopToFactoryDialog(
+                      erp,
+                      preselectedItem: item,
+                    ),
+                    icon: const Icon(Icons.keyboard_return_rounded, size: 15),
+                    label: const Text(
+                      'إرجاع للمصنع',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1598,6 +1635,152 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showReturnWorkshopToFactoryDialog(
+    ERPProvider erp, {
+    WorkshopStockModel? preselectedItem,
+  }) {
+    final availableItems =
+        erp.workshopStock.where((w) => w.availableQty > 0).toList();
+    if (availableItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لا توجد أمتار متوفرة في المعمل للإرجاع إلى المصنع.'),
+          backgroundColor: AppColors.dangerWaste,
+        ),
+      );
+      return;
+    }
+
+    String? selectedWsId =
+        preselectedItem != null && preselectedItem.availableQty > 0
+            ? preselectedItem.id
+            : availableItems.first.id;
+    final qtyCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          final matches =
+              availableItems.where((w) => w.id == selectedWsId).toList();
+          final WorkshopStockModel ws =
+              matches.isNotEmpty ? matches.first : availableItems.first;
+          final unit = ws.category == 'متر مكعب' ? 'م³' : 'م²';
+
+          return AlertDialog(
+            title: Row(
+              children: const [
+                Icon(
+                  Icons.keyboard_return_rounded,
+                  color: AppColors.accentPrimary,
+                ),
+                SizedBox(width: 8),
+                Text('إرجاع أمتار من المعمل إلى المصنع'),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'اختر مادة من مخزون المعمل لتسليمها/إرجاعها إلى مستودع المصنع:',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.brandSecondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedWsId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'مادة المعمل'),
+                    items: availableItems
+                        .map(
+                          (w) => DropdownMenuItem(
+                            value: w.id,
+                            child: Text(
+                              '${w.typeName} ${w.grade} ${w.thicknessCm}سم (${w.category}) — المتاح: ${w.availableQty.fmt}',
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setSt(() {
+                      selectedWsId = v;
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: qtyCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'الكمية المراد إرجاعها ($unit)',
+                            helperText:
+                                'المتاح حالياً: ${ws.availableQty.fmt} $unit',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () {
+                          qtyCtrl.text = ws.availableQty.fmt;
+                        },
+                        child: const Text('كامل المتاح'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accentPrimary,
+                ),
+                onPressed: () {
+                  final qty = double.tryParse(qtyCtrl.text) ?? 0.0;
+                  if (qty <= 0 || qty > ws.availableQty + 0.0001) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('يرجى إدخال كمية صحيحة وضمن المتاح.'),
+                        backgroundColor: AppColors.dangerWaste,
+                      ),
+                    );
+                    return;
+                  }
+                  final ok = erp.transferWorkshopToFactory(ws, qty);
+                  Navigator.pop(ctx);
+                  if (ok) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'تم إرجاع ${qty.fmt} $unit من (${ws.typeName} ${ws.grade}) إلى مستودع المصنع بنجاح.',
+                        ),
+                        backgroundColor: AppColors.successGreen,
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('تأكيد الإرجاع للمصنع'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -3909,12 +4092,109 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         ),
                       ),
                     ],
-                    const SizedBox(height: 8),
-                    Text(
-                      'الإجمالي بعد الخصم: ${(agreedTotal + servicesTotal - salesDiscount).fmt} ${AppCurrency.symbol(invCurrency)}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.accentPrimary,
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.panelBorder),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextField(
+                            controller: salesDiscountCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'خصم المبيعات المسموح (اختياري)',
+                              isDense: true,
+                            ),
+                            onChanged: (_) => setSt(() {}),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'الإجمالي بعد الخصم:',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.brandSecondaryText,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${(agreedTotal + servicesTotal - salesDiscount).fmt} ${AppCurrency.symbol(invCurrency)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                      color: AppColors.accentPrimary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF4F46E5),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
+                                ),
+                                onPressed: () {
+                                  // Truncate decimals (Ignore cents)
+                                  final directAgreed =
+                                      double.tryParse(agreedCtrl.text) ?? 0.0;
+                                  if (!tailoredSource &&
+                                      sourceType != 'مواد خام' &&
+                                      (directAgreed -
+                                                  directAgreed
+                                                      .truncateToDouble())
+                                              .abs() >
+                                          0.0001) {
+                                    agreedCtrl.text =
+                                        directAgreed.truncateToDouble().fmt;
+                                    if (cashInvoice) {
+                                      cashCtrl.text = agreedCtrl.text;
+                                    }
+                                  } else {
+                                    final currentNet = (agreedTotal +
+                                            servicesTotal -
+                                            salesDiscount)
+                                        .clamp(0.0, double.infinity);
+                                    final truncated =
+                                        currentNet.truncateToDouble();
+                                    final diff = currentNet - truncated;
+                                    if (diff > 0.0001) {
+                                      final newDisc = salesDiscount + diff;
+                                      salesDiscountCtrl.text = newDisc.fmt;
+                                      if (cashInvoice) {
+                                        cashCtrl.text = truncated.fmt;
+                                      }
+                                    }
+                                  }
+                                  setSt(() {});
+                                },
+                                icon: const Icon(
+                                  Icons.content_cut_rounded,
+                                  size: 16,
+                                ),
+                                label: const Text(
+                                  'تجاهل القروش (Ignore Cents)',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 16),
