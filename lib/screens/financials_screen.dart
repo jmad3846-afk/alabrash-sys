@@ -5,6 +5,7 @@ import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../widgets/currency_selector.dart';
 import '../widgets/a4_invoice_print_dialog.dart';
+import '../widgets/app_image_attachment.dart';
 import 'accounting_screens.dart';
 
 class FinancialsScreen extends StatefulWidget {
@@ -690,6 +691,17 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                             )
                           : null,
                       children: [
+                        if (inv.photoUrl.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 4,
+                            ),
+                            child: AppImagePreviewCard(
+                              imagePath: inv.photoUrl,
+                              title: 'صورة الفاتورة المرفقة (${inv.invoiceNo})',
+                            ),
+                          ),
                         ...inv.items.map(
                           (it) => ListTile(
                             dense: true,
@@ -869,6 +881,17 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                             )
                           : null,
                       children: [
+                        if (inv.photoUrl.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 4,
+                            ),
+                            child: AppImagePreviewCard(
+                              imagePath: inv.photoUrl,
+                              title: 'صورة الفاتورة المرفقة (${inv.invoiceNo})',
+                            ),
+                          ),
                         ...inv.items.map(
                           (it) => ListTile(
                             dense: true,
@@ -1384,6 +1407,18 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                           ],
                         ),
                         children: [
+                          if (inv.photoPath.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 4,
+                              ),
+                              child: AppImagePreviewCard(
+                                imagePath: inv.photoPath,
+                                title:
+                                    'صورة الفاتورة المرفقة (${inv.invoiceNo})',
+                              ),
+                            ),
                           ...inv.services.map(
                             (s) => ListTile(
                               dense: true,

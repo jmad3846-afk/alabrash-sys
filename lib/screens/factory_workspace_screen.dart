@@ -7,6 +7,7 @@ import '../core/models/models.dart';
 import '../widgets/currency_selector.dart';
 import '../widgets/thermal_receipt_dialog.dart';
 import '../widgets/a4_invoice_print_dialog.dart';
+import '../widgets/app_image_attachment.dart';
 import 'accounting_screens.dart';
 
 class FactoryWorkspaceScreen extends StatefulWidget {
@@ -1881,12 +1882,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     horizontal: 16,
                     vertical: 4,
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.attach_file_rounded, size: 16),
-                      const SizedBox(width: 6),
-                      Expanded(child: Text(inv.photoUrl)),
-                    ],
+                  child: AppImagePreviewCard(
+                    imagePath: inv.photoUrl,
+                    title: 'صورة الفاتورة المرفقة (${inv.invoiceNo})',
                   ),
                 ),
             ],
@@ -2018,6 +2016,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                       itemBuilder: (context, idx) {
                         final ord = erp.factoryOrders[idx];
                         return ListTile(
+                          leading: ord.photoPath.isNotEmpty
+                              ? AppImageThumbnail(
+                                  imagePath: ord.photoPath,
+                                  title: 'صورة طلبية ${ord.orderNo}',
+                                )
+                              : null,
                           title: Text(
                             '${ord.orderNo} • الزبون: ${ord.clientName}',
                             style: const TextStyle(fontWeight: FontWeight.bold),
@@ -2274,19 +2278,13 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          flex: 2,
-                          child: TextField(
-                            controller: photoCtrl,
-                            decoration: const InputDecoration(
-                              labelText: 'صورة الطلبية (مسار — اختياري)',
-                              prefixIcon: Icon(Icons.attach_file_rounded),
-                              isDense: true,
-                            ),
-                          ),
-                        ),
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    AppImageAttachmentPicker(
+                      initialPath: photoCtrl.text,
+                      label: 'صورة الطلبية / المخطط',
+                      onImageChanged: (p) => setSt(() => photoCtrl.text = p),
                     ),
                     if (formError != null) ...[
                       const SizedBox(height: 8),
@@ -2691,6 +2689,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final List<FactoryInvoiceItem> draftItems = [];
     String? formError;
     String invCurrency = AppCurrency.usd;
+    String photoPath = '';
 
     // Unique block-type options organised by Type + Grade.
     List<BlockTypeModel> blockOptions() {
@@ -3204,6 +3203,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         ],
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    AppImageAttachmentPicker(
+                      initialPath: photoPath,
+                      label: 'صورة فاتورة الشراء من المورد / وصل الاستلام',
+                      onImageChanged: (p) => setSt(() => photoPath = p),
+                    ),
                     const SizedBox(height: 20),
 
                     ElevatedButton(
@@ -3272,6 +3277,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             advancePayment: advance,
                             discountAmount: discount,
                             isCashInvoice: cashInvoice,
+                            photoUrl: photoPath,
                             currency: invCurrency,
                           ),
                         );
@@ -4094,14 +4100,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               ),
                               onChanged: (_) => setSt(() {}),
                             ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: photoCtrl,
-                            decoration: const InputDecoration(
-                              labelText: 'إرفاق صورة (مسار أو رابط — اختياري)',
-                              prefixIcon: Icon(Icons.attach_file_rounded),
-                              isDense: true,
-                            ),
+                          const SizedBox(height: 12),
+                          AppImageAttachmentPicker(
+                            initialPath: photoCtrl.text,
+                            label: 'صورة الفاتورة / إشعار الاستلام',
+                            onImageChanged: (p) =>
+                                setSt(() => photoCtrl.text = p),
                           ),
                         ],
                       ),

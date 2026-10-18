@@ -7,6 +7,7 @@ import '../core/models/models.dart';
 import '../widgets/currency_selector.dart';
 import '../widgets/thermal_receipt_dialog.dart';
 import '../widgets/a4_invoice_print_dialog.dart';
+import '../widgets/app_image_attachment.dart';
 import 'accounting_screens.dart';
 
 class WorkshopWorkspaceScreen extends StatefulWidget {
@@ -427,6 +428,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     itemBuilder: (context, idx) {
                       final t = items[idx];
                       return ListTile(
+                        leading: t.photoPath.isNotEmpty
+                            ? AppImageThumbnail(
+                                imagePath: t.photoPath,
+                                title: 'صورة تفصيل ${t.name}',
+                              )
+                            : null,
                         title: Text(
                           '${t.name} • المتاح ${t.quantity.fmt} ${t.unitSymbol}',
                           style: const TextStyle(fontWeight: FontWeight.bold),
@@ -576,19 +583,32 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         ),
                         if (sc.photoPath.isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(top: 4),
+                            padding: const EdgeInsets.only(top: 8),
                             child: Row(
                               children: [
-                                const Icon(Icons.attach_file_rounded, size: 14),
-                                const SizedBox(width: 4),
+                                AppImageThumbnail(
+                                  imagePath: sc.photoPath,
+                                  width: 36,
+                                  height: 36,
+                                  title:
+                                      'صورة القطعة الزائدة (${sc.description})',
+                                ),
+                                const SizedBox(width: 8),
                                 Expanded(
-                                  child: Text(
-                                    sc.photoPath,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.brandSecondaryText,
+                                  child: InkWell(
+                                    onTap: () => showAppImageViewer(
+                                      context,
+                                      imagePath: sc.photoPath,
+                                      title:
+                                          'صورة القطعة الزائدة (${sc.description})',
+                                    ),
+                                    child: const Text(
+                                      'معاينة صورة القطعة',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.accentPrimary,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -804,7 +824,21 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                 itemBuilder: (context, idx) {
                   final ord = erp.workshopOrders[idx];
                   return ListTile(
-                    leading: CurrencyBadge(currency: ord.currency),
+                    leading: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CurrencyBadge(currency: ord.currency),
+                        if (ord.photoPath.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          AppImageThumbnail(
+                            imagePath: ord.photoPath,
+                            width: 38,
+                            height: 38,
+                            title: 'صورة طلبية ${ord.orderNo}',
+                          ),
+                        ],
+                      ],
+                    ),
                     title: Text(
                       '${ord.orderNo} • الزبون: ${ord.clientName}',
                       style: const TextStyle(fontWeight: FontWeight.bold),
@@ -1126,12 +1160,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             horizontal: 16,
                             vertical: 4,
                           ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.attach_file_rounded, size: 16),
-                              const SizedBox(width: 6),
-                              Expanded(child: Text(inv.photoPath)),
-                            ],
+                          child: AppImagePreviewCard(
+                            imagePath: inv.photoPath,
+                            title: 'صورة الفاتورة المرفقة (${inv.invoiceNo})',
                           ),
                         ),
                     ],
@@ -1229,13 +1260,20 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
           final collected =
               invs.fold<double>(0.0, (s, i) => s + i.grandTotal) - due;
           return ExpansionTile(
-            leading: const CircleAvatar(
-              backgroundColor: AppColors.chipBgSky,
-              child: Icon(
-                Icons.domain_rounded,
-                color: AppColors.orderDepositBoxAccent,
-              ),
-            ),
+            leading: p.photoPath.isNotEmpty
+                ? AppImageThumbnail(
+                    imagePath: p.photoPath,
+                    width: 40,
+                    height: 40,
+                    title: 'مخطط / صورة المشروع (${p.name})',
+                  )
+                : const CircleAvatar(
+                    backgroundColor: AppColors.chipBgSky,
+                    child: Icon(
+                      Icons.domain_rounded,
+                      color: AppColors.orderDepositBoxAccent,
+                    ),
+                  ),
             title: Text(
               'المشروع ${p.name}',
               style: const TextStyle(fontWeight: FontWeight.bold),
@@ -1334,6 +1372,17 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
               ],
             ),
             children: [
+              if (p.photoPath.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  child: AppImagePreviewCard(
+                    imagePath: p.photoPath,
+                    title: 'مخطط / صورة المشروع (${p.name})',
+                  ),
+                ),
               if (p.description.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(
@@ -1383,41 +1432,44 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     final photoCtrl = TextEditingController(text: existing?.photoPath ?? '');
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(existing == null ? 'إضافة مشروع جديد' : 'تعديل المشروع'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(labelText: 'اسم المشروع'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: clientCtrl,
-              decoration: const InputDecoration(labelText: 'اسم الزبون'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: phoneCtrl,
-              decoration: const InputDecoration(labelText: 'الهاتف'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: descCtrl,
-              decoration: const InputDecoration(labelText: 'وصف المشروع'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: photoCtrl,
-              decoration: const InputDecoration(
-                labelText: 'صورة (مسار — اختياري)',
-                prefixIcon: Icon(Icons.attach_file_rounded),
-                isDense: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: Text(existing == null ? 'إضافة مشروع جديد' : 'تعديل المشروع'),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(labelText: 'اسم المشروع'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: clientCtrl,
+                    decoration: const InputDecoration(labelText: 'اسم الزبون'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: phoneCtrl,
+                    decoration: const InputDecoration(labelText: 'الهاتف'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: descCtrl,
+                    decoration: const InputDecoration(labelText: 'وصف المشروع'),
+                  ),
+                  const SizedBox(height: 12),
+                  AppImageAttachmentPicker(
+                    initialPath: photoCtrl.text,
+                    label: 'صورة / مخطط المشروع',
+                    onImageChanged: (p) => setSt(() => photoCtrl.text = p),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -1451,7 +1503,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   // DIALOG HELPERS
@@ -1487,13 +1540,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                   Text('التكلفة الكلية: ${t.totalNetCost.fmt}\$'),
                   if (t.photoPath.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.attach_file_rounded, size: 16),
-                          const SizedBox(width: 6),
-                          Expanded(child: Text(t.photoPath)),
-                        ],
+                      padding: const EdgeInsets.only(top: 8),
+                      child: AppImagePreviewCard(
+                        imagePath: t.photoPath,
+                        title: 'صورة التفصيل المرفقة (${t.name})',
                       ),
                     ),
                   const SizedBox(height: 12),
@@ -1912,6 +1962,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     final bool allowScrap = complexity == 'معقد';
     final nameCtrl = TextEditingController();
     String? formError;
+    String photoPath = '';
 
     String lineSource = 'materials';
     String? selectedStockId;
@@ -2032,7 +2083,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         labelText: 'اسم التفصيل',
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
+                    AppImageAttachmentPicker(
+                      initialPath: photoPath,
+                      label: 'صورة التفصيل / النموذج (اختياري)',
+                      onImageChanged: (p) => setSt(() => photoPath = p),
+                    ),
                     const SizedBox(height: 16),
                     const Text(
                       'بنود المواد (أضف كل بند بزر +):',
@@ -2674,7 +2730,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           laborCostPerMeter: 0.0,
                           attachedServices: const [],
                           lineItems: List.of(draftLines),
-                          photoPath: '',
+                          photoPath: photoPath,
                           sellingPrice: selling,
                           isGranite: isGranite,
                         );
@@ -2795,14 +2851,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: photoCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'صورة القطعة (مسار — اختياري)',
-                        prefixIcon: Icon(Icons.attach_file_rounded),
-                        isDense: true,
-                      ),
+                    const SizedBox(height: 12),
+                    AppImageAttachmentPicker(
+                      initialPath: photoCtrl.text,
+                      label: 'صورة القطعة الزائدة',
+                      onImageChanged: (p) => setSt(() => photoCtrl.text = p),
                     ),
                     const SizedBox(height: 12),
                     if (baseCost <= 0)
@@ -3334,14 +3387,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: photoCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'صورة الطلبية (مسار — اختياري)',
-                      prefixIcon: Icon(Icons.attach_file_rounded),
-                      isDense: true,
-                    ),
+                  const SizedBox(height: 12),
+                  AppImageAttachmentPicker(
+                    initialPath: photoCtrl.text,
+                    label: 'صورة الطلبية / المخطط',
+                    onImageChanged: (p) => setSt(() => photoCtrl.text = p),
                   ),
                   const SizedBox(height: 6),
                   const Text(
@@ -4700,14 +4750,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                 ],
                                               ),
                                             ],
-                                            const SizedBox(height: 8),
-                                            TextField(
-                                              controller: photoCtrl,
-                                              decoration: const InputDecoration(
-                                                labelText: 'صورة / مرفق (مسار اختياري)',
-                                                isDense: true,
-                                                prefixIcon: Icon(Icons.attach_file_rounded, size: 16),
-                                              ),
+                                            const SizedBox(height: 12),
+                                            AppImageAttachmentPicker(
+                                              initialPath: photoCtrl.text,
+                                              label: 'صورة الفاتورة / الوصل',
+                                              onImageChanged: (p) =>
+                                                  setSt(() => photoCtrl.text = p),
                                             ),
                                           ],
                                         ),
