@@ -935,16 +935,45 @@ void main() {
     await tester.tap(find.text('حفظ التفصيل بالمتر'));
     await tester.pumpAndSettle();
 
-    // Verify displayed on screen: Name, available quantity in meters, cost after services, selling price
+    // In Simple Tailoring, there is no overall price for the entire tailoring item;
+    // instead, there is an individual price for each line item on its own.
     final tailoring = erp.simpleTailorings.last;
     expect(tailoring.name, 'درج بسيط فاخر');
     expect(tailoring.quantity, closeTo(3.6, 0.001)); // 1.2 * 0.3 * 10 = 3.6 m2
-    expect(tailoring.sellingPrice, 35.0);
-    expect(tailoring.costPerMeterAfterServices, greaterThan(0));
+    expect(tailoring.sellingPrice, 0.0); // No overall selling price for simple tailoring
+    expect(tailoring.lineItems.first.sellingPricePerMeter, 35.0); // Individual price for this line item
 
     expect(find.textContaining('درج بسيط فاخر • المتاح 3.6 م²'), findsOneWidget);
-    expect(find.textContaining('سعر بيع المتر: 35'), findsOneWidget);
-    expect(find.textContaining('تكلفة المتر بعد الخدمات: 14.5'), findsOneWidget);
+    // Simple tailoring card has no overall selling price chip or total price chip
+    expect(find.textContaining('سعر بيع المتر:'), findsNothing);
+    expect(find.textContaining('التسعير: تسعير فردي لكل بند على حدة'), findsWidgets);
+
+    // Outside view shows marble type, available quantity in meters, and line item price
+    expect(find.textContaining('نوع الرخام: رخام كاردينال'), findsOneWidget);
+    expect(find.textContaining('الكمية المتاحة: 3.6 م²'), findsOneWidget);
+    expect(find.textContaining('سعر البند: 35 \$ / م²'), findsOneWidget);
+
+    // Open details modal
+    await tester.tap(find.byIcon(Icons.info_outline_rounded).last);
+    await tester.pumpAndSettle();
+
+    // Verify grouped by marble type
+    expect(find.textContaining('بنود التفصيل مصنفة حسب نوع الرخام'), findsOneWidget);
+    expect(find.textContaining('نوع الرخام / الخامة: رخام كاردينال'), findsOneWidget);
+    expect(find.textContaining('التسعير: تسعير فردي لكل بند على حدة'), findsWidgets);
+
+    // Edit individual line item selling price
+    final lineSellingField = find.byWidgetPredicate(
+      (w) => w is TextField && w.decoration?.labelText?.contains('سعر بيع المتر لهذا البند') == true,
+    );
+    expect(lineSellingField, findsOneWidget);
+    await tester.enterText(lineSellingField, '42.0');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('تطبيق السعر'));
+    await tester.pumpAndSettle();
+
+    expect(tailoring.lineItems.first.sellingPricePerMeter, 42.0);
+    expect(tailoring.sellingPrice, 0.0); // Remains 0.0 - no overall price for simple tailoring
   });
 
   test('replenish tailoring line item inventory deducts factory warehouse and updates quantity', () async {
