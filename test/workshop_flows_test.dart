@@ -228,9 +228,8 @@ void main() {
     'complex tailoring keeps only name before material lines and derives stock unit',
     (tester) async {
       final erp = ERPProvider();
-      final stockBefore = erp.workshopStock
-          .firstWhere((item) => item.id == 'ws1')
-          .availableQty;
+      final wsItem = erp.workshopStock.lastWhere((w) => w.typeName.contains('رخام كاردينال'));
+      final stockBefore = wsItem.availableQty;
       await openWorkshopTab(tester, erp, '2. مفصل (تفصيلات بسيطة ومعقدة)');
       await tester.tap(find.text('تفصيل معقد (Complex)'));
       await tester.pumpAndSettle();
@@ -293,7 +292,7 @@ void main() {
       expect(tailoring.unitCategory, 'قطعة');
       expect(tailoring.lengthCm, 0);
       expect(
-        erp.workshopStock.firstWhere((item) => item.id == 'ws1').availableQty,
+        erp.workshopStock.firstWhere((item) => item.id == wsItem.id).availableQty,
         closeTo(stockBefore - 2, 0.001),
       );
       expect(tester.takeException(), isNull);
@@ -304,9 +303,9 @@ void main() {
     'simple tailoring shows material consumption and blocks overselling stock',
     (tester) async {
       final erp = ERPProvider();
-      final originalStock = erp.workshopStock
-          .firstWhere((item) => item.id == 'ws1')
-          .availableQty;
+      final wsItem = erp.workshopStock.lastWhere((w) => w.typeName.contains('رخام كاردينال'));
+      wsItem.availableQty = 85.0;
+      final originalStock = wsItem.availableQty;
       final originalTailorings = erp.simpleTailorings.length;
       await openWorkshopTab(tester, erp, '2. مفصل (تفصيلات بسيطة ومعقدة)');
       await tester.tap(find.text('[إضافة تفصيل بسيط]'));
@@ -383,7 +382,7 @@ void main() {
       expect(erp.simpleTailorings.last.name, 'تفصيل اختبار');
       expect(erp.simpleTailorings.last.quantity, 85);
       expect(
-        erp.workshopStock.firstWhere((item) => item.id == 'ws1').availableQty,
+        erp.workshopStock.firstWhere((item) => item.id == wsItem.id).availableQty,
         closeTo(originalStock - 85, 0.001),
       );
       expect(tester.takeException(), isNull);
@@ -1101,12 +1100,12 @@ void main() {
   });
 
   testWidgets(
-    'complex tailoring calculates auto service price, displays net meter cost, aggregates net price, accepts manual total selling, and deducts factory warehouse',
+    'complex tailoring calculates auto service price, displays net meter cost, aggregates net price, accepts manual total selling, and deducts workshop stock',
     (tester) async {
       final erp = ERPProvider();
-      final fwItem = erp.factoryWarehouse.first;
-      final fwStockBefore = fwItem.availableQty;
-      final fwCost = fwItem.netCostPerUnit;
+      final wsItem = erp.workshopStock.first;
+      final wsStockBefore = wsItem.availableQty;
+      final wsCost = wsItem.netCostPerUnit;
 
       await openWorkshopTab(tester, erp, '2. مفصل (تفصيلات بسيطة ومعقدة)');
       await tester.tap(find.text('تفصيل معقد (Complex)'));
@@ -1122,11 +1121,11 @@ void main() {
         'كاونتر استقبال فاخر',
       );
 
-      // Select factory warehouse material
+      // Select workshop stock material
       await tester.tap(find.byType(DropdownButtonFormField<String>).first);
       await tester.pumpAndSettle();
       await tester.tap(
-        find.textContaining('${fwItem.typeName} ${fwItem.grade} ${fwItem.thicknessCm}سم').first,
+        find.textContaining('${wsItem.typeName} ${wsItem.grade} ${wsItem.thicknessCm}سم').first,
       );
       await tester.pumpAndSettle();
 
@@ -1180,7 +1179,7 @@ void main() {
 
       // Verify "سعر المتر بعد الخدمات لهذا البند" banner
       expect(find.textContaining('سعر المتر بعد الخدمات لهذا البند:'), findsOneWidget);
-      final expectedPostMeterCost = fwCost + (expectedServicePrice / 2.0);
+      final expectedPostMeterCost = wsCost + (expectedServicePrice / 2.0);
       expect(
         find.textContaining('${expectedPostMeterCost.fmt} \$'),
         findsWidgets,
@@ -1192,7 +1191,7 @@ void main() {
 
       // Verify "صافي سعر التفصيل المعقد بعد الخدمات" banner
       expect(find.textContaining('صافي سعر التفصيل المعقد بعد الخدمات:'), findsOneWidget);
-      final expectedTotalNetCost = (2.0 * fwCost) + expectedServicePrice;
+      final expectedTotalNetCost = (2.0 * wsCost) + expectedServicePrice;
       expect(find.textContaining('${expectedTotalNetCost.fmt} \$'), findsWidgets);
 
       // Enter manual total selling price
@@ -1218,9 +1217,9 @@ void main() {
       expect(tailoring.quantity, closeTo(1.0, 0.001));
       expect(tailoring.sellingPrice, closeTo(500.0, 0.001)); // Unified total selling price entered manually
 
-      // Verify deduction from factoryWarehouse (initial 2.0 m2)
-      final fwAfter = erp.factoryWarehouse.firstWhere((w) => w.id == fwItem.id);
-      expect(fwAfter.availableQty, closeTo(fwStockBefore - 2.0, 0.001));
+      // Verify deduction from workshopStock (initial 2.0 m2)
+      final wsAfter = erp.workshopStock.firstWhere((w) => w.id == wsItem.id);
+      expect(wsAfter.availableQty, closeTo(wsStockBefore - 2.0, 0.001));
 
       // 1. Verify Outside View displays net tailoring price, selling price, and total available pieces
       expect(find.textContaining('كاونتر استقبال فاخر • المتاح 1 قطعة'), findsOneWidget);
@@ -1247,8 +1246,8 @@ void main() {
 
       // Verify piece count incremented to 2 pieces
       expect(tailoring.quantity, closeTo(2.0, 0.001));
-      final fwAfter2 = erp.factoryWarehouse.firstWhere((w) => w.id == fwItem.id);
-      expect(fwAfter2.availableQty, closeTo(fwStockBefore - 4.0, 0.001));
+      final wsAfter2 = erp.workshopStock.firstWhere((w) => w.id == wsItem.id);
+      expect(wsAfter2.availableQty, closeTo(wsStockBefore - 4.0, 0.001));
       expect(find.textContaining('إجمالي القطع المتاحة: 2 قطعة'), findsWidgets);
 
       // 3. Test "التفاصيل" button
@@ -1320,6 +1319,71 @@ void main() {
         double.parse(serviceTf.controller!.text),
         closeTo(expectedServicePrice, 0.01),
       );
+    },
+  );
+
+  testWidgets(
+    'adding inventory to simple tailoring deducts meters from workshop stock',
+    (tester) async {
+      final erp = ERPProvider();
+      final wsItem = erp.workshopStock.firstWhere((w) => w.id == 'ws1');
+      final wsStockBefore = wsItem.availableQty;
+
+      // Seed a simple tailoring with a line item matching ws1
+      final li = TailoringLineItem(
+        id: 'li_st_test',
+        source: 'materials',
+        stockId: wsItem.id,
+        typeName: wsItem.typeName,
+        grade: wsItem.grade,
+        thicknessCm: wsItem.thicknessCm,
+        category: wsItem.category,
+        lengthCm: 100,
+        widthCm: 100,
+        quantity: 5,
+        netCostPerMeter: wsItem.netCostPerUnit,
+        sellingPricePerMeter: 30.0,
+      );
+      final tailoring = WorkshopTailoringModel(
+        id: 'st_replenish_ui_test',
+        name: 'درج رخام كاردينال بسيط',
+        complexity: 'بسيط',
+        rawMaterialDescription: '${wsItem.typeName} ${wsItem.grade}',
+        quantity: 5.0,
+        unitCategory: 'متر مربع',
+        materialNetCost: wsItem.netCostPerUnit * 5.0,
+        sellingPrice: 0.0,
+        lineItems: [li],
+      );
+      erp.simpleTailorings.add(tailoring);
+
+      await openWorkshopTab(tester, erp, '2. مفصل (تفصيلات بسيطة ومعقدة)');
+      final addStockBtn = find.widgetWithText(ElevatedButton, 'إضافة مخزون').last;
+      await tester.ensureVisible(addStockBtn);
+      await tester.tap(addStockBtn);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('إضافة مخزون لتفصيل: درج رخام كاردينال بسيط'), findsOneWidget);
+      expect(find.textContaining('المخزون المتاح في مواد المعمل:'), findsOneWidget);
+
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'الكمية المراد إضافتها لهذا البند (عدد القطع)',
+        ),
+        '4',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('الأمتار المحسوبة: 4 متر مربع'), findsOneWidget);
+
+      await tester.tap(find.text('تأكيد وإضافة المخزون للبند'));
+      await tester.pumpAndSettle();
+
+      final wsAfter = erp.workshopStock.firstWhere((w) => w.id == 'ws1');
+      expect(wsAfter.availableQty, closeTo(wsStockBefore - 4.0, 0.001));
+
+      expect(tailoring.quantity, closeTo(9.0, 0.001));
+      expect(li.quantity, closeTo(9.0, 0.001));
     },
   );
 }

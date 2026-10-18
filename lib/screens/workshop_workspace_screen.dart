@@ -35,9 +35,8 @@ class _TailoringStockOption {
     this.isGranite = false,
   });
 
-  String get displayName => source == 'factory'
-      ? '$typeName $grade ${thicknessCm}سم ($category - مواد المعمل) — المتاح: ${availableQty.fmt}'
-      : '$typeName $grade ${thicknessCm}سم ($category) — المتاح: ${availableQty.fmt}';
+  String get displayName =>
+      '$typeName $grade ${thicknessCm}سم ($category - مواد المعمل) — المتاح: ${availableQty.fmt}';
 }
 
 class WorkshopWorkspaceScreen extends StatefulWidget {
@@ -2465,7 +2464,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                         ).showSnackBar(
                                                           const SnackBar(
                                                             content: Text(
-                                                              'لا يوجد مخزون كافٍ لهذه الزيادة.',
+                                                              'لا يوجد مخزون كافٍ في مواد المعمل لهذه الزيادة.',
                                                             ),
                                                             backgroundColor:
                                                                 AppColors
@@ -2474,11 +2473,13 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                         );
                                                         return;
                                                       }
+                                                      t.quantity += delta;
                                                     } else if (delta < 0) {
                                                       erp.restoreWorkshopStock(
                                                         li.stockId,
                                                         -delta,
                                                       );
+                                                      t.quantity += delta;
                                                     }
                                                     erp.refresh();
                                                     setSt(() {});
@@ -2629,7 +2630,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
           .fmt,
     );
     String? formError;
-    String? selectedWhId;
+    String? selectedWsId;
 
     showDialog(
       context: context,
@@ -2652,8 +2653,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             groupedLines.putIfAbsent(key, () => []).add(item);
           }
 
-          // Find best matching material in erp.factoryWarehouse for this specific line type
-          final matchingWarehouseItems = erp.factoryWarehouse.where((w) {
+          // Find best matching material in erp.workshopStock for this specific line type
+          final matchingStockItems = erp.workshopStock.where((w) {
             if (li.stockId.isNotEmpty && w.id == li.stockId) return true;
             if (w.typeName == li.typeName) {
               if (li.grade.isNotEmpty && w.grade != li.grade) return false;
@@ -2666,24 +2667,24 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             return false;
           }).toList();
 
-          final bestMatch = matchingWarehouseItems.isNotEmpty
-              ? matchingWarehouseItems.first
-              : (erp.factoryWarehouse.any((w) => w.typeName == li.typeName)
-                  ? erp.factoryWarehouse.firstWhere(
+          final bestMatch = matchingStockItems.isNotEmpty
+              ? matchingStockItems.first
+              : (erp.workshopStock.any((w) => w.typeName == li.typeName)
+                  ? erp.workshopStock.firstWhere(
                       (w) => w.typeName == li.typeName,
                     )
-                  : (erp.factoryWarehouse.isNotEmpty
-                      ? erp.factoryWarehouse.first
+                  : (erp.workshopStock.isNotEmpty
+                      ? erp.workshopStock.first
                       : null));
 
-          selectedWhId ??= bestMatch?.id;
-          final currentWh = erp.factoryWarehouse.firstWhere(
-            (w) => w.id == selectedWhId,
+          selectedWsId ??= bestMatch?.id;
+          final currentWs = erp.workshopStock.firstWhere(
+            (w) => w.id == selectedWsId,
             orElse: () =>
                 bestMatch ??
-                (erp.factoryWarehouse.isNotEmpty
-                    ? erp.factoryWarehouse.first
-                    : FactoryWarehouseModel(
+                (erp.workshopStock.isNotEmpty
+                    ? erp.workshopStock.first
+                    : WorkshopStockModel(
                         id: '',
                         typeName: li.typeName,
                         grade: li.grade,
@@ -2703,7 +2704,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                   (li.heightCm / 100.0))
               : ((li.lengthCm / 100.0) * (li.widthCm / 100.0));
           final double deltaArea = pieceArea * addedQtyPieces;
-          final double currentMeterPrice = currentWh.netCostPerUnit;
+          final double currentMeterPrice = currentWs.netCostPerUnit;
           final double addedValue = deltaArea * currentMeterPrice;
 
           final double newTotalTailoringArea = t.quantity + deltaArea;
@@ -2768,7 +2769,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         if (v != null) {
                           setSt(() {
                             selectedLineId = v;
-                            selectedWhId = null;
+                            selectedWsId = null;
                             final selectedLi = t.lineItems.firstWhere(
                               (it) => it.id == v,
                               orElse: () => t.lineItems.first,
@@ -2893,17 +2894,22 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       ),
                     ),
                     const SizedBox(height: 6),
-                    if (erp.factoryWarehouse.isEmpty)
+                    if (erp.workshopStock.isEmpty)
                       const Text(
-                        'لا توجد مواد مسجلة في مستودع المصنع.',
+                        'لا توجد مواد مسجلة في مواد المعمل.',
                         style: TextStyle(color: AppColors.dangerWaste),
                       )
                     else
                       DropdownButtonFormField<String>(
-                        value: selectedWhId,
+                        value: selectedWsId,
                         isExpanded: true,
                         decoration: const InputDecoration(isDense: true),
-                        items: erp.factoryWarehouse.map((w) {
+                        items: erp.workshopStock
+                            .where(
+                              (w) =>
+                                  w.availableQty > 0 || w.id == selectedWsId,
+                            )
+                            .map((w) {
                           return DropdownMenuItem<String>(
                             value: w.id,
                             child: Text(
@@ -2912,7 +2918,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             ),
                           );
                         }).toList(),
-                        onChanged: (v) => setSt(() => selectedWhId = v),
+                        onChanged: (v) => setSt(() => selectedWsId = v),
                       ),
                     const SizedBox(height: 10),
 
@@ -2966,10 +2972,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             children: [
                               const Text('المخزون المتاح في مواد المعمل:'),
                               Text(
-                                '${currentWh.availableQty.fmt} ${li.category}',
+                                '${currentWs.availableQty.fmt} ${li.category}',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  color: currentWh.availableQty >= deltaArea
+                                  color: currentWs.availableQty >= deltaArea
                                       ? AppColors.successGreen
                                       : AppColors.dangerWaste,
                                 ),
@@ -3051,10 +3057,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     );
                     return;
                   }
-                  if (currentWh.availableQty + 0.0001 < deltaArea) {
+                  if (currentWs.availableQty + 0.0001 < deltaArea) {
                     setSt(
                       () => formError =
-                          'الكمية المحسوبة (${deltaArea.fmt} ${li.category}) تتجاوز المتاح في مواد المعمل (${currentWh.availableQty.fmt}).',
+                          'الكمية المحسوبة (${deltaArea.fmt} ${li.category}) تتجاوز المتاح في مواد المعمل (${currentWs.availableQty.fmt}).',
                     );
                     return;
                   }
@@ -3067,9 +3073,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     return;
                   }
 
-                  // 1. Deduct from Factory Warehouse
-                  currentWh.availableQty =
-                      (currentWh.availableQty - deltaArea).clamp(
+                  // 1. Deduct from Workshop Stock (مواد المعمل)
+                  currentWs.availableQty =
+                      (currentWs.availableQty - deltaArea).clamp(
                     0.0,
                     double.infinity,
                   );
@@ -3163,16 +3169,16 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             final double reqArea =
                 perUnitArea * (addedPieces > 0 ? addedPieces : 0);
 
-            // Find matching warehouse material in erp.factoryWarehouse
-            FactoryWarehouseModel? matchWh;
+            // Find matching workshop material in erp.workshopStock
+            WorkshopStockModel? matchWs;
             if (li.stockId.isNotEmpty) {
-              final byId = erp.factoryWarehouse
+              final byId = erp.workshopStock
                   .where((w) => w.id == li.stockId)
                   .toList();
-              if (byId.isNotEmpty) matchWh = byId.first;
+              if (byId.isNotEmpty) matchWs = byId.first;
             }
-            if (matchWh == null) {
-              final bySpec = erp.factoryWarehouse.where((w) {
+            if (matchWs == null) {
+              final bySpec = erp.workshopStock.where((w) {
                 if (w.typeName != li.typeName) return false;
                 if (li.grade.isNotEmpty && w.grade != li.grade) return false;
                 if (li.thicknessCm > 0 &&
@@ -3182,20 +3188,20 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                 return true;
               }).toList();
               if (bySpec.isNotEmpty) {
-                matchWh = bySpec.first;
+                matchWs = bySpec.first;
               } else {
-                final byType = erp.factoryWarehouse
+                final byType = erp.workshopStock
                     .where((w) => w.typeName == li.typeName)
                     .toList();
-                if (byType.isNotEmpty) matchWh = byType.first;
+                if (byType.isNotEmpty) matchWs = byType.first;
               }
             }
 
             final bool hasEnough =
-                matchWh != null && (matchWh.availableQty + 0.0001 >= reqArea);
+                matchWs != null && (matchWs.availableQty + 0.0001 >= reqArea);
             return (
               lineItem: li,
-              matchWh: matchWh,
+              matchWs: matchWs,
               reqPieces: reqPieces,
               reqArea: reqArea,
               hasEnough: hasEnough,
@@ -3340,7 +3346,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       child: Column(
                         children: requirements.map((req) {
                           final li = req.lineItem;
-                          final match = req.matchWh;
+                          final match = req.matchWs;
                           return Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 12,
@@ -3470,7 +3476,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         requirements.firstWhere((r) => !r.hasEnough);
                     setSt(
                       () => formError =
-                          'نقص في مخزون مواد المعمل لـ [${shortage.lineItem.typeName}]. المطلوب ${shortage.reqArea.fmt} ${shortage.lineItem.category} والمتاح ${shortage.matchWh?.availableQty.fmt ?? "0"}.',
+                          'نقص في مخزون مواد المعمل لـ [${shortage.lineItem.typeName}]. المطلوب ${shortage.reqArea.fmt} ${shortage.lineItem.category} والمتاح ${shortage.matchWs?.availableQty.fmt ?? "0"}.',
                     );
                     return;
                   }
@@ -3483,11 +3489,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     return;
                   }
 
-                  // 1. Deduct materials from factory warehouse and increment line item pieces
+                  // 1. Deduct materials from workshop stock and increment line item pieces
                   for (final req in requirements) {
-                    if (req.matchWh != null) {
-                      req.matchWh!.availableQty =
-                          (req.matchWh!.availableQty - req.reqArea).clamp(
+                    if (req.matchWs != null) {
+                      req.matchWs!.availableQty =
+                          (req.matchWs!.availableQty - req.reqArea).clamp(
                         0.0,
                         double.infinity,
                       );
@@ -3802,36 +3808,23 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) {
-          final List<_TailoringStockOption> allStockOptions = [
-            ...erp.factoryWarehouse.map(
-              (w) => _TailoringStockOption(
-                id: w.id,
-                source: 'factory',
-                typeName: w.typeName,
-                grade: w.grade,
-                thicknessCm: w.thicknessCm,
-                category: w.category,
-                availableQty: w.availableQty,
-                netCostPerUnit: w.netCostPerUnit,
-                recommendedSalePrice: w.recommendedSalePrice,
-                isGranite: w.isGranite,
-              ),
-            ),
-            ...erp.workshopStock.map(
-              (w) => _TailoringStockOption(
-                id: w.id,
-                source: 'workshop',
-                typeName: w.typeName,
-                grade: w.grade,
-                thicknessCm: w.thicknessCm,
-                category: w.category,
-                availableQty: w.availableQty,
-                netCostPerUnit: w.netCostPerUnit,
-                recommendedSalePrice: w.recommendedSalePrice,
-                isGranite: w.isGranite,
-              ),
-            ),
-          ];
+          final List<_TailoringStockOption> allStockOptions = erp.workshopStock
+              .where((w) => w.availableQty > 0 || w.id == selectedStockId)
+              .map(
+                (w) => _TailoringStockOption(
+                  id: w.id,
+                  source: 'workshop',
+                  typeName: w.typeName,
+                  grade: w.grade,
+                  thicknessCm: w.thicknessCm,
+                  category: w.category,
+                  availableQty: w.availableQty,
+                  netCostPerUnit: w.netCostPerUnit,
+                  recommendedSalePrice: w.recommendedSalePrice,
+                  isGranite: w.isGranite,
+                ),
+              )
+              .toList();
 
           _TailoringStockOption? ws;
           if (selectedStockId != null) {
@@ -4842,10 +4835,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           selling = 0.0;
                         }
 
-                        // Commit stock: deduct materials from factory warehouse or workshop stock.
+                        // Commit stock: deduct materials from workshop stock (مواد المعمل).
                         for (final li in draftLines) {
-                          if (erp.factoryWarehouse.any((w) => w.id == li.stockId)) {
-                            final ok = erp.deductFactoryWarehouseStock(
+                          if (erp.workshopStock.any((w) => w.id == li.stockId)) {
+                            final ok = erp.deductWorkshopStock(
                               li.stockId,
                               li.area,
                             );
@@ -4856,24 +4849,29 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               );
                               return;
                             }
-                          } else if (erp.workshopStock.any((w) => w.id == li.stockId)) {
-                            final ok = erp.deductWorkshopStock(
-                              li.stockId,
-                              li.area,
-                            );
-                            if (!ok) {
-                              setSt(
-                                () => formError =
-                                    'نقص في مخزون ${li.typeName}. راجع الكميات.',
-                              );
-                              return;
-                            }
                           } else {
-                            final m = erp.scrapItems
-                                .where((s) => s.id == li.stockId)
+                            final wsMatch = erp.workshopStock
+                                .where((w) => w.typeName == li.typeName)
                                 .toList();
-                            if (m.isNotEmpty) {
-                              m.first.isSold = true;
+                            if (wsMatch.isNotEmpty) {
+                              final ok = erp.deductWorkshopStock(
+                                wsMatch.first.id,
+                                li.area,
+                              );
+                              if (!ok) {
+                                setSt(
+                                  () => formError =
+                                      'نقص في مخزون مواد المعمل لـ ${li.typeName}. راجع الكميات.',
+                                );
+                                return;
+                              }
+                            } else {
+                              final m = erp.scrapItems
+                                  .where((s) => s.id == li.stockId)
+                                  .toList();
+                              if (m.isNotEmpty) {
+                                m.first.isSold = true;
+                              }
                             }
                           }
                         }
