@@ -289,8 +289,8 @@ void main() {
 
       final tailoring = erp.complexTailorings.last;
       expect(tailoring.name, 'تفصيل معقد اختبار');
-      expect(tailoring.quantity, 2);
-      expect(tailoring.unitCategory, 'متر مربع');
+      expect(tailoring.quantity, 1);
+      expect(tailoring.unitCategory, 'قطعة');
       expect(tailoring.lengthCm, 0);
       expect(
         erp.workshopStock.firstWhere((item) => item.id == 'ws1').availableQty,
@@ -1212,19 +1212,57 @@ void main() {
       await tester.tap(saveBtn);
       await tester.pumpAndSettle();
 
-      // Verify complex tailoring created
+      // Verify complex tailoring created with unified price and 1-piece unit
       final tailoring = erp.complexTailorings.last;
       expect(tailoring.name, 'كاونتر استقبال فاخر');
-      expect(tailoring.quantity, closeTo(2.0, 0.001));
-      expect(tailoring.sellingPrice, closeTo(250.0, 0.001)); // 500 / 2.0
-      expect(
-        tailoring.costPerMeterAfterServices,
-        closeTo(expectedPostMeterCost, 0.01),
-      );
+      expect(tailoring.quantity, closeTo(1.0, 0.001));
+      expect(tailoring.sellingPrice, closeTo(500.0, 0.001)); // Unified total selling price entered manually
 
-      // Verify deduction from factoryWarehouse
+      // Verify deduction from factoryWarehouse (initial 2.0 m2)
       final fwAfter = erp.factoryWarehouse.firstWhere((w) => w.id == fwItem.id);
       expect(fwAfter.availableQty, closeTo(fwStockBefore - 2.0, 0.001));
+
+      // 1. Verify Outside View displays net tailoring price, selling price, and total available pieces
+      expect(find.textContaining('كاونتر استقبال فاخر • المتاح 1 قطعة'), findsOneWidget);
+      expect(find.textContaining('صافي سعر التفصيل:'), findsWidgets);
+      expect(find.textContaining('سعر البيع: 500 \$'), findsWidgets);
+      expect(find.textContaining('إجمالي القطع المتاحة: 1 قطعة'), findsWidgets);
+
+      // Verify action buttons exist on card
+      expect(find.text('إضافة مخزون للتفصيل ككل'), findsWidgets);
+      expect(find.text('التفاصيل'), findsWidgets);
+
+      // 2. Test "إضافة مخزون للتفصيل ككل" button
+      await tester.tap(find.text('إضافة مخزون للتفصيل ككل').last);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('إضافة مخزون للتفصيل المعقد: كاونتر استقبال فاخر'), findsOneWidget);
+      expect(find.textContaining('المواد المطلوبة للاستهلاك والخصم من مواد المعمل:'), findsOneWidget);
+
+      // Confirm adding 1 piece
+      final confirmAddBtn = find.text('تأكيد وإضافة المخزون للتفصيل ككل');
+      await tester.ensureVisible(confirmAddBtn);
+      await tester.tap(confirmAddBtn);
+      await tester.pumpAndSettle();
+
+      // Verify piece count incremented to 2 pieces
+      expect(tailoring.quantity, closeTo(2.0, 0.001));
+      final fwAfter2 = erp.factoryWarehouse.firstWhere((w) => w.id == fwItem.id);
+      expect(fwAfter2.availableQty, closeTo(fwStockBefore - 4.0, 0.001));
+      expect(find.textContaining('إجمالي القطع المتاحة: 2 قطعة'), findsWidgets);
+
+      // 3. Test "التفاصيل" button
+      await tester.tap(find.text('التفاصيل').last);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('تفاصيل: كاونتر استقبال فاخر (معقد)'), findsOneWidget);
+      expect(find.textContaining('إجمالي القطع المتاحة: 2 قطعة'), findsWidgets);
+      expect(find.textContaining('إجمالي سعر البيع: 500 \$'), findsWidgets);
+      expect(find.textContaining('الخدمات المرفقة:'), findsWidgets);
+
+      // Close details modal
+      await tester.tap(find.text('إغلاق'));
+      await tester.pumpAndSettle();
     },
   );
 

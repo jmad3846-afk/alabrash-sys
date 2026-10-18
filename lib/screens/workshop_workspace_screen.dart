@@ -483,7 +483,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                     Row(
                                       children: [
                                         Text(
-                                          '${t.name} • المتاح ${t.quantity.fmt} ${t.unitSymbol}',
+                                          t.complexity == 'معقد'
+                                              ? '${t.name} • المتاح ${t.quantity.toInt() == t.quantity ? t.quantity.toInt() : t.quantity.fmt} قطعة'
+                                              : '${t.name} • المتاح ${t.quantity.fmt} ${t.unitSymbol}',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 15,
@@ -548,7 +550,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                               ),
                                             ),
                                             child: Text(
-                                              'تكلفة المتر بعد الخدمات: ${t.costPerMeterAfterServices.fmt} \$ / ${t.unitSymbol}',
+                                              'صافي سعر التفصيل: ${t.totalNetCost.fmt} \$',
                                               style: const TextStyle(
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.bold,
@@ -571,7 +573,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                               ),
                                             ),
                                             child: Text(
-                                              'سعر بيع المتر: ${t.sellingPrice.fmt} \$ / ${t.unitSymbol}',
+                                              'سعر البيع: ${t.sellingPrice.fmt} \$',
                                               style: TextStyle(
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.bold,
@@ -581,13 +583,35 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                               ),
                                             ),
                                           ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF1F5F9),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: const Color(0xFFCBD5E1),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              'إجمالي القطع المتاحة: ${t.quantity.toInt() == t.quantity ? t.quantity.toInt() : t.quantity.fmt} قطعة',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: AppColors.brandPrimaryText,
+                                              ),
+                                            ),
+                                          ),
                                           Padding(
                                             padding:
                                                 const EdgeInsets.symmetric(
                                                   vertical: 2,
                                                 ),
                                             child: Text(
-                                              'البنود: ${t.lineItems.length} • الإجمالي: ${t.totalNetCost.fmt}\$',
+                                              'عدد البنود: ${t.lineItems.length}',
                                               style: const TextStyle(
                                                 fontSize: 12,
                                                 color: AppColors
@@ -598,7 +622,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                         ],
                                       ],
                                     ),
-                                    if (t.lineItems.isNotEmpty) ...[
+                                    if (t.complexity == 'بسيط' && t.lineItems.isNotEmpty) ...[
                                       const SizedBox(height: 8),
                                       Container(
                                         padding: const EdgeInsets.symmetric(
@@ -749,36 +773,112 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.accentPrimary,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 8,
+                              if (t.complexity == 'معقد') ...[
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor:
+                                        AppColors.partnersEquityAccent,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                  ),
+                                  onPressed: () =>
+                                      _showAddComplexTailoringInventoryDialog(
+                                    erp,
+                                    t,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.add_box_outlined,
+                                    size: 16,
+                                  ),
+                                  label: const Text(
+                                    'إضافة مخزون للتفصيل ككل',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
-                                onPressed: () =>
-                                    _showAddTailoringInventoryDialog(erp, t),
-                                icon: const Icon(
-                                  Icons.add_box_outlined,
-                                  size: 16,
+                                const SizedBox(width: 6),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: AppColors.brandPrimaryText,
+                                    side: const BorderSide(
+                                      color: AppColors.panelBorder,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                  ),
+                                  onPressed: () =>
+                                      _showTailoringDetailsModal(erp, t),
+                                  icon: const Icon(
+                                    Icons.info_outline_rounded,
+                                    size: 16,
+                                    color: AppColors.accentPrimary,
+                                  ),
+                                  label: const Text(
+                                    'التفاصيل',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
-                                label: const Text(
-                                  'إضافة مخزون',
-                                  style: TextStyle(fontSize: 12),
+                              ] else ...[
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.accentPrimary,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                  ),
+                                  onPressed: () =>
+                                      _showAddTailoringInventoryDialog(erp, t),
+                                  icon: const Icon(
+                                    Icons.add_box_outlined,
+                                    size: 16,
+                                  ),
+                                  label: const Text(
+                                    'إضافة مخزون',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 4),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.info_outline_rounded,
-                                  color: AppColors.accentPrimary,
+                                const SizedBox(width: 6),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: AppColors.brandPrimaryText,
+                                    side: const BorderSide(
+                                      color: AppColors.panelBorder,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                  ),
+                                  onPressed: () =>
+                                      _showTailoringDetailsModal(erp, t),
+                                  icon: const Icon(
+                                    Icons.info_outline_rounded,
+                                    size: 16,
+                                    color: AppColors.accentPrimary,
+                                  ),
+                                  label: const Text(
+                                    'التفاصيل',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
-                                tooltip: 'التفاصيل والتعديل',
-                                onPressed: () =>
-                                    _showTailoringDetailsModal(erp, t),
-                              ),
+                              ],
                             ],
                           ),
                         ),
@@ -1898,29 +1998,36 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       spacing: 12,
                       runSpacing: 4,
                       children: [
-                        Text(
-                          'الكمية الكلية المتاحة: ${t.quantity.fmt} ${t.unitSymbol}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF15803D),
-                          ),
-                        ),
-                        if (t.complexity != 'بسيط') ...[
+                        if (t.complexity == 'معقد') ...[
                           Text(
-                            'التكلفة الإجمالية: ${t.totalNetCost.fmt} \$',
+                            'إجمالي القطع المتاحة: ${t.quantity.toInt() == t.quantity ? t.quantity.toInt() : t.quantity.fmt} قطعة',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF15803D),
+                            ),
+                          ),
+                          Text(
+                            'صافي سعر التفصيل (شامل الخدمات): ${t.totalNetCost.fmt} \$',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.brandPrimaryText,
                             ),
                           ),
                           Text(
-                            'متوسط سعر البيع: ${t.sellingPrice.fmt} \$ / ${t.unitSymbol}',
+                            'إجمالي سعر البيع: ${t.sellingPrice.fmt} \$',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: AppColors.accentPrimary,
                             ),
                           ),
                         ] else ...[
+                          Text(
+                            'الكمية الكلية المتاحة: ${t.quantity.fmt} ${t.unitSymbol}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF15803D),
+                            ),
+                          ),
                           const Text(
                             'التسعير: تسعير فردي لكل بند على حدة (لا يوجد سعر إجمالي للتفصيل)',
                             style: TextStyle(
@@ -2047,33 +2154,36 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
-                                  ElevatedButton.icon(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.accentPrimary,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 6,
+                                  if (t.complexity == 'بسيط') ...[
+                                    const SizedBox(width: 8),
+                                    ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor:
+                                            AppColors.accentPrimary,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 6,
+                                        ),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.pop(ctx);
+                                        _showAddTailoringInventoryDialog(
+                                          erp,
+                                          t,
+                                          lines.first.id,
+                                        );
+                                      },
+                                      icon: const Icon(
+                                        Icons.add_box_outlined,
+                                        size: 14,
+                                      ),
+                                      label: const Text(
+                                        'إضافة مخزون',
+                                        style: TextStyle(fontSize: 11),
                                       ),
                                     ),
-                                    onPressed: () {
-                                      Navigator.pop(ctx);
-                                      _showAddTailoringInventoryDialog(
-                                        erp,
-                                        t,
-                                        lines.first.id,
-                                      );
-                                    },
-                                    icon: const Icon(
-                                      Icons.add_box_outlined,
-                                      size: 14,
-                                    ),
-                                    label: const Text(
-                                      'إضافة مخزون',
-                                      style: TextStyle(fontSize: 11),
-                                    ),
-                                  ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -2188,7 +2298,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                           const SizedBox(height: 8),
 
                                           // Editable Selling Price for this specific line item
-                                          Container(
+                                          if (t.complexity == 'بسيط') ...[
+                                            Container(
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 10,
                                               vertical: 6,
@@ -2304,6 +2415,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                               ],
                                             ),
                                           ),
+                                        ],
 
                                           // Per-line pieces consumption adjustment
                                           if (li.source == 'materials') ...[
@@ -2393,7 +2505,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       );
                     }).toList(),
 
-                    if (t.complexity != 'بسيط') ...[
+                    if (t.complexity == 'معقد') ...[
                       const SizedBox(height: 10),
                       TextField(
                         controller: sellingCtrl,
@@ -2401,9 +2513,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           decimal: true,
                         ),
                         decoration: const InputDecoration(
-                          labelText: 'متوسط سعر البيع للمتر للتفصيل (\$)',
+                          labelText: 'إجمالي سعر البيع للتفصيل المعقد (\$)',
                           isDense: true,
-                          prefixIcon: Icon(Icons.price_change_outlined),
+                          prefixIcon: Icon(Icons.sell_outlined),
                         ),
                       ),
                     ],
@@ -2411,11 +2523,17 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     OutlinedButton.icon(
                       onPressed: () {
                         Navigator.pop(ctx);
-                        _showAddTailoringInventoryDialog(erp, t);
+                        if (t.complexity == 'معقد') {
+                          _showAddComplexTailoringInventoryDialog(erp, t);
+                        } else {
+                          _showAddTailoringInventoryDialog(erp, t);
+                        }
                       },
                       icon: const Icon(Icons.add_box_outlined, size: 16),
-                      label: const Text(
-                        'إضافة مخزون للتفصيل حسب البند والنوع من صفحة مواد المعمل',
+                      label: Text(
+                        t.complexity == 'معقد'
+                            ? 'إضافة مخزون للتفصيل ككل (زيادة قطع وخصم مواد)'
+                            : 'إضافة مخزون للتفصيل حسب البند والنوع من صفحة مواد المعمل',
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -2442,26 +2560,13 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                   }
                                 }
                               }
-                              if (t.complexity != 'بسيط') {
-                                final double totalArea = t.lineItems.fold<double>(
-                                  0.0,
-                                  (s, l) => s + l.area,
-                                );
+                              if (t.complexity == 'معقد') {
                                 final enteredSelling = double.tryParse(
-                                  sellingCtrl.text,
+                                  sellingCtrl.text.trim(),
                                 );
                                 if (enteredSelling != null &&
                                     enteredSelling > 0) {
                                   t.sellingPrice = enteredSelling;
-                                } else if (totalArea > 0) {
-                                  t.sellingPrice =
-                                      t.lineItems.fold<double>(
-                                        0.0,
-                                        (s, l) =>
-                                            s +
-                                            (l.area * l.sellingPricePerMeter),
-                                      ) /
-                                      totalArea;
                                 }
                               }
                               erp.saveToDisk();
@@ -3014,6 +3119,405 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                 },
                 icon: const Icon(Icons.check_circle_outline),
                 label: const Text('تأكيد وإضافة المخزون للبند'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showAddComplexTailoringInventoryDialog(
+    ERPProvider erp,
+    WorkshopTailoringModel t,
+  ) {
+    if (t.lineItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'لا توجد بنود لهذا التفصيل المعقد لحساب استهلاك المواد.',
+          ),
+          backgroundColor: AppColors.dangerWaste,
+        ),
+      );
+      return;
+    }
+
+    final addPiecesCtrl = TextEditingController(text: '1');
+    final sellingPriceCtrl = TextEditingController(text: t.sellingPrice.fmt);
+    String? formError;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          final int addedPieces = int.tryParse(addPiecesCtrl.text.trim()) ?? 0;
+          final double baseCount = t.quantity > 0 ? t.quantity : 1.0;
+
+          // Requirements per line item for addedPieces
+          final requirements = t.lineItems.map((li) {
+            final double perUnitPieces = li.quantity / baseCount;
+            final double perUnitArea = li.area / baseCount;
+            final double reqPieces =
+                perUnitPieces * (addedPieces > 0 ? addedPieces : 0);
+            final double reqArea =
+                perUnitArea * (addedPieces > 0 ? addedPieces : 0);
+
+            // Find matching warehouse material in erp.factoryWarehouse
+            FactoryWarehouseModel? matchWh;
+            if (li.stockId.isNotEmpty) {
+              final byId = erp.factoryWarehouse
+                  .where((w) => w.id == li.stockId)
+                  .toList();
+              if (byId.isNotEmpty) matchWh = byId.first;
+            }
+            if (matchWh == null) {
+              final bySpec = erp.factoryWarehouse.where((w) {
+                if (w.typeName != li.typeName) return false;
+                if (li.grade.isNotEmpty && w.grade != li.grade) return false;
+                if (li.thicknessCm > 0 &&
+                    (w.thicknessCm - li.thicknessCm).abs() > 0.01) {
+                  return false;
+                }
+                return true;
+              }).toList();
+              if (bySpec.isNotEmpty) {
+                matchWh = bySpec.first;
+              } else {
+                final byType = erp.factoryWarehouse
+                    .where((w) => w.typeName == li.typeName)
+                    .toList();
+                if (byType.isNotEmpty) matchWh = byType.first;
+              }
+            }
+
+            final bool hasEnough =
+                matchWh != null && (matchWh.availableQty + 0.0001 >= reqArea);
+            return (
+              lineItem: li,
+              matchWh: matchWh,
+              reqPieces: reqPieces,
+              reqArea: reqArea,
+              hasEnough: hasEnough,
+            );
+          }).toList();
+
+          final bool allMaterialsAvailable =
+              requirements.every((r) => r.hasEnough);
+
+          return AlertDialog(
+            title: Row(
+              children: [
+                const Icon(
+                  Icons.add_shopping_cart_rounded,
+                  color: AppColors.partnersEquityAccent,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'إضافة مخزون للتفصيل المعقد: ${t.name} (كقطعة كاملة)',
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 650,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Overview banner
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.panelBorder),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'الرصيد الحالي: ${t.quantity.toInt() == t.quantity ? t.quantity.toInt() : t.quantity.fmt} قطعة',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: Color(0xFF15803D),
+                                ),
+                              ),
+                              Text(
+                                'صافي سعر التفصيل: ${t.totalNetCost.fmt} \$',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: AppColors.brandPrimaryText,
+                                ),
+                              ),
+                              Text(
+                                'سعر البيع الحالي: ${t.sellingPrice.fmt} \$',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: AppColors.accentPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'تنبيه: كل تفصيل معقد يحسب كوحدة/قطعة متكاملة. عند إضافة عدد من القطع، سيتم احتساب المواد المطلوبة لجميع بنود التفصيل وخصمها تلقائياً من مخزون مواد المعمل.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Inputs: number of pieces & unified selling price
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: addPiecesCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'عدد القطع المراد إضافتها للتفصيل',
+                              isDense: true,
+                              prefixIcon: Icon(
+                                Icons.exposure_plus_1,
+                                size: 18,
+                              ),
+                            ),
+                            onChanged: (_) => setSt(() => formError = null),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: sellingPriceCtrl,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'سعر البيع الإجمالي للتفصيل (\$)',
+                              isDense: true,
+                              prefixIcon: Icon(
+                                Icons.sell_outlined,
+                                size: 18,
+                              ),
+                            ),
+                            onChanged: (_) => setSt(() => formError = null),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Material requirements table
+                    const Text(
+                      'المواد المطلوبة للاستهلاك والخصم من مواد المعمل:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: AppColors.brandPrimaryText,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: AppColors.panelBorder),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        children: requirements.map((req) {
+                          final li = req.lineItem;
+                          final match = req.matchWh;
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: req.hasEnough
+                                  ? Colors.white
+                                  : AppColors.dangerWaste.withValues(
+                                      alpha: 0.08,
+                                    ),
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Colors.grey.shade200,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.layers_outlined,
+                                  size: 16,
+                                  color: AppColors.brandPrimaryText,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${li.typeName} ${li.grade}${li.thicknessCm > 0 ? " ${li.thicknessCm}سم" : ""}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      Text(
+                                        'الأبعاد: ${li.lengthCm}×${li.widthCm}سم • المطلوب: ${req.reqArea.fmt} ${li.category} (${req.reqPieces.fmt} قطع)',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.brandSecondaryText,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      'المتاح بالمعمل: ${match?.availableQty.fmt ?? "0"} ${li.category}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: req.hasEnough
+                                            ? const Color(0xFF15803D)
+                                            : AppColors.dangerWaste,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 1,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: req.hasEnough
+                                            ? const Color(0xFFDCFCE7)
+                                            : const Color(0xFFFEE2E2),
+                                        borderRadius:
+                                            BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        req.hasEnough ? 'متوفر' : 'غير كافٍ',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: req.hasEnough
+                                              ? const Color(0xFF166534)
+                                              : const Color(0xFF991B1B),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
+                    if (formError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        formError!,
+                        style: const TextStyle(
+                          color: AppColors.dangerWaste,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.partnersEquityAccent,
+                ),
+                onPressed: () {
+                  if (addedPieces <= 0) {
+                    setSt(
+                      () => formError = 'أدخل عدد قطع صحيح أكبر من الصفر.',
+                    );
+                    return;
+                  }
+                  if (!allMaterialsAvailable) {
+                    final shortage =
+                        requirements.firstWhere((r) => !r.hasEnough);
+                    setSt(
+                      () => formError =
+                          'نقص في مخزون مواد المعمل لـ [${shortage.lineItem.typeName}]. المطلوب ${shortage.reqArea.fmt} ${shortage.lineItem.category} والمتاح ${shortage.matchWh?.availableQty.fmt ?? "0"}.',
+                    );
+                    return;
+                  }
+
+                  final newSell =
+                      double.tryParse(sellingPriceCtrl.text.trim()) ??
+                          t.sellingPrice;
+                  if (newSell < 0) {
+                    setSt(() => formError = 'أدخل سعر بيع صحيح.');
+                    return;
+                  }
+
+                  // 1. Deduct materials from factory warehouse and increment line item pieces
+                  for (final req in requirements) {
+                    if (req.matchWh != null) {
+                      req.matchWh!.availableQty =
+                          (req.matchWh!.availableQty - req.reqArea).clamp(
+                        0.0,
+                        double.infinity,
+                      );
+                    }
+                    req.lineItem.quantity += req.reqPieces;
+                  }
+
+                  // 2. Increment complex tailoring quantity by added pieces
+                  t.quantity += addedPieces;
+
+                  // 3. Update unified selling price
+                  if (newSell > 0) {
+                    t.sellingPrice = newSell;
+                  }
+
+                  erp.saveToDisk();
+                  erp.notifyListeners();
+                  Navigator.pop(ctx);
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'تمت إضافة $addedPieces قطعة للتفصيل المعقد "${t.name}" بنجاح، وخُصمت المواد المستهلكة من صفحة مواد المعمل.',
+                      ),
+                      backgroundColor: AppColors.successGreen,
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('تأكيد وإضافة المخزون للتفصيل ككل'),
               ),
             ],
           );
@@ -4320,24 +4824,17 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               ) ??
                               0.0;
                           if (enteredSelling > 0) {
-                            selling = outputMeasure > 0
-                                ? (enteredSelling / outputMeasure)
-                                : enteredSelling;
+                            selling = enteredSelling;
                           } else if (totalNetComplexCost > 0) {
-                            selling = outputMeasure > 0
-                                ? (totalNetComplexCost * 1.3 / outputMeasure)
-                                : 0.0;
+                            selling = totalNetComplexCost * 1.3;
                           } else {
                             selling = draftLines.fold<double>(
                                   0.0,
                                   (sum, line) => sum + line.lineTotal,
-                                ) /
-                                (outputMeasure > 0 ? outputMeasure : 1.0);
+                                );
                           }
                           for (final li in draftLines) {
-                            if (li.sellingPricePerMeter <= 0) {
-                              li.sellingPricePerMeter = selling;
-                            }
+                            li.sellingPricePerMeter = 0.0;
                           }
                         } else {
                           // Simple tailoring: No overall price for the entire tailoring item (no combined total price for all line items);
@@ -4393,9 +4890,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           lengthCm: 0,
                           widthCm: 0,
                           heightCm: 0,
-                          unitCategory: productUnit,
+                          unitCategory: complexity == 'معقد' ? 'قطعة' : productUnit,
                           measurementCount: 1,
-                          quantity: outputMeasure,
+                          quantity: complexity == 'معقد' ? 1.0 : outputMeasure,
                           materialNetCost: 0,
                           laborCostPerMeter: 0.0,
                           attachedServices: const [],
@@ -4414,7 +4911,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              'تم حفظ التفصيل بكمية ${outputMeasure.fmt} ${productUnit == 'متر مكعب' ? 'م³' : 'م²'} وخصم استهلاك المواد من المخزون.',
+                              complexity == 'معقد'
+                                  ? 'تم حفظ التفصيل المعقد كقطعة واحدة بسعر بيع إجمالي ${selling.fmt}\$ وخصم استهلاك المواد من المخزون.'
+                                  : 'تم حفظ التفصيل بكمية ${outputMeasure.fmt} ${productUnit == 'متر مكعب' ? 'م³' : 'م²'} وخصم استهلاك المواد من المخزون.',
                             ),
                             backgroundColor: AppColors.successGreen,
                           ),
