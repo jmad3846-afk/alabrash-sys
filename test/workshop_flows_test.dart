@@ -864,4 +864,210 @@ void main() {
     );
     expect(ws.availableQty, closeTo(wsBefore + 2.0, 0.001));
   });
+  testWidgets('simple tailoring dialog omits labor cost and shows post-tailoring net cost', (tester) async {
+    final erp = ERPProvider();
+    await setDesktop(tester);
+    await tester.pumpWidget(workshopWrap(erp));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('2. مفصل (تفصيلات بسيطة ومعقدة)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2. مفصل (تفصيلات بسيطة ومعقدة)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('[إضافة تفصيل بسيط]'));
+    await tester.pumpAndSettle();
+
+    // In simple tailoring, 'أجر المتر ($)' must NOT appear
+    expect(find.text('أجر المتر (\$)'), findsNothing);
+
+    // Enter name
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) => widget is TextField && widget.decoration?.labelText == 'اسم التفصيل',
+      ),
+      'درج بسيط فاخر',
+    );
+
+    // Pick material
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('رخام كاردينال').last);
+    await tester.pumpAndSettle();
+
+    // Enter dimensions: 120 x 30 cm, qty 10
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) => widget is TextField && widget.decoration?.labelText == 'الطول (سم)',
+      ),
+      '120',
+    );
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) => widget is TextField && widget.decoration?.labelText == 'العرض (سم)',
+      ),
+      '30',
+    );
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) => widget is TextField && widget.decoration?.labelText == 'الكمية',
+      ),
+      '10',
+    );
+    await tester.pumpAndSettle();
+
+    // Check net cost post-tailoring container is shown
+    expect(find.textContaining('صافي تكلفة المتر بعد الخدمات'), findsOneWidget);
+
+    // Meter Selling Price is present after services
+    expect(find.text('سعر البيع للمتر (\$)'), findsOneWidget);
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) => widget is TextField && widget.decoration?.labelText == 'سعر البيع للمتر (\$)',
+      ),
+      '35.0',
+    );
+    await tester.pumpAndSettle();
+
+    // Add material line
+    await tester.tap(find.text('إضافة بند المواد +'));
+    await tester.pumpAndSettle();
+
+    // Save tailoring
+    await tester.tap(find.text('حفظ التفصيل بالمتر'));
+    await tester.pumpAndSettle();
+
+    // Verify displayed on screen: Name, available quantity in meters, cost after services, selling price
+    final tailoring = erp.simpleTailorings.last;
+    expect(tailoring.name, 'درج بسيط فاخر');
+    expect(tailoring.quantity, closeTo(3.6, 0.001)); // 1.2 * 0.3 * 10 = 3.6 m2
+    expect(tailoring.sellingPrice, 35.0);
+    expect(tailoring.costPerMeterAfterServices, greaterThan(0));
+
+    expect(find.textContaining('درج بسيط فاخر • المتاح 3.6 م²'), findsOneWidget);
+    expect(find.textContaining('سعر بيع المتر: 35'), findsOneWidget);
+    expect(find.textContaining('تكلفة المتر بعد الخدمات: 14.5'), findsOneWidget);
+  });
+
+  test('replenish tailoring line item inventory deducts factory warehouse and updates quantity', () async {
+    final erp = ERPProvider();
+    final fw = erp.factoryWarehouse.firstWhere((w) => w.id == 'fw1');
+    final fwBefore = fw.availableQty;
+
+    final lineItem = TailoringLineItem(
+      id: 'li_rep_1',
+      source: 'materials',
+      stockId: 'ws1',
+      typeName: fw.typeName,
+      grade: fw.grade,
+      thicknessCm: fw.thicknessCm,
+      category: fw.category,
+      lengthCm: 100,
+      widthCm: 100,
+      quantity: 5,
+      netCostPerMeter: fw.netCostPerUnit,
+      sellingPricePerMeter: 30.0,
+      services: [ServiceAttachment(serviceName: 'شطف', price: 20.0)],
+    );
+
+    final tailoring = WorkshopTailoringModel(
+      id: 'tailoring_rep_test',
+      name: 'تفصيل مخزون اختبار',
+      complexity: 'بسيط',
+      rawMaterialDescription: '${fw.typeName} ${fw.grade}',
+      quantity: 5.0, // 5 m2
+      materialNetCost: fw.netCostPerUnit * 5.0,
+      sellingPrice: 30.0,
+      lineItems: [lineItem],
+    );
+    erp.simpleTailorings.add(tailoring);
+
+    // Replenish 3 pieces (3 m2) from Factory Warehouse
+    const double addedPieces = 3.0;
+    final double addedArea = (lineItem.lengthCm / 100.0) * (lineItem.widthCm / 100.0) * addedPieces;
+    expect(addedArea, 3.0);
+
+    // Deduct stock from Factory Warehouse
+    final deducted = erp.deductFactoryWarehouseStock(fw.id, addedArea);
+    expect(deducted, isTrue);
+    expect(fw.availableQty, closeTo(fwBefore - addedArea, 0.001));
+
+    // Update line item and tailoring
+    lineItem.quantity += addedPieces;
+    tailoring.quantity += addedArea;
+    tailoring.sellingPrice = 32.0;
+
+    expect(lineItem.quantity, 8.0);
+    expect(tailoring.quantity, 8.0);
+    expect(tailoring.sellingPrice, 32.0);
+  });
+
+  test('factory POS invoice sells tailoring line items and deducts stock', () async {
+    final erp = ERPProvider();
+    final client = erp.clients.firstWhere((c) => c.clientType == 'معتمد مصنع');
+
+    final lineItem = TailoringLineItem(
+      id: 'li_sale_1',
+      source: 'materials',
+      stockId: 'ws1',
+      typeName: 'رخام كاردينال',
+      grade: 'درجة أولى',
+      thicknessCm: 2.0,
+      category: 'متر مربع',
+      lengthCm: 100,
+      widthCm: 50,
+      quantity: 10, // 10 pieces = 5.0 m2
+      netCostPerMeter: 15.0,
+      sellingPricePerMeter: 28.0,
+      services: [],
+    );
+
+    final tailoring = WorkshopTailoringModel(
+      id: 'tailoring_sale_test',
+      name: 'تفصيل بيع اختبار',
+      complexity: 'بسيط',
+      rawMaterialDescription: 'رخام كاردينال',
+      quantity: 5.0,
+      materialNetCost: 75.0,
+      sellingPrice: 28.0,
+      lineItems: [lineItem],
+    );
+    erp.simpleTailorings.add(tailoring);
+
+    // Sell 4 pieces (4 * 1.0 * 0.5 = 2.0 m2)
+    final invoiceItem = FactoryInvoiceItem(
+      itemId: 'tailoring_${tailoring.id}_${lineItem.id}',
+      description: 'تفصيل: ${tailoring.name} - بند: ${lineItem.typeName} ${lineItem.grade} (${lineItem.lengthCm}×${lineItem.widthCm}سم)',
+      typeName: tailoring.name,
+      grade: tailoring.complexity,
+      lengthCm: lineItem.lengthCm,
+      widthCm: lineItem.widthCm,
+      heightCm: lineItem.heightCm,
+      quantity: 4, // 4 pieces
+      unitPrice: 28.0,
+      unitCost: 15.0,
+      itemCategory: 'tailoring',
+    );
+
+    expect(invoiceItem.isTailoringItem, isTrue);
+    expect(invoiceItem.calculatedArea, closeTo(2.0, 0.001));
+    expect(invoiceItem.totalPrice, closeTo(56.0, 0.001)); // 2.0 * 28
+
+    final inv = FactoryInvoiceModel(
+      id: 'fi_pos_tailoring_test',
+      invoiceNo: 'FAC-POS-TEST-1',
+      date: DateTime.now(),
+      partyId: client.id,
+      partyName: client.name,
+      invoiceType: 'بيع_معتمد',
+      items: [invoiceItem],
+      advancePayment: 56.0,
+    );
+
+    final created = erp.addFactoryPOSInvoice(inv);
+    expect(created, isTrue);
+
+    // Line item pieces deducted: 10 - 4 = 6 pieces
+    expect(lineItem.quantity, closeTo(6.0, 0.001));
+    // Tailoring area deducted: 5.0 - 2.0 = 3.0 m2
+    expect(tailoring.quantity, closeTo(3.0, 0.001));
+  });
 }

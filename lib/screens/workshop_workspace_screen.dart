@@ -104,7 +104,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     return DefaultTabController(
       length: 2,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -427,41 +427,144 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, idx) {
                       final t = items[idx];
-                      return ListTile(
-                        leading: t.photoPath.isNotEmpty
-                            ? AppImageThumbnail(
-                                imagePath: t.photoPath,
-                                title: 'صورة تفصيل ${t.name}',
-                              )
-                            : null,
-                        title: Text(
-                          '${t.name} • المتاح ${t.quantity.fmt} ${t.unitSymbol}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                      return Card(
+                        margin: const EdgeInsets.symmetric(
+                          vertical: 4,
+                          horizontal: 4,
                         ),
-                        subtitle: Text(
-                          'البنود: ${t.lineItems.length} • التكلفة: ${t.totalNetCost.fmt}\$ • ${t.photoPath.isEmpty ? "بلا صورة" : "مرفق صورة"}',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'سعر البيع: ${t.sellingPrice.fmt}\$/${t.unitSymbol}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: accent ?? AppColors.successGreen,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              if (t.photoPath.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsetsDirectional.only(
+                                    end: 12,
+                                  ),
+                                  child: AppImageThumbnail(
+                                    imagePath: t.photoPath,
+                                    title: 'صورة تفصيل ${t.name}',
+                                  ),
+                                ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          '${t.name} • المتاح ${t.quantity.fmt} ${t.unitSymbol}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 16,
+                                      runSpacing: 4,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF0FDF4),
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: const Color(0xFF86EFAC),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'تكلفة المتر بعد الخدمات: ${t.costPerMeterAfterServices.fmt} \$ / ${t.unitSymbol}',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF166534),
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.chipBgBlue,
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: AppColors.panelBorder,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'سعر بيع المتر: ${t.sellingPrice.fmt} \$ / ${t.unitSymbol}',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color:
+                                                  accent ??
+                                                  AppColors.successGreen,
+                                            ),
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.symmetric(
+                                                vertical: 2,
+                                              ),
+                                          child: Text(
+                                            'البنود: ${t.lineItems.length} • الإجمالي: ${t.totalNetCost.fmt}\$',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color:
+                                                  AppColors
+                                                      .brandSecondaryText,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.info_outline_rounded,
-                                color: AppColors.accentPrimary,
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.accentPrimary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                ),
+                                onPressed: () =>
+                                    _showAddTailoringInventoryDialog(erp, t),
+                                icon: const Icon(
+                                  Icons.add_box_outlined,
+                                  size: 16,
+                                ),
+                                label: const Text(
+                                  'إضافة مخزون',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               ),
-                              tooltip: 'التفاصيل والتعديل',
-                              onPressed: () =>
-                                  _showTailoringDetailsModal(erp, t),
-                            ),
-                          ],
+                              const SizedBox(width: 4),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.info_outline_rounded,
+                                  color: AppColors.accentPrimary,
+                                ),
+                                tooltip: 'التفاصيل والتعديل',
+                                onPressed: () =>
+                                    _showTailoringDetailsModal(erp, t),
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     },
@@ -1535,7 +1638,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       context,
                     ).textTheme.titleLarge?.copyWith(fontSize: 18),
                   ),
-                  const Divider(height: 20),
+                  const Divider(height: 8),
                   Text('المادة: ${t.rawMaterialDescription}'),
                   Text('التكلفة الكلية: ${t.totalNetCost.fmt}\$'),
                   if (t.photoPath.isNotEmpty)
@@ -1697,6 +1800,15 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       labelText: 'سعر البيع للمتر (\$)',
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _showAddTailoringInventoryDialog(erp, t);
+                    },
+                    icon: const Icon(Icons.add_box_outlined, size: 16),
+                    label: const Text('إضافة مخزون للتفصيل من صفحة مواد المصنع'),
+                  ),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -1726,6 +1838,433 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showAddTailoringInventoryDialog(
+    ERPProvider erp,
+    WorkshopTailoringModel t,
+  ) {
+    if (t.lineItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لا توجد بنود لهذا التفصيل لإضافة مخزون إليها.'),
+          backgroundColor: AppColors.dangerWaste,
+        ),
+      );
+      return;
+    }
+
+    String selectedLineId = t.lineItems.first.id;
+    final addQtyCtrl = TextEditingController(text: '1');
+    final sellingPriceCtrl = TextEditingController(text: t.sellingPrice.fmt);
+    String? formError;
+    String? selectedWhId;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          final li = t.lineItems.firstWhere(
+            (item) => item.id == selectedLineId,
+            orElse: () => t.lineItems.first,
+          );
+
+          // Find best matching material in erp.factoryWarehouse
+          final matchingWarehouseItems = erp.factoryWarehouse.where((w) {
+            if (li.stockId.isNotEmpty && w.id == li.stockId) return true;
+            if (w.typeName == li.typeName) {
+              if (li.grade.isNotEmpty && w.grade != li.grade) return false;
+              if (li.thicknessCm > 0 &&
+                  (w.thicknessCm - li.thicknessCm).abs() > 0.01) {
+                return false;
+              }
+              return true;
+            }
+            return false;
+          }).toList();
+
+          final bestMatch = matchingWarehouseItems.isNotEmpty
+              ? matchingWarehouseItems.first
+              : (erp.factoryWarehouse.any((w) => w.typeName == li.typeName)
+                  ? erp.factoryWarehouse.firstWhere(
+                      (w) => w.typeName == li.typeName,
+                    )
+                  : (erp.factoryWarehouse.isNotEmpty
+                      ? erp.factoryWarehouse.first
+                      : null));
+
+          selectedWhId ??= bestMatch?.id;
+          final currentWh = erp.factoryWarehouse.firstWhere(
+            (w) => w.id == selectedWhId,
+            orElse: () =>
+                bestMatch ??
+                (erp.factoryWarehouse.isNotEmpty
+                    ? erp.factoryWarehouse.first
+                    : FactoryWarehouseModel(
+                        id: '',
+                        typeName: li.typeName,
+                        grade: li.grade,
+                        thicknessCm: li.thicknessCm,
+                        category: li.category,
+                        availableQty: 0.0,
+                        netCostPerUnit: li.netCostPerMeter,
+                        recommendedSalePrice: li.sellingPricePerMeter,
+                      )),
+          );
+
+          final double addedQtyPieces = double.tryParse(addQtyCtrl.text) ?? 0.0;
+          final bool isCube = li.category == 'متر مكعب' || li.heightCm > 5;
+          final double pieceArea = isCube
+              ? ((li.lengthCm / 100.0) *
+                  (li.widthCm / 100.0) *
+                  (li.heightCm / 100.0))
+              : ((li.lengthCm / 100.0) * (li.widthCm / 100.0));
+          final double deltaArea = pieceArea * addedQtyPieces;
+          final double currentMeterPrice = currentWh.netCostPerUnit;
+          final double addedValue = deltaArea * currentMeterPrice;
+
+          final double newTotalTailoringArea = t.quantity + deltaArea;
+          final double newTotalTailoringNetCost = t.totalNetCost + addedValue;
+          final double newCostPerMeterAfterServices =
+              newTotalTailoringArea > 0
+                  ? (newTotalTailoringNetCost / newTotalTailoringArea)
+                  : 0.0;
+
+          return AlertDialog(
+            title: Row(
+              children: [
+                const Icon(
+                  Icons.add_shopping_cart_rounded,
+                  color: AppColors.accentPrimary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text('إضافة مخزون لتفصيل: ${t.name}')),
+              ],
+            ),
+            content: SizedBox(
+              width: 580,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Line item selector
+                    const Text(
+                      'اختر بند التفصيل المراد زيادة كميته:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      value: selectedLineId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(isDense: true),
+                      items: t.lineItems.map((item) {
+                        return DropdownMenuItem<String>(
+                          value: item.id,
+                          child: Text(
+                            '${item.typeName} ${item.grade} (${item.lengthCm}×${item.widthCm}سم) — حالياً: ${item.quantity.fmt} قطع (${item.area.fmt} ${item.category})',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (v) {
+                        if (v != null) {
+                          setSt(() {
+                            selectedLineId = v;
+                            selectedWhId = null;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Dimensions and quantity addition
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.panelBorder),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'أبعاد البند: الطول ${li.lengthCm} سم • العرض ${li.widthCm} سم ${isCube ? "• الارتفاع ${li.heightCm} سم" : ""} • مساحة القطعة: ${pieceArea.fmt} ${isCube ? "م³" : "م²"}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: addQtyCtrl,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'الكمية المراد زيادتها (عدد القطع)',
+                                    isDense: true,
+                                    prefixIcon: Icon(
+                                      Icons.exposure_plus_1,
+                                      size: 18,
+                                    ),
+                                  ),
+                                  onChanged: (_) =>
+                                      setSt(() => formError = null),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 12,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.chipBgBlue,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'الأمتار المحسوبة: ${deltaArea.fmt} ${li.category}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.accentPrimary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Selected material from Factory Materials Section
+                    const Text(
+                      'المادة المسحوبة من شاشة المواد (صفحة المصنع):',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    if (erp.factoryWarehouse.isEmpty)
+                      const Text(
+                        'لا توجد مواد مسجلة في مستودع المصنع.',
+                        style: TextStyle(color: AppColors.dangerWaste),
+                      )
+                    else
+                      DropdownButtonFormField<String>(
+                        value: selectedWhId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(isDense: true),
+                        items: erp.factoryWarehouse.map((w) {
+                          return DropdownMenuItem<String>(
+                            value: w.id,
+                            child: Text(
+                              '${w.typeName} ${w.grade} ${w.thicknessCm}سم — متاح: ${w.availableQty.fmt} ${w.category} — سعر المتر: ${w.netCostPerUnit.fmt}\$',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (v) => setSt(() => selectedWhId = v),
+                      ),
+                    const SizedBox(height: 10),
+
+                    // Added Value & Calculations Panel
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF86EFAC)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment:
+                                MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('سعر متر المادة الحالي من شاشة المواد:'),
+                              Text(
+                                '${currentMeterPrice.fmt} \$ / ${li.category}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment:
+                                MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('القيمة المضافة المحسوبة (الأمتار × سعر المتر):'),
+                              Text(
+                                '${addedValue.fmt} \$',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.accentPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment:
+                                MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('المخزون المتاح في مواد المصنع:'),
+                              Text(
+                                '${currentWh.availableQty.fmt} ${li.category}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: currentWh.availableQty >= deltaArea
+                                      ? AppColors.successGreen
+                                      : AppColors.dangerWaste,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Divider(height: 12),
+                          Row(
+                            mainAxisAlignment:
+                                MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('صافي تكلفة المتر للتفصيل بعد الإضافة:'),
+                              Text(
+                                '${newCostPerMeterAfterServices.fmt} \$ / ${t.unitSymbol}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF166534),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Edit selling price field
+                    TextField(
+                      controller: sellingPriceCtrl,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'تعديل سعر بيع المتر للتفصيل (\$)',
+                        isDense: true,
+                        prefixIcon: Icon(Icons.price_change_outlined, size: 18),
+                      ),
+                    ),
+
+                    if (formError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        formError!,
+                        style: const TextStyle(
+                          color: AppColors.dangerWaste,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accentPrimary,
+                ),
+                onPressed: () {
+                  if (addedQtyPieces <= 0) {
+                    setSt(
+                      () => formError = 'أدخل كمية قطع صحيحة أكبر من الصفر.',
+                    );
+                    return;
+                  }
+                  if (deltaArea <= 0) {
+                    setSt(
+                      () => formError = 'الأبعاد أو الكمية المحسوبة غير صالحة.',
+                    );
+                    return;
+                  }
+                  if (currentWh.availableQty + 0.0001 < deltaArea) {
+                    setSt(
+                      () => formError =
+                          'الكمية المحسوبة (${deltaArea.fmt} ${li.category}) تتجاوز المتاح في مواد المصنع (${currentWh.availableQty.fmt}).',
+                    );
+                    return;
+                  }
+
+                  final newSell =
+                      double.tryParse(sellingPriceCtrl.text) ?? t.sellingPrice;
+                  if (newSell < 0) {
+                    setSt(() => formError = 'أدخل سعر بيع صحيح.');
+                    return;
+                  }
+
+                  // 1. Deduct from Factory Warehouse
+                  currentWh.availableQty =
+                      (currentWh.availableQty - deltaArea).clamp(
+                        0.0,
+                        double.infinity,
+                      );
+
+                  // 2. Update line item pieces and weighted average cost
+                  final double oldLineArea = li.area;
+                  final double oldLineCost = oldLineArea * li.netCostPerMeter;
+                  li.quantity += addedQtyPieces;
+                  final double newLineArea = li.area;
+                  final double newLineCost = oldLineCost + addedValue;
+                  li.netCostPerMeter =
+                      newLineArea > 0
+                          ? (newLineCost / newLineArea)
+                          : li.netCostPerMeter;
+                  if (newSell > 0) {
+                    li.sellingPricePerMeter = newSell;
+                  }
+
+                  // 3. Update tailoring quantity and selling price
+                  t.quantity += deltaArea;
+                  t.sellingPrice = newSell;
+
+                  erp.saveToDisk();
+                  erp.notifyListeners();
+                  Navigator.pop(ctx);
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'تمت إضافة ${addedQtyPieces.fmt} قطع (${deltaArea.fmt} ${t.unitSymbol}) إلى التفصيل، وخصم ${deltaArea.fmt} من صفحة مواد المصنع بنجاح.',
+                      ),
+                      backgroundColor: AppColors.successGreen,
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('تأكيد وإضافة المخزون'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2060,6 +2599,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
               .fold(0.0, (s, e) => s + e.area);
 
           return Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             child: Container(
               width: 760,
               padding: const EdgeInsets.all(24),
@@ -2081,15 +2621,16 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       controller: nameCtrl,
                       decoration: const InputDecoration(
                         labelText: 'اسم التفصيل',
+                        isDense: true,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 4),
                     AppImageAttachmentPicker(
                       initialPath: photoPath,
-                      label: 'صورة التفصيل / النموذج (اختياري)',
+                      label: 'إرفاق صورة للنموذج (اختياري)',
                       onImageChanged: (p) => setSt(() => photoPath = p),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 6),
                     const Text(
                       'بنود المواد (أضف كل بند بزر +):',
                       style: TextStyle(fontWeight: FontWeight.bold),
@@ -2338,34 +2879,37 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       ),
                     ],
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: sellMeterCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'سعر البيع للمتر (\$)',
-                              isDense: true,
+                    if (complexity == 'معقد') ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: sellMeterCtrl,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'سعر البيع للمتر (\$)',
+                                isDense: true,
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: laborCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'أجر المتر (\$)',
-                              isDense: true,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: laborCtrl,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'أجر المتر (\$)',
+                                isDense: true,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 6),
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(8),
@@ -2381,7 +2925,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               fontSize: 12,
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           TextField(
                             decoration: const InputDecoration(
                               labelText: 'بحث خدمة...',
@@ -2391,7 +2935,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             onChanged: (v) =>
                                 setSt(() => serviceSearch = v.trim()),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           DropdownButtonFormField<String>(
                             initialValue:
                                 servicesFiltered.any(
@@ -2415,7 +2959,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             onChanged: (v) =>
                                 setSt(() => selectedServiceId = v),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           Row(
                             children: [
                               Expanded(
@@ -2494,11 +3038,127 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         ],
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    if (complexity == 'بسيط') ...[
+                      const SizedBox(height: 6),
+                      // Net meter cost calculation post-tailoring (including services) for simple tailoring
+                      Builder(
+                        builder: (context) {
+                          final double lineMatCost = lineSource == 'materials'
+                              ? (area * (ws?.netCostPerUnit ?? 0.0))
+                              : (area * (sc?.baseCost ?? 0.0));
+                          final double lineSrvCost = draftServices.fold(
+                            0.0,
+                            (s, sv) => s + sv.price,
+                          );
+                          final double lineTotalNetCost = lineMatCost + lineSrvCost;
+                          final double postTailoringMeterCost = area > 0
+                              ? (lineTotalNetCost / area)
+                              : (ws?.netCostPerUnit ?? sc?.baseCost ?? 0.0);
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF0FDF4),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: const Color(0xFF86EFAC)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.calculate_outlined,
+                                          size: 16,
+                                          color: Color(0xFF15803D),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        const Expanded(
+                                          child: Text(
+                                            'صافي تكلفة المتر بعد الخدمات (تكلفة المتر بعد التفصيل):',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 11,
+                                              color: Color(0xFF166534),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '${postTailoringMeterCost.fmt} \$ / ${wsCube ? "م³" : "م²"}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: Color(0xFF166534),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (area > 0) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'تكلفة المادة: ${lineMatCost.fmt}\$ + خدمات: ${lineSrvCost.fmt}\$ = ${lineTotalNetCost.fmt}\$ (المساحة: ${area.fmt} ${wsCube ? "م³" : "م²"})',
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Color(0xFF15803D),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+
+                              // Meter selling price placed at the end of the line item after services
+                              TextField(
+                                controller: sellMeterCtrl,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText: 'سعر البيع للمتر (\$)',
+                                  hintText: postTailoringMeterCost > 0
+                                      ? 'المقترح: ${(postTailoringMeterCost * 1.3).fmt}'
+                                      : null,
+                                  isDense: true,
+                                  prefixIcon: const Icon(
+                                    Icons.sell_outlined,
+                                    size: 18,
+                                  ),
+                                ),
+                                onChanged: (_) => setSt(() {}),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+
                     Align(
                       alignment: AlignmentDirectional.centerStart,
                       child: ElevatedButton.icon(
                         onPressed: () {
+                          final double lineMatCost = lineSource == 'materials'
+                              ? (area * (ws?.netCostPerUnit ?? 0.0))
+                              : (area * (sc?.baseCost ?? 0.0));
+                          final double lineSrvCost = draftServices.fold(
+                            0.0,
+                            (s, sv) => s + sv.price,
+                          );
+                          final double lineTotalNetCost =
+                              lineMatCost + lineSrvCost;
+                          final double postTailoringMeterCost = area > 0
+                              ? (lineTotalNetCost / area)
+                              : (ws?.netCostPerUnit ?? sc?.baseCost ?? 0.0);
+
                           if (lineSource == 'materials') {
                             final stock = ws;
                             if (stock == null) {
@@ -2534,9 +3194,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             }
                             final sell =
                                 double.tryParse(sellMeterCtrl.text) ??
-                                stock.recommendedSalePrice;
-                            final labor =
-                                double.tryParse(laborCtrl.text) ?? 0.0;
+                                (postTailoringMeterCost > 0
+                                    ? postTailoringMeterCost * 1.30
+                                    : stock.recommendedSalePrice);
+                            final labor = complexity == 'بسيط'
+                                ? 0.0
+                                : (double.tryParse(laborCtrl.text) ?? 0.0);
                             setSt(() {
                               formError = null;
                               if (existingMaterialLines.isEmpty) {
@@ -2655,7 +3318,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         ),
                       );
                     }),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 8),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: complexity == 'بسيط'
@@ -2681,12 +3344,16 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           );
                           return;
                         }
-                        final selling =
-                            draftLines.fold<double>(
-                              0.0,
-                              (sum, line) => sum + line.lineTotal,
-                            ) /
-                            outputMeasure;
+                        final selling = complexity == 'بسيط'
+                            ? (draftLines.fold<double>(
+                                0.0,
+                                (sum, line) =>
+                                    sum + (line.area * line.sellingPricePerMeter),
+                              ) / (outputMeasure > 0 ? outputMeasure : 1.0))
+                            : (draftLines.fold<double>(
+                                0.0,
+                                (sum, line) => sum + line.lineTotal,
+                              ) / (outputMeasure > 0 ? outputMeasure : 1.0));
                         // Commit stock: deduct materials, consume scrap.
                         for (final li in draftLines) {
                           if (li.source == 'materials') {

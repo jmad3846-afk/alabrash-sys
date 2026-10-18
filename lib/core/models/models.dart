@@ -1005,6 +1005,7 @@ class FactoryInvoiceItem {
   });
 
   bool get isMeterItem => itemCategory == 'meter' || itemCategory == 'متر';
+  bool get isTailoringItem => itemCategory == 'tailoring' || itemCategory == 'تفصيل';
 
   double get calculatedArea {
     if (isMeterItem) {
@@ -1291,9 +1292,9 @@ class TailoringLineItem {
   double widthCm;
   double heightCm;
   double quantity;
-  final double netCostPerMeter;
-  final double sellingPricePerMeter;
-  final double laborPerMeter;
+  double netCostPerMeter;
+  double sellingPricePerMeter;
+  double laborPerMeter;
   final List<ServiceAttachment> services;
 
   TailoringLineItem({
@@ -1330,6 +1331,8 @@ class TailoringLineItem {
 
   double get materialCost => area * netCostPerMeter;
   double get servicesTotal => services.fold(0.0, (s, e) => s + e.price);
+  double get netCostPerMeterAfterServices =>
+      area > 0 ? (materialCost + servicesTotal) / area : netCostPerMeter;
   double get lineTotal =>
       (area * sellingPricePerMeter) + (laborPerMeter * area) + servicesTotal;
 
@@ -1435,6 +1438,8 @@ class WorkshopTailoringModel {
       lineItems.fold(0.0, (s, l) => s + l.materialCost);
   double get totalNetCost =>
       materialNetCost + linesMaterialCost + totalLaborCost + totalServicesCost;
+  double get costPerMeterAfterServices =>
+      quantity > 0 ? (totalNetCost / quantity) : 0.0;
 
   Map<String, dynamic> toJson() => {
     'id': id,

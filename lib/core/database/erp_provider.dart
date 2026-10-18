@@ -2592,9 +2592,39 @@ class ERPProvider extends ChangeNotifier {
       client.addDebt(inv.currency, inv.remainingBalance);
     }
 
-    // Deduct stock from Factory Warehouse
-    if (factoryWarehouse.isNotEmpty) {
-      for (var item in inv.items) {
+    // Deduct stock from Factory Warehouse or Tailoring
+    for (var item in inv.items) {
+      if (item.itemCategory == 'tailoring' || item.itemId.startsWith('tailoring_')) {
+        final allTailorings = [...simpleTailorings, ...complexTailorings];
+        WorkshopTailoringModel? tailoring;
+        TailoringLineItem? lineItem;
+        for (final t in allTailorings) {
+          for (final li in t.lineItems) {
+            if (item.itemId == 'tailoring_${t.id}_${li.id}' || item.itemId == li.id) {
+              tailoring = t;
+              lineItem = li;
+              break;
+            }
+          }
+          if (tailoring != null) break;
+          if (item.itemId == t.id) {
+            tailoring = t;
+            break;
+          }
+        }
+        if (tailoring != null) {
+          tailoring.quantity = (tailoring.quantity - item.calculatedArea).clamp(
+            0.0,
+            double.infinity,
+          );
+          if (lineItem != null) {
+            lineItem.quantity = (lineItem.quantity - item.quantity).clamp(
+              0.0,
+              double.infinity,
+            );
+          }
+        }
+      } else if (factoryWarehouse.isNotEmpty) {
         FactoryWarehouseModel? wh;
         for (final warehouseItem in factoryWarehouse) {
           if (warehouseItem.id == item.itemId) {
@@ -2961,6 +2991,25 @@ class ERPProvider extends ChangeNotifier {
 
   void restoreWorkshopStock(String stockId, double qty) {
     final matches = workshopStock.where((w) => w.id == stockId).toList();
+    if (matches.isEmpty || qty <= 0) return;
+    matches.first.availableQty += qty;
+    notifyListeners();
+    saveToDisk();
+  }
+
+  /// Factory warehouse helpers for tailoring replenishment and stock adjustments.
+  bool deductFactoryWarehouseStock(String whId, double qty) {
+    final matches = factoryWarehouse.where((w) => w.id == whId).toList();
+    if (matches.isEmpty || qty <= 0) return false;
+    if (matches.first.availableQty + 0.0001 < qty) return false;
+    matches.first.availableQty -= qty;
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  void restoreFactoryWarehouseStock(String whId, double qty) {
+    final matches = factoryWarehouse.where((w) => w.id == whId).toList();
     if (matches.isEmpty || qty <= 0) return;
     matches.first.availableQty += qty;
     notifyListeners();

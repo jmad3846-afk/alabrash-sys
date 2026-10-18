@@ -3861,7 +3861,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final approvedClients = erp.clients
         .where((c) => c.clientType == 'معتمد مصنع')
         .toList();
-    if (approvedClients.isEmpty || erp.factoryWarehouse.isEmpty) {
+    final hasTailorings = erp.simpleTailorings.isNotEmpty || erp.complexTailorings.isNotEmpty;
+    if (approvedClients.isEmpty || (erp.factoryWarehouse.isEmpty && !hasTailorings)) {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -3875,7 +3876,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           content: Text(
             'يجب توفر بيانات أساسية أولاً:\n'
             '${approvedClients.isEmpty ? "• معتمد مصنع واحد على الأقل (شاشة الأشخاص)\n" : ""}'
-            '${erp.factoryWarehouse.isEmpty ? "• صنف واحد على الأقل في مستودع الألواح\n" : ""}',
+            '${(erp.factoryWarehouse.isEmpty && !hasTailorings) ? "• صنف واحد على الأقل في مستودع الألواح أو قسم التفصيل\n" : ""}',
           ),
           actions: [
             TextButton(
@@ -3898,9 +3899,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     }
 
     // Multi-item approved-client invoice builder (exact spec).
+    String itemSource = erp.factoryWarehouse.isNotEmpty ? 'warehouse' : 'tailoring';
     String? selectedClientId;
     String clientSearch = '';
     String? selectedWhId;
+    String? selectedTailoringId;
+    String? selectedTailoringLineId;
+    String tailoringSearch = '';
+    final tailoringPiecesCtrl = TextEditingController();
+    final tailoringUnitPriceCtrl = TextEditingController();
     String goodsSearch = '';
     final lengthCtrl = TextEditingController();
     final widthCtrl = TextEditingController();
@@ -3972,6 +3979,48 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               ? null
               : matches.first;
           final bool isCube = wh?.category == 'متر مكعب';
+
+          final allTailorings = [...erp.simpleTailorings, ...erp.complexTailorings];
+          final tailoringsFiltered = allTailorings
+              .where((t) =>
+                  tailoringSearch.isEmpty ||
+                  t.name.contains(tailoringSearch) ||
+                  t.complexity.contains(tailoringSearch))
+              .toList();
+          final tailoringValue =
+              tailoringsFiltered.any((t) => t.id == selectedTailoringId)
+                  ? selectedTailoringId
+                  : null;
+          final WorkshopTailoringModel? selectedTailoring = allTailorings
+              .cast<WorkshopTailoringModel?>()
+              .firstWhere((t) => t?.id == selectedTailoringId, orElse: () => null);
+
+          final tailoringLines = selectedTailoring?.lineItems ?? [];
+          final tailoringLineValue =
+              tailoringLines.any((li) => li.id == selectedTailoringLineId)
+                  ? selectedTailoringLineId
+                  : null;
+          final TailoringLineItem? selectedTailoringLine = tailoringLines
+              .cast<TailoringLineItem?>()
+              .firstWhere((li) => li?.id == selectedTailoringLineId, orElse: () => null);
+
+          double draftedTailoringPieces(String tailoringId, String lineId) =>
+              draftItems
+                  .where((it) => it.itemId == 'tailoring_${tailoringId}_$lineId' || it.itemId == lineId)
+                  .fold(0.0, (s, it) => s + it.quantity);
+
+          final double availablePieces = selectedTailoringLine != null
+              ? (selectedTailoringLine.quantity - draftedTailoringPieces(selectedTailoring!.id, selectedTailoringLine.id))
+              : 0.0;
+          final double tPieces = double.tryParse(tailoringPiecesCtrl.text) ?? 0.0;
+          final double tUnitPrice = double.tryParse(tailoringUnitPriceCtrl.text) ?? 0.0;
+          final double tArea = selectedTailoringLine != null
+              ? ((selectedTailoringLine.lengthCm / 100.0) *
+                  (selectedTailoringLine.widthCm / 100.0) *
+                  (selectedTailoringLine.heightCm > 5.0 ? (selectedTailoringLine.heightCm / 100.0) : 1.0) *
+                  tPieces)
+              : 0.0;
+          final double tDraftTotal = tArea * tUnitPrice;
 
           final double l = double.tryParse(lengthCtrl.text) ?? 0.0;
           final double w = double.tryParse(widthCtrl.text) ?? 0.0;
@@ -4084,339 +4133,456 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     ),
                     const SizedBox(height: 16),
 
-                    // 2. Goods line-item fields.
+                    // 2. Source Selector & Line-item fields.
                     const Text(
                       '2. أصناف الفاتورة (بزر +):',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    TextField(
-                      decoration: const InputDecoration(
-                        labelText: 'بحث صنف المستودع (النوع والدرجة)...',
-                        prefixIcon: Icon(Icons.search),
-                        isDense: true,
-                      ),
-                      onChanged: (v) => setSt(() => goodsSearch = v.trim()),
+                    Row(
+                      children: [
+                        ChoiceChip(
+                          label: const Text('بضاعة المستودع'),
+                          selected: itemSource == 'warehouse',
+                          onSelected: (val) {
+                            if (val) {
+                              setSt(() {
+                                itemSource = 'warehouse';
+                                formError = null;
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('قسم التفصيل (بيع بنود التفصيل)'),
+                          selected: itemSource == 'tailoring',
+                          onSelected: (val) {
+                            if (val) {
+                              setSt(() {
+                                itemSource = 'tailoring';
+                                formError = null;
+                              });
+                            }
+                          },
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: goodsValue,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'نوع البضاعة حسب مستودع المصنع',
+                    const SizedBox(height: 10),
+
+                    if (itemSource == 'warehouse') ...[
+                      TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'بحث صنف المستودع (النوع والدرجة)...',
+                          prefixIcon: Icon(Icons.search),
+                          isDense: true,
+                        ),
+                        onChanged: (v) => setSt(() => goodsSearch = v.trim()),
                       ),
-                      items: goodsFiltered
-                          .map(
-                            (g) => DropdownMenuItem(
-                              value: g.id,
-                              child: Text(
-                                '${g.typeName} ${g.grade} ${g.thicknessCm}سم (${g.category}) — المتاح: ${g.availableQty}',
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: goodsValue,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'نوع البضاعة حسب مستودع المصنع',
+                        ),
+                        items: goodsFiltered
+                            .map(
+                              (g) => DropdownMenuItem(
+                                value: g.id,
+                                child: Text(
+                                  '${g.typeName} ${g.grade} ${g.thicknessCm}سم (${g.category}) — المتاح: ${g.availableQty}',
+                                ),
                               ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) => setSt(() => selectedWhId = v),
-                    ),
-                    const SizedBox(height: 8),
-                    if (wh == null)
-                      const Text(
-                        'اختر الصنف أولاً.',
-                        style: TextStyle(color: AppColors.brandSecondaryText),
+                            )
+                            .toList(),
+                        onChanged: (v) => setSt(() => selectedWhId = v),
                       ),
-                    if (wh != null) ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: lengthCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'الطول (سم)',
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: widthCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'العرض (سم)',
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          ),
-                          if (isCube) ...[
-                            const SizedBox(width: 8),
+                      const SizedBox(height: 8),
+                      if (wh == null)
+                        const Text(
+                          'اختر الصنف أولاً.',
+                          style: TextStyle(color: AppColors.brandSecondaryText),
+                        ),
+                      if (wh != null) ...[
+                        Row(
+                          children: [
                             Expanded(
                               child: TextField(
-                                controller: heightCtrl,
+                                controller: lengthCtrl,
                                 keyboardType: TextInputType.number,
                                 decoration: const InputDecoration(
-                                  labelText: 'الارتفاع (سم) لحساب الحجم',
+                                  labelText: 'الطول (سم)',
                                 ),
                                 onChanged: (_) => setSt(() {}),
                               ),
                             ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: qtyCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'الكمية',
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: unitPriceCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'سعر الوحدة للمتر (مربع/مكعب \$)',
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 14,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.chipBgBlue,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                'الإجمالي: ${draftTotal.fmt} \$',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.accentPrimary,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextField(
+                                controller: widthCtrl,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  labelText: 'العرض (سم)',
                                 ),
+                                onChanged: (_) => setSt(() {}),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // 3. Attach services to this line item.
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppColors.panelBorder),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'خدمات ملحقة بهذا الصنف (من شاشة الخدمات):',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            TextField(
-                              decoration: const InputDecoration(
-                                labelText: 'بحث خدمة...',
-                                prefixIcon: Icon(Icons.search),
-                                isDense: true,
-                              ),
-                              onChanged: (v) =>
-                                  setSt(() => serviceSearch = v.trim()),
-                            ),
-                            const SizedBox(height: 8),
-                            DropdownButtonFormField<String>(
-                              initialValue: serviceValue,
-                              isExpanded: true,
-                              decoration: const InputDecoration(
-                                labelText: 'الخدمة',
-                                isDense: true,
-                              ),
-                              items: servicesFiltered
-                                  .map(
-                                    (s) => DropdownMenuItem(
-                                      value: s.id,
-                                      child: Text(
-                                        '${s.name} (${s.unitRate}\$)',
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (v) =>
-                                  setSt(() => selectedServiceId = v),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: servicePriceCtrl,
-                                    keyboardType: TextInputType.number,
-                                    decoration: const InputDecoration(
-                                      labelText: 'سعر الخدمة (\$)',
-                                      isDense: true,
-                                    ),
+                            if (isCube) ...[
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: heightCtrl,
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    labelText: 'الارتفاع (سم) لحساب الحجم',
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  flex: 2,
-                                  child: TextField(
-                                    controller: serviceNotesCtrl,
-                                    decoration: const InputDecoration(
-                                      labelText: 'وصف تفصيلي للخدمة',
-                                      isDense: true,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                ElevatedButton(
-                                  onPressed: () {
-                                    if (selectedServiceId == null) {
-                                      setSt(
-                                        () => formError = 'اختر الخدمة أولاً.',
-                                      );
-                                      return;
-                                    }
-                                    final price =
-                                        double.tryParse(
-                                          servicePriceCtrl.text,
-                                        ) ??
-                                        0.0;
-                                    if (price <= 0) {
-                                      setSt(
-                                        () => formError = 'أدخل سعر الخدمة.',
-                                      );
-                                      return;
-                                    }
-                                    final srv = erp.services.firstWhere(
-                                      (s) => s.id == selectedServiceId,
-                                    );
-                                    setSt(() {
-                                      formError = null;
-                                      draftServices.add(
-                                        ServiceAttachment(
-                                          serviceName: srv.name,
-                                          price: price,
-                                          notes: serviceNotesCtrl.text,
-                                        ),
-                                      );
-                                      selectedServiceId = null;
-                                      servicePriceCtrl.clear();
-                                      serviceNotesCtrl.clear();
-                                    });
-                                  },
-                                  child: const Text('إرفاق +'),
-                                ),
-                              ],
-                            ),
-                            if (draftServices.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              ...draftServices.asMap().entries.map(
-                                (e) => Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        '• ${e.value.serviceName}: ${e.value.price}\$ ${e.value.notes}',
-                                      ),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.delete_outline,
-                                        size: 18,
-                                        color: AppColors.dangerWaste,
-                                      ),
-                                      onPressed: () => setSt(
-                                        () => draftServices.removeAt(e.key),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                'إجمالي خدمات الصنف: ${draftServicesTotal.fmt} \$',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
+                                  onChanged: (_) => setSt(() {}),
                                 ),
                               ),
                             ],
                           ],
                         ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: qtyCtrl,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  labelText: 'الكمية',
+                                ),
+                                onChanged: (_) => setSt(() {}),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextField(
+                                controller: unitPriceCtrl,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  labelText: 'سعر الوحدة للمتر (مربع/مكعب \$)',
+                                ),
+                                onChanged: (_) => setSt(() {}),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 14,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.chipBgBlue,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'الإجمالي: ${draftTotal.fmt} \$',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.accentPrimary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Attach services to warehouse item
+                        _buildServicesAttachmentSection(
+                          setSt: setSt,
+                          erp: erp,
+                          serviceSearch: serviceSearch,
+                          onSearchChanged: (v) => setSt(() => serviceSearch = v),
+                          serviceValue: serviceValue,
+                          servicesFiltered: servicesFiltered,
+                          onServiceChanged: (v) => setSt(() => selectedServiceId = v),
+                          servicePriceCtrl: servicePriceCtrl,
+                          serviceNotesCtrl: serviceNotesCtrl,
+                          selectedServiceId: selectedServiceId,
+                          draftServices: draftServices,
+                          draftServicesTotal: draftServicesTotal,
+                          onError: (err) => setSt(() => formError = err),
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              if (selectedClientId == null) {
+                                setSt(() => formError = 'اختر المعتمد أولاً.');
+                                return;
+                              }
+                              if (area <= 0) {
+                                setSt(
+                                  () => formError = 'أدخل أبعاداً وكمية صحيحة.',
+                                );
+                                return;
+                              }
+                              if (price < 0) {
+                                setSt(() => formError = 'أدخل سعر وحدة صحيح.');
+                                return;
+                              }
+                              final available =
+                                  wh.availableQty - draftedFor(wh.id);
+                              if (area > available + 0.0001) {
+                                setSt(
+                                  () => formError =
+                                      'الكمية تتجاوز المتاح في المستودع (${available.fmt}).',
+                                );
+                                return;
+                              }
+                              setSt(() {
+                                formError = null;
+                                draftItems.add(
+                                  FactoryInvoiceItem(
+                                    itemId: wh.id,
+                                    description:
+                                        '${wh.typeName} ${wh.grade} ${wh.thicknessCm}سم',
+                                    typeName: wh.typeName,
+                                    grade: wh.grade,
+                                    lengthCm: l,
+                                    widthCm: w,
+                                    heightCm: isCube ? h : 0.0,
+                                    quantity: q,
+                                    unitPrice: price,
+                                    unitCost: wh.netCostPerUnit,
+                                    isGranite: wh.isGranite,
+                                    services: List.of(draftServices),
+                                  ),
+                                );
+                                draftServices.clear();
+                                lengthCtrl.clear();
+                                widthCtrl.clear();
+                                heightCtrl.clear();
+                                qtyCtrl.clear();
+                                unitPriceCtrl.clear();
+                                selectedWhId = null;
+                              });
+                            },
+                            icon: const Icon(Icons.add),
+                            label: const Text('إضافة الصنف للفاتورة +'),
+                          ),
+                        ),
+                      ],
+                    ] else ...[
+                      // Tailoring line items selling
+                      TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'بحث في بنود التفصيل (الاسم أو النوع)...',
+                          prefixIcon: Icon(Icons.search),
+                          isDense: true,
+                        ),
+                        onChanged: (v) => setSt(() => tailoringSearch = v.trim()),
                       ),
                       const SizedBox(height: 8),
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            if (selectedClientId == null) {
-                              setSt(() => formError = 'اختر المعتمد أولاً.');
-                              return;
-                            }
-                            if (area <= 0) {
-                              setSt(
-                                () => formError = 'أدخل أبعاداً وكمية صحيحة.',
-                              );
-                              return;
-                            }
-                            if (price < 0) {
-                              setSt(() => formError = 'أدخل سعر وحدة صحيح.');
-                              return;
-                            }
-                            final available =
-                                wh.availableQty - draftedFor(wh.id);
-                            if (area > available + 0.0001) {
-                              setSt(
-                                () => formError =
-                                    'الكمية تتجاوز المتاح في المستودع (${available.fmt}).',
-                              );
-                              return;
-                            }
-                            setSt(() {
-                              formError = null;
-                              draftItems.add(
-                                FactoryInvoiceItem(
-                                  itemId: wh.id,
-                                  description:
-                                      '${wh.typeName} ${wh.grade} ${wh.thicknessCm}سم',
-                                  typeName: wh.typeName,
-                                  grade: wh.grade,
-                                  lengthCm: l,
-                                  widthCm: w,
-                                  heightCm: isCube ? h : 0.0,
-                                  quantity: q,
-                                  unitPrice: price,
-                                  unitCost: wh.netCostPerUnit,
-                                  isGranite: wh.isGranite,
-                                  services: List.of(draftServices),
+                      DropdownButtonFormField<String>(
+                        initialValue: tailoringValue,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'اختر التفصيل',
+                        ),
+                        items: tailoringsFiltered
+                            .map(
+                              (t) => DropdownMenuItem(
+                                value: t.id,
+                                child: Text(
+                                  '${t.name} (${t.complexity}) — المتاح: ${t.quantity.fmt} ${t.unitSymbol} — سعر البيع: ${t.sellingPrice.fmt}\$',
                                 ),
-                              );
-                              draftServices.clear();
-                              lengthCtrl.clear();
-                              widthCtrl.clear();
-                              heightCtrl.clear();
-                              qtyCtrl.clear();
-                              unitPriceCtrl.clear();
-                              selectedWhId = null;
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          setSt(() {
+                            selectedTailoringId = v;
+                            selectedTailoringLineId = null;
+                            tailoringPiecesCtrl.clear();
+                            tailoringUnitPriceCtrl.clear();
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      if (selectedTailoring == null)
+                        const Text(
+                          'اختر التفصيل أولاً لعرض بنوده.',
+                          style: TextStyle(color: AppColors.brandSecondaryText),
+                        ),
+                      if (selectedTailoring != null) ...[
+                        DropdownButtonFormField<String>(
+                          initialValue: tailoringLineValue,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'اختر بند التفصيل المراد بيعه (Line Item)',
+                          ),
+                          items: tailoringLines
+                              .map((li) {
+                                final rem = li.quantity - draftedTailoringPieces(selectedTailoring.id, li.id);
+                                return DropdownMenuItem(
+                                  value: li.id,
+                                  child: Text(
+                                    '${li.typeName} ${li.grade} (${li.lengthCm}×${li.widthCm}سم) — المتاح: ${rem.toInt()} قطعة — سعر المتر: ${li.sellingPricePerMeter > 0 ? li.sellingPricePerMeter.fmt : selectedTailoring.sellingPrice.fmt}\$',
+                                  ),
+                                );
+                              })
+                              .toList(),
+                          onChanged: (v) {
+                            setSt(() {
+                              selectedTailoringLineId = v;
+                              final li = tailoringLines.firstWhere((l) => l.id == v);
+                              final defaultPrice = li.sellingPricePerMeter > 0 ? li.sellingPricePerMeter : selectedTailoring.sellingPrice;
+                              tailoringUnitPriceCtrl.text = defaultPrice > 0 ? defaultPrice.fmt : '';
                             });
                           },
-                          icon: const Icon(Icons.add),
-                          label: const Text('إضافة الصنف للفاتورة +'),
                         ),
-                      ),
+                        const SizedBox(height: 8),
+                        if (selectedTailoringLine == null)
+                          const Text(
+                            'اختر بند التفصيل لتحديد القياسات وعدد القطع.',
+                            style: TextStyle(color: AppColors.brandSecondaryText),
+                          ),
+                        if (selectedTailoringLine != null) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.chipBgBlue,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'القياس: ${selectedTailoringLine.lengthCm} × ${selectedTailoringLine.widthCm} سم ${selectedTailoringLine.heightCm > 5 ? "× ${selectedTailoringLine.heightCm} سم" : ""} | المتاح: ${availablePieces.toInt()} قطعة (${((selectedTailoringLine.lengthCm/100)*(selectedTailoringLine.widthCm/100)*availablePieces).fmt} م²) | تكلفة المتر بعد الخدمات: ${(selectedTailoringLine.netCostPerMeterAfterServices > 0 ? selectedTailoringLine.netCostPerMeterAfterServices : selectedTailoring.costPerMeterAfterServices).fmt}\$',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                                color: AppColors.accentPrimary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: tailoringPiecesCtrl,
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    labelText: 'الكمية (عدد القطع)',
+                                  ),
+                                  onChanged: (_) => setSt(() {}),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: tailoringUnitPriceCtrl,
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    labelText: 'سعر البيع للمتر (\$)',
+                                  ),
+                                  onChanged: (_) => setSt(() {}),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 14,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.chipBgGreen,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'المساحة: ${tArea.fmt} م² | الإجمالي: ${tDraftTotal.fmt} \$',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.successGreen,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Attach services to tailoring item
+                          _buildServicesAttachmentSection(
+                            setSt: setSt,
+                            erp: erp,
+                            serviceSearch: serviceSearch,
+                            onSearchChanged: (v) => setSt(() => serviceSearch = v),
+                            serviceValue: serviceValue,
+                            servicesFiltered: servicesFiltered,
+                            onServiceChanged: (v) => setSt(() => selectedServiceId = v),
+                            servicePriceCtrl: servicePriceCtrl,
+                            serviceNotesCtrl: serviceNotesCtrl,
+                            selectedServiceId: selectedServiceId,
+                            draftServices: draftServices,
+                            draftServicesTotal: draftServicesTotal,
+                            onError: (err) => setSt(() => formError = err),
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.accentPrimary,
+                              ),
+                              onPressed: () {
+                                if (selectedClientId == null) {
+                                  setSt(() => formError = 'اختر المعتمد أولاً.');
+                                  return;
+                                }
+                                if (tPieces <= 0) {
+                                  setSt(() => formError = 'أدخل عدد قطع صحيح.');
+                                  return;
+                                }
+                                if (tPieces > availablePieces + 0.0001) {
+                                  setSt(
+                                    () => formError =
+                                        'عدد القطع يتجاوز المتاح في البند (${availablePieces.toInt()} قطعة).',
+                                  );
+                                  return;
+                                }
+                                if (tUnitPrice < 0) {
+                                  setSt(() => formError = 'أدخل سعر بيع صحيح.');
+                                  return;
+                                }
+                                setSt(() {
+                                  formError = null;
+                                  draftItems.add(
+                                    FactoryInvoiceItem(
+                                      itemId: 'tailoring_${selectedTailoring.id}_${selectedTailoringLine.id}',
+                                      description: 'تفصيل: ${selectedTailoring.name} - بند: ${selectedTailoringLine.typeName} ${selectedTailoringLine.grade} (${selectedTailoringLine.lengthCm}×${selectedTailoringLine.widthCm}سم)',
+                                      typeName: selectedTailoring.name,
+                                      grade: selectedTailoring.complexity,
+                                      lengthCm: selectedTailoringLine.lengthCm,
+                                      widthCm: selectedTailoringLine.widthCm,
+                                      heightCm: selectedTailoringLine.heightCm,
+                                      quantity: tPieces,
+                                      unitPrice: tUnitPrice,
+                                      unitCost: selectedTailoringLine.netCostPerMeterAfterServices > 0
+                                          ? selectedTailoringLine.netCostPerMeterAfterServices
+                                          : selectedTailoring.costPerMeterAfterServices,
+                                      isGranite: selectedTailoring.isGranite,
+                                      services: List.of(draftServices),
+                                      itemCategory: 'tailoring',
+                                    ),
+                                  );
+                                  draftServices.clear();
+                                  tailoringPiecesCtrl.clear();
+                                  tailoringUnitPriceCtrl.clear();
+                                  selectedTailoringLineId = null;
+                                });
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('إضافة بند التفصيل للفاتورة +'),
+                            ),
+                          ),
+                        ],
+                      ],
                     ],
                     if (formError != null) ...[
                       const SizedBox(height: 6),
@@ -4743,4 +4909,157 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       ),
     );
   }
+
+  Widget _buildServicesAttachmentSection({
+    required StateSetter setSt,
+    required ERPProvider erp,
+    required String serviceSearch,
+    required ValueChanged<String> onSearchChanged,
+    required String? serviceValue,
+    required List<ServiceItemModel> servicesFiltered,
+    required ValueChanged<String?> onServiceChanged,
+    required TextEditingController servicePriceCtrl,
+    required TextEditingController serviceNotesCtrl,
+    required String? selectedServiceId,
+    required List<ServiceAttachment> draftServices,
+    required double draftServicesTotal,
+    required ValueChanged<String> onError,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.panelBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'خدمات ملحقة بهذا الصنف (من شاشة الخدمات):',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            decoration: const InputDecoration(
+              labelText: 'بحث خدمة...',
+              prefixIcon: Icon(Icons.search),
+              isDense: true,
+            ),
+            onChanged: (v) => onSearchChanged(v.trim()),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: serviceValue,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'الخدمة',
+              isDense: true,
+            ),
+            items: servicesFiltered
+                .map(
+                  (s) => DropdownMenuItem(
+                    value: s.id,
+                    child: Text(
+                      '${s.name} (${s.unitRate}\$)',
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: onServiceChanged,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: servicePriceCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'سعر الخدمة (\$)',
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: serviceNotesCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'وصف تفصيلي للخدمة',
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () {
+                  if (selectedServiceId == null) {
+                    onError('اختر الخدمة أولاً.');
+                    return;
+                  }
+                  final price =
+                      double.tryParse(servicePriceCtrl.text) ?? 0.0;
+                  if (price <= 0) {
+                    onError('أدخل سعر الخدمة.');
+                    return;
+                  }
+                  final srv = erp.services.firstWhere(
+                    (s) => s.id == selectedServiceId,
+                  );
+                  setSt(() {
+                    draftServices.add(
+                      ServiceAttachment(
+                        serviceName: srv.name,
+                        price: price,
+                        notes: serviceNotesCtrl.text,
+                      ),
+                    );
+                    servicePriceCtrl.clear();
+                    serviceNotesCtrl.clear();
+                  });
+                },
+                child: const Text('إرفاق +'),
+              ),
+            ],
+          ),
+          if (draftServices.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            ...draftServices.asMap().entries.map(
+              (e) => Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '• ${e.value.serviceName}: ${e.value.price}\$ ${e.value.notes}',
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      size: 18,
+                      color: AppColors.dangerWaste,
+                    ),
+                    onPressed: () => setSt(
+                      () => draftServices.removeAt(e.key),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              'إجمالي خدمات الصنف: ${draftServicesTotal.fmt} \$',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
 }
