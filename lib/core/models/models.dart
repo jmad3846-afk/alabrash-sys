@@ -978,6 +978,9 @@ class FactoryInvoiceItem {
   final double unitCost;
   final bool isGranite;
   final List<ServiceAttachment> services; // services attached to this line item
+  final String itemCategory; // 'block' | 'meter'
+  final double thicknessCm;
+  final String meterUnit; // 'متر مربع' | 'متر طولي' | 'متر مكعب'
 
   FactoryInvoiceItem({
     required this.itemId,
@@ -992,9 +995,17 @@ class FactoryInvoiceItem {
     required this.unitCost,
     this.isGranite = false,
     this.services = const [],
+    this.itemCategory = 'block',
+    this.thicknessCm = 0.0,
+    this.meterUnit = 'متر مربع',
   });
 
+  bool get isMeterItem => itemCategory == 'meter' || itemCategory == 'متر';
+
   double get calculatedArea {
+    if (isMeterItem) {
+      return quantity;
+    }
     if (heightCm > 5.0) {
       // Volume m³
       return (lengthCm / 100.0) *
@@ -1026,12 +1037,15 @@ class FactoryInvoiceItem {
     'unitCost': unitCost,
     'isGranite': isGranite,
     'services': services.map((s) => s.toJson()).toList(),
+    'itemCategory': itemCategory,
+    'thicknessCm': thicknessCm,
+    'meterUnit': meterUnit,
   };
 
   factory FactoryInvoiceItem.fromJson(Map<String, dynamic> json) =>
       FactoryInvoiceItem(
-        itemId: json['itemId'],
-        description: json['description'],
+        itemId: json['itemId'] ?? '',
+        description: json['description'] ?? '',
         typeName: json['typeName'] ?? json['description'] ?? '',
         grade: json['grade'] ?? '',
         lengthCm: (json['lengthCm'] ?? 0.0).toDouble(),
@@ -1046,6 +1060,9 @@ class FactoryInvoiceItem {
                   .map((s) => ServiceAttachment.fromJson(s))
                   .toList()
             : [],
+        itemCategory: json['itemCategory'] ?? (json['isMeter'] == true ? 'meter' : 'block'),
+        thicknessCm: (json['thicknessCm'] ?? 0.0).toDouble(),
+        meterUnit: json['meterUnit'] ?? 'متر مربع',
       );
 }
 

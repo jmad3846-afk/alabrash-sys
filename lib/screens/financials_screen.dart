@@ -705,11 +705,35 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         ...inv.items.map(
                           (it) => ListTile(
                             dense: true,
+                            leading: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: it.isMeterItem
+                                    ? AppColors.chipBgBlue
+                                    : AppColors.chipBgAmber,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                it.isMeterItem ? 'أمتار' : 'بلوك',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: it.isMeterItem
+                                      ? AppColors.accentPrimary
+                                      : AppColors.partnersEquityAccent,
+                                ),
+                              ),
+                            ),
                             title: Text(
-                              '${it.typeName.isNotEmpty ? it.typeName : it.description} ${it.grade}',
+                              '${it.typeName.isNotEmpty ? it.typeName : it.description} ${it.grade}${it.isMeterItem && it.thicknessCm > 0 ? " (${it.thicknessCm.fmt} سم)" : ""}',
                             ),
                             subtitle: Text(
-                              '${it.quantity} طن × ${it.unitPrice}\$ = ${(it.quantity * it.unitPrice).fmt}\$',
+                              it.isMeterItem
+                                  ? '${it.quantity.fmt} ${it.meterUnit.isNotEmpty ? it.meterUnit : "متر"} × ${it.unitPrice.fmt}${inv.currencySymbol} = ${(it.quantity * it.unitPrice).fmt}${inv.currencySymbol}'
+                                  : '${it.quantity.fmt} طن × ${it.unitPrice.fmt}${inv.currencySymbol} = ${(it.quantity * it.unitPrice).fmt}${inv.currencySymbol}',
                             ),
                           ),
                         ),

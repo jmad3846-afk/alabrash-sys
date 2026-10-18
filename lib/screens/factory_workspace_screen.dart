@@ -765,7 +765,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                       child: _buildWarehouseGrid(
                         erp,
                         erp.factoryWarehouse
-                            .where((w) => w.category == 'متر مربع')
+                            .where((w) => w.category != 'متر مكعب')
                             .toList(),
                         isM2: true,
                       ),
@@ -871,7 +871,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                       style: TextStyle(fontSize: 12),
                     ),
                     Text(
-                      '${item.availableQty} ${isM2 ? "م²" : "م³"}',
+                      '${item.availableQty.fmt} ${item.category == "متر مكعب" ? "م³" : (item.category == "متر طولي" ? "م.ط" : "م²")}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
@@ -1639,11 +1639,35 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               ...inv.items.map(
                 (it) => ListTile(
                   dense: true,
+                  leading: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: it.isMeterItem
+                          ? AppColors.chipBgBlue
+                          : AppColors.chipBgAmber,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      it.isMeterItem ? 'أمتار' : 'بلوك',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: it.isMeterItem
+                            ? AppColors.accentPrimary
+                            : AppColors.partnersEquityAccent,
+                      ),
+                    ),
+                  ),
                   title: Text(
-                    '${it.typeName.isNotEmpty ? it.typeName : it.description} ${it.grade}',
+                    '${it.typeName.isNotEmpty ? it.typeName : it.description} ${it.grade}${it.isMeterItem && it.thicknessCm > 0 ? " (${it.thicknessCm.fmt} سم)" : ""}',
                   ),
                   subtitle: Text(
-                    '${it.quantity} طن × ${it.unitPrice}${inv.currencySymbol} = ${(it.quantity * it.unitPrice).fmt}${inv.currencySymbol}',
+                    it.isMeterItem
+                        ? '${it.quantity.fmt} ${it.meterUnit.isNotEmpty ? it.meterUnit : "متر"} × ${it.unitPrice.fmt}${inv.currencySymbol} = ${(it.quantity * it.unitPrice).fmt}${inv.currencySymbol}'
+                        : '${it.quantity.fmt} طن × ${it.unitPrice.fmt}${inv.currencySymbol} = ${(it.quantity * it.unitPrice).fmt}${inv.currencySymbol}',
                   ),
                 ),
               ),
@@ -2628,7 +2652,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     ERPProvider erp, {
     bool cashInvoice = false,
   }) {
-    if (erp.suppliers.isEmpty || erp.blockTypes.isEmpty) {
+    if (erp.suppliers.isEmpty ||
+        (erp.blockTypes.isEmpty && erp.meterTypes.isEmpty)) {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -2642,7 +2667,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           content: Text(
             'يجب توفر بيانات أساسية أولاً:\n'
             '${erp.suppliers.isEmpty ? "• مورد واحد على الأقل\n" : ""}'
-            '${erp.blockTypes.isEmpty ? "• نوع بلوك واحد على الأقل\n" : ""}',
+            '${(erp.blockTypes.isEmpty && erp.meterTypes.isEmpty) ? "• نوع بلوك أو نوع متر واحد على الأقل\n" : ""}',
           ),
           actions: [
             TextButton(
@@ -2667,20 +2692,41 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 icon: const Icon(Icons.add_box_outlined),
                 label: const Text('إضافة نوع بلوك'),
               ),
+            if (erp.meterTypes.isEmpty)
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _showAddMeterTypeDialog(erp);
+                },
+                icon: const Icon(Icons.straighten_outlined),
+                label: const Text('إضافة نوع متر'),
+              ),
           ],
         ),
       );
       return;
     }
     // Full multi-item purchase invoice builder (exact spec):
-    // searchable supplier (+ inline add) -> item fields + -> shipment Q ->
+    // searchable supplier (+ inline add) -> item fields (Blocks & Meters) -> shipment Q ->
     // totals -> payment Q -> save to Due/Paid + Supplier Finances.
     String? selectedSupplierId;
     String supplierSearch = '';
+    String itemMode = erp.blockTypes.isNotEmpty ? 'block' : 'meter'; // 'block' | 'meter'
+
+    // Block item fields
     String? selectedBlockKey; // '<typeName>||<grade>'
     String blockSearch = '';
     final tonsCtrl = TextEditingController();
     final priceCtrl = TextEditingController();
+
+    // Meter item fields
+    String? selectedMeterTypeId;
+    String meterSearch = '';
+    String selectedMeterUnit = 'متر مربع'; // 'متر مربع' | 'متر طولي' | 'متر مكعب'
+    final meterQtyCtrl = TextEditingController();
+    final meterPriceCtrl = TextEditingController();
+    final meterTotalCostCtrl = TextEditingController();
+
     final shippingFeeCtrl = TextEditingController();
     final downPayCtrl = TextEditingController();
     final discountCtrl = TextEditingController(text: '0');
@@ -2731,9 +2777,28 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               ? selectedBlockKey
               : null;
 
+          final meterOptionsFiltered = erp.meterTypes
+              .where(
+                (m) =>
+                    meterSearch.isEmpty ||
+                    '${m.typeName} ${m.grade} ${m.thicknessCm} ${m.category}'
+                        .contains(meterSearch),
+              )
+              .toList();
+          final meterValue =
+              meterOptionsFiltered.any((m) => m.id == selectedMeterTypeId)
+              ? selectedMeterTypeId
+              : null;
+
           final double draftTons = double.tryParse(tonsCtrl.text) ?? 0.0;
           final double draftPrice = double.tryParse(priceCtrl.text) ?? 0.0;
-          final double draftTotal = draftTons * draftPrice;
+          final double draftBlockTotal = draftTons * draftPrice;
+
+          final double draftMeterQty =
+              double.tryParse(meterQtyCtrl.text) ?? 0.0;
+          final double draftMeterPrice =
+              double.tryParse(meterPriceCtrl.text) ?? 0.0;
+          final double draftMeterTotal = draftMeterQty * draftMeterPrice;
 
           final double itemsTotal = draftItems.fold(
             0.0,
@@ -2785,7 +2850,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
 
           return Dialog(
             child: Container(
-              width: 720,
+              width: 760,
               padding: const EdgeInsets.all(24),
               child: SingleChildScrollView(
                 child: Column(
@@ -2793,7 +2858,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'إنشاء فاتورة شراء من مورد',
+                      cashInvoice
+                          ? 'إنشاء فاتورة شراء نقدية من مورد'
+                          : 'إنشاء فاتورة شراء من مورد',
                       style: Theme.of(
                         context,
                       ).textTheme.titleLarge?.copyWith(fontSize: 18),
@@ -2846,136 +2913,555 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     ),
                     const SizedBox(height: 16),
 
-                    // 2. Item fields + add.
-                    const Text(
-                      '2. أصناف الفاتورة (أضف كل صنف بزر +):',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      decoration: const InputDecoration(
-                        labelText: 'بحث نوع البلوك والدرجة...',
-                        prefixIcon: Icon(Icons.search),
-                        isDense: true,
-                      ),
-                      onChanged: (v) => setSt(() => blockSearch = v.trim()),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: blockValue,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'نوع البلوك حسب النوع والدرجة',
-                      ),
-                      items: optionsFiltered
-                          .map(
-                            (b) => DropdownMenuItem(
-                              value: '${b.typeName}||${b.grade}',
-                              child: Text('${b.typeName} • ${b.grade}'),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) => setSt(() => selectedBlockKey = v),
-                    ),
-                    const SizedBox(height: 8),
+                    // 2. Item mode selector (Blocks vs Meters) + item inputs
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Expanded(
-                          child: TextField(
-                            controller: tonsCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'عدد الأطنان لهذا النوع والدرجة',
-                            ),
-                            onChanged: (_) => setSt(() {}),
+                        const Expanded(
+                          child: Text(
+                            '2. أصناف الفاتورة (أضف كل صنف بزر +):',
+                            style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: priceCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'سعر الوحدة (سعر الطن \$)',
-                            ),
-                            onChanged: (_) => setSt(() {}),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 14,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.chipBgBlue,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'الإجمالي: ${draftTotal.fmt} \$',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.accentPrimary,
-                              ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'الأصناف المضافة: ${draftItems.length}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          if (selectedSupplierId == null) {
-                            setSt(
-                              () => formError =
-                                  'اختر المورد أولاً قبل إضافة الأصناف.',
-                            );
-                            return;
-                          }
-                          if (selectedBlockKey == null) {
-                            setSt(() => formError = 'اختر نوع البلوك والدرجة.');
-                            return;
-                          }
-                          if (draftTons <= 0 || draftPrice < 0) {
-                            setSt(
-                              () => formError =
-                                  'أدخل عدد أطنان صحيح وسعر وحدة صحيح.',
-                            );
-                            return;
-                          }
-                          final parts = selectedBlockKey!.split('||');
-                          final bt = erp.blockTypes.firstWhere(
-                            (b) =>
-                                b.typeName == parts[0] && b.grade == parts[1],
-                            orElse: () => erp.blockTypes.first,
-                          );
-                          setSt(() {
-                            formError = null;
-                            draftItems.add(
-                              FactoryInvoiceItem(
-                                itemId:
-                                    'draft_${DateTime.now().millisecondsSinceEpoch}_${draftItems.length}',
-                                description: '${parts[0]} (${parts[1]})',
-                                typeName: parts[0],
-                                grade: parts.length > 1 ? parts[1] : '',
-                                quantity: draftTons,
-                                unitPrice: draftPrice,
-                                unitCost: draftPrice,
-                                isGranite: bt.isGranite,
+                    const SizedBox(height: 10),
+
+                    // Switcher between Blocks purchase item and Meters purchase item
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.all(4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setSt(() {
+                                itemMode = 'block';
+                                formError = null;
+                              }),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: itemMode == 'block'
+                                      ? Colors.white
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: itemMode == 'block'
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(
+                                              0.05,
+                                            ),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 1),
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                alignment: Alignment.center,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.view_in_ar_rounded,
+                                      size: 18,
+                                      color: itemMode == 'block'
+                                          ? AppColors.accentPrimary
+                                          : AppColors.brandSecondaryText,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(
+                                        'بند شراء بلوكات (Blocks)',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: itemMode == 'block'
+                                              ? AppColors.accentPrimary
+                                              : AppColors.brandSecondaryText,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            );
-                            tonsCtrl.clear();
-                            priceCtrl.clear();
-                            selectedBlockKey = null;
-                          });
-                        },
-                        icon: const Icon(Icons.add),
-                        label: const Text('إضافة الصنف للفاتورة +'),
+                            ),
+                          ),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setSt(() {
+                                itemMode = 'meter';
+                                formError = null;
+                              }),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: itemMode == 'meter'
+                                      ? Colors.white
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: itemMode == 'meter'
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(
+                                              0.05,
+                                            ),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 1),
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                alignment: Alignment.center,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.straighten_rounded,
+                                      size: 18,
+                                      color: itemMode == 'meter'
+                                          ? AppColors.accentPrimary
+                                          : AppColors.brandSecondaryText,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(
+                                        'بند شراء أمتار (Meters)',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: itemMode == 'meter'
+                                              ? AppColors.accentPrimary
+                                              : AppColors.brandSecondaryText,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                    const SizedBox(height: 12),
+
+                    if (itemMode == 'block') ...[
+                      // Blocks purchase item form
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              decoration: const InputDecoration(
+                                labelText: 'بحث نوع البلوك والدرجة...',
+                                prefixIcon: Icon(Icons.search),
+                                isDense: true,
+                              ),
+                              onChanged: (v) =>
+                                  setSt(() => blockSearch = v.trim()),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: () => refreshAfterAdd(
+                              () => _showAddBlockTypeDialog(erp),
+                            ),
+                            icon: const Icon(Icons.add_box_outlined, size: 18),
+                            label: const Text('نوع بلوك جديد +'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: blockValue,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'نوع البلوك حسب النوع والدرجة',
+                        ),
+                        items: optionsFiltered
+                            .map(
+                              (b) => DropdownMenuItem(
+                                value: '${b.typeName}||${b.grade}',
+                                child: Text('${b.typeName} • ${b.grade}'),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setSt(() => selectedBlockKey = v),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: tonsCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: const InputDecoration(
+                                labelText: 'عدد الأطنان لهذا النوع والدرجة',
+                              ),
+                              onChanged: (_) => setSt(() {}),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: priceCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: InputDecoration(
+                                labelText:
+                                    'سعر الوحدة (سعر الطن ${AppCurrency.symbol(invCurrency)})',
+                              ),
+                              onChanged: (_) => setSt(() {}),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 14,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.chipBgBlue,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'الإجمالي: ${draftBlockTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.accentPrimary,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            if (selectedSupplierId == null) {
+                              setSt(
+                                () => formError =
+                                    'اختر المورد أولاً قبل إضافة الأصناف.',
+                              );
+                              return;
+                            }
+                            if (selectedBlockKey == null) {
+                              setSt(
+                                () => formError = 'اختر نوع البلوك والدرجة.',
+                              );
+                              return;
+                            }
+                            if (draftTons <= 0 || draftPrice < 0) {
+                              setSt(
+                                () => formError =
+                                    'أدخل عدد أطنان صحيح وسعر وحدة صحيح.',
+                              );
+                              return;
+                            }
+                            final parts = selectedBlockKey!.split('||');
+                            final bt = erp.blockTypes.firstWhere(
+                              (b) =>
+                                  b.typeName == parts[0] &&
+                                  b.grade == parts[1],
+                              orElse: () => erp.blockTypes.first,
+                            );
+                            setSt(() {
+                              formError = null;
+                              draftItems.add(
+                                FactoryInvoiceItem(
+                                  itemId:
+                                      'draft_b_${DateTime.now().millisecondsSinceEpoch}_${draftItems.length}',
+                                  description: '${parts[0]} (${parts[1]})',
+                                  typeName: parts[0],
+                                  grade: parts.length > 1 ? parts[1] : '',
+                                  quantity: draftTons,
+                                  unitPrice: draftPrice,
+                                  unitCost: draftPrice,
+                                  isGranite: bt.isGranite,
+                                  itemCategory: 'block',
+                                ),
+                              );
+                              tonsCtrl.clear();
+                              priceCtrl.clear();
+                              selectedBlockKey = null;
+                            });
+                          },
+                          icon: const Icon(Icons.add),
+                          label: const Text('إضافة بند البلوك للفاتورة +'),
+                        ),
+                      ),
+                    ] else ...[
+                      // Meters purchase item form
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              decoration: const InputDecoration(
+                                labelText: 'بحث نوع المتر أو السماكة...',
+                                prefixIcon: Icon(Icons.search),
+                                isDense: true,
+                              ),
+                              onChanged: (v) =>
+                                  setSt(() => meterSearch = v.trim()),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: () => refreshAfterAdd(
+                              () => _showAddMeterTypeDialog(erp),
+                            ),
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('نوع متر جديد +'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: meterValue,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText:
+                              'نوع المتر (النوع • الدرجة • السماكة • الفئة)',
+                        ),
+                        items: meterOptionsFiltered
+                            .map(
+                              (m) => DropdownMenuItem(
+                                value: m.id,
+                                child: Text(
+                                  '${m.typeName} • ${m.grade} • ${m.thicknessCm.fmt} سم • ${m.category} ${m.isGranite ? "(غرانيت)" : "(رخام)"}',
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          setSt(() {
+                            selectedMeterTypeId = v;
+                            if (v != null) {
+                              final mt = erp.meterTypes.firstWhere(
+                                (m) => m.id == v,
+                                orElse: () => erp.meterTypes.first,
+                              );
+                              selectedMeterUnit = mt.category.isNotEmpty
+                                  ? mt.category
+                                  : 'متر مربع';
+                            }
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          const Text(
+                            'وحدة القياس: ',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          ChoiceChip(
+                            label: const Text('متر مربع (م²)'),
+                            selected: selectedMeterUnit == 'متر مربع',
+                            onSelected: (v) {
+                              if (v) {
+                                setSt(() => selectedMeterUnit = 'متر مربع');
+                              }
+                            },
+                          ),
+                          ChoiceChip(
+                            label: const Text('متر طولي (م.ط)'),
+                            selected: selectedMeterUnit == 'متر طولي',
+                            onSelected: (v) {
+                              if (v) {
+                                setSt(() => selectedMeterUnit = 'متر طولي');
+                              }
+                            },
+                          ),
+                          ChoiceChip(
+                            label: const Text('متر مكعب (م³)'),
+                            selected: selectedMeterUnit == 'متر مكعب',
+                            onSelected: (v) {
+                              if (v) {
+                                setSt(() => selectedMeterUnit = 'متر مكعب');
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: meterQtyCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: InputDecoration(
+                                labelText:
+                                    'إجمالي الأمتار المربعة / الطولية ($selectedMeterUnit)',
+                              ),
+                              onChanged: (v) {
+                                final q = double.tryParse(v) ?? 0.0;
+                                final p =
+                                    double.tryParse(meterPriceCtrl.text) ?? 0.0;
+                                if (p > 0) {
+                                  meterTotalCostCtrl.text = (q * p).fmt;
+                                }
+                                setSt(() {});
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: meterPriceCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: InputDecoration(
+                                labelText:
+                                    'سعر الوحدة للمتر (${AppCurrency.symbol(invCurrency)})',
+                              ),
+                              onChanged: (v) {
+                                final p = double.tryParse(v) ?? 0.0;
+                                final q =
+                                    double.tryParse(meterQtyCtrl.text) ?? 0.0;
+                                meterTotalCostCtrl.text = (q * p).fmt;
+                                setSt(() {});
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: meterTotalCostCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: InputDecoration(
+                                labelText:
+                                    'إجمالي التكلفة (${AppCurrency.symbol(invCurrency)})',
+                              ),
+                              onChanged: (v) {
+                                final t = double.tryParse(v) ?? 0.0;
+                                final q =
+                                    double.tryParse(meterQtyCtrl.text) ?? 0.0;
+                                if (q > 0) {
+                                  meterPriceCtrl.text = (t / q).fmt;
+                                }
+                                setSt(() {});
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            if (selectedSupplierId == null) {
+                              setSt(
+                                () => formError =
+                                    'اختر المورد أولاً قبل إضافة الأصناف.',
+                              );
+                              return;
+                            }
+                            if (selectedMeterTypeId == null) {
+                              setSt(() => formError = 'اختر نوع المتر.');
+                              return;
+                            }
+                            final double q =
+                                double.tryParse(meterQtyCtrl.text) ?? 0.0;
+                            var p =
+                                double.tryParse(meterPriceCtrl.text) ?? 0.0;
+                            final t =
+                                double.tryParse(meterTotalCostCtrl.text) ?? 0.0;
+                            if (p <= 0 && t > 0 && q > 0) {
+                              p = t / q;
+                            }
+                            if (q <= 0 || p < 0) {
+                              setSt(
+                                () => formError =
+                                    'أدخل إجمالي أمتار صحيح وسعر وحدة صحيح.',
+                              );
+                              return;
+                            }
+                            final mt = erp.meterTypes.firstWhere(
+                              (m) => m.id == selectedMeterTypeId,
+                              orElse: () => erp.meterTypes.first,
+                            );
+                            setSt(() {
+                              formError = null;
+                              draftItems.add(
+                                FactoryInvoiceItem(
+                                  itemId: mt.id,
+                                  description:
+                                      '${mt.typeName} (${mt.grade}) ${mt.thicknessCm.fmt}سم - $selectedMeterUnit',
+                                  typeName: mt.typeName,
+                                  grade: mt.grade,
+                                  thicknessCm: mt.thicknessCm,
+                                  quantity: q,
+                                  unitPrice: p,
+                                  unitCost: p,
+                                  isGranite: mt.isGranite,
+                                  itemCategory: 'meter',
+                                  meterUnit: selectedMeterUnit,
+                                ),
+                              );
+                              meterQtyCtrl.clear();
+                              meterPriceCtrl.clear();
+                              meterTotalCostCtrl.clear();
+                              selectedMeterTypeId = null;
+                            });
+                          },
+                          icon: const Icon(Icons.add),
+                          label: const Text('إضافة بند الأمتار للفاتورة +'),
+                        ),
+                      ),
+                    ],
                     if (formError != null) ...[
                       const SizedBox(height: 6),
                       Text(
@@ -2993,26 +3479,56 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         style: TextStyle(color: AppColors.brandSecondaryText),
                       ),
                     ...draftItems.asMap().entries.map(
-                      (e) => Card(
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        child: ListTile(
-                          title: Text(
-                            e.value.description,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Text(
-                            '${e.value.quantity} طن × ${e.value.unitPrice}\$ = ${(e.value.quantity * e.value.unitPrice).fmt}\$',
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              color: AppColors.dangerWaste,
+                      (e) {
+                        final it = e.value;
+                        final isMeter = it.isMeterItem;
+                        return Card(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          child: ListTile(
+                            leading: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isMeter
+                                    ? AppColors.chipBgBlue
+                                    : AppColors.chipBgAmber,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                isMeter ? 'أمتار' : 'بلوك',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: isMeter
+                                      ? AppColors.accentPrimary
+                                      : AppColors.partnersEquityAccent,
+                                ),
+                              ),
                             ),
-                            onPressed: () =>
-                                setSt(() => draftItems.removeAt(e.key)),
+                            title: Text(
+                              it.description,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            subtitle: Text(
+                              isMeter
+                                  ? '${it.quantity.fmt} ${it.meterUnit} × ${it.unitPrice.fmt}${AppCurrency.symbol(invCurrency)} = ${(it.quantity * it.unitPrice).fmt}${AppCurrency.symbol(invCurrency)}'
+                                  : '${it.quantity.fmt} طن × ${it.unitPrice.fmt}${AppCurrency.symbol(invCurrency)} = ${(it.quantity * it.unitPrice).fmt}${AppCurrency.symbol(invCurrency)}',
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: AppColors.dangerWaste,
+                              ),
+                              onPressed: () =>
+                                  setSt(() => draftItems.removeAt(e.key)),
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 16),
 
@@ -3191,7 +3707,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               children: [
                                 const Text('المتبقي بعد الدفعة:'),
                                 Text(
-                                  '${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} \$',
+                                  '${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(invCurrency)}',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: AppColors.dangerWaste,

@@ -380,4 +380,222 @@ void main() {
         w.thicknessCm == 3.0);
     expect(wh.availableQty, greaterThan(0));
   });
+
+  test(
+      'single purchase invoice with both blocks and meters updates factoryBlocks and factoryWarehouse',
+      () async {
+    final erp = ERPProvider();
+    final blocksCountBefore = erp.factoryBlocks.length;
+    final whExisting = erp.factoryWarehouse.firstWhere((w) =>
+        w.typeName == 'رخام كاردينال' &&
+        w.grade == 'درجة أولى' &&
+        w.thicknessCm == 2.0);
+    final whQtyBefore = whExisting.availableQty;
+    final whCostBefore = whExisting.netCostPerUnit;
+
+    final invoice = FactoryInvoiceModel(
+      id: 'fi_mixed_1',
+      invoiceNo: 'FAC-PUR-MIX-1',
+      date: DateTime(2026, 1, 10),
+      partyId: 'sup1',
+      partyName: 'شركة مقالع الرخام الوطنية',
+      invoiceType: 'شراء_مورد',
+      items: [
+        // 1. Blocks line item
+        FactoryInvoiceItem(
+          itemId: 'item_blk_1',
+          description: 'بازلت (درجة أولى)',
+          typeName: 'بازلت',
+          grade: 'درجة أولى',
+          quantity: 10.0,
+          unitPrice: 120.0,
+          unitCost: 120.0,
+          itemCategory: 'block',
+        ),
+        // 2. Meters line item
+        FactoryInvoiceItem(
+          itemId: 'mt1',
+          description: 'رخام كاردينال (درجة أولى) 2سم - متر مربع',
+          typeName: 'رخام كاردينال',
+          grade: 'درجة أولى',
+          thicknessCm: 2.0,
+          quantity: 50.0,
+          unitPrice: 30.0,
+          unitCost: 30.0,
+          itemCategory: 'meter',
+          meterUnit: 'متر مربع',
+        ),
+      ],
+      isGoodsDelivered: true,
+      advancePayment: 700.0,
+    );
+
+    // Blocks: 10 * 120 = 1200, Meters: 50 * 30 = 1500. Total = 2700.
+    expect(invoice.grandTotal, 2700.0);
+    expect(invoice.remainingBalance, 2000.0);
+    expect(invoice.isDue, isTrue);
+
+    final saved = erp.addSupplierPurchaseInvoice(invoice);
+    expect(saved, isTrue);
+
+    // 1. Factory Block Inventory received the block item
+    expect(erp.factoryBlocks.length, blocksCountBefore + 1);
+    final addedBlock = erp.factoryBlocks.last;
+    expect(addedBlock.typeName, 'بازلت');
+    expect(addedBlock.weightTons, 10.0);
+    expect(addedBlock.tonCost, 120.0);
+
+    // 2. Factory Warehouse Inventory received the meter item
+    final whUpdated = erp.factoryWarehouse.firstWhere((w) =>
+        w.typeName == 'رخام كاردينال' &&
+        w.grade == 'درجة أولى' &&
+        w.thicknessCm == 2.0);
+    expect(whUpdated.availableQty, closeTo(whQtyBefore + 50.0, 0.001));
+    // Weighted average cost: (prevQty * prevCost + 50 * 30) / (prevQty + 50)
+    final expectedCost =
+        ((whQtyBefore * whCostBefore) + (50.0 * 30.0)) / (whQtyBefore + 50.0);
+    expect(whUpdated.netCostPerUnit, closeTo(expectedCost, 0.001));
+
+    // 3. Supplier debt increased by remainder
+    final sup = erp.suppliers.firstWhere((s) => s.id == 'sup1');
+    expect(sup.debtBalance, closeTo(25000.0 + 2000.0, 0.001));
+  });
+
+  test(
+      'cash purchase invoice with meter item is paid from main cash box and increases factoryWarehouse',
+      () async {
+    final erp = ERPProvider();
+    final cashBefore = erp.cashOf('main', AppCurrency.usd);
+
+    final invoice = FactoryInvoiceModel(
+      id: 'fi_cash_meter_1',
+      invoiceNo: 'FAC-PUR-CASH-M1',
+      date: DateTime(2026, 1, 11),
+      partyId: 'sup2',
+      partyName: 'مؤسسة الغرانيت المستورد',
+      invoiceType: 'شراء_مورد',
+      isCashInvoice: true,
+      items: [
+        FactoryInvoiceItem(
+          itemId: 'mt_new_1',
+          description: 'غرانيت أسود جالكسي (ممتاز) 3سم - متر مربع',
+          typeName: 'غرانيت أسود جالكسي',
+          grade: 'ممتاز',
+          thicknessCm: 3.0,
+          quantity: 20.0,
+          unitPrice: 45.0,
+          unitCost: 45.0,
+          isGranite: true,
+          itemCategory: 'meter',
+          meterUnit: 'متر مربع',
+        ),
+      ],
+      isGoodsDelivered: true,
+      advancePayment: 900.0, // Full payment
+    );
+
+    expect(invoice.grandTotal, 900.0);
+    expect(invoice.remainingBalance, 0.0);
+
+    final saved = erp.addSupplierPurchaseInvoice(invoice);
+    expect(saved, isTrue);
+
+    // Main cash box deducted
+    expect(erp.cashOf('main', AppCurrency.usd), closeTo(cashBefore - 900.0, 0.001));
+
+    // Warehouse has the granite meters
+    final wh = erp.factoryWarehouse.firstWhere((w) =>
+        w.typeName == 'غرانيت أسود جالكسي' &&
+        w.grade == 'ممتاز' &&
+        w.thicknessCm == 3.0);
+    expect(wh.isGranite, isTrue);
+    expect(wh.availableQty, greaterThanOrEqualTo(20.0));
+  });
+
+  test(
+      'undelivered purchase invoice distributes shipping fee proportionally across blocks and meters',
+      () async {
+    final erp = ERPProvider();
+    final blocksCountBefore = erp.factoryBlocks.length;
+
+    // Capital: Block 10 tons * $100 = $1,000. Meter 50 m2 * $20 = $1,000. Total capital = $2,000.
+    // Shipping fee = $200.
+    // Block share: (1000 / 2000) * 200 = $100 -> effective ton cost = $100 + ($100 / 10) = $110.
+    // Meter share: (1000 / 2000) * 200 = $100 -> effective unit cost = $20 + ($100 / 50) = $22.
+    final invoice = FactoryInvoiceModel(
+      id: 'fi_shipping_prop_1',
+      invoiceNo: 'FAC-PUR-SHIP-1',
+      date: DateTime(2026, 1, 12),
+      partyId: 'sup1',
+      partyName: 'شركة مقالع الرخام الوطنية',
+      invoiceType: 'شراء_مورد',
+      items: [
+        FactoryInvoiceItem(
+          itemId: 'blk_s1',
+          description: 'بازلت (درجة أولى)',
+          typeName: 'بازلت',
+          grade: 'درجة أولى',
+          quantity: 10.0,
+          unitPrice: 100.0,
+          unitCost: 100.0,
+          itemCategory: 'block',
+        ),
+        FactoryInvoiceItem(
+          itemId: 'mt_brand_new',
+          description: 'حجر ترافرتين (درجة ثانية) 2سم - متر مربع',
+          typeName: 'حجر ترافرتين',
+          grade: 'درجة ثانية',
+          thicknessCm: 2.0,
+          quantity: 50.0,
+          unitPrice: 20.0,
+          unitCost: 20.0,
+          itemCategory: 'meter',
+          meterUnit: 'متر مربع',
+        ),
+      ],
+      isGoodsDelivered: false,
+      shippingFee: 200.0,
+      advancePayment: 2200.0,
+    );
+
+    expect(invoice.grandTotal, 2200.0);
+    final saved = erp.addSupplierPurchaseInvoice(invoice);
+    expect(saved, isTrue);
+
+    // Verify block cost includes shipping
+    expect(erp.factoryBlocks.length, blocksCountBefore + 1);
+    final addedBlock = erp.factoryBlocks.last;
+    expect(addedBlock.tonCost, closeTo(110.0, 0.001));
+
+    // Verify new warehouse item includes shipping
+    final whNew = erp.factoryWarehouse.firstWhere((w) =>
+        w.typeName == 'حجر ترافرتين' &&
+        w.grade == 'درجة ثانية' &&
+        w.thicknessCm == 2.0);
+    expect(whNew.availableQty, 50.0);
+    expect(whNew.netCostPerUnit, closeTo(22.0, 0.001));
+  });
+
+  testWidgets('dialog allows switching to meters and adding a meters purchase item',
+      (tester) async {
+    final erp = ERPProvider();
+    await openSupplierInvoiceTab(tester, erp);
+
+    // Verify tabs exist
+    expect(find.text('بند شراء بلوكات (Blocks)'), findsOneWidget);
+    expect(find.text('بند شراء أمتار (Meters)'), findsOneWidget);
+
+    // Switch to Meters
+    await tester.tap(find.text('بند شراء أمتار (Meters)'));
+    await tester.pumpAndSettle();
+
+    // Verify meter fields are displayed
+    expect(find.text('بحث نوع المتر أو السماكة...'), findsOneWidget);
+    expect(find.text('وحدة القياس: '), findsOneWidget);
+    expect(find.text('متر مربع (م²)'), findsOneWidget);
+    expect(find.text('متر طولي (م.ط)'), findsOneWidget);
+    expect(find.text('إضافة بند الأمتار للفاتورة +'), findsOneWidget);
+
+    expect(tester.takeException(), isNull);
+  });
 }

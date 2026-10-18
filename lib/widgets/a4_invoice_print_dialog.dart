@@ -82,7 +82,7 @@ class A4InvoiceData {
   factory A4InvoiceData.fromFactoryInvoice(FactoryInvoiceModel inv) {
     final isPurchase = inv.invoiceType == 'شراء_مورد';
     final typeTitle = isPurchase
-        ? 'فاتورة شراء بلوكات رخام وحجر من مورد'
+        ? 'فاتورة مشتريات من مورد (بلوكات وأمتار)'
         : 'فاتورة مبيعات مستودع المصنع (معتمدين)';
     final role = isPurchase ? 'المورد' : 'المعتمد / العميل';
 
@@ -96,13 +96,18 @@ class A4InvoiceData {
           ? it.services.map((s) => '${s.serviceName} (${s.price}\$)').join(' + ')
           : '—';
       final qtyLabel = isPurchase
-          ? '${it.quantity.fmt} طن'
+          ? (it.isMeterItem
+              ? '${it.quantity.fmt} ${it.meterUnit.isNotEmpty ? it.meterUnit : "متر"}'
+              : '${it.quantity.fmt} طن')
           : '${it.calculatedArea.fmt} ${it.heightCm > 5 ? "م³" : "م²"} (${it.quantity.fmt} قطعة)';
+      final specs = it.isMeterItem
+          ? '${it.grade}${it.thicknessCm > 0 ? " • ${it.thicknessCm.fmt} سم" : ""} ${it.isGranite ? "(جرانيت)" : "(رخام)"}'
+          : '${it.grade} ${it.isGranite ? "(جرانيت)" : "(رخام)"}';
 
       items.add(A4InvoiceLineItem(
         index: i + 1,
         description: it.typeName.isNotEmpty ? it.typeName : it.description,
-        gradeAndSpecs: '${it.grade} ${it.isGranite ? "(جرانيت)" : "(رخام)"}',
+        gradeAndSpecs: specs,
         dimensionsText: dim,
         quantityText: qtyLabel,
         unitPrice: it.unitPrice,

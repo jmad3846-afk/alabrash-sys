@@ -1078,19 +1078,35 @@ class ERPProvider extends ChangeNotifier {
 
       if (invoice.kind == 'purchase_return') {
         final line = factoryItem!;
-        final typeName = line.typeName.isNotEmpty
-            ? line.typeName
-            : line.description;
-        final grade = line.grade.isNotEmpty ? line.grade : 'درجة أولى';
-        final available = factoryBlocks
-            .where(
-              (block) =>
-                  block.supplierId == original!.partyId &&
-                  block.typeName == typeName &&
-                  block.grade == grade,
-            )
-            .fold<double>(0, (sum, block) => sum + block.weightTons);
-        if (available + 0.0001 < invoice.quantity) return false;
+        if (line.isMeterItem) {
+          final typeName = line.typeName.isNotEmpty
+              ? line.typeName
+              : line.description;
+          final grade = line.grade.isNotEmpty ? line.grade : 'درجة أولى';
+          final available = factoryWarehouse
+              .where(
+                (item) =>
+                    (line.itemId.isNotEmpty ? item.id == line.itemId : true) &&
+                    item.typeName == typeName &&
+                    (line.grade.isEmpty || item.grade == grade),
+              )
+              .fold<double>(0, (sum, item) => sum + item.availableQty);
+          if (available + 0.0001 < invoice.quantity) return false;
+        } else {
+          final typeName = line.typeName.isNotEmpty
+              ? line.typeName
+              : line.description;
+          final grade = line.grade.isNotEmpty ? line.grade : 'درجة أولى';
+          final available = factoryBlocks
+              .where(
+                (block) =>
+                    block.supplierId == original!.partyId &&
+                    block.typeName == typeName &&
+                    block.grade == grade,
+              )
+              .fold<double>(0, (sum, block) => sum + block.weightTons);
+          if (available + 0.0001 < invoice.quantity) return false;
+        }
       } else if (invoice.module == 'factory') {
         final line = factoryItem!;
         if (!factoryWarehouse.any(
@@ -1166,26 +1182,46 @@ class ERPProvider extends ChangeNotifier {
     if (invoice.kind.endsWith('return')) {
       if (invoice.kind == 'purchase_return') {
         final line = factoryItem!;
-        var remaining = invoice.quantity;
-        final blocks = factoryBlocks
-            .where(
-              (block) =>
-                  block.supplierId == original!.partyId &&
-                  block.typeName ==
-                      (line.typeName.isNotEmpty
-                          ? line.typeName
-                          : line.description) &&
-                  block.grade ==
-                      (line.grade.isNotEmpty ? line.grade : 'درجة أولى'),
-            )
-            .toList();
-        for (final block in blocks) {
-          if (remaining <= 0) break;
-          final returned = remaining < block.weightTons
-              ? remaining
-              : block.weightTons;
-          block.weightTons -= returned;
-          remaining -= returned;
+        if (line.isMeterItem) {
+          final typeName = line.typeName.isNotEmpty
+              ? line.typeName
+              : line.description;
+          final grade = line.grade.isNotEmpty ? line.grade : 'درجة أولى';
+          final warehouseMatches = factoryWarehouse.where(
+            (item) =>
+                (line.itemId.isNotEmpty ? item.id == line.itemId : false) ||
+                (item.typeName == typeName &&
+                    (line.grade.isEmpty || item.grade == grade)),
+          );
+          if (warehouseMatches.isNotEmpty) {
+            final whItem = warehouseMatches.first;
+            whItem.availableQty = (whItem.availableQty - invoice.quantity).clamp(
+              0.0,
+              double.infinity,
+            );
+          }
+        } else {
+          var remaining = invoice.quantity;
+          final blocks = factoryBlocks
+              .where(
+                (block) =>
+                    block.supplierId == original!.partyId &&
+                    block.typeName ==
+                        (line.typeName.isNotEmpty
+                            ? line.typeName
+                            : line.description) &&
+                    block.grade ==
+                        (line.grade.isNotEmpty ? line.grade : 'درجة أولى'),
+              )
+              .toList();
+          for (final block in blocks) {
+            if (remaining <= 0) break;
+            final returned = remaining < block.weightTons
+                ? remaining
+                : block.weightTons;
+            block.weightTons -= returned;
+            remaining -= returned;
+          }
         }
       } else if (invoice.module == 'factory') {
         final line = factoryItem!;
@@ -2121,7 +2157,7 @@ class ERPProvider extends ChangeNotifier {
       (s, it) => s + (it.quantity * it.unitCost),
     );
 
-    // Add items to block stock grouped later by Type + Grade + supplier price.
+    // Add items to stock: meters affect Factory Warehouse Inventory, blocks affect Factory Block Inventory.
     for (var item in inv.items) {
       final double itemCapital = item.quantity * item.unitCost;
       double shippingShare = 0.0;
@@ -2132,22 +2168,72 @@ class ERPProvider extends ChangeNotifier {
           shippingShare = inv.shippingFee / inv.items.length;
         }
       }
-      final double effectiveTonCost =
+      final double effectiveUnitCost =
           item.unitCost +
           (item.quantity > 0 ? shippingShare / item.quantity : 0.0);
-      factoryBlocks.add(
-        FactoryBlockModel(
-          id: 'fb_${DateTime.now().millisecondsSinceEpoch}_${factoryBlocks.length}',
-          blockCode: 'BLK-${factoryBlocks.length + 101}',
-          typeName: item.typeName.isNotEmpty ? item.typeName : item.description,
-          grade: item.grade.isNotEmpty ? item.grade : 'درجة أولى',
-          supplierId: inv.partyId,
-          supplierName: inv.partyName,
-          weightTons: item.quantity,
-          tonCost: effectiveTonCost,
-          isGranite: item.isGranite,
-        ),
-      );
+
+      if (item.isMeterItem) {
+        final category = item.meterUnit.isNotEmpty
+            ? item.meterUnit
+            : (item.thicknessCm > 5 ? 'متر مكعب' : 'متر مربع');
+        final targetTypeName =
+            item.typeName.isNotEmpty ? item.typeName : item.description;
+        final targetGrade = item.grade.isNotEmpty ? item.grade : 'درجة أولى';
+        final targetThickness = item.thicknessCm > 0 ? item.thicknessCm : 2.0;
+
+        final existingMatches = factoryWarehouse
+            .where(
+              (w) =>
+                  w.typeName == targetTypeName &&
+                  w.grade == targetGrade &&
+                  (w.thicknessCm - targetThickness).abs() < 0.01 &&
+                  w.category == category,
+            )
+            .toList();
+
+        if (existingMatches.isNotEmpty) {
+          final w = existingMatches.first;
+          final double mergedQty = w.availableQty + item.quantity;
+          final double mergedCost = mergedQty > 0
+              ? ((w.availableQty * w.netCostPerUnit) +
+                    (item.quantity * effectiveUnitCost)) /
+                mergedQty
+              : effectiveUnitCost;
+          w.availableQty = mergedQty;
+          w.netCostPerUnit = mergedCost;
+        } else {
+          factoryWarehouse.add(
+            FactoryWarehouseModel(
+              id:
+                  'fw_${DateTime.now().millisecondsSinceEpoch}_${factoryWarehouse.length}',
+              typeName: targetTypeName,
+              grade: targetGrade,
+              thicknessCm: targetThickness,
+              category: category,
+              availableQty: item.quantity,
+              netCostPerUnit: effectiveUnitCost,
+              recommendedSalePrice: effectiveUnitCost * 1.25,
+              isGranite: item.isGranite,
+            ),
+          );
+        }
+      } else {
+        factoryBlocks.add(
+          FactoryBlockModel(
+            id:
+                'fb_${DateTime.now().millisecondsSinceEpoch}_${factoryBlocks.length}',
+            blockCode: 'BLK-${factoryBlocks.length + 101}',
+            typeName:
+                item.typeName.isNotEmpty ? item.typeName : item.description,
+            grade: item.grade.isNotEmpty ? item.grade : 'درجة أولى',
+            supplierId: inv.partyId,
+            supplierName: inv.partyName,
+            weightTons: item.quantity,
+            tonCost: effectiveUnitCost,
+            isGranite: item.isGranite,
+          ),
+        );
+      }
     }
     notifyListeners();
     saveToDisk();
