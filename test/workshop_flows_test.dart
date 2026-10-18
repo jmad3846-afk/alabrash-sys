@@ -1070,4 +1070,189 @@ void main() {
     // Tailoring area deducted: 5.0 - 2.0 = 3.0 m2
     expect(tailoring.quantity, closeTo(3.0, 0.001));
   });
+
+  testWidgets(
+    'complex tailoring calculates auto service price, displays net meter cost, aggregates net price, accepts manual total selling, and deducts factory warehouse',
+    (tester) async {
+      final erp = ERPProvider();
+      final fwItem = erp.factoryWarehouse.first;
+      final fwStockBefore = fwItem.availableQty;
+      final fwCost = fwItem.netCostPerUnit;
+
+      await openWorkshopTab(tester, erp, '2. مفصل (تفصيلات بسيطة ومعقدة)');
+      await tester.tap(find.text('تفصيل معقد (Complex)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('[إضافة تفصيل معقد]'));
+      await tester.pumpAndSettle();
+
+      // Enter tailoring name
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'اسم التفصيل',
+        ),
+        'كاونتر استقبال فاخر',
+      );
+
+      // Select factory warehouse material
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.textContaining('${fwItem.typeName} ${fwItem.grade} ${fwItem.thicknessCm}سم').first,
+      );
+      await tester.pumpAndSettle();
+
+      // Enter Length, Width, Quantity
+      // Length = 200 cm, Width = 50 cm, Quantity = 2 pieces
+      // Area = (200/100) * (50/100) * 2 = 2.0 m2
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'الطول (سم)',
+        ),
+        '200',
+      );
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'العرض (سم)',
+        ),
+        '50',
+      );
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'الكمية',
+        ),
+        '2',
+      );
+      await tester.pumpAndSettle();
+
+      // Select a service from dropdown
+      final srv = erp.services.first;
+      await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining(srv.name).last);
+      await tester.pumpAndSettle();
+
+      // Auto service price should equal: (200/100) * 2 * srv.unitRate = 4 * srv.unitRate
+      final expectedServicePrice = (200.0 / 100.0) * 2.0 * srv.unitRate;
+      final serviceField = find.byWidgetPredicate(
+        (w) =>
+            w is TextField &&
+            w.decoration?.labelText == 'إجمالي سعر الخدمة (\$)',
+      );
+      expect(serviceField, findsOneWidget);
+      final TextField serviceTf = tester.widget(serviceField);
+      expect(
+        double.parse(serviceTf.controller!.text),
+        closeTo(expectedServicePrice, 0.01),
+      );
+
+      // Attach service
+      await tester.tap(find.text('إرفاق +'));
+      await tester.pumpAndSettle();
+
+      // Verify "سعر المتر بعد الخدمات لهذا البند" banner
+      expect(find.textContaining('سعر المتر بعد الخدمات لهذا البند:'), findsOneWidget);
+      final expectedPostMeterCost = fwCost + (expectedServicePrice / 2.0);
+      expect(
+        find.textContaining('${expectedPostMeterCost.fmt} \$'),
+        findsWidgets,
+      );
+
+      // Add line item
+      await tester.tap(find.text('إضافة بند المواد +'));
+      await tester.pumpAndSettle();
+
+      // Verify "صافي سعر التفصيل المعقد بعد الخدمات" banner
+      expect(find.textContaining('صافي سعر التفصيل المعقد بعد الخدمات:'), findsOneWidget);
+      final expectedTotalNetCost = (2.0 * fwCost) + expectedServicePrice;
+      expect(find.textContaining('${expectedTotalNetCost.fmt} \$'), findsWidgets);
+
+      // Enter manual total selling price
+      final sellingField = find.byWidgetPredicate(
+        (w) =>
+            w is TextField &&
+            w.decoration?.labelText ==
+                'إجمالي سعر البيع للتفصيل المعقد (\$)',
+      );
+      await tester.ensureVisible(sellingField);
+      await tester.enterText(sellingField, '500');
+      await tester.pumpAndSettle();
+
+      // Save tailoring
+      final saveBtn = find.text('حفظ التفصيل بالمتر');
+      await tester.ensureVisible(saveBtn);
+      await tester.tap(saveBtn);
+      await tester.pumpAndSettle();
+
+      // Verify complex tailoring created
+      final tailoring = erp.complexTailorings.last;
+      expect(tailoring.name, 'كاونتر استقبال فاخر');
+      expect(tailoring.quantity, closeTo(2.0, 0.001));
+      expect(tailoring.sellingPrice, closeTo(250.0, 0.001)); // 500 / 2.0
+      expect(
+        tailoring.costPerMeterAfterServices,
+        closeTo(expectedPostMeterCost, 0.01),
+      );
+
+      // Verify deduction from factoryWarehouse
+      final fwAfter = erp.factoryWarehouse.firstWhere((w) => w.id == fwItem.id);
+      expect(fwAfter.availableQty, closeTo(fwStockBefore - 2.0, 0.001));
+    },
+  );
+
+  testWidgets(
+    'simple tailoring auto calculates service price by length, quantity and unit rate',
+    (tester) async {
+      final erp = ERPProvider();
+      await openWorkshopTab(tester, erp, '2. مفصل (تفصيلات بسيطة ومعقدة)');
+      await tester.tap(find.text('[إضافة تفصيل بسيط]'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('رخام كاردينال').last);
+      await tester.pumpAndSettle();
+
+      // Enter Length = 150 cm, Width = 100 cm, Quantity = 3
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'الطول (سم)',
+        ),
+        '150',
+      );
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'العرض (سم)',
+        ),
+        '100',
+      );
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'الكمية',
+        ),
+        '3',
+      );
+      await tester.pumpAndSettle();
+
+      // Select service
+      final srv = erp.services.first;
+      await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining(srv.name).last);
+      await tester.pumpAndSettle();
+
+      // (150 / 100) * 3 * srv.unitRate = 4.5 * srv.unitRate
+      final expectedServicePrice = (150.0 / 100.0) * 3.0 * srv.unitRate;
+      final serviceField = find.byWidgetPredicate(
+        (w) =>
+            w is TextField &&
+            w.decoration?.labelText == 'إجمالي سعر الخدمة (\$)',
+      );
+      expect(serviceField, findsOneWidget);
+      final TextField serviceTf = tester.widget(serviceField);
+      expect(
+        double.parse(serviceTf.controller!.text),
+        closeTo(expectedServicePrice, 0.01),
+      );
+    },
+  );
 }

@@ -10,6 +10,36 @@ import '../widgets/a4_invoice_print_dialog.dart';
 import '../widgets/app_image_attachment.dart';
 import 'accounting_screens.dart';
 
+class _TailoringStockOption {
+  final String id;
+  final String source; // 'factory' or 'workshop'
+  final String typeName;
+  final String grade;
+  final double thicknessCm;
+  final String category; // 'متر مربع' or 'متر مكعب'
+  final double availableQty;
+  final double netCostPerUnit;
+  final double recommendedSalePrice;
+  final bool isGranite;
+
+  _TailoringStockOption({
+    required this.id,
+    required this.source,
+    required this.typeName,
+    required this.grade,
+    required this.thicknessCm,
+    required this.category,
+    required this.availableQty,
+    required this.netCostPerUnit,
+    required this.recommendedSalePrice,
+    this.isGranite = false,
+  });
+
+  String get displayName => source == 'factory'
+      ? '$typeName $grade ${thicknessCm}سم ($category - مواد المعمل) — المتاح: ${availableQty.fmt}'
+      : '$typeName $grade ${thicknessCm}سم ($category) — المتاح: ${availableQty.fmt}';
+}
+
 class WorkshopWorkspaceScreen extends StatefulWidget {
   const WorkshopWorkspaceScreen({super.key});
 
@@ -2495,10 +2525,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     );
   }
 
-  /// Unified tailoring builder. Simple uses Materials lines only;
-  /// Complex uses Materials + Scrap lines.
+  /// Unified tailoring builder.
+  /// Simple uses Materials lines (meter selling price at end after services).
+  /// Complex uses Factory Materials lines, auto service calculation, net meter
+  /// price after services, aggregated net price, and manual total selling price.
   void _showTailoringBuilderDialog(ERPProvider erp, String complexity) {
-    final bool allowScrap = complexity == 'معقد';
+    const bool allowScrap = false;
     final nameCtrl = TextEditingController();
     String? formError;
     String photoPath = '';
@@ -2514,6 +2546,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     final qtyCtrl = TextEditingController();
     final sellMeterCtrl = TextEditingController();
     final laborCtrl = TextEditingController();
+    final complexTotalSellingPriceCtrl = TextEditingController();
     String? selectedServiceId;
     String serviceSearch = '';
     final servicePriceCtrl = TextEditingController();
@@ -2523,7 +2556,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     String productUnit = complexity == 'معقد' ? 'متر مكعب' : 'متر مربع';
 
     double lineArea(
-      WorkshopStockModel? ws,
+      _TailoringStockOption? ws,
       double l,
       double w,
       double h,
@@ -2542,15 +2575,46 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) {
-          WorkshopStockModel? ws;
+          final List<_TailoringStockOption> allStockOptions = [
+            ...erp.factoryWarehouse.map(
+              (w) => _TailoringStockOption(
+                id: w.id,
+                source: 'factory',
+                typeName: w.typeName,
+                grade: w.grade,
+                thicknessCm: w.thicknessCm,
+                category: w.category,
+                availableQty: w.availableQty,
+                netCostPerUnit: w.netCostPerUnit,
+                recommendedSalePrice: w.recommendedSalePrice,
+                isGranite: w.isGranite,
+              ),
+            ),
+            ...erp.workshopStock.map(
+              (w) => _TailoringStockOption(
+                id: w.id,
+                source: 'workshop',
+                typeName: w.typeName,
+                grade: w.grade,
+                thicknessCm: w.thicknessCm,
+                category: w.category,
+                availableQty: w.availableQty,
+                netCostPerUnit: w.netCostPerUnit,
+                recommendedSalePrice: w.recommendedSalePrice,
+                isGranite: w.isGranite,
+              ),
+            ),
+          ];
+
+          _TailoringStockOption? ws;
           if (selectedStockId != null) {
-            final m = erp.workshopStock
+            final m = allStockOptions
                 .where((w) => w.id == selectedStockId)
                 .toList();
             ws = m.isEmpty ? null : m.first;
           }
           final bool wsCube = ws?.category == 'متر مكعب';
-          final stockFiltered = erp.workshopStock
+          final stockFiltered = allStockOptions
               .where(
                 (w) =>
                     stockSearch.isEmpty ||
@@ -2597,6 +2661,25 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
           double draftedFor(String id) => draftLines
               .where((e) => e.stockId == id)
               .fold(0.0, (s, e) => s + e.area);
+
+          void autoCalcServicePrice() {
+            if (selectedServiceId == null) return;
+            final srvMatches = erp.services
+                .where((s) => s.id == selectedServiceId)
+                .toList();
+            if (srvMatches.isEmpty) return;
+            final srv = srvMatches.first;
+            final double curLen = double.tryParse(lenCtrl.text) ?? 0.0;
+            final double curQty = double.tryParse(qtyCtrl.text) ?? 0.0;
+            if (curLen > 0 && curQty > 0) {
+              final double calc = (curLen / 100.0) * curQty * srv.unitRate;
+              servicePriceCtrl.text = calc.toStringAsFixed(2);
+            } else if (curQty > 0) {
+              servicePriceCtrl.text = (curQty * srv.unitRate).toStringAsFixed(2);
+            } else {
+              servicePriceCtrl.text = srv.unitRate.toStringAsFixed(2);
+            }
+          }
 
           return Dialog(
             insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -2695,19 +2778,25 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         initialValue: stockValue,
                         isExpanded: true,
                         decoration: const InputDecoration(
-                          labelText: 'نوع الأمتار المستخدمة',
+                          labelText: 'نوع الأمتار المستخدمة (مواد المعمل)',
                         ),
                         items: stockFiltered
                             .map(
                               (s) => DropdownMenuItem(
                                 value: s.id,
                                 child: Text(
-                                  '${s.typeName} ${s.grade} ${s.thicknessCm}سم (${s.category}) — المتاح: ${s.availableQty}',
+                                  s.displayName,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             )
                             .toList(),
-                        onChanged: (v) => setSt(() => selectedStockId = v),
+                        onChanged: (v) {
+                          setSt(() {
+                            selectedStockId = v;
+                            autoCalcServicePrice();
+                          });
+                        },
                       ),
                     ] else ...[
                       TextField(
@@ -2750,7 +2839,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                 labelText: 'الطول (سم)',
                                 isDense: true,
                               ),
-                              onChanged: (_) => setSt(() => formError = null),
+                              onChanged: (_) {
+                                setSt(() {
+                                  formError = null;
+                                  autoCalcServicePrice();
+                                });
+                              },
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -2788,7 +2882,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                 labelText: 'الكمية',
                                 isDense: true,
                               ),
-                              onChanged: (_) => setSt(() => formError = null),
+                              onChanged: (_) {
+                                setSt(() {
+                                  formError = null;
+                                  autoCalcServicePrice();
+                                });
+                              },
                             ),
                           ),
                         ],
@@ -2878,35 +2977,6 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         ],
                       ),
                     ],
-                    const SizedBox(height: 8),
-                    if (complexity == 'معقد') ...[
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: sellMeterCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'سعر البيع للمتر (\$)',
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: laborCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'أجر المتر (\$)',
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.all(8),
@@ -2956,8 +3026,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                   ),
                                 )
                                 .toList(),
-                            onChanged: (v) =>
-                                setSt(() => selectedServiceId = v),
+                            onChanged: (v) {
+                              setSt(() {
+                                selectedServiceId = v;
+                                autoCalcServicePrice();
+                              });
+                            },
                           ),
                           const SizedBox(height: 6),
                           Row(
@@ -2965,9 +3039,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               Expanded(
                                 child: TextField(
                                   controller: servicePriceCtrl,
-                                  keyboardType: TextInputType.number,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
                                   decoration: const InputDecoration(
-                                    labelText: 'سعر الخدمة (\$)',
+                                    labelText: 'إجمالي سعر الخدمة (\$)',
                                     isDense: true,
                                   ),
                                 ),
@@ -3038,6 +3115,80 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         ],
                       ),
                     ),
+                    if (complexity == 'معقد') ...[
+                      const SizedBox(height: 6),
+                      // Line item meter price after services banner for Complex Tailoring
+                      Builder(
+                        builder: (context) {
+                          final double lineMatCost = lineSource == 'materials'
+                              ? (area * (ws?.netCostPerUnit ?? 0.0))
+                              : (area * (sc?.baseCost ?? 0.0));
+                          final double lineSrvCost = draftServices.fold(
+                            0.0,
+                            (s, sv) => s + sv.price,
+                          );
+                          final double lineTotalNetCost = lineMatCost + lineSrvCost;
+                          final double postTailoringMeterCost = area > 0
+                              ? (lineTotalNetCost / area)
+                              : (ws?.netCostPerUnit ?? sc?.baseCost ?? 0.0);
+
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0FDF4),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFF86EFAC)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.calculate_outlined,
+                                      size: 16,
+                                      color: Color(0xFF15803D),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    const Expanded(
+                                      child: Text(
+                                        'سعر المتر بعد الخدمات لهذا البند:',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                          color: Color(0xFF166534),
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      '${postTailoringMeterCost.fmt} \$ / ${wsCube ? "م³" : "م²"}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: Color(0xFF166534),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (area > 0) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'سعر المتر الأصلي للمادة: ${(ws?.netCostPerUnit ?? sc?.baseCost ?? 0.0).fmt}\$ + تكلفة الخدمات للمتر: ${(area > 0 ? lineSrvCost / area : 0.0).fmt}\$ (مساحة البند: ${area.fmt} ${wsCube ? "م³" : "م²"})',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Color(0xFF15803D),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                     if (complexity == 'بسيط') ...[
                       const SizedBox(height: 6),
                       // Net meter cost calculation post-tailoring (including services) for simple tailoring
@@ -3192,14 +3343,15 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               );
                               return;
                             }
-                            final sell =
-                                double.tryParse(sellMeterCtrl.text) ??
-                                (postTailoringMeterCost > 0
+                            final sell = complexity == 'بسيط'
+                                ? (double.tryParse(sellMeterCtrl.text) ??
+                                    (postTailoringMeterCost > 0
+                                        ? postTailoringMeterCost * 1.30
+                                        : stock.recommendedSalePrice))
+                                : (postTailoringMeterCost > 0
                                     ? postTailoringMeterCost * 1.30
                                     : stock.recommendedSalePrice);
-                            final labor = complexity == 'بسيط'
-                                ? 0.0
-                                : (double.tryParse(laborCtrl.text) ?? 0.0);
+                            final labor = 0.0;
                             setSt(() {
                               formError = null;
                               if (existingMaterialLines.isEmpty) {
@@ -3298,14 +3450,14 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         child: ListTile(
                           dense: true,
                           title: Text(
-                            '${li.typeName} ${li.grade} (${li.source == 'scrap' ? 'خردة' : li.category})',
+                            '${li.typeName} ${li.grade} (${li.lengthCm > 0 && li.widthCm > 0 ? "${li.lengthCm.fmt}×${li.widthCm.fmt}سم • ${li.quantity.toInt()} قطعة" : (li.source == 'scrap' ? 'خردة' : li.category)})',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
                             ),
                           ),
                           subtitle: Text(
-                            'الاستهلاك: ${li.area.fmt} ${li.category == 'متر مكعب' ? 'م³' : 'م²'} • أجر/متر: ${li.laborPerMeter}\$ • خدمات: ${li.servicesTotal.fmt}\$',
+                            'الاستهلاك: ${li.area.fmt} ${li.category == 'متر مكعب' ? 'م³' : 'م²'} • سعر المتر بعد الخدمات: ${li.netCostPerMeterAfterServices.fmt}\$ • خدمات: ${li.servicesTotal.fmt}\$',
                           ),
                           trailing: IconButton(
                             icon: const Icon(
@@ -3318,6 +3470,93 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         ),
                       );
                     }),
+                    if (complexity == 'معقد') ...[
+                      const SizedBox(height: 8),
+                      Builder(
+                        builder: (context) {
+                          final double totalNetComplexCost = draftLines.fold(
+                            0.0,
+                            (sum, line) =>
+                                sum + line.materialCost + line.servicesTotal,
+                          );
+                          final double totalComplexArea = draftLines.fold(
+                            0.0,
+                            (sum, line) => sum + line.area,
+                          );
+                          final double avgNetPerMeter = totalComplexArea > 0
+                              ? (totalNetComplexCost / totalComplexArea)
+                              : 0.0;
+
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.panelBorder),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.summarize_outlined,
+                                      size: 18,
+                                      color: AppColors.brandPrimaryText,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Expanded(
+                                      child: Text(
+                                        'صافي سعر التفصيل المعقد بعد الخدمات:',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: AppColors.brandPrimaryText,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      '${totalNetComplexCost.fmt} \$',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                        color: AppColors.partnersEquityAccent,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (totalComplexArea > 0) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'إجمالي المساحة: ${totalComplexArea.fmt} ${productUnit == "متر مكعب" ? "م³" : "م²"} • متوسط تكلفة المتر الصافية: ${avgNetPerMeter.fmt} \$',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.brandSecondaryText,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: complexTotalSellingPriceCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'إجمالي سعر البيع للتفصيل المعقد (\$)',
+                          hintText: draftLines.isNotEmpty
+                              ? 'المقترح: ${(draftLines.fold(0.0, (s, l) => s + l.materialCost + l.servicesTotal) * 1.3).fmt}'
+                              : null,
+                          isDense: true,
+                          prefixIcon: const Icon(Icons.sell_outlined),
+                        ),
+                        onChanged: (_) => setSt(() {}),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -3344,19 +3583,64 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           );
                           return;
                         }
-                        final selling = complexity == 'بسيط'
-                            ? (draftLines.fold<double>(
+
+                        final double totalNetComplexCost = draftLines.fold(
+                          0.0,
+                          (sum, line) =>
+                              sum + line.materialCost + line.servicesTotal,
+                        );
+
+                        double selling = 0.0;
+                        if (complexity == 'معقد') {
+                          final enteredSelling = double.tryParse(
+                                complexTotalSellingPriceCtrl.text.trim(),
+                              ) ??
+                              0.0;
+                          if (enteredSelling > 0) {
+                            selling = outputMeasure > 0
+                                ? (enteredSelling / outputMeasure)
+                                : enteredSelling;
+                          } else if (totalNetComplexCost > 0) {
+                            selling = outputMeasure > 0
+                                ? (totalNetComplexCost * 1.3 / outputMeasure)
+                                : 0.0;
+                          } else {
+                            selling = draftLines.fold<double>(
+                                  0.0,
+                                  (sum, line) => sum + line.lineTotal,
+                                ) /
+                                (outputMeasure > 0 ? outputMeasure : 1.0);
+                          }
+                          for (final li in draftLines) {
+                            if (li.sellingPricePerMeter <= 0) {
+                              li.sellingPricePerMeter = selling;
+                            }
+                          }
+                        } else {
+                          selling = draftLines.fold<double>(
                                 0.0,
                                 (sum, line) =>
-                                    sum + (line.area * line.sellingPricePerMeter),
-                              ) / (outputMeasure > 0 ? outputMeasure : 1.0))
-                            : (draftLines.fold<double>(
-                                0.0,
-                                (sum, line) => sum + line.lineTotal,
-                              ) / (outputMeasure > 0 ? outputMeasure : 1.0));
-                        // Commit stock: deduct materials, consume scrap.
+                                    sum +
+                                    (line.area * line.sellingPricePerMeter),
+                              ) /
+                              (outputMeasure > 0 ? outputMeasure : 1.0);
+                        }
+
+                        // Commit stock: deduct materials from factory warehouse or workshop stock.
                         for (final li in draftLines) {
-                          if (li.source == 'materials') {
+                          if (erp.factoryWarehouse.any((w) => w.id == li.stockId)) {
+                            final ok = erp.deductFactoryWarehouseStock(
+                              li.stockId,
+                              li.area,
+                            );
+                            if (!ok) {
+                              setSt(
+                                () => formError =
+                                    'نقص في مخزون مواد المعمل لـ ${li.typeName}. راجع الكميات.',
+                              );
+                              return;
+                            }
+                          } else if (erp.workshopStock.any((w) => w.id == li.stockId)) {
                             final ok = erp.deductWorkshopStock(
                               li.stockId,
                               li.area,
