@@ -2572,12 +2572,110 @@ class ERPProvider extends ChangeNotifier {
   /// Creates a workshop invoice from any source with correct cash routing:
   /// scrap sales go to the Scrap Cash Box, everything else to Main Cash Box.
   /// When assigned from an order, the isolated deposit moves to Main Cash Box.
+  /// Supports multiple line items and multiple sources per invoice.
   bool createWorkshopInvoice(
     WorkshopInvoiceModel inv, {
     String deductStockId = '',
     double deductQty = 0.0,
   }) {
     if (inv.isCashInvoice && inv.remainingBalance > 0.01) return false;
+
+    // Multi-item path
+    if (inv.items.isNotEmpty) {
+      // 1. Validation phase
+      for (final item in inv.items) {
+        if (item.sourceType == 'تفصيل بسيط' || item.sourceType == 'تفصيل معقد') {
+          final category = item.sourceType;
+          final isOpeningStockItem = openingEntry.openingStock.any(
+            (o) => o.category == category && o.typeId == item.sourceId,
+          );
+          if (isOpeningStockItem &&
+              (!openingEntry.isLocked || !openingEntry.openingStockApplied)) {
+            return false;
+          }
+          final items = item.sourceType == 'تفصيل بسيط' ? simpleTailorings : complexTailorings;
+          final matches = items.where((t) => t.id == item.sourceId).toList();
+          if (matches.isEmpty || item.quantity <= 0 || matches.first.quantity + 0.0001 < item.quantity) {
+            return false;
+          }
+        } else if (item.sourceType == 'مواد خام') {
+          if (item.sourceId.isNotEmpty) {
+            final stock = workshopStock.where((w) => w.id == item.sourceId).toList();
+            if (stock.isEmpty || stock.first.availableQty + 0.0001 < item.quantity) {
+              return false;
+            }
+          }
+        } else if (item.sourceType == 'طلبية معمل') {
+          if (item.depositAmount > 0 && item.sourceId.isNotEmpty) {
+            final orders = workshopOrders.where((o) => o.id == item.sourceId).toList();
+            if (orders.isNotEmpty && cashOf('order', inv.currency) + 0.0001 < item.depositAmount) {
+              return false;
+            }
+          }
+        }
+      }
+
+      // 2. Perform deductions and status updates
+      double totalScrapValue = 0.0;
+      for (final item in inv.items) {
+        if (item.sourceType == 'تفصيل بسيط' || item.sourceType == 'تفصيل معقد') {
+          final items = item.sourceType == 'تفصيل بسيط' ? simpleTailorings : complexTailorings;
+          final matches = items.where((t) => t.id == item.sourceId).toList();
+          if (matches.isNotEmpty) {
+            matches.first.quantity = (matches.first.quantity - item.quantity).clamp(0.0, double.infinity);
+          }
+        } else if (item.sourceType == 'مواد خام') {
+          if (item.sourceId.isNotEmpty) {
+            final matches = workshopStock.where((w) => w.id == item.sourceId).toList();
+            if (matches.isNotEmpty) {
+              matches.first.availableQty = (matches.first.availableQty - item.quantity).clamp(0.0, double.infinity);
+            }
+          }
+        } else if (item.sourceType == 'قطع زائدة') {
+          if (item.sourceId.isNotEmpty) {
+            final matches = scrapItems.where((s) => s.id == item.sourceId).toList();
+            if (matches.isNotEmpty) matches.first.isSold = true;
+          }
+          totalScrapValue += item.grandTotal;
+        } else if (item.sourceType == 'طلبية معمل') {
+          if (item.sourceId.isNotEmpty) {
+            final orders = workshopOrders.where((o) => o.id == item.sourceId).toList();
+            if (orders.isNotEmpty) {
+              orders.first.status = 'مكتملة ومرحلة';
+            }
+          }
+          if (item.depositAmount > 0) {
+            takeCash('order', inv.currency, item.depositAmount);
+            addCash('main', inv.currency, item.depositAmount);
+          }
+        }
+      }
+
+      if (deductStockId.isNotEmpty && deductQty > 0) {
+        final matches = workshopStock.where((w) => w.id == deductStockId).toList();
+        if (matches.isNotEmpty) {
+          matches.first.availableQty = (matches.first.availableQty - deductQty).clamp(0.0, double.infinity);
+        }
+      }
+
+      workshopInvoices.add(inv);
+
+      // Route cash
+      if (totalScrapValue > 0) {
+        final scrapTake = inv.cashPaidNow.clamp(0.0, totalScrapValue);
+        final mainTake = (inv.cashPaidNow - scrapTake).clamp(0.0, double.infinity);
+        if (scrapTake > 0) addCash('scrap', inv.currency, scrapTake);
+        if (mainTake > 0) addCash('main', inv.currency, mainTake);
+      } else {
+        addCash('main', inv.currency, inv.cashPaidNow);
+      }
+
+      notifyListeners();
+      saveToDisk();
+      return true;
+    }
+
+    // Legacy single-item fallback
     WorkshopTailoringModel? tailoringItem;
     if (inv.sourceId.isNotEmpty &&
         (inv.sourceType == 'تفصيل بسيط' ||
@@ -3105,7 +3203,10 @@ class ERPProvider extends ChangeNotifier {
     if (take <= 0) return false;
     // Route the cash, then record the collection by raising cashPaidNow
     // (invoice fields are immutable, so the entry is replaced).
-    if (inv.sourceType == 'قطع زائدة') {
+    final hasOnlyScrap = inv.items.isNotEmpty
+        ? inv.items.every((i) => i.sourceType == 'قطع زائدة')
+        : inv.sourceType == 'قطع زائدة';
+    if (hasOnlyScrap) {
       addCash('scrap', inv.currency, take);
     } else {
       addCash('main', inv.currency, take);
@@ -3118,11 +3219,13 @@ class ERPProvider extends ChangeNotifier {
         invoiceNo: old.invoiceNo,
         date: old.date,
         clientName: old.clientName,
+        items: old.items,
         sourceType: old.sourceType,
         sourceId: old.sourceId,
         projectId: old.projectId,
         itemDescription: old.itemDescription,
         sourceQuantity: old.sourceQuantity,
+        sourceUnitCategory: old.sourceUnitCategory,
         agreedPrice: old.agreedPrice,
         depositDeducted: old.depositDeducted,
         cashPaidNow: old.cashPaidNow + take,

@@ -1746,18 +1746,106 @@ class WorkshopOrderModel {
 }
 
 // ==========================================
+// 12b. WORKSHOP INVOICE ITEM (بند فاتورة المعمل)
+// Each line item belongs to a specific source and has its own dedicated services.
+// ==========================================
+class WorkshopInvoiceItem {
+  final String id;
+  final String sourceType; // 'طلبية معمل' | 'تفصيل بسيط' | 'تفصيل معقد' | 'قطع زائدة' | 'مواد خام'
+  final String sourceId; // order / tailoring / scrap / stock id
+  final String description;
+  final double quantity;
+  final String unitCategory; // 'متر مربع' | 'متر مكعب' | 'قطعة' | etc.
+  final double unitPrice;
+  final double agreedPrice; // subtotal for the item itself
+  final double netCost;
+  final double depositAmount; // deposit from order if applicable
+  final bool isGranite;
+  final List<ServiceAttachment> services; // dedicated services for this line item
+  final String photoPath;
+  final double lengthCm;
+  final double widthCm;
+  final double heightCm;
+
+  WorkshopInvoiceItem({
+    required this.id,
+    required this.sourceType,
+    this.sourceId = '',
+    required this.description,
+    this.quantity = 1.0,
+    this.unitCategory = 'متر مربع',
+    this.unitPrice = 0.0,
+    required this.agreedPrice,
+    this.netCost = 0.0,
+    this.depositAmount = 0.0,
+    this.isGranite = false,
+    this.services = const [],
+    this.photoPath = '',
+    this.lengthCm = 0.0,
+    this.widthCm = 0.0,
+    this.heightCm = 0.0,
+  });
+
+  double get servicesTotal => services.fold(0.0, (s, e) => s + e.price);
+  double get grandTotal => agreedPrice + servicesTotal;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'sourceType': sourceType,
+    'sourceId': sourceId,
+    'description': description,
+    'quantity': quantity,
+    'unitCategory': unitCategory,
+    'unitPrice': unitPrice,
+    'agreedPrice': agreedPrice,
+    'netCost': netCost,
+    'depositAmount': depositAmount,
+    'isGranite': isGranite,
+    'services': services.map((s) => s.toJson()).toList(),
+    'photoPath': photoPath,
+    'lengthCm': lengthCm,
+    'widthCm': widthCm,
+    'heightCm': heightCm,
+  };
+
+  factory WorkshopInvoiceItem.fromJson(Map<String, dynamic> json) =>
+      WorkshopInvoiceItem(
+        id: json['id'] ?? '',
+        sourceType: json['sourceType'] ?? 'طلبية معمل',
+        sourceId: json['sourceId'] ?? '',
+        description: json['description'] ?? '',
+        quantity: (json['quantity'] ?? 1.0).toDouble(),
+        unitCategory: json['unitCategory'] ?? 'متر مربع',
+        unitPrice: (json['unitPrice'] as num?)?.toDouble() ?? 0.0,
+        agreedPrice: (json['agreedPrice'] as num?)?.toDouble() ?? 0.0,
+        netCost: (json['netCost'] as num?)?.toDouble() ?? 0.0,
+        depositAmount: (json['depositAmount'] as num?)?.toDouble() ?? 0.0,
+        isGranite: json['isGranite'] ?? false,
+        services: json['services'] != null
+            ? (json['services'] as List)
+                .map((s) => ServiceAttachment.fromJson(s))
+                .toList()
+            : [],
+        photoPath: json['photoPath'] ?? '',
+        lengthCm: (json['lengthCm'] as num?)?.toDouble() ?? 0.0,
+        widthCm: (json['widthCm'] as num?)?.toDouble() ?? 0.0,
+        heightCm: (json['heightCm'] as num?)?.toDouble() ?? 0.0,
+      );
+}
+
+// ==========================================
 // 13. WORKSHOP INVOICE
+// Supports multiple line items from multiple sources, each with dedicated services.
 // ==========================================
 class WorkshopInvoiceModel {
   final String id;
   final String invoiceNo;
   final DateTime date;
   final String clientName;
-  final String
-  sourceType; // 'طلبية معمل' | 'تفصيل بسيط' | 'تفصيل معقد' | 'قطع زائدة' | 'مواد خام'
+  final List<WorkshopInvoiceItem> items; // multiple items from multiple sources
+  final String sourceType; // 'طلبية معمل' | 'تفصيل بسيط' | 'تفصيل معقد' | 'قطع زائدة' | 'مواد خام' | 'مصادر متعددة'
   final String sourceId; // order / tailoring / scrap / stock id when applicable
-  final String
-  projectId; // workshop project id when the invoice belongs to a project
+  final String projectId; // workshop project id when the invoice belongs to a project
   final String itemDescription;
   final double sourceQuantity;
   final String sourceUnitCategory;
@@ -1778,10 +1866,11 @@ class WorkshopInvoiceModel {
     required this.invoiceNo,
     required this.date,
     required this.clientName,
-    required this.sourceType,
+    this.items = const [],
+    this.sourceType = 'طلبية معمل',
     this.sourceId = '',
     this.projectId = '',
-    required this.itemDescription,
+    this.itemDescription = '',
     this.sourceQuantity = 1.0,
     this.sourceUnitCategory = 'متر مربع',
     required this.agreedPrice,
@@ -1799,9 +1888,17 @@ class WorkshopInvoiceModel {
 
   String get currencySymbol => AppCurrency.symbol(currency);
 
-  double get servicesTotal => services.fold(0.0, (s, e) => s + e.price);
+  double get itemsSubtotal => items.isNotEmpty
+      ? items.fold(0.0, (s, e) => s + e.agreedPrice)
+      : agreedPrice;
+
+  double get servicesTotal => items.isNotEmpty
+      ? items.fold(0.0, (s, e) => s + e.servicesTotal)
+      : services.fold(0.0, (s, e) => s + e.price);
+
   double get grandTotal =>
-      (agreedPrice + servicesTotal - salesDiscount).clamp(0.0, double.infinity);
+      (itemsSubtotal + servicesTotal - salesDiscount).clamp(0.0, double.infinity);
+
   double get remainingBalance =>
       grandTotal - depositDeducted - cashPaidNow - adjustmentsAmount;
 
@@ -1810,6 +1907,7 @@ class WorkshopInvoiceModel {
     'invoiceNo': invoiceNo,
     'date': date.toIso8601String(),
     'clientName': clientName,
+    'items': items.map((i) => i.toJson()).toList(),
     'sourceType': sourceType,
     'sourceId': sourceId,
     'projectId': projectId,
@@ -1822,41 +1920,77 @@ class WorkshopInvoiceModel {
     'netCost': netCost,
     'salesDiscount': salesDiscount,
     'adjustmentsAmount': adjustmentsAmount,
-    'services': services.map((s) => s.toJson()).toList(),
+    'services': services.isNotEmpty
+        ? services.map((s) => s.toJson()).toList()
+        : items.expand((i) => i.services).map((s) => s.toJson()).toList(),
     'photoPath': photoPath,
     'isGranite': isGranite,
     'isCashInvoice': isCashInvoice,
     'currency': currency,
   };
 
-  factory WorkshopInvoiceModel.fromJson(Map<String, dynamic> json) =>
-      WorkshopInvoiceModel(
-        id: json['id'],
-        invoiceNo: json['invoiceNo'],
-        date: DateTime.parse(json['date']),
-        clientName: json['clientName'],
-        sourceType: json['sourceType'],
-        sourceId: json['sourceId'] ?? '',
-        projectId: json['projectId'] ?? '',
-        itemDescription: json['itemDescription'],
-        sourceQuantity: (json['sourceQuantity'] ?? 1.0).toDouble(),
-        sourceUnitCategory: json['sourceUnitCategory'] ?? 'متر مربع',
-        agreedPrice: (json['agreedPrice'] as num).toDouble(),
-        depositDeducted: (json['depositDeducted'] as num).toDouble(),
-        cashPaidNow: (json['cashPaidNow'] as num).toDouble(),
-        netCost: (json['netCost'] as num).toDouble(),
-        salesDiscount: (json['salesDiscount'] ?? 0.0).toDouble(),
-        adjustmentsAmount: (json['adjustmentsAmount'] ?? 0.0).toDouble(),
-        services: json['services'] != null
-            ? (json['services'] as List)
-                  .map((s) => ServiceAttachment.fromJson(s))
-                  .toList()
-            : [],
-        photoPath: json['photoPath'] ?? '',
-        isGranite: json['isGranite'] ?? false,
-        isCashInvoice: json['isCashInvoice'] ?? false,
-        currency: AppCurrency.normalize(json['currency']),
-      );
+  factory WorkshopInvoiceModel.fromJson(Map<String, dynamic> json) {
+    List<WorkshopInvoiceItem> parsedItems = [];
+    if (json['items'] != null && (json['items'] as List).isNotEmpty) {
+      parsedItems = (json['items'] as List)
+          .map((i) => WorkshopInvoiceItem.fromJson(i))
+          .toList();
+    } else {
+      final legacyServices = json['services'] != null
+          ? (json['services'] as List)
+              .map((s) => ServiceAttachment.fromJson(s))
+              .toList()
+          : <ServiceAttachment>[];
+      parsedItems = [
+        WorkshopInvoiceItem(
+          id: 'item_1',
+          sourceType: json['sourceType'] ?? 'طلبية معمل',
+          sourceId: json['sourceId'] ?? '',
+          description: json['itemDescription'] ?? '',
+          quantity: (json['sourceQuantity'] ?? 1.0).toDouble(),
+          unitCategory: json['sourceUnitCategory'] ?? 'متر مربع',
+          unitPrice: (json['agreedPrice'] as num?)?.toDouble() ?? 0.0,
+          agreedPrice: (json['agreedPrice'] as num?)?.toDouble() ?? 0.0,
+          netCost: (json['netCost'] as num?)?.toDouble() ?? 0.0,
+          depositAmount: (json['depositDeducted'] as num?)?.toDouble() ?? 0.0,
+          isGranite: json['isGranite'] ?? false,
+          services: legacyServices,
+          photoPath: json['photoPath'] ?? '',
+        )
+      ];
+    }
+
+    final rawServices = json['services'] != null
+        ? (json['services'] as List)
+            .map((s) => ServiceAttachment.fromJson(s))
+            .toList()
+        : parsedItems.expand((e) => e.services).toList();
+
+    return WorkshopInvoiceModel(
+      id: json['id'],
+      invoiceNo: json['invoiceNo'],
+      date: DateTime.parse(json['date']),
+      clientName: json['clientName'],
+      items: parsedItems,
+      sourceType: json['sourceType'] ?? (parsedItems.isNotEmpty ? parsedItems.first.sourceType : 'طلبية معمل'),
+      sourceId: json['sourceId'] ?? (parsedItems.isNotEmpty ? parsedItems.first.sourceId : ''),
+      projectId: json['projectId'] ?? '',
+      itemDescription: json['itemDescription'] ?? (parsedItems.map((e) => e.description).join(' + ')),
+      sourceQuantity: (json['sourceQuantity'] ?? (parsedItems.isNotEmpty ? parsedItems.fold(0.0, (s, e) => s + e.quantity) : 1.0)).toDouble(),
+      sourceUnitCategory: json['sourceUnitCategory'] ?? 'متر مربع',
+      agreedPrice: (json['agreedPrice'] as num?)?.toDouble() ?? parsedItems.fold(0.0, (s, e) => s + e.agreedPrice),
+      depositDeducted: (json['depositDeducted'] as num?)?.toDouble() ?? 0.0,
+      cashPaidNow: (json['cashPaidNow'] as num?)?.toDouble() ?? 0.0,
+      netCost: (json['netCost'] as num?)?.toDouble() ?? parsedItems.fold(0.0, (s, e) => s + e.netCost),
+      salesDiscount: (json['salesDiscount'] ?? 0.0).toDouble(),
+      adjustmentsAmount: (json['adjustmentsAmount'] ?? 0.0).toDouble(),
+      services: rawServices,
+      photoPath: json['photoPath'] ?? '',
+      isGranite: json['isGranite'] ?? false,
+      isCashInvoice: json['isCashInvoice'] ?? false,
+      currency: AppCurrency.normalize(json['currency']),
+    );
+  }
 }
 
 // ==========================================

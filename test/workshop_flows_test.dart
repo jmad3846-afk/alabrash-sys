@@ -83,6 +83,16 @@ void main() {
   });
 
   testWidgets('workshop invoice builder opens', (tester) async {
+    final oldHandler = FlutterError.onError;
+    FlutterError.onError = (details) {
+      debugPrint('ERR_SUMMARY: ${details.summary}');
+      if (details.informationCollector != null) {
+        for (final info in details.informationCollector!()) {
+          debugPrint('ERR_INFO: $info');
+        }
+      }
+      oldHandler?.call(details);
+    };
     await openWorkshopTab(
       tester,
       ERPProvider(),

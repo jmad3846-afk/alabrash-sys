@@ -138,27 +138,54 @@ class A4InvoiceData {
   /// Factory adapter for Workshop Workspace Invoices.
   factory A4InvoiceData.fromWorkshopInvoice(WorkshopInvoiceModel inv) {
     final items = <A4InvoiceLineItem>[];
-    final srvText = inv.services.isNotEmpty
-        ? inv.services.map((s) => '${s.serviceName} (${s.price}\$)').join(' + ')
-        : '—';
 
-    items.add(A4InvoiceLineItem(
-      index: 1,
-      description: inv.itemDescription.isNotEmpty
-          ? inv.itemDescription
-          : 'تفصيل رخام وجرانيت ورشة المعمل',
-      gradeAndSpecs: inv.sourceType,
-      dimensionsText: '${inv.sourceQuantity.fmt} ${inv.sourceUnitCategory}',
-      quantityText: (inv.sourceType == 'تفصيل بسيط' || inv.sourceType == 'تفصيل معقد')
-          ? '${inv.sourceQuantity.fmt} ${inv.sourceUnitCategory == "متر مكعب" ? "م³" : "م²"}'
-          : '1 مقطوعية',
-      unitPrice: inv.agreedPrice,
-      servicesText: srvText,
-      lineTotal: inv.agreedPrice,
-    ));
+    if (inv.items.isNotEmpty) {
+      int idx = 1;
+      for (final item in inv.items) {
+        final srvText = item.services.isNotEmpty
+            ? item.services
+                .map((s) => '${s.serviceName} (${s.price}\$)')
+                .join(' + ')
+            : '—';
+        items.add(A4InvoiceLineItem(
+          index: idx++,
+          description: item.description.isNotEmpty
+              ? item.description
+              : 'صنف ورشة المعمل',
+          gradeAndSpecs: item.sourceType,
+          dimensionsText: '${item.quantity.fmt} ${item.unitCategory}',
+          quantityText:
+              '${item.quantity.fmt} ${item.unitCategory == "متر مكعب" ? "م³" : item.unitCategory == "متر مربع" ? "م²" : "وحدة"}',
+          unitPrice: item.unitPrice > 0 ? item.unitPrice : item.agreedPrice,
+          servicesText: srvText,
+          lineTotal: item.agreedPrice + item.servicesTotal,
+        ));
+      }
+    } else {
+      final srvText = inv.services.isNotEmpty
+          ? inv.services.map((s) => '${s.serviceName} (${s.price}\$)').join(' + ')
+          : '—';
+
+      items.add(A4InvoiceLineItem(
+        index: 1,
+        description: inv.itemDescription.isNotEmpty
+            ? inv.itemDescription
+            : 'تفصيل رخام وجرانيت ورشة المعمل',
+        gradeAndSpecs: inv.sourceType,
+        dimensionsText: '${inv.sourceQuantity.fmt} ${inv.sourceUnitCategory}',
+        quantityText: (inv.sourceType == 'تفصيل بسيط' || inv.sourceType == 'تفصيل معقد')
+            ? '${inv.sourceQuantity.fmt} ${inv.sourceUnitCategory == "متر مكعب" ? "م³" : "م²"}'
+            : '1 مقطوعية',
+        unitPrice: inv.agreedPrice,
+        servicesText: srvText,
+        lineTotal: inv.agreedPrice,
+      ));
+    }
 
     return A4InvoiceData(
-      invoiceTypeTitle: 'فاتورة مبيعات وخدمات ورشة المعمل',
+      invoiceTypeTitle: inv.isCashInvoice
+          ? 'فاتورة مبيعات نقدية — ورشة المعمل'
+          : 'فاتورة مبيعات وخدمات ورشة المعمل',
       invoiceNo: inv.invoiceNo,
       date: inv.date,
       partyName: inv.clientName,
@@ -167,7 +194,7 @@ class A4InvoiceData {
       currency: inv.currency,
       paymentStatus: inv.remainingBalance > 0.01 ? 'مستحق الدفع' : 'مدفوعة بالكامل',
       items: items,
-      subtotal: inv.agreedPrice,
+      subtotal: inv.itemsSubtotal,
       servicesTotal: inv.servicesTotal,
       shippingFee: 0.0,
       discount: inv.salesDiscount,
