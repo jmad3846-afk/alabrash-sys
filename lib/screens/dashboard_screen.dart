@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
@@ -53,6 +55,15 @@ class DashboardScreen extends StatelessWidget {
                     alignment: WrapAlignment.end,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E293B),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () => _showCenterInfoDialog(context, erp),
+                        icon: const Icon(Icons.business_rounded),
+                        label: const Text('Add Center Information (بيانات المركز)'),
+                      ),
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF0D9488),
@@ -815,6 +826,387 @@ class DashboardScreen extends StatelessWidget {
                 },
                 icon: const Icon(Icons.check_circle_rounded),
                 label: const Text('تأكيد التحويل (Confirm Transfer)'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------
+  // ADD / EDIT CENTER INFORMATION MODAL
+  // -------------------------------------------------------------
+  void _showCenterInfoDialog(BuildContext context, ERPProvider erp) {
+    final current = erp.centerInfo;
+    final nameCtrl = TextEditingController(text: current.centerName);
+    final ownerCtrl = TextEditingController(text: current.ownerName);
+    final phone1Ctrl = TextEditingController(text: current.phone1);
+    final phone2Ctrl = TextEditingController(text: current.phone2);
+    final regNoCtrl = TextEditingController(text: current.commercialRegNo);
+    final taxIdCtrl = TextEditingController(text: current.taxId);
+    final logoPathCtrl = TextEditingController(text: current.logoPath);
+    final addressCtrl = TextEditingController(text: current.address);
+    final sloganCtrl = TextEditingController(text: current.slogan);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSt) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.business_rounded,
+                    color: Color(0xFF0F172A),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'إضافة وتعديل بيانات المركز والمنشار',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'تظهر هذه البيانات رسميًا في ترويسة جميع الفواتير المطبوعة A4',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 680,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 1. Center Name & Owner Name
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: TextField(
+                            controller: nameCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'اسم المركز / المنشأة / المنشار (Center Name) *',
+                              prefixIcon: Icon(Icons.domain_rounded),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: TextField(
+                            controller: ownerCtrl,
+                            decoration: const InputDecoration(
+                              labelText: "اسم المالك / المدير (Owner's Name) *",
+                              prefixIcon: Icon(Icons.person_rounded),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // 2. Contact Numbers (First & Second)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: phone1Ctrl,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'رقم الهاتف الأول (First Contact Number) *',
+                              prefixIcon: Icon(Icons.phone_rounded),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: phone2Ctrl,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'رقم الهاتف الثاني (Second Contact Number)',
+                              prefixIcon: Icon(Icons.phone_iphone_rounded),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // 3. Commercial Reg & Tax ID
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: regNoCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'رقم السجل التجاري (Commercial Reg Number)',
+                              prefixIcon: Icon(Icons.badge_rounded),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: taxIdCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'الرقم الضريبي (Tax Identification Number)',
+                              prefixIcon: Icon(Icons.receipt_long_rounded),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // 4. Address & Slogan
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: TextField(
+                            controller: addressCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'العنوان ومقر المركز (Address)',
+                              prefixIcon: Icon(Icons.location_on_outlined),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 3,
+                          child: TextField(
+                            controller: sloganCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'شعار لفظي / وصف النشاط (Slogan / Activity)',
+                              prefixIcon: Icon(Icons.description_outlined),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 5. Center Logo Upload & Preview
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFCBD5E1)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(
+                                Icons.image_outlined,
+                                size: 18,
+                                color: Color(0xFF475569),
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'شعار المركز / المنشار (Center Logo):',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: Color(0xFF1E293B),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: logoPathCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'مسار ملف الشعار أو رابطه (Logo File Path / URL)',
+                                    prefixIcon: Icon(Icons.link_rounded),
+                                    isDense: true,
+                                  ),
+                                  onChanged: (_) => setSt(() {}),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF2563EB),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 12,
+                                  ),
+                                ),
+                                onPressed: () async {
+                                  try {
+                                    final file =
+                                        await FilePicker.pickFile(
+                                      type: FileType.image,
+                                    );
+                                    if (file != null &&
+                                        file.path != null) {
+                                      setSt(() {
+                                        logoPathCtrl.text =
+                                            file.path!;
+                                      });
+                                    }
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('تعذر فتح منتقي الملفات: $e'),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                                icon: const Icon(Icons.upload_file_rounded, size: 18),
+                                label: const Text('رفع الشعار'),
+                              ),
+                            ],
+                          ),
+                          if (logoPathCtrl.text.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 80,
+                                  height: 80,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: const Color(0xFFE2E8F0),
+                                    ),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: logoPathCtrl.text.startsWith('http')
+                                        ? Image.network(
+                                            logoPathCtrl.text,
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, _, _) =>
+                                                const Icon(
+                                              Icons.broken_image,
+                                              color: Colors.grey,
+                                            ),
+                                          )
+                                        : Image.file(
+                                            File(logoPathCtrl.text),
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, _, _) =>
+                                                const Icon(
+                                              Icons.broken_image,
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'معاينة الشعار المعتمد',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    TextButton.icon(
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: AppColors.dangerWaste,
+                                      ),
+                                      onPressed: () =>
+                                          setSt(() => logoPathCtrl.clear()),
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        size: 16,
+                                      ),
+                                      label: const Text('إلغاء الشعار الحالي'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0F172A),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
+                ),
+                onPressed: () {
+                  final newCenter = CenterInfoModel(
+                    centerName: nameCtrl.text.trim().isNotEmpty
+                        ? nameCtrl.text.trim()
+                        : 'مركز ومنشار الأبرش للرخام والجرانيت',
+                    ownerName: ownerCtrl.text.trim(),
+                    phone1: phone1Ctrl.text.trim(),
+                    phone2: phone2Ctrl.text.trim(),
+                    commercialRegNo: regNoCtrl.text.trim(),
+                    taxId: taxIdCtrl.text.trim(),
+                    logoPath: logoPathCtrl.text.trim(),
+                    address: addressCtrl.text.trim(),
+                    slogan: sloganCtrl.text.trim(),
+                  );
+                  erp.updateCenterInfo(newCenter);
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'تم حفظ بيانات المركز والشعار بنجاح. ستظهر تلقائياً في ترويسة جميع الفواتير المطبوعة A4.',
+                      ),
+                      backgroundColor: AppColors.successGreen,
+                      duration: Duration(seconds: 4),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.check_circle_rounded),
+                label: const Text('حفظ بيانات المركز'),
               ),
             ],
           );

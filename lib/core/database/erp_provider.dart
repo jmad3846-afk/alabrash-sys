@@ -190,6 +190,7 @@ class ERPProvider extends ChangeNotifier {
   List<ExpenseTypeModel> expenseTypes = [];
   List<ExpenseRecordModel> expenseRecords = [];
   List<AdjustmentInvoiceModel> adjustmentInvoices = [];
+  CenterInfoModel centerInfo = const CenterInfoModel();
 
   ERPProvider() {
     _initDefaultSeedData();
@@ -2434,6 +2435,13 @@ class ERPProvider extends ChangeNotifier {
     }
   }
 
+  // Update center/sawmill official info
+  void updateCenterInfo(CenterInfoModel newInfo) {
+    centerInfo = newInfo;
+    notifyListeners();
+    saveToDisk();
+  }
+
   // 6. POS Factory Invoice Sale (multi-item, Pending/Paid split)
   bool addFactoryPOSInvoice(FactoryInvoiceModel inv) {
     if (inv.isCashInvoice &&
@@ -3580,6 +3588,10 @@ class ERPProvider extends ChangeNotifier {
         'adjustmentInvoices',
         jsonEncode(adjustmentInvoices.map((e) => e.toJson()).toList()),
       );
+      await prefs.setString(
+        'centerInfo',
+        jsonEncode(centerInfo.toJson()),
+      );
     } catch (_) {}
   }
 
@@ -3590,6 +3602,12 @@ class ERPProvider extends ChangeNotifier {
       if (openingStr != null) {
         openingEntry = OpeningEntryModel.fromJson(jsonDecode(openingStr));
         isOpeningEntryCompleted = openingEntry.isLocked;
+      }
+      final centerInfoJson = prefs.getString('centerInfo');
+      if (centerInfoJson != null) {
+        try {
+          centerInfo = CenterInfoModel.fromJson(jsonDecode(centerInfoJson));
+        } catch (_) {}
       }
       final partnersJson = prefs.getString('partners');
       if (partnersJson != null) {

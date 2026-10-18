@@ -6,6 +6,7 @@ import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../widgets/currency_selector.dart';
 import '../widgets/thermal_receipt_dialog.dart';
+import '../widgets/a4_invoice_print_dialog.dart';
 import 'accounting_screens.dart';
 
 class FactoryWorkspaceScreen extends StatefulWidget {
@@ -1595,21 +1596,43 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             subtitle: Text(
               'التاريخ: ${intl.DateFormat("yyyy-MM-dd").format(inv.date)} • الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المدفوع: ${inv.advancePayment.fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
             ),
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: inv.isDue ? AppColors.chipBgRed : AppColors.chipBgGreen,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                inv.isDue ? 'مستحق الدفع' : 'مدفوعة',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: inv.isDue
-                      ? AppColors.dangerWaste
-                      : AppColors.successGreen,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'معاينة طباعة A4 (Print Preview)',
+                  icon: const Icon(
+                    Icons.picture_as_pdf_rounded,
+                    color: Color(0xFF2563EB),
+                  ),
+                  onPressed: () {
+                    A4InvoicePrintDialog.show(
+                      context,
+                      invoiceData: A4InvoiceData.fromFactoryInvoice(inv),
+                    );
+                  },
                 ),
-              ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color:
+                        inv.isDue ? AppColors.chipBgRed : AppColors.chipBgGreen,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    inv.isDue ? 'مستحق الدفع' : 'مدفوعة',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: inv.isDue
+                          ? AppColors.dangerWaste
+                          : AppColors.successGreen,
+                    ),
+                  ),
+                ),
+              ],
             ),
             children: [
               ...inv.items.map(
@@ -1760,6 +1783,20 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   ),
                 ),
                 IconButton(
+                  tooltip: 'معاينة طباعة A4 (Print Preview)',
+                  icon: const Icon(
+                    Icons.picture_as_pdf_rounded,
+                    color: Color(0xFF2563EB),
+                  ),
+                  onPressed: () {
+                    A4InvoicePrintDialog.show(
+                      context,
+                      invoiceData: A4InvoiceData.fromFactoryInvoice(inv),
+                    );
+                  },
+                ),
+                IconButton(
+                  tooltip: 'إيصال حراري (Thermal)',
                   icon: const Icon(
                     Icons.print_rounded,
                     color: AppColors.brandPrimaryText,

@@ -6,6 +6,7 @@ import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../widgets/currency_selector.dart';
 import '../widgets/thermal_receipt_dialog.dart';
+import '../widgets/a4_invoice_print_dialog.dart';
 import 'accounting_screens.dart';
 
 class WorkshopWorkspaceScreen extends StatefulWidget {
@@ -940,9 +941,27 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     subtitle: Text(
                       'المصدر: ${inv.sourceType}${inv.sourceType == 'تفصيل بسيط' || inv.sourceType == 'تفصيل معقد' ? ' • الكمية: ${inv.sourceQuantity.fmt} ${inv.sourceUnitCategory == 'متر مكعب' ? 'م³' : 'م²'}' : ''} • الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المدفوع: ${(inv.cashPaidNow + inv.depositDeducted).fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}${inv.photoPath.isEmpty ? "" : " • مرفق صورة"}',
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.print_rounded),
-                      onPressed: () {
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'معاينة طباعة A4 (Print Preview)',
+                          icon: const Icon(
+                            Icons.picture_as_pdf_rounded,
+                            color: Color(0xFF2563EB),
+                          ),
+                          onPressed: () {
+                            A4InvoicePrintDialog.show(
+                              context,
+                              invoiceData:
+                                  A4InvoiceData.fromWorkshopInvoice(inv),
+                            );
+                          },
+                        ),
+                        IconButton(
+                          tooltip: 'إيصال حراري (Thermal)',
+                          icon: const Icon(Icons.print_rounded),
+                          onPressed: () {
                         showDialog(
                           context: context,
                           builder: (_) => ThermalReceiptDialog(
@@ -982,6 +1001,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                         );
                       },
                     ),
+                  ],
+                ),
                     children: [
                       ...inv.services.map(
                         (s) => ListTile(

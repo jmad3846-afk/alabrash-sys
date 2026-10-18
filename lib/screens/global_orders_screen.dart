@@ -1,10 +1,11 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../widgets/currency_selector.dart';
+import '../widgets/a4_invoice_print_dialog.dart';
 
 class GlobalOrdersScreen extends StatefulWidget {
   const GlobalOrdersScreen({super.key});
@@ -216,13 +217,33 @@ class _GlobalOrdersScreenState extends State<GlobalOrdersScreen>
                     subtitle: Text(
                       'الطرف: ${ret.partyName} • الصنف: ${ret.itemDescription} • المعالجة: ${ret.paymentAction}',
                     ),
-                    trailing: Text(
-                      'المبلغ المسترد: ${ret.refundAmount}${AppCurrency.symbol(ret.currency)}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: AppColors.dangerWaste,
-                      ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'المبلغ المسترد: ${ret.refundAmount}${AppCurrency.symbol(ret.currency)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: AppColors.dangerWaste,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: 'معاينة طباعة A4 (Print Preview)',
+                          icon: const Icon(
+                            Icons.picture_as_pdf_rounded,
+                            color: Color(0xFF2563EB),
+                          ),
+                          onPressed: () {
+                            A4InvoicePrintDialog.show(
+                              context,
+                              invoiceData:
+                                  A4InvoiceData.fromReturnInvoice(ret),
+                            );
+                          },
+                        ),
+                      ],
                     ),
                   );
                 },

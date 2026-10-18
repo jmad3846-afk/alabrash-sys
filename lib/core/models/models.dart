@@ -2367,3 +2367,54 @@ class StagedCutConversion {
     required this.salePrice,
   });
 }
+
+/// Center / Sawmill official information for invoice headers and printing.
+class CenterInfoModel {
+  final String centerName;
+  final String ownerName;
+  final String phone1;
+  final String phone2;
+  final String commercialRegNo;
+  final String taxId;
+  final String logoPath;
+  final String address;
+  final String slogan;
+
+  const CenterInfoModel({
+    this.centerName = 'مركز ومنشار الأبرش للرخام والجرانيت',
+    this.ownerName = 'إدارة منشار الأبرش',
+    this.phone1 = '+963 933 123 456',
+    this.phone2 = '+963 11 456 7890',
+    this.commercialRegNo = '104820',
+    this.taxId = '300294819',
+    this.logoPath = '',
+    this.address = 'المنطقة الصناعية - ريف دمشق / سوريا',
+    this.slogan = 'لأعمال الرخام والجرانيت وحجر البناء وقص وتفصيل البلوكات وتوريد المستودعات',
+  });
+
+  Map<String, dynamic> toJson() => {
+        'centerName': centerName,
+        'ownerName': ownerName,
+        'phone1': phone1,
+        'phone2': phone2,
+        'commercialRegNo': commercialRegNo,
+        'taxId': taxId,
+        'logoPath': logoPath,
+        'address': address,
+        'slogan': slogan,
+      };
+
+  factory CenterInfoModel.fromJson(Map<String, dynamic> json) =>
+      CenterInfoModel(
+        centerName: json['centerName'] ?? 'مركز ومنشار الأبرش للرخام والجرانيت',
+        ownerName: json['ownerName'] ?? 'إدارة منشار الأبرش',
+        phone1: json['phone1'] ?? '+963 933 123 456',
+        phone2: json['phone2'] ?? '+963 11 456 7890',
+        commercialRegNo: json['commercialRegNo'] ?? '104820',
+        taxId: json['taxId'] ?? '300294819',
+        logoPath: json['logoPath'] ?? '',
+        address: json['address'] ?? 'المنطقة الصناعية - ريف دمشق / سوريا',
+        slogan: json['slogan'] ??
+            'لأعمال الرخام والجرانيت وحجر البناء وقص وتفصيل البلوكات وتوريد المستودعات',
+      );
+}

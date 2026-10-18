@@ -4,6 +4,7 @@ import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../widgets/currency_selector.dart';
+import '../widgets/a4_invoice_print_dialog.dart';
 import 'accounting_screens.dart';
 
 class FinancialsScreen extends StatefulWidget {
@@ -1343,25 +1344,45 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         subtitle: Text(
                           '${inv.itemDescription} • الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المتبقي للتحصيل: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
                         ),
-                        trailing: inv.remainingBalance > 0.01
-                            ? ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.successGreen,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                  ),
-                                ),
-                                onPressed: () => _showMoneyDialog(
-                                  title: 'تحصيل فاتورة ${inv.invoiceNo}',
-                                  actionLabel: 'تأكيد التحصيل',
-                                  max: inv.remainingBalance,
-                                  currency: inv.currency,
-                                  onConfirm: (a) =>
-                                      erp.collectWorkshopInvoice(inv, a),
-                                ),
-                                child: const Text('تحصيل'),
-                              )
-                            : const Chip(label: Text('خالصة')),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'معاينة طباعة A4 (Print Preview)',
+                              icon: const Icon(
+                                Icons.picture_as_pdf_rounded,
+                                color: Color(0xFF2563EB),
+                              ),
+                              onPressed: () {
+                                A4InvoicePrintDialog.show(
+                                  context,
+                                  invoiceData:
+                                      A4InvoiceData.fromWorkshopInvoice(inv),
+                                );
+                              },
+                            ),
+                            const SizedBox(width: 4),
+                            inv.remainingBalance > 0.01
+                                ? ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.successGreen,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                      ),
+                                    ),
+                                    onPressed: () => _showMoneyDialog(
+                                      title: 'تحصيل فاتورة ${inv.invoiceNo}',
+                                      actionLabel: 'تأكيد التحصيل',
+                                      max: inv.remainingBalance,
+                                      currency: inv.currency,
+                                      onConfirm: (a) =>
+                                          erp.collectWorkshopInvoice(inv, a),
+                                    ),
+                                    child: const Text('تحصيل'),
+                                  )
+                                : const Chip(label: Text('خالصة')),
+                          ],
+                        ),
                         children: [
                           ...inv.services.map(
                             (s) => ListTile(
