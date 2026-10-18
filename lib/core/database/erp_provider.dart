@@ -1696,7 +1696,9 @@ class ERPProvider extends ChangeNotifier {
       .fold<double>(0, (sum, asset) => sum + asset.saleAmount);
 
   double expenseRecordsTotalOf(String? currency) => expenseRecords
-      .where((expense) => expense.currency == AppCurrency.normalize(currency))
+      .where((expense) =>
+          !expense.isInformational &&
+          expense.currency == AppCurrency.normalize(currency))
       .fold<double>(0, (sum, expense) => sum + expense.amount);
 
   double totalRevenuesOf(String? currency) =>
@@ -2156,6 +2158,48 @@ class ERPProvider extends ChangeNotifier {
       0.0,
       (s, it) => s + (it.quantity * it.unitCost),
     );
+
+    // If the shipment has not arrived and shipping costs were entered,
+    // record an informational expense entry under "Shipping and Transportation Costs"
+    // (allocated to material capital costs, not charged to the supplier).
+    if (!inv.isGoodsDelivered && inv.shippingFee > 0) {
+      final matchingTypes = expenseTypes
+          .where(
+            (t) =>
+                t.name.trim() == 'تكاليف الشحن والنقل' ||
+                t.name.contains('Shipping and Transportation Costs') ||
+                t.name.contains('الشحن والنقل'),
+          )
+          .toList();
+
+      final String typeId;
+      if (matchingTypes.isNotEmpty) {
+        typeId = matchingTypes.first.id;
+      } else {
+        typeId = 'shipping_transport_costs';
+        expenseTypes.add(
+          ExpenseTypeModel(
+            id: typeId,
+            name: 'تكاليف الشحن والنقل (Shipping and Transportation Costs)',
+            description: 'أجور وتكاليف شحن ونقل المواد والبضائع المشتراة',
+          ),
+        );
+      }
+
+      expenseRecords.add(
+        ExpenseRecordModel(
+          id: 'exp_ship_${DateTime.now().microsecondsSinceEpoch}',
+          typeId: typeId,
+          amount: inv.shippingFee,
+          currency: inv.currency,
+          personName: 'شحن مشتريات - ${inv.partyName}',
+          description:
+              'قيد إعلامي: تكاليف شحن ونقل موزعة على التكلفة الرأسمالية لمواد الفاتورة رقم ${inv.invoiceNo} (غير محملة على المورد)',
+          date: inv.date,
+          isInformational: true,
+        ),
+      );
+    }
 
     // Add items to stock: meters affect Factory Warehouse Inventory, blocks affect Factory Block Inventory.
     for (var item in inv.items) {

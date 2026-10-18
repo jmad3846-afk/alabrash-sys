@@ -128,14 +128,20 @@ class A4InvoiceData {
       items: items,
       subtotal: inv.subtotal,
       servicesTotal: inv.itemsServicesTotal,
-      shippingFee: inv.shippingFee,
+      shippingFee: isPurchase ? 0.0 : inv.shippingFee,
       discount: inv.discountAmount,
       grandTotal: inv.grandTotal,
       paidAmount: inv.advancePayment,
       remainingBalance: inv.remainingBalance,
-      notes: inv.isGoodsDelivered
-          ? 'شحن واصل للعنوان المطلوب'
-          : 'الاستلام من أرض المستودع (الزبون يستلم النقل)',
+      notes: isPurchase
+          ? (inv.isGoodsDelivered
+              ? 'شحنة واصلة للمصنع'
+              : (inv.shippingFee > 0
+                  ? 'تكلفة الشحن (${inv.shippingFee.fmt} ${inv.currencySymbol}) أُضيفت للتكلفة الرأسمالية للمواد وسُجلت بالمصروفات ولا تُحمّل على المورد.'
+                  : 'شحنة غير واصلة'))
+          : (inv.isGoodsDelivered
+              ? 'شحن واصل للعنوان المطلوب'
+              : 'الاستلام من أرض المستودع (الزبون يستلم النقل)'),
       isGoodsDelivered: inv.isGoodsDelivered,
     );
   }
@@ -971,7 +977,9 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
                   isBold: true,
                 ),
                 _buildTotalRow(
-                  'المتبقي بذمة العميل:',
+                  inv.partyRole == 'المورد'
+                      ? 'المتبقي لصالح المورد:'
+                      : 'المتبقي بذمة العميل:',
                   '${inv.remainingBalance.fmt} ${AppCurrency.symbol(inv.currency)}',
                   isBold: true,
                   color: inv.remainingBalance > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),

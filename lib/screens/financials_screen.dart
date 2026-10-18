@@ -668,7 +668,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         ),
                       ),
                       subtitle: Text(
-                        'التاريخ: ${inv.date.toString().substring(0, 10)} • واصلة: ${inv.isGoodsDelivered ? "نعم" : "لا (شحن ${inv.shippingFee}${inv.currencySymbol})"} • المدفوع: ${inv.advancePayment.fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
+                        'التاريخ: ${inv.date.toString().substring(0, 10)} • واصلة: ${inv.isGoodsDelivered ? "نعم" : "لا (شحن مرسمل ${inv.shippingFee}${inv.currencySymbol})"} • المدفوع: ${inv.advancePayment.fmt}${inv.currencySymbol} • المتبقي للمورد: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
                       ),
                       trailing: inv.isDue
                           ? ElevatedButton(

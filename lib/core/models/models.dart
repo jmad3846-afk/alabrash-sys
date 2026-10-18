@@ -431,6 +431,7 @@ class ExpenseRecordModel {
   final double personShare;
   final String description;
   final DateTime date;
+  final bool isInformational;
 
   ExpenseRecordModel({
     required this.id,
@@ -442,6 +443,7 @@ class ExpenseRecordModel {
     this.personShare = 0,
     this.description = '',
     DateTime? date,
+    this.isInformational = false,
   }) : date = date ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
@@ -454,6 +456,7 @@ class ExpenseRecordModel {
     'personShare': personShare,
     'description': description,
     'date': date.toIso8601String(),
+    'isInformational': isInformational,
   };
 
   factory ExpenseRecordModel.fromJson(Map<String, dynamic> json) =>
@@ -467,6 +470,7 @@ class ExpenseRecordModel {
         personShare: (json['personShare'] ?? 0).toDouble(),
         description: json['description'] ?? '',
         date: DateTime.parse(json['date']),
+        isInformational: json['isInformational'] ?? false,
       );
 }
 
@@ -1137,13 +1141,21 @@ class FactoryInvoiceModel {
   double get itemsServicesTotal =>
       items.fold(0.0, (sum, item) => sum + item.servicesTotal);
   double get servicesTotal => services.fold(0.0, (sum, s) => sum + s.price);
-  double get grandTotal =>
-      (subtotal +
+  double get grandTotal {
+    if (invoiceType == 'شراء_مورد') {
+      return (subtotal +
               itemsServicesTotal +
-              servicesTotal +
-              shippingFee -
+              servicesTotal -
               discountAmount)
           .clamp(0.0, double.infinity);
+    }
+    return (subtotal +
+            itemsServicesTotal +
+            servicesTotal +
+            shippingFee -
+            discountAmount)
+        .clamp(0.0, double.infinity);
+  }
   double get remainingBalance =>
       grandTotal - advancePayment - adjustmentsAmount;
 

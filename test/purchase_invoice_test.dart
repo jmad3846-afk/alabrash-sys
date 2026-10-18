@@ -97,8 +97,9 @@ void main() {
     ));
 
     final inv = erp.factoryInvoices.last;
-    // Items 1500 + 800 = 2300, + shipping 230 = 2530, - 1000 = 1530 due.
-    expect(inv.grandTotal, closeTo(2530.0, 0.001));
+    // Items 1500 + 800 = 2300. Shipping (230) is capitalized to stone cost and recorded in expenses as informational, NOT charged to supplier.
+    // Grand total owed to supplier is 2300, minus 1000 advance = 1300 due.
+    expect(inv.grandTotal, closeTo(2300.0, 0.001));
     expect(inv.isDue, isTrue);
     expect(inv.paymentStatus, 'مستحق الدفع');
 
@@ -110,9 +111,15 @@ void main() {
     expect(added[0].tonCost, closeTo(100.0 + 150.0 / 15.0, 0.001));
     expect(added[1].tonCost, closeTo(80.0 + 80.0 / 10.0, 0.001));
 
-    // Supplier debt increased by the remainder.
+    // Supplier debt increased by remainder of materials only (2300 - 1000 = 1300), NOT shipping.
     final sup = erp.suppliers.firstWhere((s) => s.id == 'sup1');
-    expect(sup.debtBalance, closeTo(25000.0 + 1530.0, 0.001));
+    expect(sup.debtBalance, closeTo(25000.0 + 1300.0, 0.001));
+
+    // Informational shipping expense record created
+    final shipExp = erp.expenseRecords.where((e) => e.isInformational).toList();
+    expect(shipExp, isNotEmpty);
+    expect(shipExp.last.amount, 230.0);
+    expect(erp.expenseRecordsTotalOf('USD'), 0.0); // Does not double-deduct from operational profit
   });
 
   test('fully paid purchase lands in Paid section', () async {
@@ -555,25 +562,33 @@ void main() {
       ],
       isGoodsDelivered: false,
       shippingFee: 200.0,
-      advancePayment: 2200.0,
+      advancePayment: 2000.0,
     );
 
-    expect(invoice.grandTotal, 2200.0);
+    // Grand total owed to supplier is materials only (2000.0); shipping is NOT charged to supplier.
+    expect(invoice.grandTotal, 2000.0);
     final saved = erp.addSupplierPurchaseInvoice(invoice);
     expect(saved, isTrue);
 
-    // Verify block cost includes shipping
+    // Verify block cost includes proportional shipping
     expect(erp.factoryBlocks.length, blocksCountBefore + 1);
     final addedBlock = erp.factoryBlocks.last;
     expect(addedBlock.tonCost, closeTo(110.0, 0.001));
 
-    // Verify new warehouse item includes shipping
+    // Verify new warehouse item includes proportional shipping
     final whNew = erp.factoryWarehouse.firstWhere((w) =>
         w.typeName == 'حجر ترافرتين' &&
         w.grade == 'درجة ثانية' &&
         w.thicknessCm == 2.0);
     expect(whNew.availableQty, 50.0);
     expect(whNew.netCostPerUnit, closeTo(22.0, 0.001));
+
+    // Verify informational expense in Shipping and Transportation Costs category
+    final shipExp = erp.expenseRecords.where((e) => e.isInformational).toList();
+    expect(shipExp, isNotEmpty);
+    expect(shipExp.last.amount, 200.0);
+    expect(shipExp.last.description, contains('قيد إعلامي'));
+    expect(erp.expenseTypes.any((t) => t.name.contains('Shipping and Transportation Costs') || t.name.contains('الشحن')), isTrue);
   });
 
   testWidgets('dialog allows switching to meters and adding a meters purchase item',
@@ -597,5 +612,79 @@ void main() {
     expect(find.text('إضافة بند الأمتار للفاتورة +'), findsOneWidget);
 
     expect(tester.takeException(), isNull);
+  });
+
+  test('undelivered shipping cost is capitalized into materials, recorded in expenses as informational, and NOT charged to supplier', () async {
+    final erp = ERPProvider();
+    final sup = erp.suppliers.firstWhere((s) => s.id == 'sup1');
+    final double supDebtBefore = sup.debtBalance;
+
+    final invoice = FactoryInvoiceModel(
+      id: 'fi_ship_not_charged',
+      invoiceNo: 'FAC-PUR-SHIP-1',
+      date: DateTime(2026, 2, 1),
+      partyId: sup.id,
+      partyName: sup.name,
+      invoiceType: 'شراء_مورد',
+      items: [
+        FactoryInvoiceItem(
+          itemId: 'item_b',
+          description: 'بلوك حجر (درجة أولى)',
+          typeName: 'حجر حلبي',
+          grade: 'درجة أولى',
+          quantity: 20.0,
+          unitPrice: 50.0, // 1000 total
+          unitCost: 50.0,
+          itemCategory: 'block',
+        ),
+        FactoryInvoiceItem(
+          itemId: 'item_m',
+          description: 'رخام أبيض 2سم',
+          typeName: 'رخام أبيض',
+          grade: 'نخب أول',
+          thicknessCm: 2.0,
+          quantity: 100.0,
+          unitPrice: 15.0, // 1500 total
+          unitCost: 15.0,
+          itemCategory: 'meter',
+          meterUnit: 'متر مربع',
+        ),
+      ],
+      isGoodsDelivered: false,
+      shippingFee: 500.0, // 500 shipping cost
+      advancePayment: 0.0,
+    );
+
+    // 1. Supplier grand total must ONLY be the materials cost (1000 + 1500 = 2500), shipping is NOT charged to supplier.
+    expect(invoice.grandTotal, 2500.0);
+    expect(invoice.remainingBalance, 2500.0);
+
+    final success = erp.addSupplierPurchaseInvoice(invoice);
+    expect(success, isTrue);
+
+    // 2. Supplier debt increased ONLY by materials cost (2500), NOT by shipping (500)
+    expect(sup.debtBalance, closeTo(supDebtBefore + 2500.0, 0.001));
+
+    // 3. Shipping cost (500) is capitalized proportionally into materials:
+    // Block: 1000 / 2500 * 500 = 200 share -> 200 / 20 = +10 -> tonCost = 60
+    final block = erp.factoryBlocks.last;
+    expect(block.tonCost, closeTo(60.0, 0.001));
+
+    // Meter: 1500 / 2500 * 500 = 300 share -> 300 / 100 = +3 -> netCostPerUnit = 18
+    final meter = erp.factoryWarehouse.last;
+    expect(meter.netCostPerUnit, closeTo(18.0, 0.001));
+
+    // 4. An informational expense record exists under "Shipping and Transportation Costs"
+    final expType = erp.expenseTypes.firstWhere(
+      (t) => t.name.contains('Shipping and Transportation Costs') || t.name.contains('الشحن'),
+    );
+    final exp = erp.expenseRecords.firstWhere(
+      (e) => e.typeId == expType.id && e.isInformational,
+    );
+    expect(exp.amount, 500.0);
+    expect(exp.isInformational, isTrue);
+
+    // 5. Informational record does NOT count as an operational expense deducting from operating profit
+    expect(erp.expenseRecordsTotalOf('USD'), 0.0);
   });
 }

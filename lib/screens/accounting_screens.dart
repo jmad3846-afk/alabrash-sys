@@ -1411,8 +1411,37 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                         .contains(query);
                   }))
                     ListTile(
-                      title: Text(
-                        '${expense.amount.fmt} ${AppCurrency.symbol(expense.currency)}',
+                      title: Row(
+                        children: [
+                          Text(
+                            '${expense.amount.fmt} ${AppCurrency.symbol(expense.currency)}',
+                          ),
+                          if (expense.isInformational) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: const Color(0xFF3B82F6),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: const Text(
+                                'قيد إعلامي (مرسمل على المواد)',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1D4ED8),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       subtitle: Text(
                         '${expense.description} • ${expense.personName.isEmpty ? 'دون مستفيد' : expense.personName}${expense.personShare > 0 ? ' • الحصة ${expense.personShare.fmt}' : ''}${expense.staffId != null ? ' • مسجل في القوى العاملة' : ''}',

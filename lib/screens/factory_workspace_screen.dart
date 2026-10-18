@@ -2808,7 +2808,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               ? (double.tryParse(shippingFeeCtrl.text) ?? 0.0)
               : 0.0;
           final double discount = double.tryParse(discountCtrl.text) ?? 0.0;
-          final double grandTotal = (itemsTotal + shipping - discount).clamp(
+          final double grandTotal = (itemsTotal - discount).clamp(
             0.0,
             double.infinity,
           );
@@ -3559,16 +3559,17 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
                           labelText:
-                              'تكاليف الشحن (تُدمج مع رأس مال الأحجار وتُوزع على الأصناف)',
+                              'تكاليف الشحن (تُدمج مع رأس مال المواد وتُسجل في المصروفات)',
                         ),
                         onChanged: (_) => setSt(() {}),
                       ),
                       const SizedBox(height: 6),
                       const Text(
-                        'تُجمع تكاليف الشحن مع إجمالي الفاتورة وتُوزع على التكلفة الرأسمالية لكل صنف.',
+                        'ملاحظة: تكاليف الشحن تُوزّع على التكلفة الرأسمالية للمواد المشتراة وتُسجَّل في صفحة المصروفات كقيد إعلامي، ولا تُحمَّل على حساب المورد أو إجمالي هذه الفاتورة.',
                         style: TextStyle(
                           fontSize: 11,
-                          color: AppColors.brandSecondaryText,
+                          color: AppColors.accentPrimary,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ],
@@ -3604,7 +3605,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('إجمالي الفاتورة:'),
+                              const Text('إجمالي الفاتورة المستحق للمورد:'),
                               Row(
                                 children: [
                                   Text(
@@ -3620,6 +3621,29 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               ),
                             ],
                           ),
+                          if (shipping > 0) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'تكاليف الشحن (مرسملة على المواد ومسجلة بالمصروفات):',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.brandSecondaryText,
+                                  ),
+                                ),
+                                Text(
+                                  '${shipping.fmt} ${AppCurrency.symbol(invCurrency)}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.accentPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           Align(
                             alignment: AlignmentDirectional.centerEnd,
@@ -3663,7 +3687,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           const SizedBox(height: 8),
                           if (cashInvoice)
                             Text(
-                              'فاتورة نقدية: سيتم دفع كامل الإجمالي (${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}) من الصندوق الرئيسي.',
+                              'فاتورة نقدية: سيتم دفع كامل مستحقات المورد (${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}) من الصندوق الرئيسي.',
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: AppColors.accentPrimary,
@@ -3744,7 +3768,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           setSt(() => formError = 'أجب: هل وصلت الشحنة أم لا؟');
                           return;
                         }
-                        if (discount < 0 || discount > itemsTotal + shipping) {
+                        if (discount < 0 || discount > itemsTotal) {
                           setSt(
                             () => formError =
                                 'قيمة الخصم يجب أن تكون بين صفر وإجمالي الفاتورة.',
