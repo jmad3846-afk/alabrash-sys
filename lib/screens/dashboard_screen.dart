@@ -28,9 +28,8 @@ class DashboardScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Dashboard Title & Quick Actions Row
+            // Dashboard Title Row
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Column(
@@ -48,121 +47,43 @@ class DashboardScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 16),
-                Flexible(
-                  child: Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.end,
-                    crossAxisAlignment: WrapCrossAlignment.center,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x060F172A),
+                        blurRadius: 6,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // BACKUP & RESTORE: EXPORT BUTTON
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0D9488),
-                          foregroundColor: Colors.white,
+                      Icon(Icons.verified_rounded, size: 16, color: Color(0xFF0D9488)),
+                      SizedBox(width: 8),
+                      Text(
+                        'منظومة أبعاد المتكاملة',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E293B),
                         ),
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (_) => const BackupRestoreModal(initialTab: 0),
-                          );
-                        },
-                        icon: const Icon(Icons.cloud_upload_rounded),
-                        label: const Text('تصدير نسخة احتياطية (فلاشة / خارجي)'),
-                      ),
-                      // BACKUP & RESTORE: RESTORE BUTTON
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2563EB),
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (_) => const BackupRestoreModal(initialTab: 1),
-                          );
-                        },
-                        icon: const Icon(Icons.cloud_download_rounded),
-                        label: const Text('استعادة نسخة احتياطية'),
-                      ),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E293B),
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: () => _showCenterInfoDialog(context, erp),
-                        icon: const Icon(Icons.business_rounded),
-                        label: const Text('Add Center Information (بيانات المركز)'),
-                      ),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0D9488),
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: () =>
-                            _showCurrencyConversionDialog(context, erp),
-                        icon: const Icon(Icons.currency_exchange_rounded),
-                        label: const Text('تصريف وتحويل العملات (USD ⇄ SYP)'),
-                      ),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.accentPrimary,
-                        ),
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (_) => const WorkdayModal(),
-                          );
-                        },
-                        icon: const Icon(Icons.date_range),
-                        label: const Text('أيام عمل'),
-                      ),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(backgroundColor: AppColors.partnersEquityAccent),
-                        onPressed: () {
-                          showDialog(context: context, builder: (_) => const PartnerManagementModal());
-                        },
-                        icon: const Icon(Icons.group),
-                        label: const Text('الشركاء وحقوق الملكية'),
-                      ),
-                      // HIGH PRIORITY DANGER ACTION: System Factory Reset & Data Wipe
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.dangerWaste,
-                          side: const BorderSide(color: AppColors.dangerWaste, width: 1.5),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        ),
-                        onPressed: () async {
-                          final confirmed = await showDialog<bool>(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (_) => const SystemResetModal(),
-                          );
-                          if (confirmed == true) {
-                            onNavigateToIndex?.call(8); // Opening Entry screen
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'تم تصفير البرنامج بنجاح. يمكنك الآن البدء بإدخال بياناتك الحقيقية عبر واجهة القيد الافتتاحي.',
-                                  ),
-                                  backgroundColor: AppColors.successGreen,
-                                  duration: Duration(seconds: 5),
-                                ),
-                              );
-                            }
-                          }
-                        },
-                        icon: const Icon(Icons.delete_forever_rounded),
-                        label: const Text('تصفير البرنامج ومسح البيانات'),
                       ),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+
+            // UNIFIED NAVIGATION BAR (شريط العمليات والإجراءات الموحد)
+            _buildUnifiedNavbar(context, erp),
+            const SizedBox(height: 20),
 
             // SYSTEM BACKUP & RESTORE DATA PROTECTION CARD
             _buildBackupProtectionCard(context),
@@ -1250,147 +1171,452 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  /// Dedicated Data Protection & Full Backup/Restore card on the main screen.
+  /// Dedicated Data Protection & Full Backup/Restore card on the main screen (Responsive & Overflow-Free).
   Widget _buildBackupProtectionCard(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFF0F172A), // Dark slate
-            Color(0xFF1E293B), // Slate 800
-          ],
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF334155), width: 1.5),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0D9488).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: const Color(0xFF0D9488).withValues(alpha: 0.5),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 960;
+
+        return Container(
+          padding: EdgeInsets.all(isNarrow ? 16 : 20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [
+                Color(0xFF0F172A), // Dark slate
+                Color(0xFF1E293B), // Slate 800
+              ],
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF334155), width: 1.5),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 12,
+                offset: Offset(0, 4),
               ),
-            ),
-            child: const Icon(
-              Icons.shield_rounded,
-              color: Color(0xFF14B8A6),
-              size: 36,
-            ),
+            ],
           ),
-          const SizedBox(width: 18),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          child: isNarrow
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color:
+                                const Color(0xFF0D9488).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFF0D9488)
+                                  .withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.shield_rounded,
+                            color: Color(0xFF14B8A6),
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              const Text(
+                                'نظام تأمين وحفظ النسخ الاحتياطية وتوزيع البيانات الشامل',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0D9488),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'تغطية شاملة 100%',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
                     const Text(
-                      'نظام تأمين وحفظ النسخ الاحتياطية وتوزيع البيانات الشامل',
+                      'تأمين كافة سجلات النظام (الفواتير، الصناديق بالدولار والليرة، المخزون، العمال، والمشاريع) على فلاشة USB أو قرص خارجي، مع استعادة وتوزيع البيانات تلقائياً وفورياً على أماكنها الصحيحة في كافة واجهات وشاشات البرنامج.',
                       style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        fontSize: 12,
+                        color: Color(0xFF94A3B8),
+                        height: 1.4,
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      children: [
+                        _buildProtectionButton(
+                          context,
+                          label: 'تصدير نسخة (فلاشة USB)',
+                          icon: Icons.usb_rounded,
+                          color: const Color(0xFF0D9488),
+                          tab: 0,
+                        ),
+                        _buildProtectionButton(
+                          context,
+                          label: 'استعادة وتوزيع البيانات',
+                          icon: Icons.restore_page_rounded,
+                          color: const Color(0xFF2563EB),
+                          tab: 1,
+                        ),
+                      ],
+                    ),
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0D9488),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text(
-                        'تغطية شاملة 100%',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
+                        color:
+                            const Color(0xFF0D9488).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: const Color(0xFF0D9488)
+                              .withValues(alpha: 0.5),
                         ),
                       ),
+                      child: const Icon(
+                        Icons.shield_rounded,
+                        color: Color(0xFF14B8A6),
+                        size: 34,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              const Text(
+                                'نظام تأمين وحفظ النسخ الاحتياطية وتوزيع البيانات الشامل',
+                                style: TextStyle(
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0D9488),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'تغطية شاملة 100%',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'تأمين كافة سجلات النظام (الفواتير، الصناديق بالدولار والليرة، المخزون، العمال، والمشاريع) على فلاشة USB أو قرص خارجي، مع استعادة وتوزيع البيانات تلقائياً وفورياً على أماكنها الصحيحة في كافة واجهات وشاشات البرنامج.',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Color(0xFF94A3B8),
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      children: [
+                        _buildProtectionButton(
+                          context,
+                          label: 'تصدير نسخة (فلاشة USB)',
+                          icon: Icons.usb_rounded,
+                          color: const Color(0xFF0D9488),
+                          tab: 0,
+                        ),
+                        _buildProtectionButton(
+                          context,
+                          label: 'استعادة وتوزيع البيانات',
+                          icon: Icons.restore_page_rounded,
+                          color: const Color(0xFF2563EB),
+                          tab: 1,
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                const Text(
-                  'تأمين كافة سجلات النظام (الفواتير، الصناديق بالدولار والليرة، المخزون، العمال، والمشاريع) على فلاشة USB أو قرص خارجي، مع استعادة وتوزيع البيانات تلقائياً وفورياً على أماكنها الصحيحة في كافة واجهات وشاشات البرنامج.',
+        );
+      },
+    );
+  }
+
+  Widget _buildProtectionButton(
+    BuildContext context, {
+    required String label,
+    required IconData icon,
+    required Color color,
+    required int tab,
+  }) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        elevation: 2,
+      ),
+      onPressed: () {
+        showDialog(
+          context: context,
+          builder: (_) => BackupRestoreModal(initialTab: tab),
+        );
+      },
+      icon: Icon(icon, size: 20),
+      label: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+      ),
+    );
+  }
+
+  /// Unified Navigation Bar with cohesive design for all 7 main screen actions.
+  Widget _buildUnifiedNavbar(BuildContext context, ERPProvider erp) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x080F172A),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          // Navbar Brand Badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.widgets_rounded, size: 16, color: Colors.white),
+                SizedBox(width: 6),
+                Text(
+                  'شريط الإجراءات',
                   style: TextStyle(
                     fontSize: 12.5,
-                    color: Color(0xFF94A3B8),
-                    height: 1.4,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 20),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
+
+          // 1. Working Days (أيام عمل)
+          _buildNavbarItem(
+            icon: Icons.date_range_rounded,
+            label: 'أيام عمل',
+            primaryColor: const Color(0xFF2563EB),
+            bgColor: const Color(0xFFEFF6FF),
+            borderColor: const Color(0xFFBFDBFE),
+            onTap: () {
+              showDialog(
+                context: context,
+                builder: (_) => const WorkdayModal(),
+              );
+            },
+          ),
+
+          // 2. Partners & Ownership (الشركاء وحقوق الملكية)
+          _buildNavbarItem(
+            icon: Icons.groups_rounded,
+            label: 'الشركاء وحقوق الملكية',
+            primaryColor: const Color(0xFFD97706),
+            bgColor: const Color(0xFFFFFBEB),
+            borderColor: const Color(0xFFFDE68A),
+            onTap: () {
+              showDialog(
+                context: context,
+                builder: (_) => const PartnerManagementModal(),
+              );
+            },
+          ),
+
+          // 3. Currency Exchange (تصريف وتحويل العملات)
+          _buildNavbarItem(
+            icon: Icons.currency_exchange_rounded,
+            label: 'تصريف وتحويل العملات (USD ⇄ SYP)',
+            primaryColor: const Color(0xFF0D9488),
+            bgColor: const Color(0xFFF0FDFA),
+            borderColor: const Color(0xFF99F6E4),
+            onTap: () => _showCurrencyConversionDialog(context, erp),
+          ),
+
+          // 4. Center Data (بيانات المركز)
+          _buildNavbarItem(
+            icon: Icons.business_rounded,
+            label: 'بيانات المركز والشعار',
+            primaryColor: const Color(0xFF334155),
+            bgColor: const Color(0xFFF8FAFC),
+            borderColor: const Color(0xFFCBD5E1),
+            onTap: () => _showCenterInfoDialog(context, erp),
+          ),
+
+          // 5. Export Backup (تصدير نسخة احتياطية)
+          _buildNavbarItem(
+            icon: Icons.cloud_upload_rounded,
+            label: 'تصدير نسخة احتياطية (فلاشة / خارجي)',
+            primaryColor: const Color(0xFF15803D),
+            bgColor: const Color(0xFFF0FDF4),
+            borderColor: const Color(0xFFBBF7D0),
+            onTap: () {
+              showDialog(
+                context: context,
+                builder: (_) => const BackupRestoreModal(initialTab: 0),
+              );
+            },
+          ),
+
+          // 6. Restore Backup (استعادة نسخة احتياطية)
+          _buildNavbarItem(
+            icon: Icons.cloud_download_rounded,
+            label: 'استعادة نسخة احتياطية',
+            primaryColor: const Color(0xFF4338CA),
+            bgColor: const Color(0xFFEEF2FF),
+            borderColor: const Color(0xFFC7D2FE),
+            onTap: () {
+              showDialog(
+                context: context,
+                builder: (_) => const BackupRestoreModal(initialTab: 1),
+              );
+            },
+          ),
+
+          // 7. Reset System (تصفير البرنامج ومسح البيانات)
+          _buildNavbarItem(
+            icon: Icons.delete_forever_rounded,
+            label: 'تصفير البرنامج ومسح البيانات',
+            primaryColor: const Color(0xFFDC2626),
+            bgColor: const Color(0xFFFEF2F2),
+            borderColor: const Color(0xFFFECACA),
+            onTap: () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => const SystemResetModal(),
+              );
+              if (confirmed == true) {
+                onNavigateToIndex?.call(8); // Opening Entry screen
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'تم تصفير البرنامج بنجاح. يمكنك الآن البدء بإدخال بياناتك الحقيقية عبر واجهة القيد الافتتاحي.',
+                      ),
+                      backgroundColor: AppColors.successGreen,
+                      duration: Duration(seconds: 5),
+                    ),
+                  );
+                }
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavbarItem({
+    required IconData icon,
+    required String label,
+    required Color primaryColor,
+    required Color bgColor,
+    required Color borderColor,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: borderColor, width: 1.2),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0D9488),
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  elevation: 2,
-                ),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (_) => const BackupRestoreModal(initialTab: 0),
-                  );
-                },
-                icon: const Icon(Icons.usb_rounded, size: 20),
-                label: const Text(
-                  'تصدير نسخة (فلاشة USB)',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  elevation: 2,
-                ),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (_) => const BackupRestoreModal(initialTab: 1),
-                  );
-                },
-                icon: const Icon(Icons.restore_page_rounded, size: 20),
-                label: const Text(
-                  'استعادة وتوزيع البيانات',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+              Icon(icon, size: 18, color: primaryColor),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: primaryColor,
                 ),
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
