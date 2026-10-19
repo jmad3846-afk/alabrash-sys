@@ -6,6 +6,7 @@ class AppColors {
   static const Color panelSurface = Color(0xFFFFFFFF); // Pure White
   static const Color panelBorder = Color(0xFFE2E8F0); // Subtle border
   static const Color brandPrimaryText = Color(0xFF0F172A); // Dark Slate
+  static const Color brandDarkText = brandPrimaryText;
   static const Color brandSecondaryText = Color(0xFF64748B); // Slate 500
   static const Color accentPrimary = Color(0xFF2563EB); // Royal Blue 600
   static const Color partnersEquityAccent = Color(0xFFD97706); // Amber 600

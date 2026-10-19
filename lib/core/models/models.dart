@@ -1025,9 +1025,45 @@ class FactoryInvoiceItem {
   }
 
   double get totalPrice => calculatedArea * unitPrice;
+  double get subtotal => totalPrice;
   double get totalCost => calculatedArea * unitCost;
   double get servicesTotal => services.fold(0.0, (sum, s) => sum + s.price);
   double get grandTotal => totalPrice + servicesTotal;
+
+  FactoryInvoiceItem copyWith({
+    String? itemId,
+    String? description,
+    String? typeName,
+    String? grade,
+    double? lengthCm,
+    double? widthCm,
+    double? heightCm,
+    double? quantity,
+    double? unitPrice,
+    double? unitCost,
+    bool? isGranite,
+    List<ServiceAttachment>? services,
+    String? itemCategory,
+    double? thicknessCm,
+    String? meterUnit,
+  }) =>
+      FactoryInvoiceItem(
+        itemId: itemId ?? this.itemId,
+        description: description ?? this.description,
+        typeName: typeName ?? this.typeName,
+        grade: grade ?? this.grade,
+        lengthCm: lengthCm ?? this.lengthCm,
+        widthCm: widthCm ?? this.widthCm,
+        heightCm: heightCm ?? this.heightCm,
+        quantity: quantity ?? this.quantity,
+        unitPrice: unitPrice ?? this.unitPrice,
+        unitCost: unitCost ?? this.unitCost,
+        isGranite: isGranite ?? this.isGranite,
+        services: services ?? List.of(this.services),
+        itemCategory: itemCategory ?? this.itemCategory,
+        thicknessCm: thicknessCm ?? this.thicknessCm,
+        meterUnit: meterUnit ?? this.meterUnit,
+      );
 
   Map<String, dynamic> toJson() => {
     'itemId': itemId,
@@ -2137,64 +2173,119 @@ class FactoryOrderModel {
   final String id;
   final String orderNo;
   final DateTime date;
+  final String partyId;
   final String clientName;
   final String clientPhone;
-  final String warehouseItemId;
-  final String itemDescription;
-  final double lengthCm;
-  final double widthCm;
-  final double heightCm;
-  final double quantity;
-  final double unitPrice;
-  final double agreedPrice;
+  final List<FactoryInvoiceItem> items;
+  final List<ServiceAttachment> services;
+  final double shippingFee;
+  final bool isGoodsDelivered;
+  final double discountAmount;
   final double depositAmount;
   final String photoPath;
-  String status; // 'قيد التنفيذ' | 'مكتملة ومرحلة' | 'ملغاة'
+  String status; // 'قيد التنفيذ' | 'مكتملة ومرحلة' | 'ملغاة (مكتملة)' | 'ملغاة (غير مكتملة)' | 'ملغاة'
+  bool isCompleted;
   bool isSpecialRefund;
-  final String
-  currency; // AppCurrency.usd | AppCurrency.syp — invoice inherits it
+  final String currency; // AppCurrency.usd | AppCurrency.syp
+  String assignedInvoiceId;
+  String assignedInvoiceNo;
 
   FactoryOrderModel({
     required this.id,
     required this.orderNo,
     required this.date,
+    this.partyId = '',
     required this.clientName,
-    required this.clientPhone,
-    required this.warehouseItemId,
-    required this.itemDescription,
-    this.lengthCm = 0.0,
-    this.widthCm = 0.0,
-    this.heightCm = 0.0,
-    required this.quantity,
-    required this.unitPrice,
-    required this.agreedPrice,
+    this.clientPhone = '',
+    this.items = const [],
+    this.services = const [],
+    this.shippingFee = 0.0,
+    this.isGoodsDelivered = true,
+    this.discountAmount = 0.0,
     required this.depositAmount,
     this.photoPath = '',
     this.status = 'قيد التنفيذ',
+    this.isCompleted = false,
     this.isSpecialRefund = false,
     this.currency = AppCurrency.usd,
-  });
+    this.assignedInvoiceId = '',
+    this.assignedInvoiceNo = '',
+    // Legacy support parameters:
+    String? warehouseItemId,
+    String? itemDescription,
+    double? lengthCm,
+    double? widthCm,
+    double? heightCm,
+    double? quantity,
+    double? unitPrice,
+    double? agreedPrice,
+  }) {
+    // If items were empty but legacy single-item fields were passed, populate items
+    if (items.isEmpty && (warehouseItemId != null && warehouseItemId.isNotEmpty || itemDescription != null && itemDescription.isNotEmpty)) {
+      items.add(
+        FactoryInvoiceItem(
+          itemId: warehouseItemId ?? '',
+          description: itemDescription ?? '',
+          lengthCm: lengthCm ?? 0.0,
+          widthCm: widthCm ?? 0.0,
+          heightCm: heightCm ?? 0.0,
+          quantity: quantity ?? 1.0,
+          unitPrice: unitPrice ?? 0.0,
+          unitCost: unitPrice ?? 0.0,
+        ),
+      );
+    }
+  }
 
   String get currencySymbol => AppCurrency.symbol(currency);
 
-  double get area {
-    if (heightCm > 5.0) {
-      if (lengthCm <= 0 || widthCm <= 0 || quantity <= 0) return 0.0;
-      return (lengthCm / 100.0) *
-          (widthCm / 100.0) *
-          (heightCm / 100.0) *
-          quantity;
-    }
-    if (lengthCm <= 0 || widthCm <= 0 || quantity <= 0) return 0.0;
-    return (lengthCm / 100.0) * (widthCm / 100.0) * quantity;
-  }
+  // Backward compatibility getters
+  String get warehouseItemId => items.isNotEmpty ? items.first.itemId : '';
+  String get itemDescription => items.isNotEmpty ? items.first.description : '';
+  double get lengthCm => items.isNotEmpty ? items.first.lengthCm : 0.0;
+  double get widthCm => items.isNotEmpty ? items.first.widthCm : 0.0;
+  double get heightCm => items.isNotEmpty ? items.first.heightCm : 0.0;
+  double get quantity => items.fold(0.0, (s, i) => s + i.quantity);
+  double get unitPrice => items.isNotEmpty ? items.first.unitPrice : 0.0;
+
+  double get subtotal => items.fold(0.0, (sum, item) => sum + item.totalPrice);
+  double get itemsServicesTotal =>
+      items.fold(0.0, (sum, item) => sum + item.servicesTotal);
+  double get totalServices => services.fold(0.0, (sum, s) => sum + s.price);
+
+  double get grandTotal =>
+      (subtotal + itemsServicesTotal + totalServices + shippingFee - discountAmount)
+          .clamp(0.0, double.infinity);
+
+  double get agreedPrice => grandTotal;
+
+  double get totalArea => items.fold(0.0, (s, i) => s + i.calculatedArea);
+  double get area => totalArea;
+
+  double get remainingBalance =>
+      (grandTotal - depositAmount).clamp(0.0, double.infinity);
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'orderNo': orderNo,
     'date': date.toIso8601String(),
+    'partyId': partyId,
     'clientName': clientName,
     'clientPhone': clientPhone,
+    'items': items.map((i) => i.toJson()).toList(),
+    'services': services.map((s) => s.toJson()).toList(),
+    'shippingFee': shippingFee,
+    'isGoodsDelivered': isGoodsDelivered,
+    'discountAmount': discountAmount,
+    'depositAmount': depositAmount,
+    'photoPath': photoPath,
+    'status': status,
+    'isCompleted': isCompleted,
+    'isSpecialRefund': isSpecialRefund,
+    'currency': currency,
+    'assignedInvoiceId': assignedInvoiceId,
+    'assignedInvoiceNo': assignedInvoiceNo,
+    // Redundant legacy fields for safe cross-version reads:
     'warehouseItemId': warehouseItemId,
     'itemDescription': itemDescription,
     'lengthCm': lengthCm,
@@ -2203,35 +2294,58 @@ class FactoryOrderModel {
     'quantity': quantity,
     'unitPrice': unitPrice,
     'agreedPrice': agreedPrice,
-    'depositAmount': depositAmount,
-    'photoPath': photoPath,
-    'status': status,
-    'isSpecialRefund': isSpecialRefund,
-    'currency': currency,
   };
 
-  factory FactoryOrderModel.fromJson(Map<String, dynamic> json) =>
-      FactoryOrderModel(
-        id: json['id'],
-        orderNo: json['orderNo'],
-        date: DateTime.parse(json['date']),
-        clientName: json['clientName'],
-        clientPhone: json['clientPhone'] ?? '',
-        warehouseItemId: json['warehouseItemId'] ?? '',
-        itemDescription: json['itemDescription'] ?? '',
-        lengthCm: (json['lengthCm'] ?? 0.0).toDouble(),
-        widthCm: (json['widthCm'] ?? 0.0).toDouble(),
-        heightCm: (json['heightCm'] ?? 0.0).toDouble(),
-        quantity: (json['quantity'] as num).toDouble(),
-        unitPrice: (json['unitPrice'] as num).toDouble(),
-        agreedPrice: (json['agreedPrice'] as num).toDouble(),
-        depositAmount: (json['depositAmount'] as num).toDouble(),
-        photoPath: json['photoPath'] ?? '',
-        status: json['status'] ?? 'قيد التنفيذ',
-        isSpecialRefund: json['isSpecialRefund'] ?? false,
-        currency: AppCurrency.normalize(json['currency']),
+  factory FactoryOrderModel.fromJson(Map<String, dynamic> json) {
+    List<FactoryInvoiceItem> parsedItems = [];
+    if (json['items'] is List && (json['items'] as List).isNotEmpty) {
+      parsedItems = (json['items'] as List)
+          .map((i) => FactoryInvoiceItem.fromJson(Map<String, dynamic>.from(i)))
+          .toList();
+    } else if (json['warehouseItemId'] != null &&
+        json['warehouseItemId'].toString().isNotEmpty) {
+      parsedItems.add(
+        FactoryInvoiceItem(
+          itemId: json['warehouseItemId'] ?? '',
+          description: json['itemDescription'] ?? '',
+          lengthCm: (json['lengthCm'] ?? 0.0).toDouble(),
+          widthCm: (json['widthCm'] ?? 0.0).toDouble(),
+          heightCm: (json['heightCm'] ?? 0.0).toDouble(),
+          quantity: (json['quantity'] as num?)?.toDouble() ?? 1.0,
+          unitPrice: (json['unitPrice'] as num?)?.toDouble() ?? 0.0,
+          unitCost: (json['unitPrice'] as num?)?.toDouble() ?? 0.0,
+        ),
       );
+    }
+
+    return FactoryOrderModel(
+      id: json['id'] ?? '',
+      orderNo: json['orderNo'] ?? '',
+      date: json['date'] != null ? DateTime.parse(json['date']) : DateTime.now(),
+      partyId: json['partyId'] ?? '',
+      clientName: json['clientName'] ?? '',
+      clientPhone: json['clientPhone'] ?? '',
+      items: parsedItems,
+      services: json['services'] != null
+          ? (json['services'] as List)
+              .map((s) => ServiceAttachment.fromJson(Map<String, dynamic>.from(s)))
+              .toList()
+          : [],
+      shippingFee: (json['shippingFee'] as num?)?.toDouble() ?? 0.0,
+      isGoodsDelivered: json['isGoodsDelivered'] ?? true,
+      discountAmount: (json['discountAmount'] as num?)?.toDouble() ?? 0.0,
+      depositAmount: (json['depositAmount'] as num?)?.toDouble() ?? 0.0,
+      photoPath: json['photoPath'] ?? '',
+      status: json['status'] ?? 'قيد التنفيذ',
+      isCompleted: json['isCompleted'] ?? false,
+      isSpecialRefund: json['isSpecialRefund'] ?? false,
+      currency: AppCurrency.normalize(json['currency']),
+      assignedInvoiceId: json['assignedInvoiceId'] ?? '',
+      assignedInvoiceNo: json['assignedInvoiceNo'] ?? '',
+    );
+  }
 }
+
 
 // ==========================================
 // 14. SERVICES CENTER ITEM

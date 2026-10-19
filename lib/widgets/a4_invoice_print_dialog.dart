@@ -163,6 +163,66 @@ class A4InvoiceData {
     );
   }
 
+  /// Factory adapter for Factory Custom Orders (أمر تشغيل وتجهيز ورشة المصنع).
+  factory A4InvoiceData.fromFactoryOrder(FactoryOrderModel ord) {
+    final items = <A4InvoiceLineItem>[];
+    for (int i = 0; i < ord.items.length; i++) {
+      final it = ord.items[i];
+      final dim = (it.lengthCm > 0 && it.widthCm > 0)
+          ? '${it.lengthCm.fmt} × ${it.widthCm.fmt}${it.heightCm > 5 ? " × ${it.heightCm.fmt}" : ""} سم'
+          : '—';
+      final srvText = it.services.isNotEmpty
+          ? it.services.map((s) {
+              final note = s.notes.trim();
+              if (note.isNotEmpty) {
+                return '${s.serviceName}: ${s.price.fmt}\$ ($note)';
+              }
+              return '${s.serviceName}: ${s.price.fmt}\$';
+            }).join('\n')
+          : '—';
+      final qtyLabel =
+          '${it.calculatedArea.fmt} ${it.heightCm > 5 ? "م³" : "م²"}\n(${it.quantity.fmt} قطعة)';
+      final specs =
+          '${it.grade} ${it.isGranite ? "(جرانيت)" : "(رخام)"}${it.thicknessCm > 0 ? " • ${it.thicknessCm.fmt} سم" : ""}';
+
+      items.add(A4InvoiceLineItem(
+        index: i + 1,
+        description: it.typeName.isNotEmpty ? it.typeName : it.description,
+        gradeAndSpecs: specs,
+        dimensionsText: dim,
+        quantityText: qtyLabel,
+        unitPrice: it.unitPrice,
+        servicesText: srvText,
+        lineTotal: it.grandTotal > 0 ? it.grandTotal : (it.quantity * it.unitPrice),
+      ));
+    }
+
+    return A4InvoiceData(
+      invoiceTypeTitle: 'أمر تشغيل ورشة وتجهيز طلبية مصنع (Factory Workshop Order)',
+      invoiceNo: ord.orderNo,
+      date: ord.date,
+      partyName: ord.clientName,
+      partyRole: 'الزبون / المعتمد',
+      partyPhone: ord.clientPhone.isNotEmpty ? ord.clientPhone : '—',
+      currency: ord.currency,
+      paymentStatus: 'عربون محجوز: ${ord.depositAmount.fmt} ${ord.currencySymbol} (صندوق الطلبيات المعزول)',
+      items: items,
+      subtotal: ord.subtotal,
+      servicesTotal: ord.itemsServicesTotal,
+      shippingFee: ord.shippingFee,
+      discount: ord.discountAmount,
+      grandTotal: ord.grandTotal,
+      paidAmount: ord.depositAmount,
+      remainingBalance: ord.remainingBalance,
+      notes: ord.isGoodsDelivered
+          ? 'التوصيل: نوصّل نحن (${ord.shippingFee.fmt} ${ord.currencySymbol})'
+          : 'التوصيل: الزبون يستلم النقل من أرض المصنع',
+      isGoodsDelivered: ord.isGoodsDelivered,
+      hasFulfillmentSection: true,
+      fulfillmentTitle: 'أمر تشغيل ورشة المصنع وتجهيز وتفصيل الطلبية',
+    );
+  }
+
   /// Factory adapter for Workshop Workspace Invoices, Factory Invoices, and Project Invoices.
   factory A4InvoiceData.fromWorkshopInvoice(
     WorkshopInvoiceModel inv, {

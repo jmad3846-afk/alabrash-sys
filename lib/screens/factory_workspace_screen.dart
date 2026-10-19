@@ -8,6 +8,7 @@ import '../widgets/currency_selector.dart';
 import '../widgets/thermal_receipt_dialog.dart';
 import '../widgets/a4_invoice_print_dialog.dart';
 import '../widgets/app_image_attachment.dart';
+import '../widgets/factory_order_dialogs.dart';
 import 'accounting_screens.dart';
 
 class FactoryWorkspaceScreen extends StatefulWidget {
@@ -30,6 +31,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   final Map<String, TextEditingController> cuttingQtyCtrls = {};
   bool cuttingAggregated = false;
   List<CuttingBatchInput> cuttingAggregates = [];
+
+  // Factory Orders filters
+  String _foStatusFilter = 'الكل';
+  String _foSearchQuery = '';
 
   TextEditingController _cuttingQtyCtrl(String blockId) {
     return cuttingQtyCtrls.putIfAbsent(blockId, () => TextEditingController());
@@ -1985,103 +1990,628 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   }
 
   // -------------------------------------------------------------
-  // SUB-TAB 9: FACTORY CUSTOM ORDERS (In Progress -> Completed on assign)
+  // SUB-TAB 9: FACTORY CUSTOM ORDERS
   // -------------------------------------------------------------
   Widget _buildSubTab9FactoryOrders(ERPProvider erp) {
+    final allOrders = erp.factoryOrders;
+    final inProgress = allOrders.where((o) => o.status == 'قيد التنفيذ').toList();
+    final completed = allOrders.where((o) => o.status == 'مكتملة ومرحلة').toList();
+    final cancelled = allOrders.where((o) => o.status.startsWith('ملغاة')).toList();
+
+    List<FactoryOrderModel> filtered = allOrders;
+    if (_foStatusFilter == 'قيد التنفيذ') {
+      filtered = inProgress;
+    } else if (_foStatusFilter == 'مكتملة ومرحلة') {
+      filtered = completed;
+    } else if (_foStatusFilter == 'ملغاة') {
+      filtered = cancelled;
+    }
+
+    if (_foSearchQuery.isNotEmpty) {
+      filtered = filtered.where((o) {
+        final q = _foSearchQuery.toLowerCase();
+        return o.orderNo.toLowerCase().contains(q) ||
+            o.clientName.toLowerCase().contains(q) ||
+            o.clientPhone.contains(q) ||
+            o.items.any((it) => it.description.toLowerCase().contains(q));
+      }).toList();
+    }
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Header Row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'طلبيات المصنع (Factory Orders)',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.orderDepositBoxAccent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    SizedBox(height: 4),
-                    Text(
-                      'الطلبية "قيد التنفيذ" وحين إسنادها لفاتورة تصبح "مكتملة". العربون في صندوق الطلبيات المعزول.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.orderDepositBoxAccent,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    child: const Icon(
+                      Icons.assignment_turned_in_rounded,
+                      color: AppColors.orderDepositBoxAccent,
+                      size: 26,
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'طلبيات المصنع (Factory Orders)',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        'أوامر تشغيل وتجهيز طلبيات المصنع مع حفظ وتتبع العربونات المعزولة وخصم المواد من المستودع',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.brandSecondaryText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.orderDepositBoxAccent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
-                onPressed: () => _showAddFactoryOrderDialog(erp),
+                onPressed: () => showAddFactoryOrderDialog(context, erp),
                 icon: const Icon(Icons.post_add_rounded),
-                label: const Text('إضافة طلبية مصنع'),
+                label: const Text(
+                  'إضافة طلبية مصنع جديدة +',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 16),
+
+          // Metric Statistics Cards
+          Row(
+            children: [
+              Expanded(
+                child: _buildOrderStatCard(
+                  title: 'إجمالي طلبيات المصنع',
+                  value: '${allOrders.length}',
+                  icon: Icons.list_alt_rounded,
+                  color: AppColors.accentPrimary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildOrderStatCard(
+                  title: 'قيد التنفيذ (معلقة)',
+                  value: '${inProgress.length}',
+                  icon: Icons.pending_actions_rounded,
+                  color: const Color(0xFFD97706),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildOrderStatCard(
+                  title: 'مكتملة ومرحلة لفواتير',
+                  value: '${completed.length}',
+                  icon: Icons.check_circle_rounded,
+                  color: AppColors.successGreen,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildOrderStatCard(
+                  title: 'ملغاة',
+                  value: '${cancelled.length}',
+                  icon: Icons.cancel_rounded,
+                  color: AppColors.dangerWaste,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildOrderStatCard(
+                  title: 'صندوق العربونات المعزول',
+                  value: erp.dualOrderCash,
+                  icon: Icons.savings_rounded,
+                  color: AppColors.orderDepositBoxAccent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Search and Filters Bar
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'بحث برقم الطلبية أو اسم الزبون أو الهاتف...',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppColors.panelBorder),
+                    ),
+                  ),
+                  onChanged: (v) => setState(() => _foSearchQuery = v.trim()),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Wrap(
+                spacing: 6,
+                children: ['الكل', 'قيد التنفيذ', 'مكتملة ومرحلة', 'ملغاة']
+                    .map((status) => ChoiceChip(
+                          label: Text(status),
+                          selected: _foStatusFilter == status,
+                          onSelected: (sel) {
+                            if (sel) setState(() => _foStatusFilter = status);
+                          },
+                        ))
+                    .toList(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Orders List
           Expanded(
             child: Card(
-              child: erp.factoryOrders.isEmpty
-                  ? const Center(child: Text('لا توجد طلبيات مصنع بعد.'))
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.assignment_outlined,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'لا توجد طلبيات تطابق الفلتر الحالي.',
+                            style: TextStyle(
+                              color: AppColors.brandSecondaryText,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
                   : ListView.separated(
-                      itemCount: erp.factoryOrders.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      padding: const EdgeInsets.all(12),
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (context, idx) {
-                        final ord = erp.factoryOrders[idx];
-                        return ListTile(
-                          leading: ord.photoPath.isNotEmpty
-                              ? AppImageThumbnail(
-                                  imagePath: ord.photoPath,
-                                  title: 'صورة طلبية ${ord.orderNo}',
-                                )
-                              : null,
-                          title: Text(
-                            '${ord.orderNo} • الزبون: ${ord.clientName}',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                        final ord = filtered[idx];
+                        final bool isInProgress = ord.status == 'قيد التنفيذ';
+                        final bool isOrdCompleted =
+                            ord.status == 'مكتملة ومرحلة';
+                        final bool isOrdCancelled =
+                            ord.status.startsWith('ملغاة');
+
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isInProgress
+                                  ? AppColors.orderDepositBoxAccent
+                                      .withValues(alpha: 0.3)
+                                  : isOrdCompleted
+                                      ? const Color(0xFFBBF7D0)
+                                      : const Color(0xFFFECACA),
+                              width: 1.2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.02),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                          subtitle: Text(
-                            'الصنف: ${ord.itemDescription} • السعر: ${ord.agreedPrice}\$ • العربون: ${ord.depositAmount}\$${ord.photoPath.isEmpty ? "" : " • مرفق صورة"}',
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (ord.status == 'قيد التنفيذ') ...[
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.successGreen,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
+                          child: ExpansionTile(
+                            leading: CurrencyBadge(currency: ord.currency),
+                            title: Row(
+                              children: [
+                                Text(
+                                  ord.orderNo,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14.5,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  '• الزبون: ${ord.clientName}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13.5,
+                                  ),
+                                ),
+                                if (ord.clientPhone.isNotEmpty) ...[
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '(${ord.clientPhone})',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF64748B),
                                     ),
                                   ),
-                                  onPressed: () =>
-                                      _showAssignFactoryOrderDialog(erp, ord),
-                                  child: const Text('إسناد لفاتورة'),
-                                ),
-                                const SizedBox(width: 6),
-                                OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppColors.dangerWaste,
+                                ],
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
                                   ),
-                                  onPressed: () =>
-                                      _showCancelFactoryOrderDialog(erp, ord),
-                                  child: const Text('إلغاء'),
+                                  decoration: BoxDecoration(
+                                    color: isInProgress
+                                        ? const Color(0xFFFEF3C7)
+                                        : isOrdCompleted
+                                            ? AppColors.chipBgGreen
+                                            : AppColors.chipBgRed,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    ord.status,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11.5,
+                                      color: isInProgress
+                                          ? const Color(0xFFB45309)
+                                          : isOrdCompleted
+                                              ? AppColors.successGreen
+                                              : AppColors.dangerWaste,
+                                    ),
+                                  ),
                                 ),
-                              ] else
-                                Chip(
-                                  label: Text(ord.status),
-                                  backgroundColor: AppColors.chipBgGreen,
+                              ],
+                            ),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 4.0),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    'التاريخ: ${intl.DateFormat("yyyy-MM-dd").format(ord.date)}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Text(
+                                    'عدد البنود: ${ord.items.length} (${ord.totalArea.fmt} م)',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF0F766E),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Text(
+                                    'الإجمالي: ${ord.grandTotal.fmt} ${ord.currencySymbol}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.orderDepositBoxAccent
+                                          .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'العربون المعزول: ${ord.depositAmount.fmt} ${ord.currencySymbol}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.orderDepositBoxAccent,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Text(
+                                    'المتبقي: ${ord.remainingBalance.fmt} ${ord.currencySymbol}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: ord.remainingBalance > 0
+                                          ? AppColors.dangerWaste
+                                          : AppColors.successGreen,
+                                    ),
+                                  ),
+                                  if (ord.assignedInvoiceNo.isNotEmpty) ...[
+                                    const SizedBox(width: 16),
+                                    Text(
+                                      'فاتورة: ${ord.assignedInvoiceNo}',
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF2563EB),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            children: [
+                              const Divider(height: 1),
+                              Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    // Items details
+                                    const Text(
+                                      'بنود ومواصفات الطلبية:',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    ...ord.items.asMap().entries.map((entry) {
+                                      final it = entry.value;
+                                      return Container(
+                                        margin: const EdgeInsets.only(bottom: 6),
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF8FAFC),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: AppColors.panelBorder,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            CircleAvatar(
+                                              radius: 12,
+                                              backgroundColor:
+                                                  AppColors.accentPrimary
+                                                      .withValues(alpha: 0.1),
+                                              child: Text(
+                                                '${entry.key + 1}',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                  color:
+                                                      AppColors.accentPrimary,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              flex: 3,
+                                              child: Text(
+                                                it.description,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 12.5,
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              flex: 2,
+                                              child: Text(
+                                                (it.lengthCm > 0 &&
+                                                        it.widthCm > 0)
+                                                    ? '${it.lengthCm.fmt} × ${it.widthCm.fmt}${it.heightCm > 5 ? " × ${it.heightCm.fmt}" : ""} سم'
+                                                    : '—',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              flex: 2,
+                                              child: Text(
+                                                '${it.calculatedArea.fmt} ${it.heightCm > 5 ? "م³" : "م²"} (${it.quantity.fmt} قطع)',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Color(0xFF15803D),
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              flex: 2,
+                                              child: Text(
+                                                '${it.unitPrice.fmt}\$ / م',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                            if (it.services.isNotEmpty)
+                                              Expanded(
+                                                flex: 2,
+                                                child: Text(
+                                                  'خدمات (${it.services.length}): ${it.servicesTotal.fmt}\$',
+                                                  style: const TextStyle(
+                                                    fontSize: 11.5,
+                                                    color: Color(0xFF2563EB),
+                                                  ),
+                                                ),
+                                              ),
+                                            Text(
+                                              '${it.grandTotal.fmt} \$',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }),
+                                    const SizedBox(height: 10),
+
+                                    // Delivery and notes info
+                                    Row(
+                                      children: [
+                                        Text(
+                                          ord.isGoodsDelivered
+                                              ? 'التوصيل: نوصّل نحن (تكلفة: ${ord.shippingFee.fmt} ${ord.currencySymbol})'
+                                              : 'التوصيل: الزبون يستلم النقل من أرض المصنع',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF475569),
+                                          ),
+                                        ),
+                                        if (ord.discountAmount > 0) ...[
+                                          const SizedBox(width: 20),
+                                          Text(
+                                            'خصم مبيعات: ${ord.discountAmount.fmt} ${ord.currencySymbol}',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.dangerWaste,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                        if (ord.photoPath.isNotEmpty) ...[
+                                          const SizedBox(width: 20),
+                                          AppImageThumbnail(
+                                            imagePath: ord.photoPath,
+                                            title: 'مخطط طلبية ${ord.orderNo}',
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 14),
+
+                                    // Action buttons row
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.end,
+                                      children: [
+                                        // Preview for Printing button
+                                        ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                const Color(0xFF2563EB),
+                                            foregroundColor: Colors.white,
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                              vertical: 10,
+                                            ),
+                                          ),
+                                          onPressed: () {
+                                            A4InvoicePrintDialog.show(
+                                              context,
+                                              invoiceData:
+                                                  A4InvoiceData
+                                                      .fromFactoryOrder(ord),
+                                            );
+                                          },
+                                          icon: const Icon(
+                                            Icons.print_rounded,
+                                            size: 18,
+                                          ),
+                                          label: const Text(
+                                            'معاينة للطباعة (أمر تشغيل للورشة)',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+
+                                        if (isInProgress) ...[
+                                          const SizedBox(width: 10),
+                                          // Assign to POS invoice button
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  AppColors.successGreen,
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 14,
+                                                vertical: 10,
+                                              ),
+                                            ),
+                                            onPressed: () =>
+                                                _showAssignFactoryOrderDialog(
+                                              erp,
+                                              ord,
+                                            ),
+                                            icon: const Icon(
+                                              Icons.point_of_sale_rounded,
+                                              size: 18,
+                                            ),
+                                            label: const Text(
+                                              'إسناد لفاتورة معتمدين',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          // Cancel order button
+                                          OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor:
+                                                  AppColors.dangerWaste,
+                                              side: const BorderSide(
+                                                color: AppColors.dangerWaste,
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 14,
+                                                vertical: 10,
+                                              ),
+                                            ),
+                                            onPressed: () =>
+                                                showCancelFactoryOrderDialog(
+                                              context,
+                                              erp,
+                                              ord,
+                                            ),
+                                            icon: const Icon(
+                                              Icons.cancel_outlined,
+                                              size: 18,
+                                            ),
+                                            label: const Text(
+                                              'إلغاء الطلب',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ],
                                 ),
+                              ),
                             ],
                           ),
                         );
@@ -2094,380 +2624,70 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     );
   }
 
-  void _showAddFactoryOrderDialog(ERPProvider erp) {
-    if (erp.factoryWarehouse.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('مستودع المصنع فارغ. انقل ناتج قص أولاً.'),
-          backgroundColor: AppColors.dangerWaste,
-        ),
-      );
-      return;
-    }
-    final nameCtrl = TextEditingController();
-    final phoneCtrl = TextEditingController();
-    String? selectedWhId;
-    String goodsSearch = '';
-    final lenCtrl = TextEditingController();
-    final widCtrl = TextEditingController();
-    final heiCtrl = TextEditingController();
-    final qtyCtrl = TextEditingController();
-    final priceCtrl = TextEditingController();
-    final depositCtrl = TextEditingController();
-    final photoCtrl = TextEditingController();
-    String? formError;
-    String orderCurrency = AppCurrency.usd;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSt) {
-          final goodsFiltered = erp.factoryWarehouse
-              .where(
-                (w) =>
-                    goodsSearch.isEmpty ||
-                    '${w.typeName} ${w.grade}'.contains(goodsSearch),
-              )
-              .toList();
-          final goodsValue = goodsFiltered.any((w) => w.id == selectedWhId)
-              ? selectedWhId
-              : null;
-          final m = erp.factoryWarehouse
-              .where((w) => w.id == selectedWhId)
-              .toList();
-          final wh = m.isEmpty ? null : m.first;
-          final bool isCube = wh?.category == 'متر مكعب';
-          final double l = double.tryParse(lenCtrl.text) ?? 0.0;
-          final double w = double.tryParse(widCtrl.text) ?? 0.0;
-          final double h = double.tryParse(heiCtrl.text) ?? 0.0;
-          final double q = double.tryParse(qtyCtrl.text) ?? 0.0;
-          final double price = double.tryParse(priceCtrl.text) ?? 0.0;
-          double area = 0.0;
-          if (wh != null && l > 0 && w > 0 && q > 0) {
-            area = isCube && h > 0
-                ? (l / 100.0) * (w / 100.0) * (h / 100.0) * q
-                : (l / 100.0) * (w / 100.0) * q;
-          }
-
-          return Dialog(
-            child: Container(
-              width: 620,
-              padding: const EdgeInsets.all(24),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'إضافة طلبية مصنع (قيد التنفيذ)',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.titleLarge?.copyWith(fontSize: 18),
-                    ),
-                    const Divider(height: 20),
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'اسم الزبون',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: phoneCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'رقم الهاتف',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      decoration: const InputDecoration(
-                        labelText: 'بحث صنف المستودع...',
-                        prefixIcon: Icon(Icons.search),
-                        isDense: true,
-                      ),
-                      onChanged: (v) => setSt(() => goodsSearch = v.trim()),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: goodsValue,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'الصنف من المستودع',
-                      ),
-                      items: goodsFiltered
-                          .map(
-                            (g) => DropdownMenuItem(
-                              value: g.id,
-                              child: Text(
-                                '${g.typeName} ${g.grade} ${g.thicknessCm}سم — المتاح: ${g.availableQty}',
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) => setSt(() => selectedWhId = v),
-                    ),
-                    if (wh != null) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: lenCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'الطول (سم)',
-                                isDense: true,
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: widCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'العرض (سم)',
-                                isDense: true,
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          ),
-                          if (isCube) ...[
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                controller: heiCtrl,
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
-                                  labelText: 'الارتفاع (سم)',
-                                  isDense: true,
-                                ),
-                                onChanged: (_) => setSt(() {}),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: qtyCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'الكمية',
-                                isDense: true,
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: priceCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'سعر الوحدة (\$)',
-                                isDense: true,
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'الإجمالي: ${(area * price).fmt} \$ • المتاح: ${wh.availableQty}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    CurrencySelector(
-                      value: orderCurrency,
-                      dense: true,
-                      onChanged: (v) => setSt(() => orderCurrency = v),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: depositCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'العربون (صندوق الطلبيات)',
-                              isDense: true,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    AppImageAttachmentPicker(
-                      initialPath: photoCtrl.text,
-                      label: 'صورة الطلبية / المخطط',
-                      onImageChanged: (p) => setSt(() => photoCtrl.text = p),
-                    ),
-                    if (formError != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        formError!,
-                        style: const TextStyle(
-                          color: AppColors.dangerWaste,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 20),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.orderDepositBoxAccent,
-                      ),
-                      onPressed: () {
-                        if (nameCtrl.text.isEmpty) {
-                          setSt(() => formError = 'أدخل اسم الزبون.');
-                          return;
-                        }
-                        if (wh == null || area <= 0) {
-                          setSt(
-                            () => formError = 'اختر الصنف وأدخل أبعاداً صحيحة.',
-                          );
-                          return;
-                        }
-                        if (area > wh.availableQty + 0.0001) {
-                          setSt(() => formError = 'الكمية تتجاوز المتاح.');
-                          return;
-                        }
-                        final deposit =
-                            double.tryParse(depositCtrl.text) ?? 0.0;
-                        erp.createFactoryOrder(
-                          FactoryOrderModel(
-                            id: 'fo_${DateTime.now().millisecondsSinceEpoch}',
-                            orderNo: 'FORD-${erp.factoryOrders.length + 101}',
-                            date: DateTime.now(),
-                            clientName: nameCtrl.text,
-                            clientPhone: phoneCtrl.text,
-                            warehouseItemId: wh.id,
-                            itemDescription:
-                                '${wh.typeName} ${wh.grade} ${wh.thicknessCm}سم',
-                            lengthCm: l,
-                            widthCm: w,
-                            heightCm: isCube ? h : 0.0,
-                            quantity: q,
-                            unitPrice: price,
-                            agreedPrice: area * price,
-                            depositAmount: deposit,
-                            photoPath: photoCtrl.text.trim(),
-                            currency: orderCurrency,
-                          ),
-                        );
-                        Navigator.pop(ctx);
-                      },
-                      child: const Text('تأكيد الطلبية وإيداع العربون'),
-                    ),
-                  ],
-                ),
-              ),
+  Widget _buildOrderStatCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.panelBorder),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
             ),
-          );
-        },
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.brandSecondaryText,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  void _showAddFactoryOrderDialog(ERPProvider erp) {
+    showAddFactoryOrderDialog(context, erp);
   }
 
   void _showAssignFactoryOrderDialog(ERPProvider erp, FactoryOrderModel ord) {
-    final cashCtrl = TextEditingController(
-      text: (ord.agreedPrice - ord.depositAmount)
-          .clamp(0.0, double.infinity)
-          .fmt,
-    );
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إسناد الطلبية لفاتورة (مكتملة)'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '${ord.orderNo} • ${ord.clientName} • الإجمالي ${ord.agreedPrice}\$ • العربون ${ord.depositAmount}\$',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: cashCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'النقد المدفوع الآن (\$)',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.successGreen,
-            ),
-            onPressed: () {
-              final cash = double.tryParse(cashCtrl.text) ?? 0.0;
-              erp.assignFactoryOrderToInvoice(ord, cash);
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'تم إسناد الطلبية لفاتورة ونقل العربون للصندوق الرئيسي!',
-                  ),
-                  backgroundColor: AppColors.successGreen,
-                ),
-              );
-            },
-            child: const Text('تأكيد الإسناد'),
-          ),
-        ],
-      ),
-    );
+    _showAddPOSInvoiceDialog(erp, initialOrder: ord);
   }
 
   void _showCancelFactoryOrderDialog(ERPProvider erp, FactoryOrderModel ord) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إلغاء طلبية المصنع'),
-        content: const Text(
-          'العربون غير قابل للاسترداد إلا في الحالات الخاصة.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('تراجع'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.dangerWaste,
-            ),
-            onPressed: () {
-              erp.cancelFactoryOrder(ord, false);
-              Navigator.pop(ctx);
-            },
-            child: const Text('إلغاء مع الاحتفاظ بالعربون'),
-          ),
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.dangerWaste,
-            ),
-            onPressed: () {
-              erp.cancelFactoryOrder(ord, true);
-              Navigator.pop(ctx);
-            },
-            child: const Text('إلغاء مع رد العربون (خاص)'),
-          ),
-        ],
-      ),
-    );
+    showCancelFactoryOrderDialog(context, erp, ord);
   }
 
   // DIALOGS & POPUPS HELPERS
@@ -3854,6 +4074,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   void _showAddPOSInvoiceDialog(
     ERPProvider erp, {
     bool cashInvoice = false,
+    FactoryOrderModel? initialOrder,
   }) {
     final approvedClients = erp.clients
         .where((c) => c.clientType == 'معتمد مصنع')
@@ -3894,8 +4115,20 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       return;
     }
 
+    FactoryOrderModel? assignedOrder = initialOrder;
+
     // Multi-item approved-client invoice builder (Factory Warehouse goods).
     String? selectedClientId;
+    if (initialOrder != null) {
+      final match = approvedClients
+          .where(
+            (c) =>
+                c.id == initialOrder.partyId ||
+                c.name == initialOrder.clientName,
+          )
+          .toList();
+      if (match.isNotEmpty) selectedClientId = match.first.id;
+    }
     String clientSearch = '';
     String? selectedWhId;
     String goodsSearch = '';
@@ -3904,14 +4137,30 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final heightCtrl = TextEditingController();
     final qtyCtrl = TextEditingController();
     final unitPriceCtrl = TextEditingController();
-    final downPayCtrl = TextEditingController();
-    final salesDiscountCtrl = TextEditingController(text: '0');
-    final shippingCtrl = TextEditingController();
-    final photoCtrl = TextEditingController();
-    bool? deliverByUs;
+    final downPayCtrl = TextEditingController(
+      text: (initialOrder != null && initialOrder.depositAmount > 0)
+          ? initialOrder.depositAmount.fmt
+          : '',
+    );
+    final salesDiscountCtrl = TextEditingController(
+      text: (initialOrder != null && initialOrder.discountAmount > 0)
+          ? initialOrder.discountAmount.fmt
+          : '0',
+    );
+    final shippingCtrl = TextEditingController(
+      text: (initialOrder != null && initialOrder.shippingFee > 0)
+          ? initialOrder.shippingFee.fmt
+          : '',
+    );
+    final photoCtrl = TextEditingController(
+      text: initialOrder?.photoPath ?? '',
+    );
+    bool? deliverByUs = initialOrder?.isGoodsDelivered;
     String? formError;
 
-    final List<FactoryInvoiceItem> draftItems = [];
+    final List<FactoryInvoiceItem> draftItems = initialOrder != null
+        ? List.of(initialOrder.items)
+        : [];
 
     // Services attached to the item currently being built.
     String? selectedServiceId;
@@ -3919,7 +4168,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final servicePriceCtrl = TextEditingController();
     final serviceNotesCtrl = TextEditingController();
     final List<ServiceAttachment> draftServices = [];
-    String posCurrency = AppCurrency.usd;
+    String posCurrency = initialOrder?.currency ?? AppCurrency.usd;
 
     double draftArea(
       FactoryWarehouseModel? wh,
@@ -4064,6 +4313,164 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                       ).textTheme.titleLarge?.copyWith(fontSize: 18),
                     ),
                     const Divider(height: 20),
+
+                    // Factory Order Assignment Section
+                    Builder(builder: (context) {
+                      final pendingOrders = erp.factoryOrders
+                          .where((o) => o.status == 'قيد التنفيذ')
+                          .toList();
+
+                      if (assignedOrder != null) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF93C5FD)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.link_rounded,
+                                          color: Color(0xFF2563EB), size: 22),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'تم إسناد طلبية المصنع: ${assignedOrder!.orderNo} للزبون ${assignedOrder!.clientName}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF1E40AF),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  TextButton.icon(
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: AppColors.dangerWaste,
+                                    ),
+                                    onPressed: () {
+                                      setSt(() {
+                                        assignedOrder = null;
+                                      });
+                                    },
+                                    icon: const Icon(
+                                      Icons.link_off_rounded,
+                                      size: 16,
+                                    ),
+                                    label: const Text('إلغاء الربط بالطلبية'),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Text(
+                                    'العربون المحجوز في صندوق الطلبيات المعزول: ',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF1E3A8A),
+                                    ),
+                                  ),
+                                  Text(
+                                    '${assignedOrder!.depositAmount.fmt} ${assignedOrder!.currencySymbol}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color: AppColors.orderDepositBoxAccent,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                '• تم استيراد أصناف الطلبية أدناه، ولك كامل الحرية في تعديل المقاسات، والأسعار، أو حذف وإضافة بنود وخدمات.\n'
+                                '• عند حفظ الفاتورة، سيتم تحويل العربون تلقائياً إلى الصندوق الرئيسي وتحديث حالة الطلبية إلى "مكتملة ومرحلة".',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF3B82F6),
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      } else if (pendingOrders.isNotEmpty) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.panelBorder),
+                          ),
+                          child: DropdownButtonFormField<String>(
+                            decoration: const InputDecoration(
+                              labelText:
+                                  '📥 إسناد من طلبية مصنع معلقة (اختياري)',
+                              prefixIcon: Icon(
+                                Icons.file_download_outlined,
+                                color: AppColors.orderDepositBoxAccent,
+                              ),
+                              isDense: true,
+                              border: InputBorder.none,
+                            ),
+                            items: pendingOrders
+                                .map((ord) => DropdownMenuItem(
+                                      value: ord.id,
+                                      child: Text(
+                                        '${ord.orderNo} • ${ord.clientName} (${ord.totalArea.fmt} م) • عربون: ${ord.depositAmount.fmt} ${ord.currencySymbol}',
+                                      ),
+                                    ))
+                                .toList(),
+                            onChanged: (ordId) {
+                              if (ordId == null) return;
+                              final ord = pendingOrders
+                                  .firstWhere((o) => o.id == ordId);
+                              setSt(() {
+                                assignedOrder = ord;
+                                final matchClient = approvedClients
+                                    .where(
+                                      (c) =>
+                                          c.id == ord.partyId ||
+                                          c.name == ord.clientName,
+                                    )
+                                    .toList();
+                                if (matchClient.isNotEmpty) {
+                                  selectedClientId = matchClient.first.id;
+                                }
+                                posCurrency = ord.currency;
+                                draftItems.clear();
+                                draftItems.addAll(ord.items);
+                                deliverByUs = ord.isGoodsDelivered;
+                                if (ord.shippingFee > 0) {
+                                  shippingCtrl.text = ord.shippingFee.fmt;
+                                }
+                                if (ord.discountAmount > 0) {
+                                  salesDiscountCtrl.text =
+                                      ord.discountAmount.fmt;
+                                }
+                                downPayCtrl.text = ord.depositAmount > 0
+                                    ? ord.depositAmount.fmt
+                                    : '';
+                                if (ord.photoPath.isNotEmpty) {
+                                  photoCtrl.text = ord.photoPath;
+                                }
+                              });
+                            },
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    }),
 
                     // 1. Approved client searchable + inline add.
                     const Text(
@@ -4695,25 +5102,29 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           (c) => c.id == selectedClientId,
                           orElse: () => erp.clients.first,
                         );
-                        final created = erp.addFactoryPOSInvoice(
-                          FactoryInvoiceModel(
-                            id: 'fi_pos_${DateTime.now().millisecondsSinceEpoch}',
-                            invoiceNo:
-                                'FAC-POS-${erp.factoryInvoices.length + 101}',
-                            date: DateTime.now(),
-                            partyId: client.id,
-                            partyName: client.name,
-                            invoiceType: 'بيع_معتمد',
-                            items: List.of(draftItems),
-                            isGoodsDelivered: deliverByUs == true,
-                            shippingFee: shipping,
-                            advancePayment: advance,
-                            discountAmount: salesDiscount,
-                            isCashInvoice: cashInvoice,
-                            photoUrl: photoCtrl.text.trim(),
-                            currency: posCurrency,
-                          ),
+                        final newInvoice = FactoryInvoiceModel(
+                          id: 'fi_pos_${DateTime.now().millisecondsSinceEpoch}',
+                          invoiceNo:
+                              'FAC-POS-${erp.factoryInvoices.length + 101}',
+                          date: DateTime.now(),
+                          partyId: client.id,
+                          partyName: client.name,
+                          invoiceType: 'بيع_معتمد',
+                          items: List.of(draftItems),
+                          isGoodsDelivered: deliverByUs == true,
+                          shippingFee: shipping,
+                          advancePayment: advance,
+                          discountAmount: salesDiscount,
+                          isCashInvoice: cashInvoice,
+                          photoUrl: photoCtrl.text.trim(),
+                          currency: posCurrency,
                         );
+                        final created = assignedOrder != null
+                            ? erp.assignFactoryOrderToPOSInvoice(
+                                assignedOrder!,
+                                newInvoice,
+                              )
+                            : erp.addFactoryPOSInvoice(newInvoice);
                         if (!created) {
                           setSt(
                             () => formError =
@@ -4725,11 +5136,13 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              cashInvoice
-                                  ? 'تم إصدار فاتورة البيع النقدية وتحصيلها بالكامل في الصندوق الرئيسي.'
-                                  : advance >= grandTotal - 0.01
-                                  ? 'تم حفظ الفاتورة مدفوعة بالكامل وتسجيلها في قسم المدفوعة.'
-                                  : 'تم حفظ الفاتورة وتسجيلها في قسم التحصيل المعلق.',
+                              assignedOrder != null
+                                  ? 'تم حفظ الفاتورة وإسناد طلبية المصنع (${assignedOrder!.orderNo}) ونقل العربون إلى الصندوق الرئيسي بنجاح.'
+                                  : cashInvoice
+                                      ? 'تم إصدار فاتورة البيع النقدية وتحصيلها بالكامل في الصندوق الرئيسي.'
+                                      : advance >= grandTotal - 0.01
+                                          ? 'تم حفظ الفاتورة مدفوعة بالكامل وتسجيلها في قسم المدفوعة.'
+                                          : 'تم حفظ الفاتورة وتسجيلها في قسم التحصيل المعلق.',
                             ),
                             backgroundColor: AppColors.successGreen,
                           ),

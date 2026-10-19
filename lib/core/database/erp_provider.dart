@@ -3093,13 +3093,117 @@ class ERPProvider extends ChangeNotifier {
   }
 
   // 7b. Factory Custom Orders (mirror the workshop deposit-box rules)
+  void _deductFactoryOrderItemStock(FactoryInvoiceItem item) {
+    if (factoryWarehouse.isEmpty) return;
+    FactoryWarehouseModel? wh;
+    for (final warehouseItem in factoryWarehouse) {
+      if (warehouseItem.id == item.itemId) {
+        wh = warehouseItem;
+        break;
+      }
+    }
+    wh ??= factoryWarehouse.firstWhere(
+      (warehouseItem) =>
+          warehouseItem.typeName == item.description ||
+          warehouseItem.typeName == item.typeName,
+      orElse: () => factoryWarehouse.first,
+    );
+    wh.availableQty = (wh.availableQty - item.calculatedArea).clamp(
+      0.0,
+      double.infinity,
+    );
+  }
+
+  void _restoreFactoryOrderItemStock(FactoryInvoiceItem item) {
+    if (factoryWarehouse.isEmpty) return;
+    FactoryWarehouseModel? wh;
+    for (final warehouseItem in factoryWarehouse) {
+      if (warehouseItem.id == item.itemId) {
+        wh = warehouseItem;
+        break;
+      }
+    }
+    wh ??= factoryWarehouse.firstWhere(
+      (warehouseItem) =>
+          warehouseItem.typeName == item.description ||
+          warehouseItem.typeName == item.typeName,
+      orElse: () => factoryWarehouse.first,
+    );
+    wh.availableQty += item.calculatedArea;
+  }
+
   void createFactoryOrder(FactoryOrderModel order) {
     factoryOrders.add(order);
     if (order.depositAmount > 0) {
       addCash('order', order.currency, order.depositAmount);
     }
+    // Deduct stock consumed in order line items from Factory Warehouse
+    for (final it in order.items) {
+      _deductFactoryOrderItemStock(it);
+    }
     notifyListeners();
     saveToDisk();
+  }
+
+  void cancelFactoryOrder({
+    required FactoryOrderModel order,
+    required bool isCompleted,
+    required bool refundDeposit,
+  }) {
+    order.status = isCompleted ? 'ملغاة (مكتملة)' : 'ملغاة (غير مكتملة)';
+    order.isCompleted = isCompleted;
+    order.isSpecialRefund = refundDeposit;
+
+    // If not completed and refund requested: refund deposit to customer from Order Safe
+    if (!isCompleted && refundDeposit && order.depositAmount > 0) {
+      takeCash('order', order.currency, order.depositAmount);
+    }
+    // If completed: deposit is NOT refunded and remains in the Orders Safe.
+    // If not completed and refundDeposit == false: deposit remains in Orders Safe.
+
+    // In BOTH cases: exact meters consumed in order line items returned to Factory Warehouse
+    for (final it in order.items) {
+      _restoreFactoryOrderItemStock(it);
+    }
+
+    notifyListeners();
+    saveToDisk();
+  }
+
+  void cancelFactoryOrderLegacy(FactoryOrderModel order, bool isSpecialRefund) {
+    cancelFactoryOrder(
+      order: order,
+      isCompleted: !isSpecialRefund,
+      refundDeposit: isSpecialRefund,
+    );
+  }
+
+  bool assignFactoryOrderToPOSInvoice(
+    FactoryOrderModel order,
+    FactoryInvoiceModel invoice,
+  ) {
+    // 1. Reconcile stock: restore original order reserved stock so addFactoryPOSInvoice deducts final edited items
+    for (final it in order.items) {
+      _restoreFactoryOrderItemStock(it);
+    }
+
+    // 2. Transfer deposit out of isolated Order Cash Box (it enters Main Cash Box via invoice.advancePayment)
+    if (order.depositAmount > 0) {
+      takeCash('order', order.currency, order.depositAmount);
+    }
+
+    // 3. Mark the order as completed & link invoice
+    order.status = 'مكتملة ومرحلة';
+    order.isCompleted = true;
+    order.assignedInvoiceId = invoice.id;
+    order.assignedInvoiceNo = invoice.invoiceNo;
+
+    // 4. Add the POS invoice
+    final success = addFactoryPOSInvoice(invoice);
+
+    notifyListeners();
+    saveToDisk();
+    return success;
   }
 
   void assignFactoryOrderToInvoice(
@@ -3107,50 +3211,36 @@ class ERPProvider extends ChangeNotifier {
     double cashPaidNow, {
     List<ServiceAttachment> services = const [],
   }) {
-    order.status = 'مكتملة ومرحلة';
-    if (order.depositAmount > 0) {
-      takeCash('order', order.currency, order.depositAmount);
-    }
-    addFactoryPOSInvoice(
-      FactoryInvoiceModel(
-        id: 'fi_ord_${DateTime.now().millisecondsSinceEpoch}',
-        invoiceNo: 'FAC-ORD-${factoryInvoices.length + 101}',
-        date: DateTime.now(),
-        partyId: '',
-        partyName: order.clientName,
-        invoiceType: 'بيع_معتمد',
-        items: [
-          FactoryInvoiceItem(
-            itemId: order.warehouseItemId,
-            description: order.itemDescription,
-            lengthCm: order.lengthCm,
-            widthCm: order.widthCm,
-            heightCm: order.heightCm,
-            quantity: order.quantity,
-            unitPrice: order.unitPrice,
-            unitCost: order.unitPrice,
-            services: services,
-          ),
-        ],
-        isGoodsDelivered: true,
-        advancePayment: order.depositAmount + cashPaidNow,
-        photoUrl: order.photoPath,
-        currency: order.currency,
-      ),
+    final invoice = FactoryInvoiceModel(
+      id: 'fi_ord_${DateTime.now().millisecondsSinceEpoch}',
+      invoiceNo: 'FAC-ORD-${factoryInvoices.length + 101}',
+      date: DateTime.now(),
+      partyId: order.partyId,
+      partyName: order.clientName,
+      invoiceType: 'بيع_معتمد',
+      items: order.items.isNotEmpty
+          ? List.of(order.items)
+          : [
+              FactoryInvoiceItem(
+                itemId: order.warehouseItemId,
+                description: order.itemDescription,
+                lengthCm: order.lengthCm,
+                widthCm: order.widthCm,
+                heightCm: order.heightCm,
+                quantity: order.quantity,
+                unitPrice: order.unitPrice,
+                unitCost: order.unitPrice,
+                services: services,
+              ),
+            ],
+      isGoodsDelivered: order.isGoodsDelivered,
+      shippingFee: order.shippingFee,
+      discountAmount: order.discountAmount,
+      advancePayment: order.depositAmount + cashPaidNow,
+      photoUrl: order.photoPath,
+      currency: order.currency,
     );
-    // addFactoryPOSInvoice already moved (deposit + cash) into Main Cash Box.
-    notifyListeners();
-    saveToDisk();
-  }
-
-  void cancelFactoryOrder(FactoryOrderModel order, bool isSpecialRefund) {
-    order.status = 'ملغاة';
-    order.isSpecialRefund = isSpecialRefund;
-    if (isSpecialRefund) {
-      takeCash('order', order.currency, order.depositAmount);
-    }
-    notifyListeners();
-    saveToDisk();
+    assignFactoryOrderToPOSInvoice(order, invoice);
   }
 
   /// Workshop stock helpers for tailoring line items.
