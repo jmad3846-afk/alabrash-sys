@@ -892,7 +892,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                 children: [
                   Expanded(
                     child: Text(
-                      'برنامج أبعاد (Abaad) • هاتف: 0931691900 • مستند مالي معتمد',
+                      'برنامج Sh Ab\'ad • هاتف: 0931691900 • مستند مالي معتمد',
                       style: TextStyle(fontSize: 9.5, color: Colors.grey[600]),
                       overflow: TextOverflow.ellipsis,
                     ),

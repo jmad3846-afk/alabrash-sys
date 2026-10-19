@@ -56,6 +56,8 @@ class A4InvoiceData {
   final double remainingBalance;
   final String notes;
   final bool isGoodsDelivered;
+  final bool hasFulfillmentSection;
+  final String fulfillmentTitle;
 
   const A4InvoiceData({
     required this.invoiceTypeTitle,
@@ -76,14 +78,19 @@ class A4InvoiceData {
     required this.remainingBalance,
     this.notes = '',
     this.isGoodsDelivered = true,
+    this.hasFulfillmentSection = false,
+    this.fulfillmentTitle = 'أمر تشغيل وتجهيز المصنع / المعمل',
   });
 
   /// Factory adapter for Factory Invoices (Supplier Purchase & Approved Clients POS).
   factory A4InvoiceData.fromFactoryInvoice(FactoryInvoiceModel inv) {
     final isPurchase = inv.invoiceType == 'شراء_مورد';
+    final isCash = inv.isCashInvoice;
     final typeTitle = isPurchase
         ? 'فاتورة مشتريات من مورد (بلوكات وأمتار)'
-        : 'فاتورة مبيعات مستودع المصنع (معتمدين)';
+        : (isCash
+            ? 'فاتورة مبيعات معتمدين (نقدي) — مستودع المصنع'
+            : 'فاتورة مبيعات معتمدين (آجل) — مستودع المصنع');
     final role = isPurchase ? 'المورد' : 'المعتمد / العميل';
 
     final items = <A4InvoiceLineItem>[];
@@ -143,11 +150,18 @@ class A4InvoiceData {
               ? 'شحن واصل للعنوان المطلوب'
               : 'الاستلام من أرض المستودع (الزبون يستلم النقل)'),
       isGoodsDelivered: inv.isGoodsDelivered,
+      hasFulfillmentSection: !isPurchase,
+      fulfillmentTitle: isCash
+          ? 'أمر تشغيل وتجهيز طلبية المعتمدين (نقدي) — قسم المصنع'
+          : 'أمر تشغيل وتجهيز طلبية المعتمدين (آجل) — قسم المصنع',
     );
   }
 
-  /// Factory adapter for Workshop Workspace Invoices.
-  factory A4InvoiceData.fromWorkshopInvoice(WorkshopInvoiceModel inv) {
+  /// Factory adapter for Workshop Workspace Invoices, Factory Invoices, and Project Invoices.
+  factory A4InvoiceData.fromWorkshopInvoice(
+    WorkshopInvoiceModel inv, {
+    String? projectName,
+  }) {
     final items = <A4InvoiceLineItem>[];
 
     if (inv.items.isNotEmpty) {
@@ -193,14 +207,22 @@ class A4InvoiceData {
       ));
     }
 
+    final isProject = inv.projectId.isNotEmpty || (projectName != null && projectName.isNotEmpty);
+    final isCash = inv.isCashInvoice;
+    final typeTitle = isProject
+        ? (isCash
+            ? 'فاتورة مشروع (سداد نقدي) — إدارة المصنع'
+            : 'فاتورة مشروع (آجل ومستخلص) — إدارة المصنع')
+        : (isCash
+            ? 'فاتورة مبيعات نقدية — المصنع والمعمل'
+            : 'فاتورة مبيعات وتوريد — المصنع والمعمل');
+
     return A4InvoiceData(
-      invoiceTypeTitle: inv.isCashInvoice
-          ? 'فاتورة مبيعات نقدية — ورشة المعمل'
-          : 'فاتورة مبيعات وخدمات ورشة المعمل',
+      invoiceTypeTitle: typeTitle,
       invoiceNo: inv.invoiceNo,
       date: inv.date,
       partyName: inv.clientName,
-      partyRole: 'العميل / الزبون',
+      partyRole: isProject ? 'المشروع / الجهة' : 'العميل / الزبون',
       partyPhone: '—',
       currency: inv.currency,
       paymentStatus: inv.remainingBalance > 0.01 ? 'مستحق الدفع' : 'مدفوعة بالكامل',
@@ -214,6 +236,12 @@ class A4InvoiceData {
       remainingBalance: inv.remainingBalance,
       notes: 'المصدر: ${inv.sourceType} • ${inv.isGranite ? "جرانيت طبيعي" : "رخام طبيعي"}',
       isGoodsDelivered: true,
+      hasFulfillmentSection: true,
+      fulfillmentTitle: isProject
+          ? 'أمر تشغيل وتجهيز بنود المشروع — قسم المصنع والورشة'
+          : (isCash
+              ? 'أمر تشغيل وتجهيز طلبية المصنع (نقدي) — الورشة'
+              : 'أمر تشغيل وتجهيز طلبية المصنع (آجل) — الورشة'),
     );
   }
 
@@ -251,6 +279,8 @@ class A4InvoiceData {
       remainingBalance: 0.0,
       notes: 'معالجة مالية: ${inv.paymentAction}',
       isGoodsDelivered: true,
+      hasFulfillmentSection: false,
+      fulfillmentTitle: 'أمر تشغيل وتجهيز المصنع',
     );
   }
 }
@@ -281,37 +311,66 @@ class A4InvoicePrintDialog extends StatefulWidget {
 }
 
 class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
-  final GlobalKey _previewContainerKey = GlobalKey();
+  final List<GlobalKey> _pageKeys = [];
   bool _isPrinting = false;
+  late bool _includeFulfillment;
+  late bool _forceTwoPages;
+
+  @override
+  void initState() {
+    super.initState();
+    _includeFulfillment = widget.invoiceData.hasFulfillmentSection;
+    // By default, if there are more than 2 items, separate into 2 full pages
+    _forceTwoPages = widget.invoiceData.items.length > 2;
+    _syncPageKeys();
+  }
+
+  void _syncPageKeys() {
+    _pageKeys.clear();
+    if (!_includeFulfillment) {
+      _pageKeys.add(GlobalKey());
+    } else {
+      if (_forceTwoPages || widget.invoiceData.items.length > 2) {
+        _pageKeys.add(GlobalKey()); // Page 1: Financial invoice
+        _pageKeys.add(GlobalKey()); // Page 2: Factory fulfillment sheet
+      } else {
+        _pageKeys.add(GlobalKey()); // Merged single A4 sheet
+      }
+    }
+  }
 
   Future<void> _handleDirectPrint() async {
     setState(() => _isPrinting = true);
     try {
-      final boundary = _previewContainerKey.currentContext?.findRenderObject()
-          as RenderRepaintBoundary?;
-      if (boundary == null) return;
-
-      final ui.Image image = await boundary.toImage(pixelRatio: 2.5);
-      final ByteData? byteData =
-          await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) return;
-
-      final Uint8List pngBytes = byteData.buffer.asUint8List();
       final pdfDoc = pw.Document();
-      final pdfImage = pw.MemoryImage(pngBytes);
 
-      pdfDoc.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: pw.EdgeInsets.zero,
-          build: (pw.Context context) => pw.FullPage(
-            ignoreMargins: true,
-            child: pw.Center(
-              child: pw.Image(pdfImage, fit: pw.BoxFit.contain),
+      for (int i = 0; i < _pageKeys.length; i++) {
+        final key = _pageKeys[i];
+        final boundary = key.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
+        if (boundary == null) continue;
+
+        final ui.Image image = await boundary.toImage(pixelRatio: 2.5);
+        final ByteData? byteData =
+            await image.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData == null) continue;
+
+        final Uint8List pngBytes = byteData.buffer.asUint8List();
+        final pdfImage = pw.MemoryImage(pngBytes);
+
+        pdfDoc.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            margin: pw.EdgeInsets.zero,
+            build: (pw.Context context) => pw.FullPage(
+              ignoreMargins: true,
+              child: pw.Center(
+                child: pw.Image(pdfImage, fit: pw.BoxFit.contain),
+              ),
             ),
           ),
-        ),
-      );
+        );
+      }
 
       await Printing.layoutPdf(
         onLayout: (PdfPageFormat format) async => pdfDoc.save(),
@@ -336,105 +395,203 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
     final erp = Provider.of<ERPProvider>(context);
     final centerInfo = erp.centerInfo;
     final inv = widget.invoiceData;
+    final isTwoPagesMode = _includeFulfillment && (_forceTwoPages || inv.items.length > 2);
 
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       backgroundColor: Colors.transparent,
       child: Container(
-        width: 940,
-        height: MediaQuery.of(context).size.height * 0.94,
+        width: 960,
+        height: MediaQuery.of(context).size.height * 0.95,
         decoration: BoxDecoration(
-          color: const Color(0xFF0F172A),
+          color: const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFCBD5E1)),
           boxShadow: const [
             BoxShadow(
-              color: Colors.black45,
-              blurRadius: 24,
+              color: Color(0x33000000),
+              blurRadius: 28,
               offset: Offset(0, 10),
             ),
           ],
         ),
         child: Column(
           children: [
-            // Top Toolbar
+            // Top Toolbar (Light modern theme with responsive non-overflowing controls)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: const BoxDecoration(
-                color: Color(0xFF1E293B),
+                color: Colors.white,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
               ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF334155),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.picture_as_pdf_rounded,
-                          color: Color(0xFF38BDF8),
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'معاينة طباعة الفاتورة قياس A4 (Print Preview)',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                            ),
+                  // Title and metadata (Wrapped in Expanded to completely prevent any overflow)
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(7),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFBFDBFE)),
                           ),
-                          Text(
-                            'رقم الفاتورة: ${inv.invoiceNo} • ${inv.partyName}',
-                            style: const TextStyle(
-                              color: Color(0xFF94A3B8),
-                              fontSize: 12,
-                            ),
+                          child: const Icon(
+                            Icons.picture_as_pdf_rounded,
+                            color: Color(0xFF2563EB),
+                            size: 18,
                           ),
-                        ],
-                      ),
-                    ],
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: const Text(
+                                      'معاينة طباعة الفاتورة وقسيمة التشغيل',
+                                      style: TextStyle(
+                                        color: Color(0xFF0F172A),
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 14,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                                    ),
+                                    child: Text(
+                                      isTwoPagesMode ? 'صفحتان A4' : 'صفحة واحدة A4',
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF475569),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Text(
+                                'رقم الفاتورة: ${inv.invoiceNo} • ${inv.partyName}',
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+
+                  const SizedBox(width: 10),
+
+                  // Middle / Right controls: Toggles & Print (Compact, responsive row)
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
+                      // Toggle to include / exclude factory fulfillment section
+                      if (inv.hasFulfillmentSection) ...[
+                        FilterChip(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          avatar: Icon(
+                            _includeFulfillment ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                            size: 14,
+                            color: _includeFulfillment ? const Color(0xFF0D9488) : const Color(0xFF64748B),
+                          ),
+                          label: const Text(
+                            'قسيمة المصنع',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                          selected: _includeFulfillment,
+                          selectedColor: const Color(0xFFCCFBF1),
+                          checkmarkColor: Colors.transparent,
+                          onSelected: (val) {
+                            setState(() {
+                              _includeFulfillment = val;
+                              _syncPageKeys();
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+
+                      // Page splitting toggle if items can fit on 1 page
+                      if (_includeFulfillment && inv.items.length <= 2) ...[
+                        FilterChip(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          avatar: Icon(
+                            _forceTwoPages ? Icons.file_copy_outlined : Icons.description_outlined,
+                            size: 14,
+                            color: const Color(0xFF2563EB),
+                          ),
+                          label: Text(
+                            _forceTwoPages ? 'صفحتان' : 'صفحة واحدة',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                          selected: _forceTwoPages,
+                          selectedColor: const Color(0xFFDBEAFE),
+                          onSelected: (val) {
+                            setState(() {
+                              _forceTwoPages = val;
+                              _syncPageKeys();
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+
+                      // Print button
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF2563EB),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 12,
+                            horizontal: 14,
+                            vertical: 10,
                           ),
-                          elevation: 2,
+                          elevation: 1,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                         onPressed: _isPrinting ? null : _handleDirectPrint,
                         icon: _isPrinting
                             ? const SizedBox(
-                                width: 18,
-                                height: 18,
+                                width: 16,
+                                height: 16,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                   color: Colors.white,
                                 ),
                               )
-                            : const Icon(Icons.print_rounded, size: 18),
+                            : const Icon(Icons.print_rounded, size: 16),
                         label: Text(
-                          _isPrinting ? 'جارٍ المعالجة...' : 'طباعة الفاتورة / PDF',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          _isPrinting
+                              ? 'طباعة...'
+                              : 'طباعة (${_pageKeys.length})',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 6),
                       IconButton(
+                        visualDensity: VisualDensity.compact,
                         onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                        icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B), size: 20),
                         tooltip: 'إغلاق',
                       ),
                     ],
@@ -450,9 +607,9 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
                 alignment: Alignment.topCenter,
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                  child: RepaintBoundary(
-                    key: _previewContainerKey,
-                    child: _buildA4Paper(context, centerInfo, inv),
+                  child: Directionality(
+                    textDirection: TextDirection.rtl,
+                    child: _buildPreviewPages(context, centerInfo, inv),
                   ),
                 ),
               ),
@@ -463,16 +620,152 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
     );
   }
 
-  /// Pure A4 Sheet (210mm x 297mm styled white sheet)
-  Widget _buildA4Paper(
+  /// Builds preview pages based on pagination mode
+  Widget _buildPreviewPages(
     BuildContext context,
     CenterInfoModel centerInfo,
     A4InvoiceData inv,
   ) {
+    if (!_includeFulfillment) {
+      // Single Financial Invoice Page
+      return RepaintBoundary(
+        key: _pageKeys[0],
+        child: _buildA4PaperInvoice(
+          context,
+          centerInfo,
+          inv,
+          pageNumber: 1,
+          totalPages: 1,
+        ),
+      );
+    }
+
+    final isTwoPages = _forceTwoPages || inv.items.length > 2;
+    if (!isTwoPages) {
+      // Merged single A4 page with perforated cut-line
+      return RepaintBoundary(
+        key: _pageKeys[0],
+        child: _buildA4PaperCombined(context, centerInfo, inv),
+      );
+    }
+
+    // 2 Separate A4 Pages
+    return Column(
+      children: [
+        // Page 1 Header Banner
+        _buildPageIndicatorBanner(
+          pageNumber: 1,
+          totalPages: 2,
+          title: 'القسم الأول: الفاتورة المالية المعتمدة (نسخة العميل / المحاسبة)',
+          accentColor: const Color(0xFF2563EB),
+        ),
+        const SizedBox(height: 8),
+        RepaintBoundary(
+          key: _pageKeys[0],
+          child: _buildA4PaperInvoice(
+            context,
+            centerInfo,
+            inv,
+            pageNumber: 1,
+            totalPages: 2,
+          ),
+        ),
+        const SizedBox(height: 32),
+
+        // Page 2 Header Banner
+        _buildPageIndicatorBanner(
+          pageNumber: 2,
+          totalPages: 2,
+          title: 'القسم الثاني: أمر تشغيل وتجهيز المصنع / المعمل (نسخة الورشة والمستودع)',
+          accentColor: const Color(0xFF0D9488),
+        ),
+        const SizedBox(height: 8),
+        RepaintBoundary(
+          key: _pageKeys[1],
+          child: _buildA4PaperFulfillment(
+            context,
+            centerInfo,
+            inv,
+            pageNumber: 2,
+            totalPages: 2,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPageIndicatorBanner({
+    required int pageNumber,
+    required int totalPages,
+    required String title,
+    required Color accentColor,
+  }) {
+    return Container(
+      width: 794,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+          Text(
+            'ورقة $pageNumber من $totalPages (A4)',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF64748B),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================================
+  // PAGE 1: OFFICIAL FINANCIAL INVOICE
+  // ==========================================================================
+  Widget _buildA4PaperInvoice(
+    BuildContext context,
+    CenterInfoModel centerInfo,
+    A4InvoiceData inv, {
+    int pageNumber = 1,
+    int totalPages = 1,
+  }) {
     return Container(
       width: 794,
       constraints: const BoxConstraints(minHeight: 1123),
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 36),
+      padding: const EdgeInsets.symmetric(horizontal: 38, vertical: 34),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(4),
@@ -485,74 +778,236 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
           ),
         ],
       ),
-      child: Directionality(
-        textDirection: TextDirection.rtl,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Top Accent Ribbon
-            Container(
-              height: 5,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF0F172A), Color(0xFFD97706), Color(0xFF2563EB)],
-                ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Top Accent Ribbon
+          Container(
+            height: 4,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF2563EB), Color(0xFF0D9488), Color(0xFFD97706)],
               ),
             ),
-            const SizedBox(height: 18),
+          ),
+          const SizedBox(height: 16),
 
-            // 1. INVOICE HEADER (Center Details & Logo)
-            _buildInvoiceHeader(centerInfo),
-            const SizedBox(height: 14),
+          // 1. INVOICE HEADER (Sawmill Details & Logo)
+          _buildInvoiceHeader(centerInfo),
+          const SizedBox(height: 14),
 
-            // Official Invoice Title Banner & Metadata Box
-            _buildInvoiceMetaSection(inv),
-            const SizedBox(height: 18),
+          // Official Invoice Title Banner & Metadata Box
+          _buildInvoiceMetaSection(inv),
+          const SizedBox(height: 16),
 
-            // 2. INVOICE BODY (Main Structured Table)
-            _buildItemsTable(inv),
-            const SizedBox(height: 16),
+          // 2. INVOICE BODY: Structured Light Table
+          _buildItemsTable(inv),
+          const SizedBox(height: 16),
 
-            // 3. FINANCIAL SUMMARY & TOTALS (Bottom Section)
-            _buildFinancialSummary(inv),
-            const SizedBox(height: 28),
+          // 3. FINANCIAL SUMMARY & TOTALS (Bottom Section - terms box removed)
+          _buildFinancialSummary(inv),
+          const SizedBox(height: 24),
 
-            // 4. SIGNATURES & OFFICIAL SEALS
-            _buildSignaturesFooter(centerInfo),
-            const SizedBox(height: 18),
-
-            // Bottom System Footer Line
-            Container(
-              padding: const EdgeInsets.only(top: 8),
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'برنامج أبعاد (Abaad) • هاتف: 0931691900 • مستند مالي معتمد',
-                    style: TextStyle(fontSize: 9.5, color: Colors.grey[600]),
-                  ),
-                  Text(
-                    'تاريخ الطباعة: ${intl.DateFormat("yyyy-MM-dd HH:mm").format(DateTime.now())}',
-                    style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          // Bottom System Footer Line (Signatures section removed as requested)
+          _buildSystemFooterLine(pageNumber: pageNumber, totalPages: totalPages),
+        ],
       ),
     );
   }
 
-  /// 1. Header with Full Sawmill / Center Details and Logo
-  Widget _buildInvoiceHeader(CenterInfoModel center) {
+  // ==========================================================================
+  // PAGE 2: FACTORY & WORKSHOP FULFILLMENT WORK ORDER
+  // ==========================================================================
+  Widget _buildA4PaperFulfillment(
+    BuildContext context,
+    CenterInfoModel centerInfo,
+    A4InvoiceData inv, {
+    int pageNumber = 2,
+    int totalPages = 2,
+  }) {
+    return Container(
+      width: 794,
+      constraints: const BoxConstraints(minHeight: 1123),
+      padding: const EdgeInsets.symmetric(horizontal: 38, vertical: 34),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x2B000000),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Top Accent Ribbon (Teal/Emerald theme for production/factory)
+          Container(
+            height: 4,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF0D9488), Color(0xFF0284C7), Color(0xFF10B981)],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 1. Factory Header
+          _buildInvoiceHeader(centerInfo, subtitleOverride: 'قسم التشغيل والتجهيز الميداني بالمصنع'),
+          const SizedBox(height: 14),
+
+          // 2. Work Order Meta Banner
+          _buildFulfillmentMetaBanner(inv),
+          const SizedBox(height: 16),
+
+          // 3. Fulfillment Items Table (Repeated line items for cutting and fulfillment)
+          _buildFulfillmentItemsTable(inv),
+          const SizedBox(height: 16),
+
+          // Bottom System Footer Line (Signatures section removed as requested)
+          _buildSystemFooterLine(
+            pageNumber: pageNumber,
+            totalPages: totalPages,
+            customLabel: 'أمر تشغيل وتجهيز طلبية المصنع • مستند تنفيذي معتمد',
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================================
+  // COMBINED SINGLE A4 SHEET (When items <= 2 and space fits)
+  // ==========================================================================
+  Widget _buildA4PaperCombined(
+    BuildContext context,
+    CenterInfoModel centerInfo,
+    A4InvoiceData inv,
+  ) {
+    return Container(
+      width: 794,
+      constraints: const BoxConstraints(minHeight: 1123),
+      padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 26),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x2B000000),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Top Accent Ribbon
+          Container(
+            height: 4,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF2563EB), Color(0xFF0D9488), Color(0xFFD97706)],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // SECTION 1: FINANCIAL INVOICE
+          _buildInvoiceHeader(centerInfo, isCompact: true),
+          const SizedBox(height: 10),
+          _buildInvoiceMetaSection(inv, isCompact: true),
+          const SizedBox(height: 10),
+          _buildItemsTable(inv),
+          const SizedBox(height: 10),
+          _buildFinancialSummary(inv, isCompact: true),
+          const SizedBox(height: 14),
+
+          // PERFORATED CUT LINE (قسيمة قص أمر تشغيل المصنع)
+          _buildPerforatedDivider(inv),
+          const SizedBox(height: 14),
+
+          // SECTION 2: FACTORY FULFILLMENT TABLE
+          _buildFulfillmentMetaBanner(inv, isCompact: true),
+          const SizedBox(height: 10),
+          _buildFulfillmentItemsTable(inv),
+          const SizedBox(height: 14),
+
+          // Bottom System Footer Line
+          _buildSystemFooterLine(
+            pageNumber: 1,
+            totalPages: 1,
+            customLabel: 'فاتورة مالية وقسيمة تشغيل المصنع • مستند معتمد',
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Perforated cut divider separating invoice from factory work order
+  Widget _buildPerforatedDivider(A4InvoiceData inv) {
+    return Row(
+      children: [
+        const Icon(Icons.content_cut_rounded, size: 16, color: Color(0xFF64748B)),
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: const Color(0xFFCBD5E1)),
+          ),
+          child: const Text(
+            'قص هنا: قسيمة أمر تشغيل وتجهيز طلبية المصنع / المعمل',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF334155),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const dashWidth = 5.0;
+              const dashSpace = 4.0;
+              final dashCount = (constraints.maxWidth / (dashWidth + dashSpace)).floor();
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: List.generate(
+                  dashCount,
+                  (_) => const SizedBox(
+                    width: dashWidth,
+                    height: 1.5,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(color: Color(0xFF94A3B8)),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ==========================================================================
+  // SHARED HEADER AND COMPONENTS
+  // ==========================================================================
+  Widget _buildInvoiceHeader(
+    CenterInfoModel center, {
+    bool isCompact = false,
+    String? subtitleOverride,
+  }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Right Side: Sawmill / Center Name & Info
+        // Right Side: Sawmill / Center Details
         Expanded(
           flex: 6,
           child: Column(
@@ -560,53 +1015,52 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
             children: [
               Text(
                 center.centerName,
-                style: const TextStyle(
-                  fontSize: 22,
+                style: TextStyle(
+                  fontSize: isCompact ? 18 : 22,
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFF0F172A),
+                  color: const Color(0xFF0F172A),
                   letterSpacing: -0.5,
                 ),
               ),
-              const SizedBox(height: 3),
-              if (center.slogan.isNotEmpty)
-                Text(
-                  center.slogan,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFFD97706),
-                  ),
+              const SizedBox(height: 2),
+              Text(
+                subtitleOverride ?? (center.slogan.isNotEmpty ? center.slogan : 'لإدارة وتشغيل الرخام والجرانيت الطبيعي والصناعي'),
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFD97706),
                 ),
-              const SizedBox(height: 6),
+              ),
+              const SizedBox(height: 5),
               Wrap(
-                spacing: 16,
-                runSpacing: 4,
+                spacing: 14,
+                runSpacing: 3,
                 children: [
                   if (center.ownerName.isNotEmpty)
-                    _buildHeaderBadge(Icons.person_outline_rounded, 'المالك/الإدارة: ${center.ownerName}'),
+                    _buildHeaderBadge(Icons.person_outline_rounded, 'الإدارة: ${center.ownerName}'),
                   if (center.commercialRegNo.isNotEmpty)
                     _buildHeaderBadge(Icons.receipt_long_rounded, 'س.ت: ${center.commercialRegNo}'),
                   if (center.taxId.isNotEmpty)
                     _buildHeaderBadge(Icons.shield_outlined, 'الرقم الضريبي: ${center.taxId}'),
                 ],
               ),
-              const SizedBox(height: 5),
+              const SizedBox(height: 4),
               Row(
                 children: [
-                  const Icon(Icons.phone_in_talk_rounded, size: 13, color: Color(0xFF2563EB)),
+                  const Icon(Icons.phone_in_talk_rounded, size: 12, color: Color(0xFF2563EB)),
                   const SizedBox(width: 4),
                   Text(
                     'هاتف: ${center.phone1}${center.phone2.isNotEmpty ? " • ${center.phone2}" : ""}',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
                   ),
                   if (center.address.isNotEmpty) ...[
-                    const SizedBox(width: 14),
-                    const Icon(Icons.location_on_outlined, size: 13, color: Color(0xFF64748B)),
+                    const SizedBox(width: 12),
+                    const Icon(Icons.location_on_outlined, size: 12, color: Color(0xFF64748B)),
                     const SizedBox(width: 3),
                     Flexible(
                       child: Text(
                         center.address,
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -617,12 +1071,12 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
           ),
         ),
 
-        // Left Side: Center Logo / Emblem
+        // Left Side: Center Logo
         Expanded(
           flex: 2,
           child: Align(
             alignment: AlignmentDirectional.centerEnd,
-            child: _buildCenterLogo(center),
+            child: _buildCenterLogo(center, isCompact: isCompact),
           ),
         ),
       ],
@@ -633,17 +1087,18 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 12, color: const Color(0xFF64748B)),
-        const SizedBox(width: 4),
+        Icon(icon, size: 11, color: const Color(0xFF64748B)),
+        const SizedBox(width: 3),
         Text(
           text,
-          style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+          style: const TextStyle(fontSize: 10.5, color: Color(0xFF334155), fontWeight: FontWeight.w600),
         ),
       ],
     );
   }
 
-  Widget _buildCenterLogo(CenterInfoModel center) {
+  Widget _buildCenterLogo(CenterInfoModel center, {bool isCompact = false}) {
+    final size = isCompact ? 68.0 : 84.0;
     final path = center.logoPath.trim();
     if (path.isNotEmpty) {
       if (path.startsWith('http://') || path.startsWith('https://')) {
@@ -651,10 +1106,10 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
           borderRadius: BorderRadius.circular(8),
           child: Image.network(
             path,
-            width: 90,
-            height: 90,
+            width: size,
+            height: size,
             fit: BoxFit.contain,
-            errorBuilder: (_, _, _) => _buildFallbackLogo(center),
+            errorBuilder: (_, _, _) => _buildFallbackLogo(center, size: size),
           ),
         );
       }
@@ -664,82 +1119,94 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
           borderRadius: BorderRadius.circular(8),
           child: Image.file(
             file,
-            width: 90,
-            height: 90,
+            width: size,
+            height: size,
             fit: BoxFit.contain,
-            errorBuilder: (_, _, _) => _buildFallbackLogo(center),
+            errorBuilder: (_, _, _) => _buildFallbackLogo(center, size: size),
           ),
         );
       }
     }
-    return _buildFallbackLogo(center);
+    return _buildFallbackLogo(center, size: size);
   }
 
-  Widget _buildFallbackLogo(CenterInfoModel center) {
+  Widget _buildFallbackLogo(CenterInfoModel center, {double size = 84.0}) {
     return Container(
-      width: 86,
-      height: 86,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: const [
-          Icon(Icons.domain_rounded, size: 36, color: Color(0xFF0F172A)),
-          SizedBox(height: 4),
+          Icon(Icons.domain_rounded, size: 30, color: Color(0xFF0F172A)),
+          SizedBox(height: 2),
           Text(
             'شعار المركز',
-            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+            style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
           ),
         ],
       ),
     );
   }
 
-  /// Invoice Title Banner & Metadata Information Grid
-  Widget _buildInvoiceMetaSection(A4InvoiceData inv) {
+  /// Official Invoice Title Banner & Metadata Box (Light Modern Aesthetic)
+  Widget _buildInvoiceMetaSection(A4InvoiceData inv, {bool isCompact = false}) {
+    final isPaid = inv.paymentStatus.contains('مدفوعة') || inv.paymentStatus.contains('تم الدفع');
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
       ),
       child: Column(
         children: [
-          // Banner Title
+          // Banner Title Row (Light header, dark bold text)
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+            padding: EdgeInsets.symmetric(
+              vertical: isCompact ? 6 : 8,
+              horizontal: 14,
+            ),
             decoration: const BoxDecoration(
-              color: Color(0xFF0F172A),
+              color: Color(0xFFF1F5F9),
               borderRadius: BorderRadius.vertical(top: Radius.circular(7)),
+              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  inv.invoiceTypeTitle,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                Row(
+                  children: [
+                    const Icon(Icons.receipt_long_rounded, size: 16, color: Color(0xFF2563EB)),
+                    const SizedBox(width: 8),
+                    Text(
+                      inv.invoiceTypeTitle,
+                      style: TextStyle(
+                        fontSize: isCompact ? 13 : 14,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ],
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
-                    color: inv.paymentStatus.contains('مدفوعة')
-                        ? const Color(0xFF10B981)
-                        : const Color(0xFFEF4444),
-                    borderRadius: BorderRadius.circular(4),
+                    color: isPaid ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: isPaid ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5),
+                    ),
                   ),
                   child: Text(
                     inv.paymentStatus,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+                    style: TextStyle(
+                      color: isPaid ? const Color(0xFF15803D) : const Color(0xFFB91C1C),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),
@@ -749,7 +1216,10 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
 
           // Metadata Grid
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: isCompact ? 8 : 10,
+            ),
             child: Row(
               children: [
                 Expanded(
@@ -784,49 +1254,55 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            fontSize: 10,
+            color: Color(0xFF475569),
+            fontWeight: FontWeight.bold,
+          ),
         ),
         const SizedBox(height: 2),
         Text(
           value,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: 11.5,
             fontWeight: isPrimary ? FontWeight.w900 : FontWeight.bold,
-            color: isPrimary ? const Color(0xFF0F172A) : const Color(0xFF334155),
+            color: isPrimary ? const Color(0xFF0F172A) : const Color(0xFF1E293B),
           ),
         ),
       ],
     );
   }
 
-  /// 2. INVOICE BODY: Structured Table Layout
+  // ==========================================================================
+  // INVOICE TABLE (LIGHT HEADER, HIGH CONTRAST)
+  // ==========================================================================
   Widget _buildItemsTable(A4InvoiceData inv) {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
         borderRadius: BorderRadius.circular(6),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(5),
         child: Table(
           columnWidths: const {
-            0: FixedColumnWidth(36), // #
-            1: FlexColumnWidth(3.2), // Description
-            2: FlexColumnWidth(1.8), // Specs / Grade
-            3: FlexColumnWidth(2.0), // Dimensions
-            4: FlexColumnWidth(1.8), // Qty / Area
+            0: FixedColumnWidth(34), // #
+            1: FlexColumnWidth(3.0), // Description
+            2: FlexColumnWidth(1.8), // Specs
+            3: FlexColumnWidth(1.9), // Dimensions
+            4: FlexColumnWidth(1.8), // Qty
             5: FlexColumnWidth(1.6), // Unit Price
-            6: FlexColumnWidth(2.2), // Services
-            7: FlexColumnWidth(2.0), // Total
+            6: FlexColumnWidth(2.0), // Services
+            7: FlexColumnWidth(1.9), // Total
           },
           border: TableBorder.all(
-            color: const Color(0xFFE2E8F0),
+            color: const Color(0xFFCBD5E1),
             width: 1,
           ),
           children: [
-            // Table Header Row
+            // Table Header Row: Light slate background, crisp dark text
             TableRow(
-              decoration: const BoxDecoration(color: Color(0xFF1E293B)),
+              decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
               children: const [
                 _TableHeaderCell('#'),
                 _TableHeaderCell('البيان والمادة'),
@@ -839,7 +1315,7 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
               ],
             ),
 
-            // Table Data Rows
+            // Table Data Rows: Alternating white and soft tint
             ...inv.items.map((it) {
               final isEven = it.index % 2 == 0;
               return TableRow(
@@ -869,126 +1345,81 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
     );
   }
 
-  /// 3. Financial Summary & Totals Box
-  Widget _buildFinancialSummary(A4InvoiceData inv) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Left Column: Terms, Conditions, Notes, Delivery Info
-        Expanded(
-          flex: 6,
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF475569)),
-                    SizedBox(width: 6),
-                    Text(
-                      'شروط وملاحظات الفاتورة:',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Color(0xFF1E293B)),
+  // ==========================================================================
+  // FINANCIAL SUMMARY (TERMS/NOTES BOX REMOVED AS REQUESTED)
+  // ==========================================================================
+  Widget _buildFinancialSummary(A4InvoiceData inv, {bool isCompact = false}) {
+    return Align(
+      alignment: AlignmentDirectional.centerEnd,
+      child: Container(
+        width: 380,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
+        ),
+        child: Column(
+          children: [
+            _buildTotalRow('المجموع الفرعي للأصناف:', '${inv.subtotal.fmt} ${AppCurrency.symbol(inv.currency)}'),
+            if (inv.servicesTotal > 0)
+              _buildTotalRow('إجمالي الخدمات الإضافية:', '+ ${inv.servicesTotal.fmt} ${AppCurrency.symbol(inv.currency)}'),
+            if (inv.shippingFee > 0)
+              _buildTotalRow('أجور النقل والتوصيل:', '+ ${inv.shippingFee.fmt} ${AppCurrency.symbol(inv.currency)}'),
+            if (inv.discount > 0)
+              _buildTotalRow(
+                'الخصم المسموح به:',
+                '- ${inv.discount.fmt} ${AppCurrency.symbol(inv.currency)}',
+                color: const Color(0xFF16A34A),
+              ),
+
+            // Grand Total: Soft light amber highlight with bold dark text
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFEF3C7),
+                border: Border.symmetric(
+                  horizontal: BorderSide(color: Color(0xFFFDE68A), width: 1.2),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'الإجمالي النهائي الصافي:',
+                    style: TextStyle(
+                      color: Color(0xFF78350F),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12.5,
                     ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  '• البضاعة المجهزة بموجب مقاسات خاصة لا ترد ولا تستبدل بعد القص أو التفصيل.',
-                  style: TextStyle(fontSize: 10, color: Color(0xFF64748B)),
-                ),
-                const Text(
-                  '• يرجى معاينة المواد والتأكد من مطابقتها قبل مغادرة المستودع أو التوقيع على الاستلام.',
-                  style: TextStyle(fontSize: 10, color: Color(0xFF64748B)),
-                ),
-                if (inv.notes.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF3C7),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      'ملاحظات إضافية: ${inv.notes}',
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
+                  ),
+                  Text(
+                    '${inv.grandTotal.fmt} ${AppCurrency.symbol(inv.currency)}',
+                    style: const TextStyle(
+                      color: Color(0xFF92400E),
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15.5,
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
-          ),
-        ),
 
-        const SizedBox(width: 20),
-
-        // Right Column: Structured Financial Totals
-        Expanded(
-          flex: 5,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
+            _buildTotalRow(
+              'المدفوع / العربون المقبوض:',
+              '${inv.paidAmount.fmt} ${AppCurrency.symbol(inv.currency)}',
+              isBold: true,
             ),
-            child: Column(
-              children: [
-                _buildTotalRow('المجموع الفرعي للأصناف:', '${inv.subtotal.fmt} ${AppCurrency.symbol(inv.currency)}'),
-                if (inv.servicesTotal > 0)
-                  _buildTotalRow('إجمالي الخدمات الإضافية:', '+ ${inv.servicesTotal.fmt} ${AppCurrency.symbol(inv.currency)}'),
-                if (inv.shippingFee > 0)
-                  _buildTotalRow('أجور النقل والتوصيل:', '+ ${inv.shippingFee.fmt} ${AppCurrency.symbol(inv.currency)}'),
-                if (inv.discount > 0)
-                  _buildTotalRow(
-                    'الخصم المسموح / بتر القروش:',
-                    '- ${inv.discount.fmt} ${AppCurrency.symbol(inv.currency)}',
-                    color: const Color(0xFF16A34A),
-                  ),
-                // Grand Total Highlight
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  color: const Color(0xFF0F172A),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'الإجمالي النهائي الصافي:',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                      Text(
-                        '${inv.grandTotal.fmt} ${AppCurrency.symbol(inv.currency)}',
-                        style: const TextStyle(
-                          color: Color(0xFFFBBF24),
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                _buildTotalRow(
-                  'المدفوع / العربون المقبوض:',
-                  '${inv.paidAmount.fmt} ${AppCurrency.symbol(inv.currency)}',
-                  isBold: true,
-                ),
-                _buildTotalRow(
-                  inv.partyRole == 'المورد'
-                      ? 'المتبقي لصالح المورد:'
-                      : 'المتبقي بذمة العميل:',
-                  '${inv.remainingBalance.fmt} ${AppCurrency.symbol(inv.currency)}',
-                  isBold: true,
-                  color: inv.remainingBalance > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
-                ),
-              ],
+            _buildTotalRow(
+              inv.partyRole == 'المورد'
+                  ? 'المتبقي لصالح المورد:'
+                  : 'المتبقي بذمة العميل:',
+              '${inv.remainingBalance.fmt} ${AppCurrency.symbol(inv.currency)}',
+              isBold: true,
+              color: inv.remainingBalance > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -999,14 +1430,14 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
     Color? color,
   }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             label,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 10.5,
               color: const Color(0xFF475569),
               fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
             ),
@@ -1014,7 +1445,7 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
           Text(
             value,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11.5,
               fontWeight: isBold ? FontWeight.w900 : FontWeight.bold,
               color: color ?? const Color(0xFF0F172A),
             ),
@@ -1024,39 +1455,203 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
     );
   }
 
-  /// 4. Signatures & Approvals Section
-  Widget _buildSignaturesFooter(CenterInfoModel center) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        _buildSignatureBox('توقيع المستلم / العميل', 'الاسم: .......................................'),
-        _buildSignatureBox('أمين الصندوق والمحاسبة', 'التوقيع: ...................................'),
-        _buildSignatureBox('ختم وتوقيع إدارة المركز والمنشار', center.centerName),
-      ],
-    );
-  }
-
-  Widget _buildSignatureBox(String title, String subtitle) {
+  // ==========================================================================
+  // FACTORY FULFILLMENT COMPONENTS (WORK ORDER FOR WORKSHOP/SAWMILL)
+  // ==========================================================================
+  Widget _buildFulfillmentMetaBanner(A4InvoiceData inv, {bool isCompact = false}) {
     return Container(
-      width: 210,
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: const Color(0xFFF0FDFA), // Light mint/teal
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF99F6E4)),
       ),
       child: Column(
         children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
-            textAlign: TextAlign.center,
+          // Work Order Header Bar
+          Container(
+            padding: EdgeInsets.symmetric(
+              vertical: isCompact ? 6 : 8,
+              horizontal: 14,
+            ),
+            decoration: const BoxDecoration(
+              color: Color(0xFFCCFBF1),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(7)),
+              border: Border(bottom: BorderSide(color: Color(0xFF99F6E4))),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.handyman_rounded, size: 16, color: Color(0xFF0F766E)),
+                    const SizedBox(width: 8),
+                    Text(
+                      inv.fulfillmentTitle,
+                      style: TextStyle(
+                        fontSize: isCompact ? 13 : 14,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF0F766E),
+                      ),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFF0D9488)),
+                  ),
+                  child: Text(
+                    'أمر تشغيل #WO-${inv.invoiceNo}',
+                    style: const TextStyle(
+                      color: Color(0xFF0F766E),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 36), // Space for physical signature / seal
+
+          // Work Order Info Grid
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: isCompact ? 8 : 10,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildMetaItem('رقم الفاتورة المرجعية:', inv.invoiceNo, isPrimary: true),
+                ),
+                Expanded(
+                  child: _buildMetaItem('الجهة / العميل:', inv.partyName, isPrimary: true),
+                ),
+                Expanded(
+                  child: _buildMetaItem(
+                    'تاريخ الإرسال للورشة:',
+                    intl.DateFormat('yyyy-MM-dd').format(inv.date),
+                  ),
+                ),
+                Expanded(
+                  child: _buildMetaItem(
+                    'طريقة التسليم:',
+                    inv.isGoodsDelivered ? 'شحن واصل للعنوان' : 'استلام من أرض المصنع',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Factory Fulfillment Table (Repeats line items with physical cutting & execution checklist)
+  Widget _buildFulfillmentItemsTable(A4InvoiceData inv) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFF99F6E4), width: 1.2),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(5),
+        child: Table(
+          columnWidths: const {
+            0: FixedColumnWidth(34), // #
+            1: FlexColumnWidth(3.0), // Description
+            2: FlexColumnWidth(1.8), // Specs / Grade
+            3: FlexColumnWidth(1.9), // Dimensions
+            4: FlexColumnWidth(1.8), // Qty / Area
+            5: FlexColumnWidth(2.2), // Operations / Services
+            6: FlexColumnWidth(2.0), // Workshop Checklist
+            7: FlexColumnWidth(1.9), // Cutting Notes
+          },
+          border: TableBorder.all(
+            color: const Color(0xFFCCFBF1),
+            width: 1,
+          ),
+          children: [
+            // Table Header: Light mint/teal background with crisp dark teal text
+            TableRow(
+              decoration: const BoxDecoration(color: Color(0xFFCCFBF1)),
+              children: const [
+                _TableHeaderCell('#', textColor: Color(0xFF0F766E)),
+                _TableHeaderCell('البيان والمادة المطلوبة', textColor: Color(0xFF0F766E)),
+                _TableHeaderCell('المواصفات والنوع', textColor: Color(0xFF0F766E)),
+                _TableHeaderCell('الأبعاد والمقاسات (سم)', textColor: Color(0xFF0F766E)),
+                _TableHeaderCell('الكمية / المساحة', textColor: Color(0xFF0F766E)),
+                _TableHeaderCell('عمليات التشغيل والقص', textColor: Color(0xFF0F766E)),
+                _TableHeaderCell('حالة التجهيز بالمصنع', textColor: Color(0xFF0F766E)),
+                _TableHeaderCell('ملاحظات القص والتنفيذ', textColor: Color(0xFF0F766E)),
+              ],
+            ),
+
+            // Repeated Data Rows with physical fulfillment checklist
+            ...inv.items.map((it) {
+              final isEven = it.index % 2 == 0;
+              return TableRow(
+                decoration: BoxDecoration(
+                  color: isEven ? const Color(0xFFF0FDFA) : Colors.white,
+                ),
+                children: [
+                  _TableCell(it.index.toString(), isCenter: true),
+                  _TableCell(it.description, isBold: true),
+                  _TableCell(it.gradeAndSpecs),
+                  _TableCell(it.dimensionsText, isCenter: true, isBold: true),
+                  _TableCell(it.quantityText, isCenter: true, isBold: true),
+                  _TableCell(it.servicesText, isSmall: true),
+                  // Physical Checklist Boxes for Factory Craftsmen
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text('☐ تم القص', style: TextStyle(fontSize: 9.5, color: Color(0xFF0F172A), fontWeight: FontWeight.bold)),
+                        Text('☐ تم الفرز والجلي', style: TextStyle(fontSize: 9.5, color: Color(0xFF0F172A), fontWeight: FontWeight.bold)),
+                        Text('☐ جاهز للتسليم', style: TextStyle(fontSize: 9.5, color: Color(0xFF0D9488), fontWeight: FontWeight.w900)),
+                      ],
+                    ),
+                  ),
+                  _TableCell('جاهز للتنفيذ', isSmall: true, isCenter: true, color: const Color(0xFF64748B)),
+                ],
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// System verification line at the bottom of the page (Includes "Sh Ab'ad" and phone 0931691900)
+  Widget _buildSystemFooterLine({
+    required int pageNumber,
+    required int totalPages,
+    String? customLabel,
+  }) {
+    return Container(
+      padding: const EdgeInsets.only(top: 8),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
           Text(
-            subtitle,
-            style: const TextStyle(fontSize: 9, color: Color(0xFF94A3B8)),
-            textAlign: TextAlign.center,
+            customLabel ?? 'برنامج Sh Ab\'ad • هاتف: 0931691900 • مستند معتمد',
+            style: const TextStyle(
+              fontSize: 9.5,
+              color: Color(0xFF64748B),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Text(
+            totalPages > 1
+                ? 'صفحة $pageNumber من $totalPages • تاريخ الطباعة: ${intl.DateFormat("yyyy-MM-dd HH:mm").format(DateTime.now())}'
+                : 'تاريخ الطباعة: ${intl.DateFormat("yyyy-MM-dd HH:mm").format(DateTime.now())}',
+            style: const TextStyle(fontSize: 9.5, color: Color(0xFF64748B)),
           ),
         ],
       ),
@@ -1066,19 +1661,20 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
 
 class _TableHeaderCell extends StatelessWidget {
   final String text;
-  const _TableHeaderCell(this.text);
+  final Color? textColor;
+  const _TableHeaderCell(this.text, {this.textColor});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 5),
       child: Text(
         text,
         textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w900,
+          color: textColor ?? const Color(0xFF0F172A),
         ),
       ),
     );
@@ -1103,14 +1699,14 @@ class _TableCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 5),
       child: Text(
         text,
         textAlign: isCenter ? TextAlign.center : TextAlign.start,
         style: TextStyle(
-          fontSize: isSmall ? 9.5 : 11,
-          fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-          color: color ?? const Color(0xFF334155),
+          fontSize: isSmall ? 9.0 : 10.5,
+          fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+          color: color ?? const Color(0xFF0F172A),
         ),
       ),
     );
