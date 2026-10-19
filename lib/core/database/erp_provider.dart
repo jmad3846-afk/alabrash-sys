@@ -2744,8 +2744,12 @@ class ERPProvider extends ChangeNotifier {
     if (inv.items.isNotEmpty) {
       // 1. Validation phase
       for (final item in inv.items) {
-        if (item.sourceType == 'تفصيل بسيط' || item.sourceType == 'تفصيل معقد') {
-          final category = item.sourceType;
+        if (item.sourceType == 'بيع خياطة بسيطة' ||
+            item.sourceType == 'تفصيل بسيط' ||
+            item.sourceType == 'بيع خياطة معقدة' ||
+            item.sourceType == 'تفصيل معقد') {
+          final isSimple = item.sourceType == 'بيع خياطة بسيطة' || item.sourceType == 'تفصيل بسيط';
+          final category = isSimple ? 'تفصيل بسيط' : 'تفصيل معقد';
           final isOpeningStockItem = openingEntry.openingStock.any(
             (o) => o.category == category && o.typeId == item.sourceId,
           );
@@ -2753,19 +2757,19 @@ class ERPProvider extends ChangeNotifier {
               (!openingEntry.isLocked || !openingEntry.openingStockApplied)) {
             return false;
           }
-          final items = item.sourceType == 'تفصيل بسيط' ? simpleTailorings : complexTailorings;
+          final items = isSimple ? simpleTailorings : complexTailorings;
           final matches = items.where((t) => t.id == item.sourceId).toList();
           if (matches.isEmpty || item.quantity <= 0 || matches.first.quantity + 0.0001 < item.quantity) {
             return false;
           }
-        } else if (item.sourceType == 'مواد خام') {
+        } else if (item.sourceType == 'بيع مواد خام من المعمل' || item.sourceType == 'مواد خام') {
           if (item.sourceId.isNotEmpty) {
             final stock = workshopStock.where((w) => w.id == item.sourceId).toList();
             if (stock.isEmpty || stock.first.availableQty + 0.0001 < item.quantity) {
               return false;
             }
           }
-        } else if (item.sourceType == 'طلبية معمل') {
+        } else if (item.sourceType == 'طلب معمل' || item.sourceType == 'طلبية معمل') {
           if (item.depositAmount > 0 && item.sourceId.isNotEmpty) {
             final orders = workshopOrders.where((o) => o.id == item.sourceId).toList();
             if (orders.isNotEmpty && cashOf('order', inv.currency) + 0.0001 < item.depositAmount) {
@@ -2778,37 +2782,66 @@ class ERPProvider extends ChangeNotifier {
       // 2. Perform deductions and status updates
       double totalScrapValue = 0.0;
       for (final item in inv.items) {
-        if (item.sourceType == 'تفصيل بسيط' || item.sourceType == 'تفصيل معقد') {
-          final items = item.sourceType == 'تفصيل بسيط' ? simpleTailorings : complexTailorings;
-          final matches = items.where((t) => t.id == item.sourceId).toList();
+        if (item.sourceType == 'بيع خياطة بسيطة' || item.sourceType == 'تفصيل بسيط') {
+          final matches = simpleTailorings.where((t) => t.id == item.sourceId).toList();
+          if (matches.isNotEmpty) {
+            final t = matches.first;
+            t.quantity = (t.quantity - item.quantity).clamp(0.0, double.infinity);
+            if (item.sourceLineItemId.isNotEmpty) {
+              final liMatches = t.lineItems.where((li) => li.id == item.sourceLineItemId).toList();
+              if (liMatches.isNotEmpty) {
+                final li = liMatches.first;
+                final pieceArea = (li.lengthCm > 0 && li.widthCm > 0)
+                    ? (li.lengthCm / 100.0) * (li.widthCm / 100.0) * (li.category == 'متر مكعب' && li.heightCm > 0 ? li.heightCm / 100.0 : 1.0)
+                    : 0.0;
+                if (pieceArea > 0) {
+                  li.quantity = (li.quantity - (item.quantity / pieceArea)).clamp(0.0, double.infinity);
+                } else {
+                  li.quantity = (li.quantity - item.quantity).clamp(0.0, double.infinity);
+                }
+              }
+            }
+          }
+        } else if (item.sourceType == 'بيع خياطة معقدة' || item.sourceType == 'تفصيل معقد') {
+          final matches = complexTailorings.where((t) => t.id == item.sourceId).toList();
           if (matches.isNotEmpty) {
             matches.first.quantity = (matches.first.quantity - item.quantity).clamp(0.0, double.infinity);
           }
-        } else if (item.sourceType == 'مواد خام') {
+        } else if (item.sourceType == 'بيع مواد خام من المعمل' || item.sourceType == 'مواد خام') {
           if (item.sourceId.isNotEmpty) {
             final matches = workshopStock.where((w) => w.id == item.sourceId).toList();
             if (matches.isNotEmpty) {
               matches.first.availableQty = (matches.first.availableQty - item.quantity).clamp(0.0, double.infinity);
             }
           }
-        } else if (item.sourceType == 'قطع زائدة') {
+        } else if (item.sourceType == 'بيع قطع إضافية' || item.sourceType == 'قطع زائدة') {
           if (item.sourceId.isNotEmpty) {
             final matches = scrapItems.where((s) => s.id == item.sourceId).toList();
             if (matches.isNotEmpty) matches.first.isSold = true;
           }
           totalScrapValue += item.grandTotal;
-        } else if (item.sourceType == 'طلبية معمل') {
+        } else if (item.sourceType == 'طلب معمل' || item.sourceType == 'طلبية معمل') {
           if (item.sourceId.isNotEmpty) {
             final orders = workshopOrders.where((o) => o.id == item.sourceId).toList();
             if (orders.isNotEmpty) {
               orders.first.status = 'مكتملة ومرحلة';
             }
           }
-          if (item.depositAmount > 0) {
-            takeCash('order', inv.currency, item.depositAmount);
-            addCash('main', inv.currency, item.depositAmount);
-          }
         }
+      }
+
+      // Complete any associated order linked via inv.sourceId or by client
+      if (inv.sourceId.isNotEmpty) {
+        final orders = workshopOrders.where((o) => o.id == inv.sourceId).toList();
+        if (orders.isNotEmpty) {
+          orders.first.status = 'مكتملة ومرحلة';
+        }
+      }
+
+      // Transfer deposit from Orders Safe to Main Safe
+      if (inv.depositDeducted > 0) {
+        takeCash('order', inv.currency, inv.depositDeducted);
+        addCash('main', inv.currency, inv.depositDeducted);
       }
 
       if (deductStockId.isNotEmpty && deductQty > 0) {
@@ -2830,6 +2863,33 @@ class ERPProvider extends ChangeNotifier {
         addCash('main', inv.currency, inv.cashPaidNow);
       }
 
+      // Ensure client account appears in Financials under Factory Financials - Customers
+      if (inv.clientName.trim().isNotEmpty) {
+        final existingClient = clients
+            .where((c) =>
+                c.name.trim() == inv.clientName.trim() &&
+                c.clientType == 'زبون معمل')
+            .firstOrNull;
+        final ClientModel client;
+        if (existingClient == null) {
+          client = ClientModel(
+            id: 'cli_wrk_${DateTime.now().millisecondsSinceEpoch}',
+            name: inv.clientName.trim(),
+            phone: '',
+            location: '',
+            clientType: 'زبون معمل',
+            debtBalance: 0.0,
+            debtBalanceSyp: 0.0,
+          );
+          clients.add(client);
+        } else {
+          client = existingClient;
+        }
+        if (inv.remainingBalance > 0.01) {
+          client.addDebt(inv.currency, inv.remainingBalance);
+        }
+      }
+
       notifyListeners();
       saveToDisk();
       return true;
@@ -2837,12 +2897,10 @@ class ERPProvider extends ChangeNotifier {
 
     // Legacy single-item fallback
     WorkshopTailoringModel? tailoringItem;
-    if (inv.sourceId.isNotEmpty &&
-        (inv.sourceType == 'تفصيل بسيط' ||
-            inv.sourceType == 'تفصيل معقد')) {
-      final category = inv.sourceType == 'تفصيل بسيط'
-          ? 'تفصيل بسيط'
-          : 'تفصيل معقد';
+    final isSimple = inv.sourceType == 'بيع خياطة بسيطة' || inv.sourceType == 'تفصيل بسيط';
+    final isComplex = inv.sourceType == 'بيع خياطة معقدة' || inv.sourceType == 'تفصيل معقد';
+    if (inv.sourceId.isNotEmpty && (isSimple || isComplex)) {
+      final category = isSimple ? 'تفصيل بسيط' : 'تفصيل معقد';
       final isOpeningStockItem = openingEntry.openingStock.any(
         (item) => item.category == category && item.typeId == inv.sourceId,
       );
@@ -2850,9 +2908,7 @@ class ERPProvider extends ChangeNotifier {
           (!openingEntry.isLocked || !openingEntry.openingStockApplied)) {
         return false;
       }
-      final items = inv.sourceType == 'تفصيل بسيط'
-          ? simpleTailorings
-          : complexTailorings;
+      final items = isSimple ? simpleTailorings : complexTailorings;
       final matches = items.where((item) => item.id == inv.sourceId).toList();
       if (matches.isEmpty ||
           inv.sourceQuantity <= 0 ||
@@ -2867,7 +2923,8 @@ class ERPProvider extends ChangeNotifier {
           .toList();
       if (stock.isEmpty || stock.first.availableQty < deductQty) return false;
     }
-    if (inv.sourceType == 'طلبية معمل' &&
+    final isOrd = inv.sourceType == 'طلب معمل' || inv.sourceType == 'طلبية معمل';
+    if (isOrd &&
         inv.depositDeducted > 0 &&
         inv.sourceId.isNotEmpty) {
       final orders = workshopOrders
@@ -2880,9 +2937,9 @@ class ERPProvider extends ChangeNotifier {
     }
     workshopInvoices.add(inv);
     if (tailoringItem != null) {
-      tailoringItem.quantity -= inv.sourceQuantity;
+      tailoringItem.quantity = (tailoringItem.quantity - inv.sourceQuantity).clamp(0.0, double.infinity);
     }
-    if (inv.sourceType == 'قطع زائدة') {
+    if (inv.sourceType == 'بيع قطع إضافية' || inv.sourceType == 'قطع زائدة') {
       if (inv.sourceId.isNotEmpty) {
         final matches = scrapItems.where((s) => s.id == inv.sourceId).toList();
         if (matches.isNotEmpty) matches.first.isSold = true;
@@ -2891,7 +2948,7 @@ class ERPProvider extends ChangeNotifier {
     } else {
       addCash('main', inv.currency, inv.cashPaidNow);
       if (inv.depositDeducted > 0) {
-        if (inv.sourceType == 'طلبية معمل' && inv.sourceId.isNotEmpty) {
+        if (isOrd && inv.sourceId.isNotEmpty) {
           final orders = workshopOrders
               .where((o) => o.id == inv.sourceId)
               .toList();
@@ -2912,6 +2969,33 @@ class ERPProvider extends ChangeNotifier {
             .clamp(0.0, double.infinity);
       }
     }
+
+    if (inv.clientName.trim().isNotEmpty) {
+      final existingClient = clients
+          .where((c) =>
+              c.name.trim() == inv.clientName.trim() &&
+              c.clientType == 'زبون معمل')
+          .firstOrNull;
+      final ClientModel client;
+      if (existingClient == null) {
+        client = ClientModel(
+          id: 'cli_wrk_${DateTime.now().millisecondsSinceEpoch}',
+          name: inv.clientName.trim(),
+          phone: '',
+          location: '',
+          clientType: 'زبون معمل',
+          debtBalance: 0.0,
+          debtBalanceSyp: 0.0,
+        );
+        clients.add(client);
+      } else {
+        client = existingClient;
+      }
+      if (inv.remainingBalance > 0.01) {
+        client.addDebt(inv.currency, inv.remainingBalance);
+      }
+    }
+
     notifyListeners();
     saveToDisk();
     return true;
@@ -3417,6 +3501,10 @@ class ERPProvider extends ChangeNotifier {
         isCashInvoice: old.isCashInvoice,
         currency: old.currency,
       );
+    }
+    final client = clients.where((c) => c.name.trim() == inv.clientName.trim() && c.clientType == 'زبون معمل').firstOrNull;
+    if (client != null) {
+      client.reduceDebt(inv.currency, take);
     }
     notifyListeners();
     saveToDisk();

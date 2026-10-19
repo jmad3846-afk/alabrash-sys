@@ -20,6 +20,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _financialsTabController;
   String _retailQuery = '';
+  int _retailSubView = 0;
 
   @override
   void initState() {
@@ -1248,7 +1249,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
             color: AppColors.panelSurface,
             child: const TabBar(
               tabs: [
-                Tab(text: 'زبائن الجزافي (Retail Clients)'),
+                Tab(text: 'زبائن المعمل (الطلبيات والجزافي)'),
                 Tab(text: 'المشاريع (Projects)'),
               ],
             ),
@@ -1341,15 +1342,35 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   }
 
   Widget _buildRetailFinances(ERPProvider erp) {
+    final q = _retailQuery;
+    final clients = erp.clients.where((c) {
+      final isWorkshopClient = c.clientType == 'زبون معمل' ||
+          erp.workshopInvoices.any((i) => i.clientName.trim() == c.name.trim());
+      if (!isWorkshopClient) return false;
+      if (q.isEmpty) return true;
+      return c.name.contains(q) || c.phone.contains(q);
+    }).toList();
+
+    bool matchesInv(WorkshopInvoiceModel i) {
+      if (q.isEmpty) return true;
+      final hay =
+          '${i.invoiceNo} ${i.clientName} ${i.itemDescription} ${i.sourceType} ${i.photoPath} ${i.services.map((s) => '${s.serviceName} ${s.notes}').join(' ')}';
+      return hay.contains(q);
+    }
+
+    final invs = erp.workshopInvoices
+        .where((i) => i.projectId.isEmpty && matchesInv(i))
+        .toList();
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Search across all invoice fields.
+          // Search across clients and invoice fields.
           TextField(
             decoration: const InputDecoration(
-              labelText: 'بحث في كل حقول الفواتير...',
+              labelText: 'بحث في الزبائن أو الفواتير...',
               prefixIcon: Icon(Icons.search),
             ),
             onChanged: (v) => setState(() => _retailQuery = v.trim()),
@@ -1357,116 +1378,290 @@ class _FinancialsScreenState extends State<FinancialsScreen>
           const SizedBox(height: 12),
           _buildRetailStats(erp),
           const SizedBox(height: 12),
-          Expanded(
-            child: Builder(
-              builder: (_) {
-                final q = _retailQuery;
-                bool matches(WorkshopInvoiceModel i) {
-                  if (q.isEmpty) return true;
-                  final hay =
-                      '${i.invoiceNo} ${i.clientName} ${i.itemDescription} ${i.sourceType} ${i.photoPath} ${i.services.map((s) => '${s.serviceName} ${s.notes}').join(' ')}';
-                  return hay.contains(q);
-                }
 
-                final invs = erp.workshopInvoices
-                    .where((i) => i.projectId.isEmpty && matches(i))
-                    .toList();
-                if (invs.isEmpty) {
-                  return const Card(
-                    child: Center(child: Text('لا توجد فواتير مطابقة.')),
-                  );
-                }
-                return Card(
-                  child: ListView.separated(
-                    itemCount: invs.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, idx) {
-                      final inv = invs[idx];
-                      return ExpansionTile(
-                        leading: CurrencyBadge(currency: inv.currency),
-                        title: Text(
-                          '${inv.invoiceNo} • ${inv.clientName}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+          // Sub-view switch: Customer Accounts vs Invoice Ledger
+          Row(
+            children: [
+              ChoiceChip(
+                selected: _retailSubView == 0,
+                onSelected: (_) => setState(() => _retailSubView = 0),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.people_outline, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'حسابات زبائن المعمل (${clients.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                selected: _retailSubView == 1,
+                onSelected: (_) => setState(() => _retailSubView = 1),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.receipt_long_outlined, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'سجل فواتير المعمل (${invs.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          Expanded(
+            child: _retailSubView == 0
+                ? (clients.isEmpty
+                    ? const Card(
+                        child: Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Text('لا توجد حسابات زبائن معمل مطابقة.'),
+                          ),
                         ),
-                        subtitle: Text(
-                          '${inv.itemDescription} • الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المتبقي للتحصيل: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              tooltip: 'معاينة طباعة A4 (Print Preview)',
-                              icon: const Icon(
-                                Icons.picture_as_pdf_rounded,
-                                color: Color(0xFF2563EB),
-                              ),
-                              onPressed: () {
-                                A4InvoicePrintDialog.show(
-                                  context,
-                                  invoiceData:
-                                      A4InvoiceData.fromWorkshopInvoice(inv),
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 4),
-                            inv.remainingBalance > 0.01
-                                ? ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.successGreen,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                      ),
-                                    ),
-                                    onPressed: () => _showMoneyDialog(
-                                      title: 'تحصيل فاتورة ${inv.invoiceNo}',
-                                      actionLabel: 'تأكيد التحصيل',
-                                      max: inv.remainingBalance,
-                                      currency: inv.currency,
-                                      onConfirm: (a) =>
-                                          erp.collectWorkshopInvoice(inv, a),
-                                    ),
-                                    child: const Text('تحصيل'),
-                                  )
-                                : const Chip(label: Text('خالصة')),
-                          ],
-                        ),
-                        children: [
-                          if (inv.photoPath.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 4,
-                              ),
-                              child: AppImagePreviewCard(
-                                imagePath: inv.photoPath,
-                                title:
-                                    'صورة الفاتورة المرفقة (${inv.invoiceNo})',
-                              ),
-                            ),
-                          ...inv.services.map(
-                            (s) => ListTile(
-                              dense: true,
-                              title: Text('خدمة: ${s.serviceName}'),
-                              trailing: Text(
-                                '${s.price}\$',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
+                      )
+                    : ListView.builder(
+                        itemCount: clients.length,
+                        itemBuilder: (_, idx) {
+                          final c = clients[idx];
+                          final clientInvs = erp.workshopInvoices
+                              .where((i) => i.clientName.trim() == c.name.trim())
+                              .toList();
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: ExpansionTile(
+                              leading: CircleAvatar(
+                                backgroundColor: AppColors.chipBgBlue,
+                                child: Text(
+                                  c.name.isEmpty ? '؟' : c.name[0],
+                                  style: const TextStyle(
+                                    color: AppColors.accentPrimary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
+                              title: Text(
+                                'الزبون: ${c.name}',
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Text(
+                                'الرصيد المتبقي عليه: ${c.dualDebt} • الفواتير: ${clientInvs.length}${c.phone.isNotEmpty ? " • الهاتف: ${c.phone}" : ""}',
+                              ),
+                              trailing: _buildDualCollectButton(
+                                erp,
+                                c.name,
+                                c.debtBalance,
+                                c.debtBalanceSyp,
+                                (cur, amt) => erp.collectClientDebt(c, amt, cur),
+                              ),
+                              children: [
+                                if (clientInvs.isEmpty)
+                                  const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: Text('لا توجد فواتير مسجلة لهذا الزبون.'),
+                                  )
+                                else
+                                  ...clientInvs.map(
+                                    (inv) => ExpansionTile(
+                                      leading: CurrencyBadge(currency: inv.currency),
+                                      title: Text(
+                                        '${inv.invoiceNo} — الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        'التاريخ: ${inv.date.toString().substring(0, 10)}${inv.depositDeducted > 0 ? " • عربون مخصوم: ${inv.depositDeducted.fmt}${inv.currencySymbol}" : ""} • مدفوع نقداً: ${inv.cashPaidNow.fmt}${inv.currencySymbol}',
+                                      ),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            tooltip: 'معاينة طباعة A4',
+                                            icon: const Icon(
+                                              Icons.picture_as_pdf_rounded,
+                                              color: Color(0xFF2563EB),
+                                              size: 20,
+                                            ),
+                                            onPressed: () {
+                                              A4InvoicePrintDialog.show(
+                                                context,
+                                                invoiceData:
+                                                    A4InvoiceData.fromWorkshopInvoice(inv),
+                                              );
+                                            },
+                                          ),
+                                          const SizedBox(width: 4),
+                                          inv.remainingBalance > 0.01
+                                              ? ElevatedButton(
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor:
+                                                        AppColors.successGreen,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                    ),
+                                                  ),
+                                                  onPressed: () => _showMoneyDialog(
+                                                    title:
+                                                        'تحصيل فاتورة ${inv.invoiceNo}',
+                                                    actionLabel: 'تأكيد التحصيل',
+                                                    max: inv.remainingBalance,
+                                                    currency: inv.currency,
+                                                    onConfirm: (a) => erp
+                                                        .collectWorkshopInvoice(inv, a),
+                                                  ),
+                                                  child: const Text('تحصيل'),
+                                                )
+                                              : const Chip(label: Text('خالصة')),
+                                        ],
+                                      ),
+                                      children: [
+                                        if (inv.items.isNotEmpty)
+                                          ...inv.items.map(
+                                            (it) => ListTile(
+                                              dense: true,
+                                              title: Text(it.description),
+                                              subtitle: Text(
+                                                'الكمية: ${it.quantity.fmt} ${it.unitCategory} • سعر الوحدة: ${it.unitPrice.fmt}${inv.currencySymbol} • الإجمالي: ${it.agreedPrice.fmt}${inv.currencySymbol}',
+                                              ),
+                                            ),
+                                          ),
+                                        ...inv.services.map(
+                                          (s) => ListTile(
+                                            dense: true,
+                                            title: Text('خدمة: ${s.serviceName}'),
+                                            trailing: Text(
+                                              '${s.price}\$',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
                             ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
+                          );
+                        },
+                      ))
+                : (invs.isEmpty
+                    ? const Card(
+                        child: Center(child: Text('لا توجد فواتير مطابقة.')),
+                      )
+                    : Card(
+                        child: ListView.separated(
+                          itemCount: invs.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (_, idx) {
+                            final inv = invs[idx];
+                            return ExpansionTile(
+                              leading: CurrencyBadge(currency: inv.currency),
+                              title: Text(
+                                '${inv.invoiceNo} • ${inv.clientName}',
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Text(
+                                '${inv.itemDescription} • الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المتبقي للتحصيل: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'معاينة طباعة A4 (Print Preview)',
+                                    icon: const Icon(
+                                      Icons.picture_as_pdf_rounded,
+                                      color: Color(0xFF2563EB),
+                                    ),
+                                    onPressed: () {
+                                      A4InvoicePrintDialog.show(
+                                        context,
+                                        invoiceData:
+                                            A4InvoiceData.fromWorkshopInvoice(inv),
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(width: 4),
+                                  inv.remainingBalance > 0.01
+                                      ? ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                AppColors.successGreen,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                            ),
+                                          ),
+                                          onPressed: () => _showMoneyDialog(
+                                            title:
+                                                'تحصيل فاتورة ${inv.invoiceNo}',
+                                            actionLabel: 'تأكيد التحصيل',
+                                            max: inv.remainingBalance,
+                                            currency: inv.currency,
+                                            onConfirm: (a) => erp
+                                                .collectWorkshopInvoice(inv, a),
+                                          ),
+                                          child: const Text('تحصيل'),
+                                        )
+                                      : const Chip(label: Text('خالصة')),
+                                ],
+                              ),
+                              children: [
+                                if (inv.photoPath.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 4,
+                                    ),
+                                    child: AppImagePreviewCard(
+                                      imagePath: inv.photoPath,
+                                      title:
+                                          'صورة الفاتورة المرفقة (${inv.invoiceNo})',
+                                    ),
+                                  ),
+                                if (inv.items.isNotEmpty)
+                                  ...inv.items.map(
+                                    (it) => ListTile(
+                                      dense: true,
+                                      title: Text(it.description),
+                                      subtitle: Text(
+                                        'الكمية: ${it.quantity.fmt} ${it.unitCategory} • سعر الوحدة: ${it.unitPrice.fmt}${inv.currencySymbol} • الإجمالي: ${it.agreedPrice.fmt}${inv.currencySymbol}',
+                                      ),
+                                    ),
+                                  ),
+                                ...inv.services.map(
+                                  (s) => ListTile(
+                                    dense: true,
+                                    title: Text('خدمة: ${s.serviceName}'),
+                                    trailing: Text(
+                                      '${s.price}\$',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      )),
           ),
         ],
       ),
     );
   }
+
 
   Widget _buildProjectsFinances(ERPProvider erp) {
     final pending = erp.pendingProjects;

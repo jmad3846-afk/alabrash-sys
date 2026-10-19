@@ -667,8 +667,8 @@ class ClientModel {
   ClientModel({
     required this.id,
     required this.name,
-    required this.phone,
-    required this.location,
+    this.phone = '',
+    this.location = '',
     required this.clientType,
     this.description = '',
     this.debtBalance = 0.0,
@@ -1335,6 +1335,8 @@ class TailoringLineItem {
       area > 0 ? (materialCost + servicesTotal) / area : netCostPerMeter;
   double get lineTotal =>
       (area * sellingPricePerMeter) + (laborPerMeter * area) + servicesTotal;
+  String get description =>
+      typeName.isNotEmpty ? '$typeName $grade'.trim() : 'بند تفصيل';
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -1729,6 +1731,7 @@ class WorkshopOrderModel {
   bool isSpecialRefund;
   final String
   currency; // AppCurrency.usd | AppCurrency.syp — invoice inherits it
+  final List<WorkshopInvoiceItem> items;
 
   WorkshopOrderModel({
     required this.id,
@@ -1743,6 +1746,7 @@ class WorkshopOrderModel {
     this.status = 'قيد التنفيذ',
     this.isSpecialRefund = false,
     this.currency = AppCurrency.usd,
+    this.items = const [],
   });
 
   String get currencySymbol => AppCurrency.symbol(currency);
@@ -1760,6 +1764,7 @@ class WorkshopOrderModel {
     'status': status,
     'isSpecialRefund': isSpecialRefund,
     'currency': currency,
+    'items': items.map((i) => i.toJson()).toList(),
   };
 
   factory WorkshopOrderModel.fromJson(Map<String, dynamic> json) =>
@@ -1776,6 +1781,11 @@ class WorkshopOrderModel {
         status: json['status'] ?? 'قيد التنفيذ',
         isSpecialRefund: json['isSpecialRefund'] ?? false,
         currency: AppCurrency.normalize(json['currency']),
+        items: json['items'] != null
+            ? (json['items'] as List)
+                .map((i) => WorkshopInvoiceItem.fromJson(i))
+                .toList()
+            : [],
       );
 }
 
@@ -1785,8 +1795,9 @@ class WorkshopOrderModel {
 // ==========================================
 class WorkshopInvoiceItem {
   final String id;
-  final String sourceType; // 'طلبية معمل' | 'تفصيل بسيط' | 'تفصيل معقد' | 'قطع زائدة' | 'مواد خام'
+  final String sourceType; // 'طلب معمل' | 'بيع خياطة بسيطة' | 'بيع خياطة معقدة' | 'بيع قطع إضافية' | 'بيع مواد خام من المعمل'
   final String sourceId; // order / tailoring / scrap / stock id
+  final String sourceLineItemId; // specific line item id inside tailoring if applicable
   final String description;
   final double quantity;
   final String unitCategory; // 'متر مربع' | 'متر مكعب' | 'قطعة' | etc.
@@ -1805,6 +1816,7 @@ class WorkshopInvoiceItem {
     required this.id,
     required this.sourceType,
     this.sourceId = '',
+    this.sourceLineItemId = '',
     required this.description,
     this.quantity = 1.0,
     this.unitCategory = 'متر مربع',
@@ -1823,10 +1835,50 @@ class WorkshopInvoiceItem {
   double get servicesTotal => services.fold(0.0, (s, e) => s + e.price);
   double get grandTotal => agreedPrice + servicesTotal;
 
+  WorkshopInvoiceItem copyWith({
+    String? id,
+    String? sourceType,
+    String? sourceId,
+    String? sourceLineItemId,
+    String? description,
+    double? quantity,
+    String? unitCategory,
+    double? unitPrice,
+    double? agreedPrice,
+    double? netCost,
+    double? depositAmount,
+    bool? isGranite,
+    List<ServiceAttachment>? services,
+    String? photoPath,
+    double? lengthCm,
+    double? widthCm,
+    double? heightCm,
+  }) =>
+      WorkshopInvoiceItem(
+        id: id ?? this.id,
+        sourceType: sourceType ?? this.sourceType,
+        sourceId: sourceId ?? this.sourceId,
+        sourceLineItemId: sourceLineItemId ?? this.sourceLineItemId,
+        description: description ?? this.description,
+        quantity: quantity ?? this.quantity,
+        unitCategory: unitCategory ?? this.unitCategory,
+        unitPrice: unitPrice ?? this.unitPrice,
+        agreedPrice: agreedPrice ?? this.agreedPrice,
+        netCost: netCost ?? this.netCost,
+        depositAmount: depositAmount ?? this.depositAmount,
+        isGranite: isGranite ?? this.isGranite,
+        services: services ?? this.services,
+        photoPath: photoPath ?? this.photoPath,
+        lengthCm: lengthCm ?? this.lengthCm,
+        widthCm: widthCm ?? this.widthCm,
+        heightCm: heightCm ?? this.heightCm,
+      );
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'sourceType': sourceType,
     'sourceId': sourceId,
+    'sourceLineItemId': sourceLineItemId,
     'description': description,
     'quantity': quantity,
     'unitCategory': unitCategory,
@@ -1847,6 +1899,7 @@ class WorkshopInvoiceItem {
         id: json['id'] ?? '',
         sourceType: json['sourceType'] ?? 'طلبية معمل',
         sourceId: json['sourceId'] ?? '',
+        sourceLineItemId: json['sourceLineItemId'] ?? '',
         description: json['description'] ?? '',
         quantity: (json['quantity'] ?? 1.0).toDouble(),
         unitCategory: json['unitCategory'] ?? 'متر مربع',
