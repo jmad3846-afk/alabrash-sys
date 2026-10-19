@@ -2682,3 +2682,294 @@ class AccountantWithdrawalModel {
       );
 }
 
+// ==========================================
+// 19. DAILY COMPREHENSIVE REPORT MODEL (التقرير اليومي الشامل)
+// ==========================================
+
+class DailyReportInvoiceSummary {
+  final String invoiceNo;
+  final String module; // 'المصنع' | 'المعمل' | 'مرتجع'
+  final String type; // 'مبيعات' | 'مشتريات' | 'مرتجع'
+  final String paymentType; // 'عادية' | 'نقدية'
+  final String partyName; // Client or Supplier name
+  final double totalAmount;
+  final double paidAmount;
+  final double remainingAmount;
+  final String currency;
+  final String itemsSummary;
+  final DateTime time;
+
+  DailyReportInvoiceSummary({
+    required this.invoiceNo,
+    required this.module,
+    required this.type,
+    required this.paymentType,
+    required this.partyName,
+    required this.totalAmount,
+    required this.paidAmount,
+    required this.remainingAmount,
+    required this.currency,
+    required this.itemsSummary,
+    required this.time,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'invoiceNo': invoiceNo,
+        'module': module,
+        'type': type,
+        'paymentType': paymentType,
+        'partyName': partyName,
+        'totalAmount': totalAmount,
+        'paidAmount': paidAmount,
+        'remainingAmount': remainingAmount,
+        'currency': currency,
+        'itemsSummary': itemsSummary,
+        'time': time.toIso8601String(),
+      };
+
+  factory DailyReportInvoiceSummary.fromJson(Map<String, dynamic> json) =>
+      DailyReportInvoiceSummary(
+        invoiceNo: json['invoiceNo'] ?? '',
+        module: json['module'] ?? '',
+        type: json['type'] ?? '',
+        paymentType: json['paymentType'] ?? '',
+        partyName: json['partyName'] ?? '',
+        totalAmount: (json['totalAmount'] as num?)?.toDouble() ?? 0.0,
+        paidAmount: (json['paidAmount'] as num?)?.toDouble() ?? 0.0,
+        remainingAmount: (json['remainingAmount'] as num?)?.toDouble() ?? 0.0,
+        currency: json['currency'] ?? 'USD',
+        itemsSummary: json['itemsSummary'] ?? '',
+        time: DateTime.tryParse(json['time'] ?? '') ?? DateTime.now(),
+      );
+}
+
+class DailyReportExpenseSummary {
+  final String category;
+  final String description;
+  final String beneficiary;
+  final double amount;
+  final String currency;
+  final String cashBox;
+  final DateTime time;
+
+  DailyReportExpenseSummary({
+    required this.category,
+    required this.description,
+    required this.beneficiary,
+    required this.amount,
+    required this.currency,
+    required this.cashBox,
+    required this.time,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'category': category,
+        'description': description,
+        'beneficiary': beneficiary,
+        'amount': amount,
+        'currency': currency,
+        'cashBox': cashBox,
+        'time': time.toIso8601String(),
+      };
+
+  factory DailyReportExpenseSummary.fromJson(Map<String, dynamic> json) =>
+      DailyReportExpenseSummary(
+        category: json['category'] ?? '',
+        description: json['description'] ?? '',
+        beneficiary: json['beneficiary'] ?? '',
+        amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+        currency: json['currency'] ?? 'USD',
+        cashBox: json['cashBox'] ?? 'main',
+        time: DateTime.tryParse(json['time'] ?? '') ?? DateTime.now(),
+      );
+}
+
+class DailyReportCashMovementSummary {
+  final String type; // 'قبض مبيعات' | 'سداد مشتريات' | 'مصاريف' | 'سحب أرباح' | 'تحويل عملات' | 'استرداد مرتجع'
+  final String description;
+  final String cashBox;
+  final double amount;
+  final String currency;
+  final DateTime time;
+
+  DailyReportCashMovementSummary({
+    required this.type,
+    required this.description,
+    required this.cashBox,
+    required this.amount,
+    required this.currency,
+    required this.time,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'description': description,
+        'cashBox': cashBox,
+        'amount': amount,
+        'currency': currency,
+        'time': time.toIso8601String(),
+      };
+
+  factory DailyReportCashMovementSummary.fromJson(Map<String, dynamic> json) =>
+      DailyReportCashMovementSummary(
+        type: json['type'] ?? '',
+        description: json['description'] ?? '',
+        cashBox: json['cashBox'] ?? '',
+        amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+        currency: json['currency'] ?? 'USD',
+        time: DateTime.tryParse(json['time'] ?? '') ?? DateTime.now(),
+      );
+}
+
+class DailyReportModel {
+  final String id;
+  final String reportNo;
+  final DateTime reportDate; // Day covered
+  final DateTime generatedAt; // Compile timestamp
+  String notes;
+
+  // Aggregated financials for that day
+  final double totalSalesUsd;
+  final double totalSalesSyp;
+  final double totalPurchasesUsd;
+  final double totalPurchasesSyp;
+  final double totalExpensesUsd;
+  final double totalExpensesSyp;
+  final double totalCashInUsd;
+  final double totalCashInSyp;
+  final double totalCashOutUsd;
+  final double totalCashOutSyp;
+
+  // Cash balances at time of compilation
+  final double mainCashUsd;
+  final double mainCashSyp;
+  final double scrapCashUsd;
+  final double scrapCashSyp;
+  final double orderCashUsd;
+  final double orderCashSyp;
+
+  // Granular item lists
+  final List<DailyReportInvoiceSummary> salesInvoices;
+  final List<DailyReportInvoiceSummary> purchaseInvoices;
+  final List<DailyReportInvoiceSummary> returnInvoices;
+  final List<DailyReportExpenseSummary> expenses;
+  final List<DailyReportCashMovementSummary> cashMovements;
+
+  // Operation counts
+  final int cuttingOperationsCount;
+  final int attendanceCount;
+
+  DailyReportModel({
+    required this.id,
+    required this.reportNo,
+    required this.reportDate,
+    required this.generatedAt,
+    this.notes = '',
+    required this.totalSalesUsd,
+    required this.totalSalesSyp,
+    required this.totalPurchasesUsd,
+    required this.totalPurchasesSyp,
+    required this.totalExpensesUsd,
+    required this.totalExpensesSyp,
+    required this.totalCashInUsd,
+    required this.totalCashInSyp,
+    required this.totalCashOutUsd,
+    required this.totalCashOutSyp,
+    required this.mainCashUsd,
+    required this.mainCashSyp,
+    required this.scrapCashUsd,
+    required this.scrapCashSyp,
+    required this.orderCashUsd,
+    required this.orderCashSyp,
+    required this.salesInvoices,
+    required this.purchaseInvoices,
+    required this.returnInvoices,
+    required this.expenses,
+    required this.cashMovements,
+    this.cuttingOperationsCount = 0,
+    this.attendanceCount = 0,
+  });
+
+  double get netCashFlowUsd => totalCashInUsd - totalCashOutUsd;
+  double get netCashFlowSyp => totalCashInSyp - totalCashOutSyp;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'reportNo': reportNo,
+        'reportDate': reportDate.toIso8601String(),
+        'generatedAt': generatedAt.toIso8601String(),
+        'notes': notes,
+        'totalSalesUsd': totalSalesUsd,
+        'totalSalesSyp': totalSalesSyp,
+        'totalPurchasesUsd': totalPurchasesUsd,
+        'totalPurchasesSyp': totalPurchasesSyp,
+        'totalExpensesUsd': totalExpensesUsd,
+        'totalExpensesSyp': totalExpensesSyp,
+        'totalCashInUsd': totalCashInUsd,
+        'totalCashInSyp': totalCashInSyp,
+        'totalCashOutUsd': totalCashOutUsd,
+        'totalCashOutSyp': totalCashOutSyp,
+        'mainCashUsd': mainCashUsd,
+        'mainCashSyp': mainCashSyp,
+        'scrapCashUsd': scrapCashUsd,
+        'scrapCashSyp': scrapCashSyp,
+        'orderCashUsd': orderCashUsd,
+        'orderCashSyp': orderCashSyp,
+        'salesInvoices': salesInvoices.map((i) => i.toJson()).toList(),
+        'purchaseInvoices': purchaseInvoices.map((i) => i.toJson()).toList(),
+        'returnInvoices': returnInvoices.map((i) => i.toJson()).toList(),
+        'expenses': expenses.map((e) => e.toJson()).toList(),
+        'cashMovements': cashMovements.map((c) => c.toJson()).toList(),
+        'cuttingOperationsCount': cuttingOperationsCount,
+        'attendanceCount': attendanceCount,
+      };
+
+  factory DailyReportModel.fromJson(Map<String, dynamic> json) =>
+      DailyReportModel(
+        id: json['id'] ?? '',
+        reportNo: json['reportNo'] ?? '',
+        reportDate: DateTime.tryParse(json['reportDate'] ?? '') ?? DateTime.now(),
+        generatedAt: DateTime.tryParse(json['generatedAt'] ?? '') ?? DateTime.now(),
+        notes: json['notes'] ?? '',
+        totalSalesUsd: (json['totalSalesUsd'] as num?)?.toDouble() ?? 0.0,
+        totalSalesSyp: (json['totalSalesSyp'] as num?)?.toDouble() ?? 0.0,
+        totalPurchasesUsd: (json['totalPurchasesUsd'] as num?)?.toDouble() ?? 0.0,
+        totalPurchasesSyp: (json['totalPurchasesSyp'] as num?)?.toDouble() ?? 0.0,
+        totalExpensesUsd: (json['totalExpensesUsd'] as num?)?.toDouble() ?? 0.0,
+        totalExpensesSyp: (json['totalExpensesSyp'] as num?)?.toDouble() ?? 0.0,
+        totalCashInUsd: (json['totalCashInUsd'] as num?)?.toDouble() ?? 0.0,
+        totalCashInSyp: (json['totalCashInSyp'] as num?)?.toDouble() ?? 0.0,
+        totalCashOutUsd: (json['totalCashOutUsd'] as num?)?.toDouble() ?? 0.0,
+        totalCashOutSyp: (json['totalCashOutSyp'] as num?)?.toDouble() ?? 0.0,
+        mainCashUsd: (json['mainCashUsd'] as num?)?.toDouble() ?? 0.0,
+        mainCashSyp: (json['mainCashSyp'] as num?)?.toDouble() ?? 0.0,
+        scrapCashUsd: (json['scrapCashUsd'] as num?)?.toDouble() ?? 0.0,
+        scrapCashSyp: (json['scrapCashSyp'] as num?)?.toDouble() ?? 0.0,
+        orderCashUsd: (json['orderCashUsd'] as num?)?.toDouble() ?? 0.0,
+        orderCashSyp: (json['orderCashSyp'] as num?)?.toDouble() ?? 0.0,
+        salesInvoices: (json['salesInvoices'] as List? ?? [])
+            .map((i) => DailyReportInvoiceSummary.fromJson(
+                Map<String, dynamic>.from(i)))
+            .toList(),
+        purchaseInvoices: (json['purchaseInvoices'] as List? ?? [])
+            .map((i) => DailyReportInvoiceSummary.fromJson(
+                Map<String, dynamic>.from(i)))
+            .toList(),
+        returnInvoices: (json['returnInvoices'] as List? ?? [])
+            .map((i) => DailyReportInvoiceSummary.fromJson(
+                Map<String, dynamic>.from(i)))
+            .toList(),
+        expenses: (json['expenses'] as List? ?? [])
+            .map((e) => DailyReportExpenseSummary.fromJson(
+                Map<String, dynamic>.from(e)))
+            .toList(),
+        cashMovements: (json['cashMovements'] as List? ?? [])
+            .map((c) => DailyReportCashMovementSummary.fromJson(
+                Map<String, dynamic>.from(c)))
+            .toList(),
+        cuttingOperationsCount: json['cuttingOperationsCount'] ?? 0,
+        attendanceCount: json['attendanceCount'] ?? 0,
+      );
+}
+
+

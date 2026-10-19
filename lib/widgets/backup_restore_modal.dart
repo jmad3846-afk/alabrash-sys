@@ -468,6 +468,12 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
                     '${erp.workshopProjects.length} مشروع • ${erp.workshopOrders.length} طلبية',
                 color: const Color(0xFFDC2626),
               ),
+              _buildSummaryItem(
+                icon: Icons.analytics_rounded,
+                title: 'أرشيف التقارير اليومية',
+                value: '${erp.dailyReports.length} تقرير يومي محفوظ',
+                color: const Color(0xFF0284C7),
+              ),
             ],
           ),
           const SizedBox(height: 24),
@@ -838,6 +844,8 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
     final suppliersCount = (fac['suppliers'] as List?)?.length ?? 0;
     final staffCount = (stf['staffList'] as List?)?.length ?? 0;
     final projectsCount = (wrk['workshopProjects'] as List?)?.length ?? 0;
+    final dailyReportsCount = (ops['dailyReports'] as List?)?.length ??
+        ((raw['dailyReports'] as List?)?.length ?? 0);
 
     final mainUsd = (fin['mainCashBox'] as num?)?.toDouble() ?? 0.0;
     final scrapUsd = (fin['scrapCashBox'] as num?)?.toDouble() ?? 0.0;
@@ -962,6 +970,18 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildDetailPill(
+                  label: 'أرشيف التقارير اليومية',
+                  detail: '$dailyReportsCount تقرير يومي شامل',
+                  icon: Icons.analytics_rounded,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -1081,6 +1101,11 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
                 _buildMetricRow(
                   'مشاريع المعمل المستعادة:',
                   '${_restoredMetrics?['workshopProjects'] ?? 0} مشروع كامل',
+                ),
+                const Divider(),
+                _buildMetricRow(
+                  'أرشيف التقارير اليومية:',
+                  '${_restoredMetrics?['dailyReports'] ?? 0} تقرير يومي مستعاد',
                 ),
                 const Divider(),
                 _buildMetricRow(

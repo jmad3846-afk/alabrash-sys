@@ -12,6 +12,7 @@ import '../widgets/partner_management_modal.dart';
 import '../widgets/workday_modal.dart';
 import '../widgets/system_reset_modal.dart';
 import '../widgets/backup_restore_modal.dart';
+import 'daily_reports_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   final void Function(int index)? onNavigateToIndex;
@@ -1507,7 +1508,23 @@ class DashboardScreen extends StatelessWidget {
             onTap: () => _showCurrencyConversionDialog(context, erp),
           ),
 
-          // 4. Center Data (بيانات المركز)
+          // 4. Daily Reports (التقارير اليومية)
+          _buildNavbarItem(
+            icon: Icons.analytics_rounded,
+            label: 'التقارير اليومية',
+            primaryColor: const Color(0xFF047857),
+            bgColor: const Color(0xFFECFDF5),
+            borderColor: const Color(0xFFA7F3D0),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const DailyReportsScreen(),
+                ),
+              );
+            },
+          ),
+
+          // 5. Center Data (بيانات المركز)
           _buildNavbarItem(
             icon: Icons.business_rounded,
             label: 'بيانات المركز والشعار',

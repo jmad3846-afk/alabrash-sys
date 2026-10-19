@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' as intl;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 
@@ -195,6 +196,9 @@ class ERPProvider extends ChangeNotifier {
   List<ExpenseRecordModel> expenseRecords = [];
   List<AdjustmentInvoiceModel> adjustmentInvoices = [];
   CenterInfoModel centerInfo = const CenterInfoModel();
+
+  // Daily Reports Archive
+  List<DailyReportModel> dailyReports = [];
 
   ERPProvider() {
     _initDefaultSeedData();
@@ -3830,6 +3834,7 @@ class ERPProvider extends ChangeNotifier {
     expenseTypes.clear();
     expenseRecords.clear();
     adjustmentInvoices.clear();
+    dailyReports.clear();
 
     // 2. Reset isolated cash registers (both USD and SYP funds).
     mainCashBox = 0.0;
@@ -4064,6 +4069,10 @@ class ERPProvider extends ChangeNotifier {
       await prefs.setString(
         'returnInvoices',
         jsonEncode(returnInvoices.map((r) => r.toJson()).toList()),
+      );
+      await prefs.setString(
+        'dailyReports',
+        jsonEncode(dailyReports.map((r) => r.toJson()).toList()),
       );
     } catch (_) {}
   }
@@ -4311,6 +4320,15 @@ class ERPProvider extends ChangeNotifier {
         } catch (_) {}
       }
 
+      final dailyReportsJson = prefs.getString('dailyReports');
+      if (dailyReportsJson != null) {
+        try {
+          dailyReports = (jsonDecode(dailyReportsJson) as List)
+              .map((item) => DailyReportModel.fromJson(Map<String, dynamic>.from(item)))
+              .toList();
+        } catch (_) {}
+      }
+
       if (openingEntry.isLocked &&
           openingEntry.openingStock.isNotEmpty &&
           !openingEntry.openingStockApplied) {
@@ -4389,6 +4407,7 @@ class ERPProvider extends ChangeNotifier {
         'adjustmentInvoices':
             adjustmentInvoices.map((a) => a.toJson()).toList(),
         'services': services.map((s) => s.toJson()).toList(),
+        'dailyReports': dailyReports.map((d) => d.toJson()).toList(),
       },
       'centerInfo': centerInfo.toJson(),
     };
@@ -4632,6 +4651,17 @@ class ERPProvider extends ChangeNotifier {
               ServiceItemModel.fromJson(Map<String, dynamic>.from(item)))
           .toList();
     }
+    if (ops['dailyReports'] is List) {
+      dailyReports = (ops['dailyReports'] as List)
+          .map((item) =>
+              DailyReportModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    } else if (raw['dailyReports'] is List) {
+      dailyReports = (raw['dailyReports'] as List)
+          .map((item) =>
+              DailyReportModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
 
     // Settings
     if (raw['centerInfo'] != null) {
@@ -4657,9 +4687,326 @@ class ERPProvider extends ChangeNotifier {
       'cuttingOperations': cuttingOperations.length,
       'workshopProjects': workshopProjects.length,
       'staffList': staffList.length,
+      'dailyReports': dailyReports.length,
       'totalCashUsd': mainCashBox + scrapCashBox + orderCashBox,
       'totalCashSyp': mainCashBoxSyp + scrapCashBoxSyp + orderCashBoxSyp,
     };
+  }
+
+  // -------------------------------------------------------------
+  // DAILY REPORT COMPILATION & GENERATION
+  // -------------------------------------------------------------
+
+  /// Compiles all transactions, invoices, expenses, cash movements, and stats
+  /// for a specific target day into a comprehensive [DailyReportModel].
+  DailyReportModel compileDailyReportForDate(DateTime targetDate, {String? notes}) {
+    bool sameDay(DateTime d) =>
+        d.year == targetDate.year &&
+        d.month == targetDate.month &&
+        d.day == targetDate.day;
+
+    final dateStr = intl.DateFormat('yyyyMMdd').format(targetDate);
+    final count = dailyReports.where((r) => sameDay(r.reportDate)).length + 1;
+    final reportNo = 'DREP-$dateStr-${count.toString().padLeft(2, '0')}';
+
+    final List<DailyReportInvoiceSummary> sales = [];
+    final List<DailyReportInvoiceSummary> purchases = [];
+    final List<DailyReportInvoiceSummary> returns = [];
+    final List<DailyReportExpenseSummary> exps = [];
+    final List<DailyReportCashMovementSummary> movements = [];
+
+    double totalSalesUsd = 0.0;
+    double totalSalesSyp = 0.0;
+    double totalPurchasesUsd = 0.0;
+    double totalPurchasesSyp = 0.0;
+    double totalExpensesUsd = 0.0;
+    double totalExpensesSyp = 0.0;
+    double totalCashInUsd = 0.0;
+    double totalCashInSyp = 0.0;
+    double totalCashOutUsd = 0.0;
+    double totalCashOutSyp = 0.0;
+
+    // 1. Factory Invoices
+    for (final inv in factoryInvoices.where((i) => sameDay(i.date))) {
+      final isSyp = AppCurrency.isSyp(inv.currency);
+      final isSales = inv.invoiceType == 'بيع_معتمد';
+      final itemsSummary = inv.items
+          .map((it) => '${it.description} (${it.quantity.fmt})')
+          .join(' • ');
+
+      final entry = DailyReportInvoiceSummary(
+        invoiceNo: inv.invoiceNo,
+        module: 'المصنع',
+        type: isSales ? 'مبيعات' : 'مشتريات',
+        paymentType: inv.isCashInvoice ? 'نقدية' : 'آجل',
+        partyName: inv.partyName,
+        totalAmount: inv.grandTotal,
+        paidAmount: inv.advancePayment,
+        remainingAmount: inv.remainingBalance,
+        currency: inv.currency,
+        itemsSummary: itemsSummary,
+        time: inv.date,
+      );
+
+      if (isSales) {
+        sales.add(entry);
+        if (isSyp) {
+          totalSalesSyp += inv.grandTotal;
+          totalCashInSyp += inv.advancePayment;
+        } else {
+          totalSalesUsd += inv.grandTotal;
+          totalCashInUsd += inv.advancePayment;
+        }
+        if (inv.advancePayment > 0) {
+          movements.add(DailyReportCashMovementSummary(
+            type: 'قبض مبيعات مصنع',
+            description: 'فاتورة #${inv.invoiceNo} - ${entry.partyName}',
+            cashBox: 'main',
+            amount: inv.advancePayment,
+            currency: inv.currency,
+            time: inv.date,
+          ));
+        }
+      } else {
+        purchases.add(entry);
+        if (isSyp) {
+          totalPurchasesSyp += inv.grandTotal;
+          totalCashOutSyp += inv.advancePayment;
+        } else {
+          totalPurchasesUsd += inv.grandTotal;
+          totalCashOutUsd += inv.advancePayment;
+        }
+        if (inv.advancePayment > 0) {
+          movements.add(DailyReportCashMovementSummary(
+            type: 'سداد مشتريات مصنع',
+            description: 'فاتورة توريد #${inv.invoiceNo} - ${entry.partyName}',
+            cashBox: 'main',
+            amount: inv.advancePayment,
+            currency: inv.currency,
+            time: inv.date,
+          ));
+        }
+      }
+    }
+
+    // 2. Workshop Invoices
+    for (final inv in workshopInvoices.where((i) => sameDay(i.date))) {
+      final isSyp = AppCurrency.isSyp(inv.currency);
+      final itemsSummary = inv.items.isNotEmpty
+          ? inv.items
+              .map((it) => '${it.description} (${it.quantity.fmt} ${it.unitCategory})')
+              .join(' • ')
+          : (inv.itemDescription.isNotEmpty
+              ? '${inv.itemDescription} (${inv.sourceQuantity.fmt} ${inv.sourceUnitCategory})'
+              : 'أعمال تفصيل وطلبيات');
+
+      final paidAmt = inv.depositDeducted + inv.cashPaidNow;
+
+      final entry = DailyReportInvoiceSummary(
+        invoiceNo: inv.invoiceNo,
+        module: 'المعمل',
+        type: 'مبيعات',
+        paymentType: inv.isCashInvoice ? 'نقدية' : 'آجل',
+        partyName: inv.clientName,
+        totalAmount: inv.grandTotal,
+        paidAmount: paidAmt,
+        remainingAmount: inv.remainingBalance,
+        currency: inv.currency,
+        itemsSummary: itemsSummary,
+        time: inv.date,
+      );
+
+      sales.add(entry);
+      if (isSyp) {
+        totalSalesSyp += inv.grandTotal;
+        totalCashInSyp += paidAmt;
+      } else {
+        totalSalesUsd += inv.grandTotal;
+        totalCashInUsd += paidAmt;
+      }
+      if (paidAmt > 0) {
+        movements.add(DailyReportCashMovementSummary(
+          type: 'قبض مبيعات معمل',
+          description: 'فاتورة معمل #${inv.invoiceNo} - ${inv.clientName}',
+          cashBox: 'order',
+          amount: paidAmt,
+          currency: inv.currency,
+          time: inv.date,
+        ));
+      }
+    }
+
+    // 3. Return Invoices
+    for (final ret in returnInvoices.where((r) => sameDay(r.date))) {
+      final isSyp = AppCurrency.isSyp(ret.currency);
+      final itemsSummary = '${ret.itemDescription} (${ret.quantity.fmt})';
+
+      final entry = DailyReportInvoiceSummary(
+        invoiceNo: ret.returnNo,
+        module: ret.returnType,
+        type: 'مرتجع',
+        paymentType: ret.paymentAction,
+        partyName: ret.partyName,
+        totalAmount: ret.refundAmount,
+        paidAmount: ret.refundAmount,
+        remainingAmount: 0.0,
+        currency: ret.currency,
+        itemsSummary: itemsSummary,
+        time: ret.date,
+      );
+      returns.add(entry);
+      if (isSyp) {
+        totalCashOutSyp += ret.refundAmount;
+      } else {
+        totalCashOutUsd += ret.refundAmount;
+      }
+      if (ret.refundAmount > 0) {
+        movements.add(DailyReportCashMovementSummary(
+          type: 'استرداد مرتجع مبيعات',
+          description: 'مرتجع #${ret.returnNo} - ${ret.partyName}',
+          cashBox: 'main',
+          amount: ret.refundAmount,
+          currency: ret.currency,
+          time: ret.date,
+        ));
+      }
+    }
+
+    // 4. Expense Records
+    for (final exp in expenseRecords.where((e) => sameDay(e.date) && !e.isInformational)) {
+      final isSyp = AppCurrency.isSyp(exp.currency);
+      final catName = expenseTypes
+          .firstWhere((t) => t.id == exp.typeId,
+              orElse: () => ExpenseTypeModel(id: '', name: 'مصاريف تشغيلية'))
+          .name;
+
+      exps.add(DailyReportExpenseSummary(
+        category: catName,
+        description: exp.description,
+        beneficiary: exp.personName,
+        amount: exp.amount,
+        currency: exp.currency,
+        cashBox: 'main',
+        time: exp.date,
+      ));
+      if (isSyp) {
+        totalExpensesSyp += exp.amount;
+        totalCashOutSyp += exp.amount;
+      } else {
+        totalExpensesUsd += exp.amount;
+        totalCashOutUsd += exp.amount;
+      }
+      movements.add(DailyReportCashMovementSummary(
+        type: 'مصاريف تشغيلية',
+        description: '$catName: ${exp.description}',
+        cashBox: 'main',
+        amount: exp.amount,
+        currency: exp.currency,
+        time: exp.date,
+      ));
+    }
+
+    // 5. Accountant Profit Withdrawals
+    for (final w in accountantWithdrawals.where((w) => sameDay(w.date))) {
+      final isSyp = AppCurrency.isSyp(w.currency);
+      if (isSyp) {
+        totalCashOutSyp += w.amount;
+      } else {
+        totalCashOutUsd += w.amount;
+      }
+      movements.add(DailyReportCashMovementSummary(
+        type: 'سحب أرباح محاسب الجرانيت',
+        description: w.notes.isNotEmpty ? w.notes : 'سحب أرباح المحاسب',
+        cashBox: w.cashBox,
+        amount: w.amount,
+        currency: w.currency,
+        time: w.date,
+      ));
+    }
+
+    // 6. Surplus Costs (Settled worker wages / general surplus expenses)
+    for (final sc in surplusCosts.where((c) => sameDay(c.date) && c.amountPaid > 0)) {
+      final isSyp = AppCurrency.isSyp(sc.currency);
+      exps.add(DailyReportExpenseSummary(
+        category: sc.kind == 'worker' ? 'أجور عمال الفائض' : 'مصاريف الفائض',
+        description: '${sc.surplusDescription} - ${sc.beneficiaryName}',
+        beneficiary: sc.beneficiaryName,
+        amount: sc.amountPaid,
+        currency: sc.currency,
+        cashBox: 'scrap',
+        time: sc.date,
+      ));
+      if (isSyp) {
+        totalExpensesSyp += sc.amountPaid;
+        totalCashOutSyp += sc.amountPaid;
+      } else {
+        totalExpensesUsd += sc.amountPaid;
+        totalCashOutUsd += sc.amountPaid;
+      }
+      movements.add(DailyReportCashMovementSummary(
+        type: sc.kind == 'worker' ? 'صرف أجور عمال فائض' : 'مصاريف صندوق الفائض',
+        description: '${sc.surplusDescription} - ${sc.beneficiaryName}',
+        cashBox: 'scrap',
+        amount: sc.amountPaid,
+        currency: sc.currency,
+        time: sc.date,
+      ));
+    }
+
+    // 7. Operational Stats
+    final cuttingCount =
+        cuttingOperations.where((c) => sameDay(c.timestamp)).length;
+    final attCount =
+        staffAttendance.where((a) => sameDay(a.date)).length;
+
+    final report = DailyReportModel(
+      id: 'report_${DateTime.now().microsecondsSinceEpoch}',
+      reportNo: reportNo,
+      reportDate: targetDate,
+      generatedAt: DateTime.now(),
+      notes: notes ?? '',
+      totalSalesUsd: totalSalesUsd,
+      totalSalesSyp: totalSalesSyp,
+      totalPurchasesUsd: totalPurchasesUsd,
+      totalPurchasesSyp: totalPurchasesSyp,
+      totalExpensesUsd: totalExpensesUsd,
+      totalExpensesSyp: totalExpensesSyp,
+      totalCashInUsd: totalCashInUsd,
+      totalCashInSyp: totalCashInSyp,
+      totalCashOutUsd: totalCashOutUsd,
+      totalCashOutSyp: totalCashOutSyp,
+      mainCashUsd: mainCashBox,
+      mainCashSyp: mainCashBoxSyp,
+      scrapCashUsd: scrapCashBox,
+      scrapCashSyp: scrapCashBoxSyp,
+      orderCashUsd: orderCashBox,
+      orderCashSyp: orderCashBoxSyp,
+      salesInvoices: sales,
+      purchaseInvoices: purchases,
+      returnInvoices: returns,
+      expenses: exps,
+      cashMovements: movements,
+      cuttingOperationsCount: cuttingCount,
+      attendanceCount: attCount,
+    );
+
+    // Replace or add report for this date
+    final existingIdx = dailyReports.indexWhere((r) => sameDay(r.reportDate));
+    if (existingIdx >= 0) {
+      dailyReports[existingIdx] = report;
+    } else {
+      dailyReports.insert(0, report);
+    }
+
+    saveToDisk();
+    notifyListeners();
+    return report;
+  }
+
+  void deleteDailyReport(String id) {
+    dailyReports.removeWhere((r) => r.id == id);
+    saveToDisk();
+    notifyListeners();
   }
 }
 
