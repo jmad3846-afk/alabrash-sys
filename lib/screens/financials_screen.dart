@@ -5,6 +5,7 @@ import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../widgets/currency_selector.dart';
 import '../widgets/a4_invoice_print_dialog.dart';
+import '../widgets/a4_statement_print_dialog.dart';
 import '../widgets/app_image_attachment.dart';
 import 'accounting_screens.dart';
 
@@ -23,6 +24,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   int _retailSubView = 0;
   String _projectQuery = '';
   int _projectSubView = 0;
+  String _supplierQuery = '';
+  int _supplierFilter = 0;
+  String _agentQuery = '';
+  int _agentFilter = 0;
 
   @override
   void initState() {
@@ -557,6 +562,19 @@ class _FinancialsScreenState extends State<FinancialsScreen>
       (s, x) => s + x.debtBalanceSyp,
     );
 
+    final q = _supplierQuery.trim().toLowerCase();
+    final allSuppliers = erp.suppliers;
+    final filteredSuppliers = allSuppliers.where((s) {
+      if (_supplierFilter == 0) {
+        final hasDebt = s.debtBalance > 0.01 || s.debtBalanceSyp > 0.01;
+        if (!hasDebt) return false;
+      }
+      if (q.isEmpty) return true;
+      return s.name.toLowerCase().contains(q) ||
+          s.phone.toLowerCase().contains(q) ||
+          s.location.toLowerCase().contains(q);
+    }).toList();
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -578,7 +596,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'الموردون الذين علينا لهم مستحقات (الفواتير المدفوعة بالكامل في قسم المدفوعة)',
+                      'متابعة حسابات وفواتير وكشوفات حساب موردي مستلزمات ومواد المصنع',
                       style: TextStyle(color: AppColors.brandSecondaryText),
                     ),
                   ],
@@ -619,19 +637,66 @@ class _FinancialsScreenState extends State<FinancialsScreen>
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          if (debtors.isEmpty)
+          const SizedBox(height: 16),
+
+          // Search & Filter Bar
+          TextField(
+            decoration: const InputDecoration(
+              labelText: 'بحث في الموردين (الاسم، الهاتف، الموقع)...',
+              prefixIcon: Icon(Icons.search),
+            ),
+            onChanged: (v) => setState(() => _supplierQuery = v),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              ChoiceChip(
+                selected: _supplierFilter == 0,
+                onSelected: (_) => setState(() => _supplierFilter = 0),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.pending_actions_rounded, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'موردون بذمتهم مستحقات (${debtors.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                selected: _supplierFilter == 1,
+                onSelected: (_) => setState(() => _supplierFilter = 1),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.groups_rounded, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'كافة الموردين (${allSuppliers.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          if (filteredSuppliers.isEmpty)
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(
                   child: Text(
-                    'لا توجد مستحقات على الموردين. جميع الفواتير مدفوعة.',
+                    'لا يوجد موردون مطابقون للبحث أو الفلتر المحدد.',
                   ),
                 ),
               ),
             ),
-          ...debtors.map((s) {
+          ...filteredSuppliers.map((s) {
             final invs = erp.factoryInvoices
                 .where(
                   (i) =>
@@ -652,9 +717,52 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     ),
                   ),
                 ),
-                title: Text(
-                  'المورد ${s.name}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'المورد: ${s.name}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      icon: const Icon(
+                        Icons.picture_as_pdf_rounded,
+                        size: 16,
+                      ),
+                      label: const Text(
+                        'معاينة كشف الحساب قبل الطباعة',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      onPressed: () {
+                        A4StatementPrintDialog.show(
+                          context,
+                          statementData: A4StatementData.fromSupplier(
+                            supplier: s,
+                            erp: erp,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
                 subtitle: Text(
                   'المتبقي علينا: ${s.dualDebt} • الفواتير: ${invs.length}',
@@ -769,6 +877,21 @@ class _FinancialsScreenState extends State<FinancialsScreen>
       (s, x) => s + x.debtBalanceSyp,
     );
 
+    final q = _agentQuery.trim().toLowerCase();
+    final allAgents = erp.clients
+        .where((c) => c.clientType == 'معتمد مصنع')
+        .toList();
+    final filteredAgents = allAgents.where((c) {
+      if (_agentFilter == 0) {
+        final hasDebt = c.debtBalance > 0.01 || c.debtBalanceSyp > 0.01;
+        if (!hasDebt) return false;
+      }
+      if (q.isEmpty) return true;
+      return c.name.toLowerCase().contains(q) ||
+          c.phone.toLowerCase().contains(q) ||
+          c.location.toLowerCase().contains(q);
+    }).toList();
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -790,7 +913,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'المعتمدون الذين علينا تحصيل مستحقات منهم',
+                      'متابعة حسابات وفواتير وتحصيلات وكشوفات حساب وكلاء التوزيع المعتمدين',
                       style: TextStyle(color: AppColors.brandSecondaryText),
                     ),
                   ],
@@ -831,15 +954,64 @@ class _FinancialsScreenState extends State<FinancialsScreen>
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          if (debtors.isEmpty)
+          const SizedBox(height: 16),
+
+          // Search & Filter Bar
+          TextField(
+            decoration: const InputDecoration(
+              labelText: 'بحث في معتمدي المصنع (الاسم، الهاتف، الموقع)...',
+              prefixIcon: Icon(Icons.search),
+            ),
+            onChanged: (v) => setState(() => _agentQuery = v),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              ChoiceChip(
+                selected: _agentFilter == 0,
+                onSelected: (_) => setState(() => _agentFilter = 0),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.pending_actions_rounded, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'معتمدون عليهم مستحقات (${debtors.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                selected: _agentFilter == 1,
+                onSelected: (_) => setState(() => _agentFilter = 1),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.groups_rounded, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'كافة المعتمدين (${allAgents.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          if (filteredAgents.isEmpty)
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(24),
-                child: Center(child: Text('لا توجد مستحقات على المعتمدين.')),
+                child: Center(
+                  child: Text('لا يوجد معتمدون مطابقون للبحث أو الفلتر المحدد.'),
+                ),
               ),
             ),
-          ...debtors.map((c) {
+          ...filteredAgents.map((c) {
             final invs = erp.factoryInvoices
                 .where(
                   (i) =>
@@ -860,9 +1032,52 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     ),
                   ),
                 ),
-                title: Text(
-                  'المعتمد ${c.name}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'المعتمد: ${c.name}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      icon: const Icon(
+                        Icons.picture_as_pdf_rounded,
+                        size: 16,
+                      ),
+                      label: const Text(
+                        'معاينة كشف الحساب قبل الطباعة',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      onPressed: () {
+                        A4StatementPrintDialog.show(
+                          context,
+                          statementData: A4StatementData.fromAccreditedAgent(
+                            client: c,
+                            erp: erp,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
                 subtitle: Text(
                   'المتبقي عليه: ${c.dualDebt} • الفواتير: ${invs.length}',
@@ -1450,9 +1665,53 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                                   ),
                                 ),
                               ),
-                              title: Text(
-                                'الزبون: ${c.name}',
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              title: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'الزبون: ${c.name}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF2563EB),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 7,
+                                      ),
+                                      elevation: 1,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    icon: const Icon(
+                                      Icons.picture_as_pdf_rounded,
+                                      size: 16,
+                                    ),
+                                    label: const Text(
+                                      'معاينة كشف الحساب قبل الطباعة',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    onPressed: () {
+                                      A4StatementPrintDialog.show(
+                                        context,
+                                        statementData:
+                                            A4StatementData.fromCustomer(
+                                          client: c,
+                                          erp: erp,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
                               ),
                               subtitle: Text(
                                 'الرصيد المتبقي عليه: ${c.dualDebt} • الفواتير: ${clientInvs.length}${c.phone.isNotEmpty ? " • الهاتف: ${c.phone}" : ""}',
@@ -2058,9 +2317,46 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                                       'المشروع: ${p.name}',
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
+                                        fontSize: 15,
                                       ),
                                     ),
                                   ),
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF2563EB),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 7,
+                                      ),
+                                      elevation: 1,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    icon: const Icon(
+                                      Icons.picture_as_pdf_rounded,
+                                      size: 16,
+                                    ),
+                                    label: const Text(
+                                      'معاينة كشف الحساب قبل الطباعة',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    onPressed: () {
+                                      A4StatementPrintDialog.show(
+                                        context,
+                                        statementData:
+                                            A4StatementData.fromProject(
+                                          project: p,
+                                          erp: erp,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(width: 8),
                                   if (isPaidInFull)
                                     Container(
                                       padding: const EdgeInsets.symmetric(

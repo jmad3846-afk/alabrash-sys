@@ -7,6 +7,7 @@ import '../core/models/models.dart';
 import '../widgets/currency_selector.dart';
 import '../widgets/thermal_receipt_dialog.dart';
 import '../widgets/a4_invoice_print_dialog.dart';
+import '../widgets/a4_statement_print_dialog.dart';
 import '../widgets/app_image_attachment.dart';
 import 'accounting_screens.dart';
 
@@ -1829,6 +1830,41 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                 Text(
                   'المشروع: ${p.name}',
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    elevation: 1,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  icon: const Icon(
+                    Icons.picture_as_pdf_rounded,
+                    size: 15,
+                  ),
+                  label: const Text(
+                    'معاينة كشف الحساب قبل الطباعة',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  onPressed: () {
+                    A4StatementPrintDialog.show(
+                      context,
+                      statementData: A4StatementData.fromProject(
+                        project: p,
+                        erp: erp,
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(width: 8),
                 if (isFullyPaid)
