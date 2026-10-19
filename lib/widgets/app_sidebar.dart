@@ -55,15 +55,21 @@ class AppSidebar extends StatelessWidget {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppColors.accentPrimary, Color(0xFF1D4ED8)],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.foundation_rounded,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.panelBorder),
                     color: Colors.white,
-                    size: 26,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset(
+                    'assets/images/abaad_icon.png',
+                    fit: BoxFit.cover,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -72,7 +78,7 @@ class AppSidebar extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'رخام وغرانيت ERP',
+                        'أبعاد • ABAAD',
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(
                               fontWeight: FontWeight.bold,
@@ -80,7 +86,7 @@ class AppSidebar extends StatelessWidget {
                             ),
                       ),
                       const Text(
-                        'إدارة المصانع والمعامل',
+                        'لبرنامج إدارة الرخام والحجر',
                         style: TextStyle(
                           fontSize: 11,
                           color: AppColors.brandSecondaryText,

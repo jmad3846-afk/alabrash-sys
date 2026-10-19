@@ -892,8 +892,8 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                 children: [
                   Expanded(
                     child: Text(
-                      'طُبع هذا الكشف بواسطة نظام الأبرش لإدارة الرخام والجرانيت • مستند مالي معتمد',
-                      style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                      'برنامج أبعاد (Abaad) • هاتف: 0931691900 • مستند مالي معتمد',
+                      style: TextStyle(fontSize: 9.5, color: Colors.grey[600]),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),

@@ -531,8 +531,8 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'طُبعت هذه الفاتورة بواسطة نظام الأبرش لإدارة الرخام والجرانيت • مستند مالي معتمد',
-                    style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                    'برنامج أبعاد (Abaad) • هاتف: 0931691900 • مستند مالي معتمد',
+                    style: TextStyle(fontSize: 9.5, color: Colors.grey[600]),
                   ),
                   Text(
                     'تاريخ الطباعة: ${intl.DateFormat("yyyy-MM-dd HH:mm").format(DateTime.now())}',

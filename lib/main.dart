@@ -20,7 +20,7 @@ class MarbleGraniteERPApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'نظام إدارة مصنع ومعمل الرخام والغرانيت',
+      title: 'برنامج أبعاد (Abaad) لإدارة الرخام والجرانيت',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       home: const ExcludeSemantics(child: MainLayout()),
