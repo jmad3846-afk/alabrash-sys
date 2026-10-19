@@ -2796,11 +2796,6 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           final double draftPrice = double.tryParse(priceCtrl.text) ?? 0.0;
           final double draftBlockTotal = draftTons * draftPrice;
 
-          final double draftMeterQty =
-              double.tryParse(meterQtyCtrl.text) ?? 0.0;
-          final double draftMeterPrice =
-              double.tryParse(meterPriceCtrl.text) ?? 0.0;
-          final double draftMeterTotal = draftMeterQty * draftMeterPrice;
 
           final double itemsTotal = draftItems.fold(
             0.0,
@@ -3863,8 +3858,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final approvedClients = erp.clients
         .where((c) => c.clientType == 'معتمد مصنع')
         .toList();
-    final hasTailorings = erp.simpleTailorings.isNotEmpty || erp.complexTailorings.isNotEmpty;
-    if (approvedClients.isEmpty || (erp.factoryWarehouse.isEmpty && !hasTailorings)) {
+    if (approvedClients.isEmpty || erp.factoryWarehouse.isEmpty) {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -3878,7 +3872,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           content: Text(
             'يجب توفر بيانات أساسية أولاً:\n'
             '${approvedClients.isEmpty ? "• معتمد مصنع واحد على الأقل (شاشة الأشخاص)\n" : ""}'
-            '${(erp.factoryWarehouse.isEmpty && !hasTailorings) ? "• صنف واحد على الأقل في مستودع الألواح أو قسم التفصيل\n" : ""}',
+            '${erp.factoryWarehouse.isEmpty ? "• بضاعة واحدة على الأقل في مستودع المصنع\n" : ""}',
           ),
           actions: [
             TextButton(
@@ -3900,16 +3894,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       return;
     }
 
-    // Multi-item approved-client invoice builder (exact spec).
-    String itemSource = erp.factoryWarehouse.isNotEmpty ? 'warehouse' : 'tailoring';
+    // Multi-item approved-client invoice builder (Factory Warehouse goods).
     String? selectedClientId;
     String clientSearch = '';
     String? selectedWhId;
-    String? selectedTailoringId;
-    String? selectedTailoringLineId;
-    String tailoringSearch = '';
-    final tailoringPiecesCtrl = TextEditingController();
-    final tailoringUnitPriceCtrl = TextEditingController();
     String goodsSearch = '';
     final lengthCtrl = TextEditingController();
     final widthCtrl = TextEditingController();
@@ -3982,47 +3970,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               : matches.first;
           final bool isCube = wh?.category == 'متر مكعب';
 
-          final allTailorings = [...erp.simpleTailorings, ...erp.complexTailorings];
-          final tailoringsFiltered = allTailorings
-              .where((t) =>
-                  tailoringSearch.isEmpty ||
-                  t.name.contains(tailoringSearch) ||
-                  t.complexity.contains(tailoringSearch))
-              .toList();
-          final tailoringValue =
-              tailoringsFiltered.any((t) => t.id == selectedTailoringId)
-                  ? selectedTailoringId
-                  : null;
-          final WorkshopTailoringModel? selectedTailoring = allTailorings
-              .cast<WorkshopTailoringModel?>()
-              .firstWhere((t) => t?.id == selectedTailoringId, orElse: () => null);
-
-          final tailoringLines = selectedTailoring?.lineItems ?? [];
-          final tailoringLineValue =
-              tailoringLines.any((li) => li.id == selectedTailoringLineId)
-                  ? selectedTailoringLineId
-                  : null;
-          final TailoringLineItem? selectedTailoringLine = tailoringLines
-              .cast<TailoringLineItem?>()
-              .firstWhere((li) => li?.id == selectedTailoringLineId, orElse: () => null);
-
-          double draftedTailoringPieces(String tailoringId, String lineId) =>
-              draftItems
-                  .where((it) => it.itemId == 'tailoring_${tailoringId}_$lineId' || it.itemId == lineId)
-                  .fold(0.0, (s, it) => s + it.quantity);
-
-          final double availablePieces = selectedTailoringLine != null
-              ? (selectedTailoringLine.quantity - draftedTailoringPieces(selectedTailoring!.id, selectedTailoringLine.id))
-              : 0.0;
-          final double tPieces = double.tryParse(tailoringPiecesCtrl.text) ?? 0.0;
-          final double tUnitPrice = double.tryParse(tailoringUnitPriceCtrl.text) ?? 0.0;
-          final double tArea = selectedTailoringLine != null
-              ? ((selectedTailoringLine.lengthCm / 100.0) *
-                  (selectedTailoringLine.widthCm / 100.0) *
-                  (selectedTailoringLine.heightCm > 5.0 ? (selectedTailoringLine.heightCm / 100.0) : 1.0) *
-                  tPieces)
-              : 0.0;
-          final double tDraftTotal = tArea * tUnitPrice;
+          // Auto-populate price per meter from Factory Warehouse interface if empty
+          if (wh != null && unitPriceCtrl.text.isEmpty && wh.recommendedSalePrice > 0) {
+            unitPriceCtrl.text = wh.recommendedSalePrice.fmt;
+          }
 
           final double l = double.tryParse(lengthCtrl.text) ?? 0.0;
           final double w = double.tryParse(widthCtrl.text) ?? 0.0;
@@ -4035,6 +3986,30 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             0.0,
             (s, sv) => s + sv.price,
           );
+
+          void autoCalcServicePrice() {
+            if (selectedServiceId == null) return;
+            final srvMatches = erp.services.where((s) => s.id == selectedServiceId).toList();
+            if (srvMatches.isEmpty) return;
+            final srv = srvMatches.first;
+
+            final rawL = double.tryParse(lengthCtrl.text) ?? 0.0;
+            final double curLenM = rawL > 0 ? (rawL / 100.0) : 0.0;
+            final double curQty = double.tryParse(qtyCtrl.text) ?? 0.0;
+
+            if (curLenM > 0 && curQty > 0) {
+              final double calc = curLenM * curQty * srv.unitRate;
+              servicePriceCtrl.text = calc.toStringAsFixed(2);
+              serviceNotesCtrl.text = 'طول ${curLenM.fmt}م × ${curQty.fmt} قطع × ${srv.unitRate.fmt}\$';
+            } else if (curQty > 0) {
+              final double calc = curQty * srv.unitRate;
+              servicePriceCtrl.text = calc.toStringAsFixed(2);
+              serviceNotesCtrl.text = '${curQty.fmt} قطع × ${srv.unitRate.fmt}\$';
+            } else {
+              servicePriceCtrl.text = srv.unitRate.toStringAsFixed(2);
+              serviceNotesCtrl.text = 'سعر الوحدة: ${srv.unitRate.fmt}\$';
+            }
+          }
 
           final double itemsTotal = draftItems.fold(
             0.0,
@@ -4135,44 +4110,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     ),
                     const SizedBox(height: 16),
 
-                    // 2. Source Selector & Line-item fields.
+                    // 2. Factory Warehouse Goods (بضاعة مستودع المصنع).
                     const Text(
-                      '2. أصناف الفاتورة (بزر +):',
+                      '2. أصناف بضاعة مستودع المصنع (بزر +):',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        ChoiceChip(
-                          label: const Text('بضاعة المستودع'),
-                          selected: itemSource == 'warehouse',
-                          onSelected: (val) {
-                            if (val) {
-                              setSt(() {
-                                itemSource = 'warehouse';
-                                formError = null;
-                              });
-                            }
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: const Text('قسم التفصيل (بيع بنود التفصيل)'),
-                          selected: itemSource == 'tailoring',
-                          onSelected: (val) {
-                            if (val) {
-                              setSt(() {
-                                itemSource = 'tailoring';
-                                formError = null;
-                              });
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-
-                    if (itemSource == 'warehouse') ...[
                       TextField(
                         decoration: const InputDecoration(
                           labelText: 'بحث صنف المستودع (النوع والدرجة)...',
@@ -4193,12 +4136,26 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               (g) => DropdownMenuItem(
                                 value: g.id,
                                 child: Text(
-                                  '${g.typeName} ${g.grade} ${g.thicknessCm}سم (${g.category}) — المتاح: ${g.availableQty}',
+                                  '${g.typeName} ${g.grade} ${g.thicknessCm}سم (${g.category}) — المتاح: ${g.availableQty} — سعر بيع المتر: ${g.recommendedSalePrice.fmt} \$',
                                 ),
                               ),
                             )
                             .toList(),
-                        onChanged: (v) => setSt(() => selectedWhId = v),
+                        onChanged: (v) {
+                          setSt(() {
+                            selectedWhId = v;
+                            if (v != null) {
+                              final mList = erp.factoryWarehouse.where((g) => g.id == v).toList();
+                              if (mList.isNotEmpty) {
+                                final selWh = mList.first;
+                                if (selWh.recommendedSalePrice > 0) {
+                                  unitPriceCtrl.text = selWh.recommendedSalePrice.fmt;
+                                }
+                              }
+                            }
+                            autoCalcServicePrice();
+                          });
+                        },
                       ),
                       const SizedBox(height: 8),
                       if (wh == null)
@@ -4212,18 +4169,21 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             Expanded(
                               child: TextField(
                                 controller: lengthCtrl,
-                                keyboardType: TextInputType.number,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 decoration: const InputDecoration(
                                   labelText: 'الطول (سم)',
                                 ),
-                                onChanged: (_) => setSt(() {}),
+                                onChanged: (_) {
+                                  autoCalcServicePrice();
+                                  setSt(() {});
+                                },
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: TextField(
                                 controller: widthCtrl,
-                                keyboardType: TextInputType.number,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 decoration: const InputDecoration(
                                   labelText: 'العرض (سم)',
                                 ),
@@ -4235,7 +4195,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               Expanded(
                                 child: TextField(
                                   controller: heightCtrl,
-                                  keyboardType: TextInputType.number,
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                   decoration: const InputDecoration(
                                     labelText: 'الارتفاع (سم) لحساب الحجم',
                                   ),
@@ -4251,20 +4211,26 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             Expanded(
                               child: TextField(
                                 controller: qtyCtrl,
-                                keyboardType: TextInputType.number,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 decoration: const InputDecoration(
-                                  labelText: 'الكمية',
+                                  labelText: 'الكمية (العدد)',
                                 ),
-                                onChanged: (_) => setSt(() {}),
+                                onChanged: (_) {
+                                  autoCalcServicePrice();
+                                  setSt(() {});
+                                },
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: TextField(
                                 controller: unitPriceCtrl,
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
-                                  labelText: 'سعر الوحدة للمتر (مربع/مكعب \$)',
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                decoration: InputDecoration(
+                                  labelText: 'سعر بيع المتر (${isCube ? "م³" : "م²"} \$)',
+                                  helperText: wh.recommendedSalePrice > 0
+                                      ? 'سعر المستودع: ${wh.recommendedSalePrice.fmt} \$'
+                                      : null,
                                 ),
                                 onChanged: (_) => setSt(() {}),
                               ),
@@ -4274,22 +4240,100 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 12,
-                                  vertical: 14,
+                                  vertical: 10,
                                 ),
                                 decoration: BoxDecoration(
                                   color: AppColors.chipBgBlue,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Text(
-                                  'الإجمالي: ${draftTotal.fmt} \$',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.accentPrimary,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      'إجمالي قيمة البضاعة:',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Color(0xFF64748B),
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${draftTotal.fmt} \$',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: AppColors.accentPrimary,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Prominently display calculated number of meters before adding the line item
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0FDF4),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF86EFAC), width: 1.2),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFDCFCE7),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Icon(Icons.straighten_rounded, color: Color(0xFF15803D), size: 22),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text(
+                                          'إجمالي عدد الأمتار المحسوبة للبند:',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF166534),
+                                          ),
+                                        ),
+                                        Text(
+                                          '${area.fmt} ${isCube ? "متر مكعب (م³)" : "متر مربع (م²)"}',
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w900,
+                                            color: Color(0xFF15803D),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      (l > 0 && w > 0 && q > 0)
+                                          ? 'طريقة الحساب: (الطول ${(l / 100.0).fmt}م × العرض ${(w / 100.0).fmt}م ${isCube ? "× الارتفاع ${(h / 100.0).fmt}م " : ""}× العدد ${q.fmt} قطع) = ${area.fmt} ${isCube ? "م³" : "م²"}'
+                                          : 'أدخل الطول والعرض والعدد لاحتساب إجمالي الأمتار تلقائياً قبل إضافة الصنف',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: (l > 0 && w > 0 && q > 0) ? const Color(0xFF166534) : const Color(0xFF64748B),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 12),
 
@@ -4301,12 +4345,19 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           onSearchChanged: (v) => setSt(() => serviceSearch = v),
                           serviceValue: serviceValue,
                           servicesFiltered: servicesFiltered,
-                          onServiceChanged: (v) => setSt(() => selectedServiceId = v),
+                          onServiceChanged: (v) {
+                            setSt(() {
+                              selectedServiceId = v;
+                              autoCalcServicePrice();
+                            });
+                          },
                           servicePriceCtrl: servicePriceCtrl,
                           serviceNotesCtrl: serviceNotesCtrl,
                           selectedServiceId: selectedServiceId,
                           draftServices: draftServices,
                           draftServicesTotal: draftServicesTotal,
+                          curLengthM: l > 0 ? (l / 100.0) : 0.0,
+                          curQuantity: q,
                           onError: (err) => setSt(() => formError = err),
                         ),
                         const SizedBox(height: 8),
@@ -4370,222 +4421,6 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           ),
                         ),
                       ],
-                    ] else ...[
-                      // Tailoring line items selling
-                      TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'بحث في بنود التفصيل (الاسم أو النوع)...',
-                          prefixIcon: Icon(Icons.search),
-                          isDense: true,
-                        ),
-                        onChanged: (v) => setSt(() => tailoringSearch = v.trim()),
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        initialValue: tailoringValue,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'اختر التفصيل',
-                        ),
-                        items: tailoringsFiltered
-                            .map(
-                              (t) => DropdownMenuItem(
-                                value: t.id,
-                                child: Text(
-                                  '${t.name} (${t.complexity}) — المتاح: ${t.quantity.fmt} ${t.unitSymbol} — سعر البيع: ${t.sellingPrice.fmt}\$',
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) {
-                          setSt(() {
-                            selectedTailoringId = v;
-                            selectedTailoringLineId = null;
-                            tailoringPiecesCtrl.clear();
-                            tailoringUnitPriceCtrl.clear();
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      if (selectedTailoring == null)
-                        const Text(
-                          'اختر التفصيل أولاً لعرض بنوده.',
-                          style: TextStyle(color: AppColors.brandSecondaryText),
-                        ),
-                      if (selectedTailoring != null) ...[
-                        DropdownButtonFormField<String>(
-                          initialValue: tailoringLineValue,
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'اختر بند التفصيل المراد بيعه (Line Item)',
-                          ),
-                          items: tailoringLines
-                              .map((li) {
-                                final rem = li.quantity - draftedTailoringPieces(selectedTailoring.id, li.id);
-                                return DropdownMenuItem(
-                                  value: li.id,
-                                  child: Text(
-                                    '${li.typeName} ${li.grade} (${li.lengthCm}×${li.widthCm}سم) — المتاح: ${rem.toInt()} قطعة — سعر المتر: ${li.sellingPricePerMeter > 0 ? li.sellingPricePerMeter.fmt : selectedTailoring.sellingPrice.fmt}\$',
-                                  ),
-                                );
-                              })
-                              .toList(),
-                          onChanged: (v) {
-                            setSt(() {
-                              selectedTailoringLineId = v;
-                              final li = tailoringLines.firstWhere((l) => l.id == v);
-                              final defaultPrice = li.sellingPricePerMeter > 0 ? li.sellingPricePerMeter : selectedTailoring.sellingPrice;
-                              tailoringUnitPriceCtrl.text = defaultPrice > 0 ? defaultPrice.fmt : '';
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        if (selectedTailoringLine == null)
-                          const Text(
-                            'اختر بند التفصيل لتحديد القياسات وعدد القطع.',
-                            style: TextStyle(color: AppColors.brandSecondaryText),
-                          ),
-                        if (selectedTailoringLine != null) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: AppColors.chipBgBlue,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'القياس: ${selectedTailoringLine.lengthCm} × ${selectedTailoringLine.widthCm} سم ${selectedTailoringLine.heightCm > 5 ? "× ${selectedTailoringLine.heightCm} سم" : ""} | المتاح: ${availablePieces.toInt()} قطعة (${((selectedTailoringLine.lengthCm/100)*(selectedTailoringLine.widthCm/100)*availablePieces).fmt} م²) | تكلفة المتر بعد الخدمات: ${(selectedTailoringLine.netCostPerMeterAfterServices > 0 ? selectedTailoringLine.netCostPerMeterAfterServices : selectedTailoring.costPerMeterAfterServices).fmt}\$',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                                color: AppColors.accentPrimary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: tailoringPiecesCtrl,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: 'الكمية (عدد القطع)',
-                                  ),
-                                  onChanged: (_) => setSt(() {}),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  controller: tailoringUnitPriceCtrl,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: 'سعر البيع للمتر (\$)',
-                                  ),
-                                  onChanged: (_) => setSt(() {}),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 14,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.chipBgGreen,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    'المساحة: ${tArea.fmt} م² | الإجمالي: ${tDraftTotal.fmt} \$',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.successGreen,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-
-                          // Attach services to tailoring item
-                          _buildServicesAttachmentSection(
-                            setSt: setSt,
-                            erp: erp,
-                            serviceSearch: serviceSearch,
-                            onSearchChanged: (v) => setSt(() => serviceSearch = v),
-                            serviceValue: serviceValue,
-                            servicesFiltered: servicesFiltered,
-                            onServiceChanged: (v) => setSt(() => selectedServiceId = v),
-                            servicePriceCtrl: servicePriceCtrl,
-                            serviceNotesCtrl: serviceNotesCtrl,
-                            selectedServiceId: selectedServiceId,
-                            draftServices: draftServices,
-                            draftServicesTotal: draftServicesTotal,
-                            onError: (err) => setSt(() => formError = err),
-                          ),
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.accentPrimary,
-                              ),
-                              onPressed: () {
-                                if (selectedClientId == null) {
-                                  setSt(() => formError = 'اختر المعتمد أولاً.');
-                                  return;
-                                }
-                                if (tPieces <= 0) {
-                                  setSt(() => formError = 'أدخل عدد قطع صحيح.');
-                                  return;
-                                }
-                                if (tPieces > availablePieces + 0.0001) {
-                                  setSt(
-                                    () => formError =
-                                        'عدد القطع يتجاوز المتاح في البند (${availablePieces.toInt()} قطعة).',
-                                  );
-                                  return;
-                                }
-                                if (tUnitPrice < 0) {
-                                  setSt(() => formError = 'أدخل سعر بيع صحيح.');
-                                  return;
-                                }
-                                setSt(() {
-                                  formError = null;
-                                  draftItems.add(
-                                    FactoryInvoiceItem(
-                                      itemId: 'tailoring_${selectedTailoring.id}_${selectedTailoringLine.id}',
-                                      description: 'تفصيل: ${selectedTailoring.name} - بند: ${selectedTailoringLine.typeName} ${selectedTailoringLine.grade} (${selectedTailoringLine.lengthCm}×${selectedTailoringLine.widthCm}سم)',
-                                      typeName: selectedTailoring.name,
-                                      grade: selectedTailoring.complexity,
-                                      lengthCm: selectedTailoringLine.lengthCm,
-                                      widthCm: selectedTailoringLine.widthCm,
-                                      heightCm: selectedTailoringLine.heightCm,
-                                      quantity: tPieces,
-                                      unitPrice: tUnitPrice,
-                                      unitCost: selectedTailoringLine.netCostPerMeterAfterServices > 0
-                                          ? selectedTailoringLine.netCostPerMeterAfterServices
-                                          : selectedTailoring.costPerMeterAfterServices,
-                                      isGranite: selectedTailoring.isGranite,
-                                      services: List.of(draftServices),
-                                      itemCategory: 'tailoring',
-                                    ),
-                                  );
-                                  draftServices.clear();
-                                  tailoringPiecesCtrl.clear();
-                                  tailoringUnitPriceCtrl.clear();
-                                  selectedTailoringLineId = null;
-                                });
-                              },
-                              icon: const Icon(Icons.add),
-                              label: const Text('إضافة بند التفصيل للفاتورة +'),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ],
                     if (formError != null) ...[
                       const SizedBox(height: 6),
                       Text(
@@ -4925,8 +4760,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     required String? selectedServiceId,
     required List<ServiceAttachment> draftServices,
     required double draftServicesTotal,
+    required double curLengthM,
+    required double curQuantity,
     required ValueChanged<String> onError,
   }) {
+    final ServiceItemModel? selectedSrv = (selectedServiceId != null &&
+            erp.services.any((s) => s.id == selectedServiceId))
+        ? erp.services.firstWhere((s) => s.id == selectedServiceId)
+        : null;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -4937,12 +4779,25 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'خدمات ملحقة بهذا الصنف (من شاشة الخدمات):',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: const [
+              Text(
+                'خدمات ملحقة بهذا الصنف (من شاشة الخدمات):',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12.5,
+                ),
+              ),
+              Text(
+                'المعادلة: (الطول × العدد × سعر الخدمة)',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: AppColors.accentPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           TextField(
@@ -4958,7 +4813,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             initialValue: serviceValue,
             isExpanded: true,
             decoration: const InputDecoration(
-              labelText: 'الخدمة',
+              labelText: 'اختر الخدمة المطلوبة',
               isDense: true,
             ),
             items: servicesFiltered
@@ -4966,22 +4821,73 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   (s) => DropdownMenuItem(
                     value: s.id,
                     child: Text(
-                      '${s.name} (${s.unitRate}\$)',
+                      '${s.name} (${s.unitRate}\$ للمتر)',
                     ),
                   ),
                 )
                 .toList(),
             onChanged: onServiceChanged,
           ),
+          if (selectedSrv != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'سعر الخدمة للمتر: ${selectedSrv.unitRate.fmt} \$',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E40AF),
+                        ),
+                      ),
+                      if (curLengthM > 0 && curQuantity > 0)
+                        Text(
+                          'إجمالي الخدمة المحسوب: ${(curLengthM * curQuantity * selectedSrv.unitRate).fmt} \$',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF1D4ED8),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    (curLengthM > 0 && curQuantity > 0)
+                        ? 'معادلة الحساب: (الطول ${curLengthM.fmt}م × العدد ${curQuantity.fmt} قطعة × سعر الخدمة ${selectedSrv.unitRate.fmt}\$) = ${(curLengthM * curQuantity * selectedSrv.unitRate).fmt} \$'
+                        : 'أدخل الطول والكمية بالصنف ليتم احتساب إجمالي سعر الخدمة تلقائياً',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: (curLengthM > 0 && curQuantity > 0)
+                          ? const Color(0xFF2563EB)
+                          : const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: servicePriceCtrl,
-                  keyboardType: TextInputType.number,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(
-                    labelText: 'سعر الخدمة (\$)',
+                    labelText: 'سعر الخدمة الإجمالي (\$)',
                     isDense: true,
                   ),
                 ),
@@ -4992,7 +4898,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 child: TextField(
                   controller: serviceNotesCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'وصف تفصيلي للخدمة',
+                    labelText: 'وصف أو تفاصيل حساب الخدمة',
                     isDense: true,
                   ),
                 ),
@@ -5007,18 +4913,26 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   final price =
                       double.tryParse(servicePriceCtrl.text) ?? 0.0;
                   if (price <= 0) {
-                    onError('أدخل سعر الخدمة.');
+                    onError('أدخل سعر الخدمة أو تأكد من إدخال الطول والكمية.');
                     return;
                   }
                   final srv = erp.services.firstWhere(
                     (s) => s.id == selectedServiceId,
                   );
+                  final autoFormula = (curLengthM > 0 && curQuantity > 0)
+                      ? 'طول ${curLengthM.fmt}م × ${curQuantity.fmt} قطع × ${srv.unitRate.fmt}\$'
+                      : '';
+                  final userNote = serviceNotesCtrl.text.trim();
+                  final finalNote = userNote.isNotEmpty
+                      ? (userNote.contains('طول') ? userNote : (autoFormula.isNotEmpty ? '$autoFormula • $userNote' : userNote))
+                      : autoFormula;
+
                   setSt(() {
                     draftServices.add(
                       ServiceAttachment(
                         serviceName: srv.name,
                         price: price,
-                        notes: serviceNotesCtrl.text,
+                        notes: finalNote,
                       ),
                     );
                     servicePriceCtrl.clear();
@@ -5030,32 +4944,62 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             ],
           ),
           if (draftServices.isNotEmpty) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             ...draftServices.asMap().entries.map(
-              (e) => Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '• ${e.value.serviceName}: ${e.value.price}\$ ${e.value.notes}',
+              (e) => Container(
+                margin: const EdgeInsets.symmetric(vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '• ${e.value.serviceName}: ${e.value.price.fmt} \$',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          if (e.value.notes.isNotEmpty)
+                            Text(
+                              'تفاصيل الحساب: ${e.value.notes}',
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                color: Color(0xFF2563EB),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      size: 18,
-                      color: AppColors.dangerWaste,
+                    IconButton(
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        size: 18,
+                        color: AppColors.dangerWaste,
+                      ),
+                      onPressed: () => setSt(
+                        () => draftServices.removeAt(e.key),
+                      ),
                     ),
-                    onPressed: () => setSt(
-                      () => draftServices.removeAt(e.key),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
+            const SizedBox(height: 4),
             Text(
               'إجمالي خدمات الصنف: ${draftServicesTotal.fmt} \$',
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
+                color: Color(0xFF0F172A),
               ),
             ),
           ],

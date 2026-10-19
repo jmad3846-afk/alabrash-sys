@@ -100,13 +100,19 @@ class A4InvoiceData {
           ? '${it.lengthCm.fmt} × ${it.widthCm.fmt} سم'
           : '—';
       final srvText = it.services.isNotEmpty
-          ? it.services.map((s) => '${s.serviceName} (${s.price}\$)').join(' + ')
+          ? it.services.map((s) {
+              final note = s.notes.trim();
+              if (note.isNotEmpty) {
+                return '${s.serviceName}: ${s.price.fmt}\$ ($note)';
+              }
+              return '${s.serviceName}: ${s.price.fmt}\$';
+            }).join('\n')
           : '—';
       final qtyLabel = isPurchase
           ? (it.isMeterItem
               ? '${it.quantity.fmt} ${it.meterUnit.isNotEmpty ? it.meterUnit : "متر"}'
               : '${it.quantity.fmt} طن')
-          : '${it.calculatedArea.fmt} ${it.heightCm > 5 ? "م³" : "م²"} (${it.quantity.fmt} قطعة)';
+          : '${it.calculatedArea.fmt} ${it.heightCm > 5 ? "م³" : "م²"}\n(${it.quantity.fmt} قطعة)';
       final specs = it.isMeterItem
           ? '${it.grade}${it.thicknessCm > 0 ? " • ${it.thicknessCm.fmt} سم" : ""} ${it.isGranite ? "(جرانيت)" : "(رخام)"}'
           : '${it.grade} ${it.isGranite ? "(جرانيت)" : "(رخام)"}';
@@ -169,8 +175,14 @@ class A4InvoiceData {
       for (final item in inv.items) {
         final srvText = item.services.isNotEmpty
             ? item.services
-                .map((s) => '${s.serviceName} (${s.price}\$)')
-                .join(' + ')
+                .map((s) {
+                  final note = s.notes.trim();
+                  if (note.isNotEmpty) {
+                    return '${s.serviceName}: ${s.price.fmt}\$ ($note)';
+                  }
+                  return '${s.serviceName} (${s.price.fmt}\$)';
+                })
+                .join('\n')
             : '—';
         items.add(A4InvoiceLineItem(
           index: idx++,
@@ -188,7 +200,13 @@ class A4InvoiceData {
       }
     } else {
       final srvText = inv.services.isNotEmpty
-          ? inv.services.map((s) => '${s.serviceName} (${s.price}\$)').join(' + ')
+          ? inv.services.map((s) {
+              final note = s.notes.trim();
+              if (note.isNotEmpty) {
+                return '${s.serviceName}: ${s.price.fmt}\$ ($note)';
+              }
+              return '${s.serviceName} (${s.price.fmt}\$)';
+            }).join('\n')
           : '—';
 
       items.add(A4InvoiceLineItem(
@@ -1286,14 +1304,14 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
         borderRadius: BorderRadius.circular(5),
         child: Table(
           columnWidths: const {
-            0: FixedColumnWidth(34), // #
-            1: FlexColumnWidth(3.0), // Description
-            2: FlexColumnWidth(1.8), // Specs
-            3: FlexColumnWidth(1.9), // Dimensions
-            4: FlexColumnWidth(1.8), // Qty
-            5: FlexColumnWidth(1.6), // Unit Price
-            6: FlexColumnWidth(2.0), // Services
-            7: FlexColumnWidth(1.9), // Total
+            0: FixedColumnWidth(30), // #
+            1: FlexColumnWidth(2.6), // Description
+            2: FlexColumnWidth(1.6), // Specs
+            3: FlexColumnWidth(1.7), // Dimensions
+            4: FlexColumnWidth(1.8), // Qty / Meters
+            5: FlexColumnWidth(1.5), // Unit Price
+            6: FlexColumnWidth(2.8), // Services & formula
+            7: FlexColumnWidth(1.7), // Total
           },
           border: TableBorder.all(
             color: const Color(0xFFCBD5E1),
@@ -1308,9 +1326,9 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
                 _TableHeaderCell('البيان والمادة'),
                 _TableHeaderCell('المواصفات والنوع'),
                 _TableHeaderCell('الأبعاد (سم)'),
-                _TableHeaderCell('الكمية / المساحة'),
-                _TableHeaderCell('سعر الوحدة'),
-                _TableHeaderCell('الخدمات الملحقة'),
+                _TableHeaderCell('الكمية / الأمتار (م²)'),
+                _TableHeaderCell('سعر المتر / الوحدة'),
+                _TableHeaderCell('الخدمات الملحقة وحسابها'),
                 _TableHeaderCell('الإجمالي'),
               ],
             ),
@@ -1560,14 +1578,14 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
         borderRadius: BorderRadius.circular(5),
         child: Table(
           columnWidths: const {
-            0: FixedColumnWidth(34), // #
-            1: FlexColumnWidth(3.0), // Description
-            2: FlexColumnWidth(1.8), // Specs / Grade
-            3: FlexColumnWidth(1.9), // Dimensions
+            0: FixedColumnWidth(30), // #
+            1: FlexColumnWidth(2.6), // Description
+            2: FlexColumnWidth(1.6), // Specs / Grade
+            3: FlexColumnWidth(1.7), // Dimensions
             4: FlexColumnWidth(1.8), // Qty / Area
-            5: FlexColumnWidth(2.2), // Operations / Services
-            6: FlexColumnWidth(2.0), // Workshop Checklist
-            7: FlexColumnWidth(1.9), // Cutting Notes
+            5: FlexColumnWidth(2.8), // Operations / Services formula
+            6: FlexColumnWidth(1.8), // Workshop Checklist
+            7: FlexColumnWidth(1.5), // Cutting Notes
           },
           border: TableBorder.all(
             color: const Color(0xFFCCFBF1),
@@ -1582,8 +1600,8 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
                 _TableHeaderCell('البيان والمادة المطلوبة', textColor: Color(0xFF0F766E)),
                 _TableHeaderCell('المواصفات والنوع', textColor: Color(0xFF0F766E)),
                 _TableHeaderCell('الأبعاد والمقاسات (سم)', textColor: Color(0xFF0F766E)),
-                _TableHeaderCell('الكمية / المساحة', textColor: Color(0xFF0F766E)),
-                _TableHeaderCell('عمليات التشغيل والقص', textColor: Color(0xFF0F766E)),
+                _TableHeaderCell('الكمية / الأمتار (م²)', textColor: Color(0xFF0F766E)),
+                _TableHeaderCell('عمليات التشغيل وحسابها', textColor: Color(0xFF0F766E)),
                 _TableHeaderCell('حالة التجهيز بالمصنع', textColor: Color(0xFF0F766E)),
                 _TableHeaderCell('ملاحظات القص والتنفيذ', textColor: Color(0xFF0F766E)),
               ],
