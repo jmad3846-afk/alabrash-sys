@@ -21,6 +21,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   late TabController _financialsTabController;
   String _retailQuery = '';
   int _retailSubView = 0;
+  String _projectQuery = '';
+  int _projectSubView = 0;
 
   @override
   void initState() {
@@ -1250,7 +1252,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
             child: const TabBar(
               tabs: [
                 Tab(text: 'زبائن المعمل (الطلبيات والجزافي)'),
-                Tab(text: 'المشاريع (Projects)'),
+                Tab(text: 'مالية المشاريع (Project Financials)'),
               ],
             ),
           ),
@@ -1663,85 +1665,674 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   }
 
 
-  Widget _buildProjectsFinances(ERPProvider erp) {
-    final pending = erp.pendingProjects;
-    final actionable = pending
-        .where(
-          (p) => erp.projectDue(p.id) > 0.01 || erp.projectDueSyp(p.id) > 0.01,
-        )
+  Widget _buildProjectsStats(ERPProvider erp) {
+    final invs = erp.workshopInvoices
+        .where((i) => i.projectId.isNotEmpty)
         .toList();
-    if (actionable.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Card(
-          child: Center(child: Text('لا توجد مشاريع بانتظار التحصيل.')),
+    double sumWhere(String cur, double Function(WorkshopInvoiceModel) f) => invs
+        .where((i) => i.currency == cur)
+        .fold<double>(0.0, (s, i) => s + f(i));
+
+    final totalInvoicedUsd = sumWhere(AppCurrency.usd, (i) => i.grandTotal);
+    final totalInvoicedSyp = sumWhere(AppCurrency.syp, (i) => i.grandTotal);
+    final totalCollectedUsd = sumWhere(
+      AppCurrency.usd,
+      (i) => i.cashPaidNow + i.depositDeducted,
+    );
+    final totalCollectedSyp = sumWhere(
+      AppCurrency.syp,
+      (i) => i.cashPaidNow + i.depositDeducted,
+    );
+    final totalDueUsd = sumWhere(AppCurrency.usd, (i) => i.remainingBalance);
+    final totalDueSyp = sumWhere(AppCurrency.syp, (i) => i.remainingBalance);
+
+    Widget stat(String label, String value, Color color) => Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
         ),
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.all(24),
-      itemCount: actionable.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (_, idx) {
-        final p = actionable[idx];
-        final invs = erp.workshopInvoices
-            .where((i) => i.projectId == p.id)
-            .toList();
-        final due = erp.projectDue(p.id);
-        final dueSyp = erp.projectDueSyp(p.id);
-        return Card(
-          child: ExpansionTile(
-            leading: const CircleAvatar(
-              backgroundColor: AppColors.chipBgSky,
-              child: Icon(
-                Icons.domain_rounded,
-                color: AppColors.orderDepositBoxAccent,
+        child: Column(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: color,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            title: Text(
-              'المشروع ${p.name}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
             ),
-            subtitle: Text(
-              'الزبون: ${p.clientName} • الفواتير: ${invs.length} • المتبقي للتحصيل: ${AppCurrency.dual(due, dueSyp)}',
+          ],
+        ),
+      ),
+    );
+
+    return Row(
+      children: [
+        stat(
+          'إجمالي المشاريع',
+          '${erp.workshopProjects.length} مشروع (${invs.length} فاتورة)',
+          AppColors.accentPrimary,
+        ),
+        const SizedBox(width: 8),
+        stat(
+          'إجمالي مبالغ الفواتير',
+          AppCurrency.dual(totalInvoicedUsd, totalInvoicedSyp),
+          const Color(0xFF2563EB),
+        ),
+        const SizedBox(width: 8),
+        stat(
+          'المحصل الفعلي',
+          AppCurrency.dual(totalCollectedUsd, totalCollectedSyp),
+          AppColors.successGreen,
+        ),
+        const SizedBox(width: 8),
+        stat(
+          'المتبقي للتحصيل',
+          AppCurrency.dual(totalDueUsd, totalDueSyp),
+          AppColors.dangerWaste,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProjectsFinances(ERPProvider erp) {
+    final q = _projectQuery;
+    final allProjects = erp.workshopProjects;
+    final pendingProjects = erp.pendingProjects;
+    final completedProjects = erp.completedProjects;
+    final allProjectInvoices = erp.workshopInvoices
+        .where((i) => i.projectId.isNotEmpty)
+        .toList();
+
+    bool matchesProject(WorkshopProjectModel p) {
+      if (q.isEmpty) return true;
+      final invs = erp.workshopInvoices
+          .where((i) => i.projectId == p.id)
+          .toList();
+      final hay =
+          '${p.name} ${p.clientName} ${p.phone} ${p.description} ${invs.map((i) => '${i.invoiceNo} ${i.itemDescription}').join(' ')}';
+      return hay.toLowerCase().contains(q.toLowerCase());
+    }
+
+    bool matchesInv(WorkshopInvoiceModel i) {
+      if (q.isEmpty) return true;
+      final proj = erp.workshopProjects
+          .cast<WorkshopProjectModel?>()
+          .firstWhere((p) => p?.id == i.projectId, orElse: () => null);
+      final hay =
+          '${i.invoiceNo} ${i.clientName} ${proj?.name ?? ""} ${i.itemDescription} ${i.sourceType} ${i.services.map((s) => s.serviceName).join(' ')}';
+      return hay.toLowerCase().contains(q.toLowerCase());
+    }
+
+    final filteredProjects = (switch (_projectSubView) {
+      1 => pendingProjects,
+      2 => completedProjects,
+      _ => allProjects,
+    }).where(matchesProject).toList();
+
+    final filteredInvoices =
+        allProjectInvoices.where(matchesInv).toList();
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            decoration: const InputDecoration(
+              labelText: 'بحث في المشاريع، الزبائن، المواقع أو الفواتير...',
+              prefixIcon: Icon(Icons.search),
             ),
+            onChanged: (v) => setState(() => _projectQuery = v.trim()),
+          ),
+          const SizedBox(height: 12),
+          _buildProjectsStats(erp),
+          const SizedBox(height: 12),
+          Row(
             children: [
-              ...invs.map(
-                (inv) => ListTile(
-                  leading: CurrencyBadge(currency: inv.currency),
-                  title: Text(
-                    '${inv.invoiceNo} — ${inv.grandTotal.fmt}${inv.currencySymbol}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
+              ChoiceChip(
+                selected: _projectSubView == 0,
+                onSelected: (_) => setState(() => _projectSubView = 0),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.domain_rounded, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'كافة المشاريع (${allProjects.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                  ),
-                  subtitle: Text(
-                    '${inv.itemDescription} • المدفوع: ${(inv.cashPaidNow + inv.depositDeducted).fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
-                  ),
-                  trailing: inv.remainingBalance > 0.01
-                      ? ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.successGreen,
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                          ),
-                          onPressed: () => _showMoneyDialog(
-                            title: 'تحصيل فاتورة ${inv.invoiceNo}',
-                            actionLabel: 'تأكيد التحصيل',
-                            max: inv.remainingBalance,
-                            currency: inv.currency,
-                            onConfirm: (a) =>
-                                erp.collectWorkshopInvoice(inv, a),
-                          ),
-                          child: const Text('تحصيل'),
-                        )
-                      : const Chip(label: Text('خالصة')),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                selected: _projectSubView == 1,
+                onSelected: (_) => setState(() => _projectSubView = 1),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.pending_actions_rounded, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'بانتظار التحصيل (${pendingProjects.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                selected: _projectSubView == 2,
+                onSelected: (_) => setState(() => _projectSubView = 2),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.check_circle_outline_rounded, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'مسددة بالكامل (${completedProjects.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                selected: _projectSubView == 3,
+                onSelected: (_) => setState(() => _projectSubView = 3),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.receipt_long_outlined, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'سجل فواتير المشاريع (${allProjectInvoices.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-        );
-      },
+          const SizedBox(height: 12),
+          Expanded(
+            child: _projectSubView == 3
+                ? (filteredInvoices.isEmpty
+                    ? const Card(
+                        child: Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Text('لا توجد فواتير مشاريع مطابقة.'),
+                          ),
+                        ),
+                      )
+                    : Card(
+                        child: ListView.separated(
+                          itemCount: filteredInvoices.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (_, idx) {
+                            final inv = filteredInvoices[idx];
+                            final proj = erp.workshopProjects
+                                .cast<WorkshopProjectModel?>()
+                                .firstWhere(
+                                  (p) => p?.id == inv.projectId,
+                                  orElse: () => null,
+                                );
+                            return ExpansionTile(
+                              leading: CurrencyBadge(currency: inv.currency),
+                              title: Text(
+                                '${inv.invoiceNo} • ${inv.clientName}${proj != null ? " (مشروع: ${proj.name})" : ""}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${inv.itemDescription} • الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'معاينة طباعة A4',
+                                    icon: const Icon(
+                                      Icons.picture_as_pdf_rounded,
+                                      color: Color(0xFF2563EB),
+                                    ),
+                                    onPressed: () {
+                                      A4InvoicePrintDialog.show(
+                                        context,
+                                        invoiceData:
+                                            A4InvoiceData.fromWorkshopInvoice(
+                                          inv,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(width: 4),
+                                  inv.remainingBalance > 0.01
+                                      ? ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                AppColors.successGreen,
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                            ),
+                                          ),
+                                          onPressed: () => _showMoneyDialog(
+                                            title:
+                                                'تحصيل فاتورة ${inv.invoiceNo}',
+                                            actionLabel: 'تأكيد التحصيل',
+                                            max: inv.remainingBalance,
+                                            currency: inv.currency,
+                                            onConfirm: (a) => erp
+                                                .collectWorkshopInvoice(
+                                                  inv,
+                                                  a,
+                                                ),
+                                          ),
+                                          child: const Text('تحصيل'),
+                                        )
+                                      : const Chip(label: Text('خالصة')),
+                                ],
+                              ),
+                              children: [
+                                if (inv.photoPath.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 4,
+                                    ),
+                                    child: AppImagePreviewCard(
+                                      imagePath: inv.photoPath,
+                                      title:
+                                          'صورة الفاتورة المرفقة (${inv.invoiceNo})',
+                                    ),
+                                  ),
+                                if (inv.items.isNotEmpty)
+                                  ...inv.items.map(
+                                    (it) => ListTile(
+                                      dense: true,
+                                      title: Text(it.description),
+                                      subtitle: Text(
+                                        'الكمية: ${it.quantity.fmt} ${it.unitCategory} • سعر الوحدة: ${it.unitPrice.fmt}${inv.currencySymbol} • الإجمالي: ${it.agreedPrice.fmt}${inv.currencySymbol}',
+                                      ),
+                                    ),
+                                  ),
+                                ...inv.services.map(
+                                  (s) => ListTile(
+                                    dense: true,
+                                    title: Text('خدمة: ${s.serviceName}'),
+                                    trailing: Text(
+                                      '${s.price}\$',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ))
+                : (filteredProjects.isEmpty
+                    ? const Card(
+                        child: Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Text('لا توجد مشاريع مطابقة.'),
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        itemCount: filteredProjects.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (_, idx) {
+                          final p = filteredProjects[idx];
+                          final invs = erp.workshopInvoices
+                              .where((i) => i.projectId == p.id)
+                              .toList();
+                          final due = erp.projectDue(p.id);
+                          final dueSyp = erp.projectDueSyp(p.id);
+                          final hasDue = due > 0.01 || dueSyp > 0.01;
+                          final isPaidInFull = !hasDue && invs.isNotEmpty;
+
+                          final totalUsd = invs
+                              .where((i) => i.currency == AppCurrency.usd)
+                              .fold<double>(0.0, (s, i) => s + i.grandTotal);
+                          final totalSyp = invs
+                              .where((i) => i.currency == AppCurrency.syp)
+                              .fold<double>(0.0, (s, i) => s + i.grandTotal);
+                          final paidUsd = invs
+                              .where((i) => i.currency == AppCurrency.usd)
+                              .fold<double>(
+                                0.0,
+                                (s, i) =>
+                                    s + (i.cashPaidNow + i.depositDeducted),
+                              );
+                          final paidSyp = invs
+                              .where((i) => i.currency == AppCurrency.syp)
+                              .fold<double>(
+                                0.0,
+                                (s, i) =>
+                                    s + (i.cashPaidNow + i.depositDeducted),
+                              );
+
+                          return Card(
+                            elevation: 1,
+                            margin: EdgeInsets.zero,
+                            child: ExpansionTile(
+                              leading: CircleAvatar(
+                                backgroundColor: isPaidInFull
+                                    ? const Color(0xFFDCFCE7)
+                                    : (hasDue
+                                        ? const Color(0xFFFEE2E2)
+                                        : AppColors.chipBgSky),
+                                child: Icon(
+                                  Icons.domain_rounded,
+                                  color: isPaidInFull
+                                      ? const Color(0xFF166534)
+                                      : (hasDue
+                                          ? AppColors.dangerWaste
+                                          : AppColors.orderDepositBoxAccent),
+                                ),
+                              ),
+                              title: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'المشروع: ${p.name}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  if (isPaidInFull)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFDCFCE7),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: const Color(0xFF86EFAC),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'مسدد بالكامل',
+                                        style: TextStyle(
+                                          color: Color(0xFF166534),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    )
+                                  else if (hasDue)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFEE2E2),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: const Color(0xFFFCA5A5),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'متبقي: ${AppCurrency.dual(due, dueSyp)}',
+                                        style: const TextStyle(
+                                          color: Color(0xFF991B1B),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF1F5F9),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Text(
+                                        'قيد التنفيذ',
+                                        style: TextStyle(
+                                          color: Color(0xFF475569),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              subtitle: Text(
+                                'الزبون: ${p.clientName}${p.phone.isNotEmpty ? " • الهاتف: ${p.phone}" : ""} • الفواتير: ${invs.length}',
+                              ),
+                              children: [
+                                // Financial summary bar for the project
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: const Color(0xFFE2E8F0),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'إجمالي قيمة الفواتير:',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: AppColors
+                                                    .brandSecondaryText,
+                                              ),
+                                            ),
+                                            Text(
+                                              AppCurrency.dual(
+                                                totalUsd,
+                                                totalSyp,
+                                              ),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'إجمالي المدفوع:',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: AppColors
+                                                    .brandSecondaryText,
+                                              ),
+                                            ),
+                                            Text(
+                                              AppCurrency.dual(
+                                                paidUsd,
+                                                paidSyp,
+                                              ),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                                color: AppColors.successGreen,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'المتبقي للتحصيل:',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: AppColors
+                                                    .brandSecondaryText,
+                                              ),
+                                            ),
+                                            Text(
+                                              AppCurrency.dual(due, dueSyp),
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                                color: hasDue
+                                                    ? AppColors.dangerWaste
+                                                    : AppColors.successGreen,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (p.description.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 4,
+                                    ),
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Text(
+                                        'ملاحظات المشروع: ${p.description}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.brandSecondaryText,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                if (invs.isEmpty)
+                                  const Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: Text(
+                                      'لا توجد فواتير مسجلة لهذا المشروع حتى الآن.',
+                                    ),
+                                  )
+                                else
+                                  ...invs.map(
+                                    (inv) => ListTile(
+                                      leading: CurrencyBadge(
+                                        currency: inv.currency,
+                                      ),
+                                      title: Text(
+                                        '${inv.invoiceNo} — ${inv.grandTotal.fmt}${inv.currencySymbol}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        '${inv.itemDescription} • التاريخ: ${inv.date.toString().substring(0, 10)} • المدفوع: ${(inv.cashPaidNow + inv.depositDeducted).fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
+                                      ),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            tooltip: 'معاينة طباعة A4',
+                                            icon: const Icon(
+                                              Icons.picture_as_pdf_rounded,
+                                              color: Color(0xFF2563EB),
+                                              size: 20,
+                                            ),
+                                            onPressed: () {
+                                              A4InvoicePrintDialog.show(
+                                                context,
+                                                invoiceData:
+                                                    A4InvoiceData
+                                                        .fromWorkshopInvoice(
+                                                  inv,
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                          const SizedBox(width: 4),
+                                          inv.remainingBalance > 0.01
+                                              ? ElevatedButton(
+                                                  style: ElevatedButton
+                                                      .styleFrom(
+                                                    backgroundColor: AppColors
+                                                        .successGreen,
+                                                    padding:
+                                                        const EdgeInsets
+                                                            .symmetric(
+                                                      horizontal: 10,
+                                                    ),
+                                                  ),
+                                                  onPressed: () =>
+                                                      _showMoneyDialog(
+                                                    title:
+                                                        'تحصيل فاتورة ${inv.invoiceNo}',
+                                                    actionLabel:
+                                                        'تأكيد التحصيل',
+                                                    max: inv.remainingBalance,
+                                                    currency: inv.currency,
+                                                    onConfirm: (a) => erp
+                                                        .collectWorkshopInvoice(
+                                                          inv,
+                                                          a,
+                                                        ),
+                                                  ),
+                                                  child: const Text('تحصيل'),
+                                                )
+                                              : const Chip(
+                                                  label: Text('خالصة'),
+                                                ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      )),
+          ),
+        ],
+      ),
     );
   }
 

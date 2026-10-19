@@ -4033,6 +4033,46 @@ class ERPProvider extends ChangeNotifier {
             .map((item) => WorkshopInvoiceModel.fromJson(item))
             .toList();
       }
+      final workshopProjectsJson = prefs.getString('workshopProjects');
+      if (workshopProjectsJson != null) {
+        try {
+          workshopProjects = (jsonDecode(workshopProjectsJson) as List)
+              .map((item) => WorkshopProjectModel.fromJson(item))
+              .toList();
+        } catch (_) {}
+      }
+      final workshopOrdersJson = prefs.getString('workshopOrders');
+      if (workshopOrdersJson != null) {
+        try {
+          workshopOrders = (jsonDecode(workshopOrdersJson) as List)
+              .map((item) => WorkshopOrderModel.fromJson(item))
+              .toList();
+        } catch (_) {}
+      }
+      final factoryOrdersJson = prefs.getString('factoryOrders');
+      if (factoryOrdersJson != null) {
+        try {
+          factoryOrders = (jsonDecode(factoryOrdersJson) as List)
+              .map((item) => FactoryOrderModel.fromJson(item))
+              .toList();
+        } catch (_) {}
+      }
+      final servicesJson = prefs.getString('services');
+      if (servicesJson != null) {
+        try {
+          services = (jsonDecode(servicesJson) as List)
+              .map((item) => ServiceItemModel.fromJson(item))
+              .toList();
+        } catch (_) {}
+      }
+      final wasteLogsJson = prefs.getString('wasteLogs');
+      if (wasteLogsJson != null) {
+        try {
+          wasteLogs = (jsonDecode(wasteLogsJson) as List)
+              .map((item) => WasteLogModel.fromJson(item))
+              .toList();
+        } catch (_) {}
+      }
       final workshopStockJson = prefs.getString('workshopStock');
       if (workshopStockJson != null) {
         workshopStock = (jsonDecode(workshopStockJson) as List)
