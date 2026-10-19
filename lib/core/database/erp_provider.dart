@@ -4057,6 +4057,14 @@ class ERPProvider extends ChangeNotifier {
         'accountantWithdrawals',
         jsonEncode(accountantWithdrawals.map((w) => w.toJson()).toList()),
       );
+      await prefs.setString(
+        'cuttingOperations',
+        jsonEncode(cuttingOperations.map((c) => c.toJson()).toList()),
+      );
+      await prefs.setString(
+        'returnInvoices',
+        jsonEncode(returnInvoices.map((r) => r.toJson()).toList()),
+      );
     } catch (_) {}
   }
 
@@ -4115,6 +4123,14 @@ class ERPProvider extends ChangeNotifier {
         factoryWarehouse = (jsonDecode(factoryWarehouseJson) as List)
             .map((item) => FactoryWarehouseModel.fromJson(item))
             .toList();
+      }
+      final cuttingOpsJson = prefs.getString('cuttingOperations');
+      if (cuttingOpsJson != null) {
+        try {
+          cuttingOperations = (jsonDecode(cuttingOpsJson) as List)
+              .map((item) => CuttingOperationModel.fromJson(item))
+              .toList();
+        } catch (_) {}
       }
       final factoryInvoicesJson = prefs.getString('factoryInvoices');
       if (factoryInvoicesJson != null) {
@@ -4185,6 +4201,14 @@ class ERPProvider extends ChangeNotifier {
         complexTailorings = (jsonDecode(complexTailoringsJson) as List)
             .map((item) => WorkshopTailoringModel.fromJson(item))
             .toList();
+      }
+      final returnInvoicesJson = prefs.getString('returnInvoices');
+      if (returnInvoicesJson != null) {
+        try {
+          returnInvoices = (jsonDecode(returnInvoicesJson) as List)
+              .map((item) => ReturnInvoiceModel.fromJson(item))
+              .toList();
+        } catch (_) {}
       }
       final expenseTypesJson = prefs.getString('expenseTypes');
       if (expenseTypesJson != null) {
@@ -4295,6 +4319,347 @@ class ERPProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (_) {}
+  }
+
+  // -------------------------------------------------------------
+  // COMPREHENSIVE BACKUP & RESTORE SYSTEM
+  // -------------------------------------------------------------
+
+  /// Exports 100% of the entire ERP software data into a structured backup map.
+  Map<String, dynamic> exportFullBackupData() {
+    return {
+      'metadata': {
+        'systemName': 'Abaad ERP (برنامج أبعاد)',
+        'systemIdentifier': 'abaad_marble_granite_erp',
+        'backupVersion': '1.0.0',
+        'exportDate': DateTime.now().toIso8601String(),
+        'centerName': centerInfo.centerName,
+        'centerPhone': centerInfo.phone1,
+        'graniteAccountantPercentage': graniteAccountantPercentage,
+      },
+      'financials': {
+        'mainCashBox': mainCashBox,
+        'scrapCashBox': scrapCashBox,
+        'orderCashBox': orderCashBox,
+        'mainCashBoxSyp': mainCashBoxSyp,
+        'scrapCashBoxSyp': scrapCashBoxSyp,
+        'orderCashBoxSyp': orderCashBoxSyp,
+        'graniteAccountantPercentage': graniteAccountantPercentage,
+        'accountantWithdrawals':
+            accountantWithdrawals.map((w) => w.toJson()).toList(),
+        'partners': partners.map((p) => p.toJson()).toList(),
+        'openingEntry': openingEntry.toJson(),
+      },
+      'factory': {
+        'suppliers': suppliers.map((s) => s.toJson()).toList(),
+        'clients': clients.map((c) => c.toJson()).toList(),
+        'blockTypes': blockTypes.map((b) => b.toJson()).toList(),
+        'meterTypes': meterTypes.map((m) => m.toJson()).toList(),
+        'factoryBlocks': factoryBlocks.map((b) => b.toJson()).toList(),
+        'factoryWarehouse': factoryWarehouse.map((w) => w.toJson()).toList(),
+        'cuttingOperations':
+            cuttingOperations.map((c) => c.toJson()).toList(),
+        'factoryInvoices': factoryInvoices.map((inv) => inv.toJson()).toList(),
+        'factoryOrders': factoryOrders.map((o) => o.toJson()).toList(),
+      },
+      'workshop': {
+        'workshopStock': workshopStock.map((w) => w.toJson()).toList(),
+        'simpleTailorings': simpleTailorings.map((t) => t.toJson()).toList(),
+        'complexTailorings': complexTailorings.map((t) => t.toJson()).toList(),
+        'scrapItems': scrapItems.map((s) => s.toJson()).toList(),
+        'surplusCosts': surplusCosts.map((s) => s.toJson()).toList(),
+        'wasteLogs': wasteLogs.map((w) => w.toJson()).toList(),
+        'workshopOrders': workshopOrders.map((o) => o.toJson()).toList(),
+        'workshopInvoices':
+            workshopInvoices.map((inv) => inv.toJson()).toList(),
+        'workshopProjects':
+            workshopProjects.map((p) => p.toJson()).toList(),
+      },
+      'staff': {
+        'staffTypes': staffTypes.map((t) => t.toJson()).toList(),
+        'staffList': staffList.map((s) => s.toJson()).toList(),
+        'staffAttendance': staffAttendance.map((a) => a.toJson()).toList(),
+        'workdayEntries': workdayEntries.map((w) => w.toJson()).toList(),
+        'activeWorkweekStart': activeWorkweekStart.toIso8601String(),
+      },
+      'operations': {
+        'returnInvoices': returnInvoices.map((r) => r.toJson()).toList(),
+        'expenseTypes': expenseTypes.map((e) => e.toJson()).toList(),
+        'expenseRecords': expenseRecords.map((e) => e.toJson()).toList(),
+        'adjustmentInvoices':
+            adjustmentInvoices.map((a) => a.toJson()).toList(),
+        'services': services.map((s) => s.toJson()).toList(),
+      },
+      'centerInfo': centerInfo.toJson(),
+    };
+  }
+
+  /// Restores and distributes all data back to its correct places across all screens and sections.
+  Future<Map<String, dynamic>> importFullBackupData(
+      Map<String, dynamic> raw) async {
+    // 1. Resolve sections with fallback to root keys if present
+    final fin = (raw['financials'] is Map)
+        ? raw['financials'] as Map<String, dynamic>
+        : raw;
+    final fac = (raw['factory'] is Map)
+        ? raw['factory'] as Map<String, dynamic>
+        : raw;
+    final wrk = (raw['workshop'] is Map)
+        ? raw['workshop'] as Map<String, dynamic>
+        : raw;
+    final stf = (raw['staff'] is Map)
+        ? raw['staff'] as Map<String, dynamic>
+        : raw;
+    final ops = (raw['operations'] is Map)
+        ? raw['operations'] as Map<String, dynamic>
+        : raw;
+
+    // Financials
+    if (fin['openingEntry'] != null) {
+      try {
+        openingEntry = OpeningEntryModel.fromJson(
+            Map<String, dynamic>.from(fin['openingEntry']));
+        isOpeningEntryCompleted = openingEntry.isLocked;
+      } catch (_) {}
+    }
+    if (fin['partners'] is List) {
+      partners = (fin['partners'] as List)
+          .map((item) => PartnerModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (fin['mainCashBox'] != null) {
+      mainCashBox = (fin['mainCashBox'] as num).toDouble();
+    }
+    if (fin['scrapCashBox'] != null) {
+      scrapCashBox = (fin['scrapCashBox'] as num).toDouble();
+    }
+    if (fin['orderCashBox'] != null) {
+      orderCashBox = (fin['orderCashBox'] as num).toDouble();
+    }
+    if (fin['mainCashBoxSyp'] != null) {
+      mainCashBoxSyp = (fin['mainCashBoxSyp'] as num).toDouble();
+    }
+    if (fin['scrapCashBoxSyp'] != null) {
+      scrapCashBoxSyp = (fin['scrapCashBoxSyp'] as num).toDouble();
+    }
+    if (fin['orderCashBoxSyp'] != null) {
+      orderCashBoxSyp = (fin['orderCashBoxSyp'] as num).toDouble();
+    }
+    if (fin['graniteAccountantPercentage'] != null) {
+      graniteAccountantPercentage =
+          (fin['graniteAccountantPercentage'] as num).toDouble();
+    }
+    if (fin['accountantWithdrawals'] is List) {
+      accountantWithdrawals = (fin['accountantWithdrawals'] as List)
+          .map((item) => AccountantWithdrawalModel.fromJson(
+              Map<String, dynamic>.from(item)))
+          .toList();
+    }
+
+    // Factory
+    if (fac['suppliers'] is List) {
+      suppliers = (fac['suppliers'] as List)
+          .map((item) => SupplierModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (fac['clients'] is List) {
+      clients = (fac['clients'] as List)
+          .map((item) => ClientModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (fac['blockTypes'] is List) {
+      blockTypes = (fac['blockTypes'] as List)
+          .map((item) => BlockTypeModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (fac['meterTypes'] is List) {
+      meterTypes = (fac['meterTypes'] as List)
+          .map((item) => MeterTypeModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (fac['factoryBlocks'] is List) {
+      factoryBlocks = (fac['factoryBlocks'] as List)
+          .map((item) =>
+              FactoryBlockModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (fac['factoryWarehouse'] is List) {
+      factoryWarehouse = (fac['factoryWarehouse'] as List)
+          .map((item) =>
+              FactoryWarehouseModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (fac['cuttingOperations'] is List) {
+      cuttingOperations = (fac['cuttingOperations'] as List)
+          .map((item) =>
+              CuttingOperationModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (fac['factoryInvoices'] is List) {
+      factoryInvoices = (fac['factoryInvoices'] as List)
+          .map((item) =>
+              FactoryInvoiceModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (fac['factoryOrders'] is List) {
+      factoryOrders = (fac['factoryOrders'] as List)
+          .map((item) =>
+              FactoryOrderModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+
+    // Workshop
+    if (wrk['workshopStock'] is List) {
+      workshopStock = (wrk['workshopStock'] as List)
+          .map((item) =>
+              WorkshopStockModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (wrk['simpleTailorings'] is List) {
+      simpleTailorings = (wrk['simpleTailorings'] as List)
+          .map((item) =>
+              WorkshopTailoringModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (wrk['complexTailorings'] is List) {
+      complexTailorings = (wrk['complexTailorings'] as List)
+          .map((item) =>
+              WorkshopTailoringModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (wrk['scrapItems'] is List) {
+      scrapItems = (wrk['scrapItems'] as List)
+          .map((item) => ScrapItemModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (wrk['surplusCosts'] is List) {
+      surplusCosts = (wrk['surplusCosts'] as List)
+          .map((item) =>
+              SurplusCostModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (wrk['wasteLogs'] is List) {
+      wasteLogs = (wrk['wasteLogs'] as List)
+          .map((item) => WasteLogModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (wrk['workshopOrders'] is List) {
+      workshopOrders = (wrk['workshopOrders'] as List)
+          .map((item) =>
+              WorkshopOrderModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (wrk['workshopInvoices'] is List) {
+      workshopInvoices = (wrk['workshopInvoices'] as List)
+          .map((item) =>
+              WorkshopInvoiceModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (wrk['workshopProjects'] is List) {
+      workshopProjects = (wrk['workshopProjects'] as List)
+          .map((item) =>
+              WorkshopProjectModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+
+    // Staff
+    if (stf['staffTypes'] is List) {
+      staffTypes = (stf['staffTypes'] as List)
+          .map((item) => StaffTypeModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (stf['staffList'] is List) {
+      staffList = (stf['staffList'] as List)
+          .map((item) => StaffModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+      for (final staff in staffList) {
+        if (staff.category != 'معلمين' && staff.typeId.isEmpty) {
+          final matchingTypes = staffTypes.where(
+            (type) => type.category == staff.category,
+          );
+          if (matchingTypes.isNotEmpty) {
+            staff.typeId = matchingTypes.first.id;
+          }
+        }
+      }
+    }
+    if (stf['staffAttendance'] is List) {
+      staffAttendance = (stf['staffAttendance'] as List)
+          .map((item) =>
+              StaffAttendanceModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (stf['workdayEntries'] is List) {
+      workdayEntries = (stf['workdayEntries'] as List)
+          .map((item) =>
+              WorkdayEntryModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (stf['activeWorkweekStart'] != null) {
+      try {
+        activeWorkweekStart = DateTime.parse(stf['activeWorkweekStart']);
+      } catch (_) {}
+    }
+
+    // Operations
+    if (ops['returnInvoices'] is List) {
+      returnInvoices = (ops['returnInvoices'] as List)
+          .map((item) =>
+              ReturnInvoiceModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (ops['expenseTypes'] is List) {
+      expenseTypes = (ops['expenseTypes'] as List)
+          .map((item) =>
+              ExpenseTypeModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (ops['expenseRecords'] is List) {
+      expenseRecords = (ops['expenseRecords'] as List)
+          .map((item) =>
+              ExpenseRecordModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (ops['adjustmentInvoices'] is List) {
+      adjustmentInvoices = (ops['adjustmentInvoices'] as List)
+          .map((item) =>
+              AdjustmentInvoiceModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (ops['services'] is List) {
+      services = (ops['services'] as List)
+          .map((item) =>
+              ServiceItemModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+
+    // Settings
+    if (raw['centerInfo'] != null) {
+      try {
+        centerInfo =
+            CenterInfoModel.fromJson(Map<String, dynamic>.from(raw['centerInfo']));
+      } catch (_) {}
+    }
+
+    // Persist to disk immediately
+    await saveToDisk();
+
+    // Notify all UI consumers to immediately re-render across all screens
+    notifyListeners();
+
+    return {
+      'factoryInvoices': factoryInvoices.length,
+      'workshopInvoices': workshopInvoices.length,
+      'suppliers': suppliers.length,
+      'clients': clients.length,
+      'factoryBlocks': factoryBlocks.length,
+      'factoryWarehouse': factoryWarehouse.length,
+      'cuttingOperations': cuttingOperations.length,
+      'workshopProjects': workshopProjects.length,
+      'staffList': staffList.length,
+      'totalCashUsd': mainCashBox + scrapCashBox + orderCashBox,
+      'totalCashSyp': mainCashBoxSyp + scrapCashBoxSyp + orderCashBoxSyp,
+    };
   }
 }
 

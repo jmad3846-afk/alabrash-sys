@@ -11,6 +11,7 @@ import '../widgets/supplier_worker_debt_modal.dart';
 import '../widgets/partner_management_modal.dart';
 import '../widgets/workday_modal.dart';
 import '../widgets/system_reset_modal.dart';
+import '../widgets/backup_restore_modal.dart';
 
 class DashboardScreen extends StatelessWidget {
   final void Function(int index)? onNavigateToIndex;
@@ -55,6 +56,36 @@ class DashboardScreen extends StatelessWidget {
                     alignment: WrapAlignment.end,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      // BACKUP & RESTORE: EXPORT BUTTON
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D9488),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (_) => const BackupRestoreModal(initialTab: 0),
+                          );
+                        },
+                        icon: const Icon(Icons.cloud_upload_rounded),
+                        label: const Text('تصدير نسخة احتياطية (فلاشة / خارجي)'),
+                      ),
+                      // BACKUP & RESTORE: RESTORE BUTTON
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (_) => const BackupRestoreModal(initialTab: 1),
+                          );
+                        },
+                        icon: const Icon(Icons.cloud_download_rounded),
+                        label: const Text('استعادة نسخة احتياطية'),
+                      ),
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1E293B),
@@ -131,6 +162,10 @@ class DashboardScreen extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 24),
+
+            // SYSTEM BACKUP & RESTORE DATA PROTECTION CARD
+            _buildBackupProtectionCard(context),
             const SizedBox(height: 24),
 
             // SECTION 1: FACTORY & WORKSHOP ANALYTICS CARDS
@@ -457,8 +492,8 @@ class DashboardScreen extends StatelessWidget {
                                   boxShadow: isUsd
                                       ? [
                                           BoxShadow(
-                                            color: Colors.black.withOpacity(
-                                              0.06,
+                                            color: Colors.black.withValues(
+                                              alpha: 0.06,
                                             ),
                                             blurRadius: 4,
                                           ),
@@ -499,8 +534,8 @@ class DashboardScreen extends StatelessWidget {
                                   boxShadow: !isUsd
                                       ? [
                                           BoxShadow(
-                                            color: Colors.black.withOpacity(
-                                              0.06,
+                                            color: Colors.black.withValues(
+                                              alpha: 0.06,
                                             ),
                                             blurRadius: 4,
                                           ),
@@ -1211,6 +1246,151 @@ class DashboardScreen extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+
+  /// Dedicated Data Protection & Full Backup/Restore card on the main screen.
+  Widget _buildBackupProtectionCard(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF0F172A), // Dark slate
+            Color(0xFF1E293B), // Slate 800
+          ],
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF334155), width: 1.5),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D9488).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: const Color(0xFF0D9488).withValues(alpha: 0.5),
+              ),
+            ),
+            child: const Icon(
+              Icons.shield_rounded,
+              color: Color(0xFF14B8A6),
+              size: 36,
+            ),
+          ),
+          const SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'نظام تأمين وحفظ النسخ الاحتياطية وتوزيع البيانات الشامل',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0D9488),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'تغطية شاملة 100%',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'تأمين كافة سجلات النظام (الفواتير، الصناديق بالدولار والليرة، المخزون، العمال، والمشاريع) على فلاشة USB أو قرص خارجي، مع استعادة وتوزيع البيانات تلقائياً وفورياً على أماكنها الصحيحة في كافة واجهات وشاشات البرنامج.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Color(0xFF94A3B8),
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 20),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D9488),
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  elevation: 2,
+                ),
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => const BackupRestoreModal(initialTab: 0),
+                  );
+                },
+                icon: const Icon(Icons.usb_rounded, size: 20),
+                label: const Text(
+                  'تصدير نسخة (فلاشة USB)',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  elevation: 2,
+                ),
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => const BackupRestoreModal(initialTab: 1),
+                  );
+                },
+                icon: const Icon(Icons.restore_page_rounded, size: 20),
+                label: const Text(
+                  'استعادة وتوزيع البيانات',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
