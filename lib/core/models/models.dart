@@ -2639,3 +2639,46 @@ class CenterInfoModel {
             'لأعمال الرخام والجرانيت وحجر البناء وقص وتفصيل البلوكات وتوريد المستودعات',
       );
 }
+
+/// Model for accountant profit withdrawals from the granite business.
+class AccountantWithdrawalModel {
+  final String id;
+  final DateTime date;
+  final double amount;
+  final String currency; // AppCurrency.usd | AppCurrency.syp
+  final String cashBox; // 'main' | 'order' | 'scrap' | 'direct'
+  final String notes;
+  final String recipient;
+
+  AccountantWithdrawalModel({
+    required this.id,
+    required this.date,
+    required this.amount,
+    this.currency = AppCurrency.usd,
+    this.cashBox = 'main',
+    this.notes = '',
+    this.recipient = 'محاسب الغرانيت',
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'date': date.toIso8601String(),
+        'amount': amount,
+        'currency': currency,
+        'cashBox': cashBox,
+        'notes': notes,
+        'recipient': recipient,
+      };
+
+  factory AccountantWithdrawalModel.fromJson(Map<String, dynamic> json) =>
+      AccountantWithdrawalModel(
+        id: json['id'] ?? '',
+        date: DateTime.tryParse(json['date'] ?? '') ?? DateTime.now(),
+        amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+        currency: AppCurrency.normalize(json['currency']),
+        cashBox: json['cashBox'] ?? 'main',
+        notes: json['notes'] ?? '',
+        recipient: json['recipient'] ?? 'محاسب الغرانيت',
+      );
+}
+

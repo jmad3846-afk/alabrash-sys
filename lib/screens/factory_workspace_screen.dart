@@ -2615,7 +2615,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               ),
               const SizedBox(height: 12),
               SwitchListTile(
-                title: const Text('هل هو غرانيت؟ (يخضع لأرباح المحاسب 50%)'),
+                title: Text(
+                  'هل هو غرانيت؟ (يخضع لأرباح المحاسب ${erp.graniteAccountantPercentage.fmt}%)',
+                ),
                 value: isGranite,
                 onChanged: (v) => setSt(() => isGranite = v),
               ),

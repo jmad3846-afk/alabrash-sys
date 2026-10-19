@@ -17,6 +17,10 @@ class ERPProvider extends ChangeNotifier {
   // Partners
   List<PartnerModel> partners = [];
 
+  // Granite Accountant Profit Percentage & Withdrawals
+  double graniteAccountantPercentage = 50.0;
+  List<AccountantWithdrawalModel> accountantWithdrawals = [];
+
   // Isolated Cash Registers — each box holds TWO funds:
   // a Dollar fund ($) and a Syrian fund (SYP ل.س). Legacy fields are USD.
   double mainCashBox = 45000.0;
@@ -1582,11 +1586,94 @@ class ERPProvider extends ChangeNotifier {
   double get netGraniteProfitSyp => netGraniteProfitOf(AppCurrency.syp);
 
   double accountantGraniteShareOf(String? currency) =>
-      netGraniteProfitOf(currency) * 0.50; // 50% split
+      netGraniteProfitOf(currency) * (graniteAccountantPercentage / 100.0);
   double get accountantGraniteShare =>
       accountantGraniteShareOf(AppCurrency.usd);
   double get accountantGraniteShareSyp =>
       accountantGraniteShareOf(AppCurrency.syp);
+
+  double accountantTotalWithdrawnOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return accountantWithdrawals
+        .where((w) => w.currency == c)
+        .fold(0.0, (s, w) => s + w.amount);
+  }
+
+  double get accountantTotalWithdrawnUsd =>
+      accountantTotalWithdrawnOf(AppCurrency.usd);
+  double get accountantTotalWithdrawnSyp =>
+      accountantTotalWithdrawnOf(AppCurrency.syp);
+
+  double accountantAvailableBalanceOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return accountantGraniteShareOf(c) - accountantTotalWithdrawnOf(c);
+  }
+
+  double get accountantAvailableBalanceUsd =>
+      accountantAvailableBalanceOf(AppCurrency.usd);
+  double get accountantAvailableBalanceSyp =>
+      accountantAvailableBalanceOf(AppCurrency.syp);
+
+  void setGraniteAccountantPercentage(double pct) {
+    graniteAccountantPercentage = pct.clamp(0.0, 100.0);
+    notifyListeners();
+    saveToDisk();
+  }
+
+  bool withdrawAccountantProfit({
+    required double amount,
+    required String currency,
+    required String cashBox,
+    String notes = '',
+    String recipient = 'محاسب الغرانيت',
+    MutableWrapper<String?>? outWarning,
+  }) {
+    final c = AppCurrency.normalize(currency);
+    if (amount <= 0) {
+      outWarning?.value = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.';
+      return false;
+    }
+    final available = accountantAvailableBalanceOf(c);
+    if (amount > available + 0.0001) {
+      outWarning?.value =
+          'المبلغ المطلوب (${amount.fmt} ${AppCurrency.symbol(c)}) يتجاوز رصيد الأرباح المتبقي والمتاح للسحب (${available.fmt} ${AppCurrency.symbol(c)})!';
+      return false;
+    }
+    if (cashBox != 'direct') {
+      if (cashOf(cashBox, c) + 0.0001 < amount) {
+        outWarning?.value =
+            'رصيد الصندوق المحدد لا يكفي لتغطية مبلغ السحب المطلوب!';
+        return false;
+      }
+      takeCash(cashBox, c, amount);
+    }
+    final withdrawal = AccountantWithdrawalModel(
+      id: 'WDR-ACC-${DateTime.now().millisecondsSinceEpoch}',
+      date: DateTime.now(),
+      amount: amount,
+      currency: c,
+      cashBox: cashBox,
+      notes: notes,
+      recipient: recipient,
+    );
+    accountantWithdrawals.insert(0, withdrawal);
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  bool deleteAccountantWithdrawal(String id) {
+    final idx = accountantWithdrawals.indexWhere((w) => w.id == id);
+    if (idx == -1) return false;
+    final w = accountantWithdrawals[idx];
+    if (w.cashBox != 'direct') {
+      addCash(w.cashBox, w.currency, w.amount);
+    }
+    accountantWithdrawals.removeAt(idx);
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
 
   // Income Statement (P&L) Calculations — per currency
   double totalFactoryRevenueOf(String? currency) => factoryInvoices
@@ -3962,6 +4049,14 @@ class ERPProvider extends ChangeNotifier {
         'centerInfo',
         jsonEncode(centerInfo.toJson()),
       );
+      await prefs.setDouble(
+        'graniteAccountantPercentage',
+        graniteAccountantPercentage,
+      );
+      await prefs.setString(
+        'accountantWithdrawals',
+        jsonEncode(accountantWithdrawals.map((w) => w.toJson()).toList()),
+      );
     } catch (_) {}
   }
 
@@ -4176,6 +4271,18 @@ class ERPProvider extends ChangeNotifier {
         try {
           scrapItems = (jsonDecode(scrapStr) as List)
               .map((e) => ScrapItemModel.fromJson(e))
+              .toList();
+        } catch (_) {}
+      }
+
+      final pct = prefs.getDouble('graniteAccountantPercentage');
+      if (pct != null) graniteAccountantPercentage = pct;
+
+      final accWithStr = prefs.getString('accountantWithdrawals');
+      if (accWithStr != null) {
+        try {
+          accountantWithdrawals = (jsonDecode(accWithStr) as List)
+              .map((e) => AccountantWithdrawalModel.fromJson(e))
               .toList();
         } catch (_) {}
       }

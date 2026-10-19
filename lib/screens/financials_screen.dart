@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart' as intl;
 import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
@@ -28,6 +29,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   int _supplierFilter = 0;
   String _agentQuery = '';
   int _agentFilter = 0;
+  int _graniteSubView = 0;
 
   @override
   void initState() {
@@ -65,8 +67,11 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
               ),
-              tabs: const [
-                Tab(text: '1. أرباح محاسب الغرانيت (50%)'),
+              tabs: [
+                Tab(
+                  text:
+                      '1. أرباح محاسب الغرانيت (${erp.graniteAccountantPercentage.fmt}%)',
+                ),
                 Tab(text: '2. الصناديق المعزولة'),
                 Tab(text: '3. مالية موردي المصنع'),
                 Tab(text: '4. مالية معتمدي المصنع'),
@@ -102,14 +107,19 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   }
 
   // -------------------------------------------------------------
-  // TAB 1: SPECIAL ACCOUNTANT GRANITE PROFIT MODULE (50% SPLIT)
+  // -------------------------------------------------------------
+  // TAB 1: SPECIAL ACCOUNTANT GRANITE PROFIT MODULE
   // -------------------------------------------------------------
   Widget _buildGraniteAccountantTab(ERPProvider erp) {
+    final availableUsd = erp.accountantAvailableBalanceUsd;
+    final availableSyp = erp.accountantAvailableBalanceSyp;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 1. Header with Title, Badge, and Action Buttons
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -118,55 +128,158 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'قسم أرباح محاسب الغرانيت (Special 50% Granite Profit Module)',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.titleLarge?.copyWith(fontSize: 20),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'قسم أرباح محاسب الغرانيت (${erp.graniteAccountantPercentage.fmt}%)',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(fontSize: 20),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: 3.5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.accentPrimary.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: AppColors.accentPrimary.withOpacity(0.4),
+                            ),
+                          ),
+                          child: Text(
+                            'نسبة الشراكة: ${erp.graniteAccountantPercentage.fmt}%',
+                            style: const TextStyle(
+                              color: AppColors.accentPrimary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'القاعدة المحاسبية: يحصل المحاسب على 50% تماماً من صافي أرباح مبيعات أصناف الغرانيت بكافة مقاساته وسماكاته',
-                      style: TextStyle(color: AppColors.brandSecondaryText),
+                    const SizedBox(height: 6),
+                    Text(
+                      'القاعدة المحاسبية: يحصل المحاسب على ${erp.graniteAccountantPercentage.fmt}% من صافي أرباح مبيعات أصناف الغرانيت بكافة مقاساته وسماكاته (المصنع والمعمل)',
+                      style: const TextStyle(
+                        color: AppColors.brandSecondaryText,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.chipBgBlue,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.accentPrimary),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Text(
-                      'مستحقات المحاسب المعتمدة (50% Share):',
-                      style: TextStyle(
-                        fontSize: 11,
+              const SizedBox(width: 14),
+              // Action Buttons
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.accentPrimary,
+                      side: const BorderSide(
                         color: AppColors.accentPrimary,
-                        fontWeight: FontWeight.bold,
+                        width: 1.3,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    Text(
-                      '${erp.accountantGraniteShare.fmt} \$',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.accentPrimary,
+                    onPressed: () => _showEditProfitPercentageDialog(context, erp),
+                    icon: const Icon(Icons.tune_rounded, size: 18),
+                    label: Text(
+                      'تعديل نسبة الأرباح (${erp.graniteAccountantPercentage.fmt}%)',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.successGreen,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                  ],
-                ),
+                    onPressed: () => _showWithdrawAccountantProfitDialog(context, erp),
+                    icon: const Icon(Icons.payments_rounded, size: 19),
+                    label: const Text(
+                      'سحب أرباح المحاسب',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
           const SizedBox(height: 20),
 
-          // Accounting Ledger Entry Box
+          // 2. Financial Summary KPI Cards (Dual-Currency)
+          Row(
+            children: [
+              _buildSummaryCard(
+                'صافي أرباح الغرانيت الكلية (100%)',
+                AppCurrency.dual(
+                  erp.netGraniteProfit,
+                  erp.netGraniteProfitSyp,
+                ),
+                AppColors.accentPrimary,
+                AppColors.chipBgBlue,
+              ),
+              const SizedBox(width: 14),
+              _buildSummaryCard(
+                'مستحقات المحاسب (${erp.graniteAccountantPercentage.fmt}%)',
+                AppCurrency.dual(
+                  erp.accountantGraniteShare,
+                  erp.accountantGraniteShareSyp,
+                ),
+                const Color(0xFF0284C7),
+                const Color(0xFFF0F9FF),
+              ),
+              const SizedBox(width: 14),
+              _buildSummaryCard(
+                'إجمالي المسحوبات المصروفة',
+                AppCurrency.dual(
+                  erp.accountantTotalWithdrawnUsd,
+                  erp.accountantTotalWithdrawnSyp,
+                ),
+                AppColors.dangerWaste,
+                AppColors.chipBgRed,
+              ),
+              const SizedBox(width: 14),
+              _buildSummaryCard(
+                'الرصيد المتبقي المتاح للسحب',
+                AppCurrency.dual(
+                  availableUsd,
+                  availableSyp,
+                ),
+                availableUsd > 0.01 || availableSyp > 0.01
+                    ? AppColors.successGreen
+                    : const Color(0xFF64748B),
+                availableUsd > 0.01 || availableSyp > 0.01
+                    ? AppColors.chipBgGreen
+                    : const Color(0xFFF1F5F9),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // 3. Double-Entry Accounting Ledger Info Box
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -177,6 +290,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
               ),
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Icon(
                   Icons.menu_book_rounded,
@@ -189,21 +303,38 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'القيد المحاسبي المولد آلياً في دفتر الأستاذ:',
+                        'الأثر المحاسبي المولد آلياً في دفتر الأستاذ العام:',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Text(
-                        'من حـ/ 5321 (مصروف عمولات مبيعات الغرانيت)   :   ${erp.accountantGraniteShare.fmt} \$\nإلى حـ/ 2115 (مستحقات المحاسب الدائنة)       :   ${erp.accountantGraniteShare.fmt} \$',
+                        '1. قيد استحقاق الأرباح الدائنة (${erp.graniteAccountantPercentage.fmt}%):\n'
+                        '   من حـ/ 5321 (مصروف أرباح مبيعات الغرانيت)   :   ${AppCurrency.dual(erp.accountantGraniteShare, erp.accountantGraniteShareSyp)}\n'
+                        '   إلى حـ/ 2115 (مستحقات المحاسب الدائنة)       :   ${AppCurrency.dual(erp.accountantGraniteShare, erp.accountantGraniteShareSyp)}',
                         style: const TextStyle(
                           fontFamily: 'monospace',
                           fontWeight: FontWeight.bold,
                           color: AppColors.brandPrimaryText,
+                          fontSize: 12,
                         ),
                       ),
+                      if (erp.accountantWithdrawals.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          '2. قيد صرف المسحوبات المسددة:\n'
+                          '   من حـ/ 2115 (مستحقات المحاسب الدائنة)       :   ${AppCurrency.dual(erp.accountantTotalWithdrawnUsd, erp.accountantTotalWithdrawnSyp)}\n'
+                          '   إلى حـ/ 1111 (النقدية في الصناديق المعزولة)  :   ${AppCurrency.dual(erp.accountantTotalWithdrawnUsd, erp.accountantTotalWithdrawnSyp)}',
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF059669),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -212,73 +343,833 @@ class _FinancialsScreenState extends State<FinancialsScreen>
           ),
           const SizedBox(height: 24),
 
-          // Granite Financials Summary Cards
+          // 4. Sub-Navigation Filter Chips (Withdrawals vs Invoices)
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildSummaryCard(
-                'إجمالي إيرادات مبيعات الغرانيت',
-                AppCurrency.dual(
-                  erp.graniteTotalRevenue,
-                  erp.graniteTotalRevenueSyp,
+              Row(
+                children: [
+                  ChoiceChip(
+                    avatar: const Icon(Icons.history_edu_rounded, size: 16),
+                    label: Text(
+                      'سجل مسحوبات المحاسب (${erp.accountantWithdrawals.length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    selected: _graniteSubView == 0,
+                    onSelected: (sel) {
+                      if (sel) setState(() => _graniteSubView = 0);
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    avatar: const Icon(Icons.receipt_long_rounded, size: 16),
+                    label: Text(
+                      'فواتير الغرانيت المساهمة (${erp.factoryInvoices.where((i) => i.containsGranite).length + erp.workshopInvoices.where((i) => i.isGranite).length})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    selected: _graniteSubView == 1,
+                    onSelected: (sel) {
+                      if (sel) setState(() => _graniteSubView = 1);
+                    },
+                  ),
+                ],
+              ),
+              if (_graniteSubView == 0 && erp.accountantWithdrawals.isNotEmpty)
+                TextButton.icon(
+                  onPressed: () => _showWithdrawAccountantProfitDialog(context, erp),
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('تسجيل سحب جديد'),
                 ),
-                AppColors.accentPrimary,
-                AppColors.chipBgBlue,
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // 5. Active Sub-View Body
+          if (_graniteSubView == 0)
+            _buildAccountantWithdrawalsTable(erp)
+          else
+            _buildGraniteInvoicesTable(erp),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccountantWithdrawalsTable(ERPProvider erp) {
+    if (erp.accountantWithdrawals.isEmpty) {
+      return Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: AppColors.panelBorder),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+          alignment: Alignment.center,
+          child: Column(
+            children: [
+              const Icon(
+                Icons.account_balance_wallet_outlined,
+                size: 48,
+                color: Color(0xFF94A3B8),
               ),
-              const SizedBox(width: 16),
-              _buildSummaryCard(
-                'إجمالي تكلفة البضاعة المبيعة (Post-Cut COGS)',
-                AppCurrency.dual(erp.graniteTotalCOGS, erp.graniteTotalCOGSSyp),
-                AppColors.dangerWaste,
-                AppColors.chipBgRed,
+              const SizedBox(height: 12),
+              const Text(
+                'لا توجد مسحوبات مسجلة للمحاسب حتى الآن',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF334155),
+                ),
               ),
-              const SizedBox(width: 16),
-              _buildSummaryCard(
-                'صافي أرباح الغرانيت الكلية',
-                AppCurrency.dual(erp.netGraniteProfit, erp.netGraniteProfitSyp),
-                AppColors.successGreen,
-                AppColors.chipBgGreen,
+              const SizedBox(height: 4),
+              const Text(
+                'كامل رصيد أرباح المحاسب متاح في الذمة ويمكن سحبه نقداً في أي وقت.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.successGreen,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => _showWithdrawAccountantProfitDialog(context, erp),
+                icon: const Icon(Icons.payments_rounded, size: 18),
+                label: const Text('سحب دفعة الآن'),
               ),
             ],
           ),
+        ),
+      );
+    }
 
-          const SizedBox(height: 24),
-          const Text(
-            'تفاصيل فواتير الغرانيت المساهمة في الأرباح:',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-          ),
-          const SizedBox(height: 10),
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AppColors.panelBorder),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: erp.accountantWithdrawals.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (context, idx) {
+          final w = erp.accountantWithdrawals[idx];
+          String boxLabel = 'الصندوق الرئيسي';
+          if (w.cashBox == 'order') boxLabel = 'صندوق الطلبيات';
+          if (w.cashBox == 'scrap') boxLabel = 'صندوق الزيادات والسكراب';
+          if (w.cashBox == 'direct') boxLabel = 'تسوية مباشرة (سحب خارجي)';
 
-          Card(
-            child: ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: erp.factoryInvoices
-                  .where((i) => i.containsGranite)
-                  .length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, idx) {
-                final inv = erp.factoryInvoices
-                    .where((i) => i.containsGranite)
-                    .toList()[idx];
-                return ListTile(
-                  title: Text(
-                    'فاتورة مصنع: ${inv.invoiceNo} • الطرف: ${inv.partyName}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+          return ListTile(
+            leading: CircleAvatar(
+              backgroundColor: AppColors.chipBgRed,
+              child: const Icon(
+                Icons.arrow_upward_rounded,
+                color: AppColors.dangerWaste,
+                size: 20,
+              ),
+            ),
+            title: Row(
+              children: [
+                Text(
+                  'سحب دفعة: ${w.amount.fmt} ${AppCurrency.symbol(w.currency)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Color(0xFF0F172A),
                   ),
-                  subtitle: Text('أصناف الغرانيت المسجلة في الفاتورة'),
-                  trailing: Text(
-                    'ربح الغرانيت: ${inv.graniteProfit.fmt}\$',
-                    style: const TextStyle(
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppCurrency.isSyp(w.currency)
+                        ? const Color(0xFFFEF3C7)
+                        : const Color(0xFFDBEAFE),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    w.currency,
+                    style: TextStyle(
+                      fontSize: 10,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.successGreen,
-                      fontSize: 15,
+                      color: AppCurrency.isSyp(w.currency)
+                          ? const Color(0xFFB45309)
+                          : const Color(0xFF1D4ED8),
                     ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '• الصندوق: $boxLabel',
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                ),
+              ],
+            ),
+            subtitle: Text(
+              'التاريخ: ${intl.DateFormat("yyyy-MM-dd HH:mm").format(w.date)} • المستلم: ${w.recipient}'
+              '${w.notes.isNotEmpty ? " • البيان: ${w.notes}" : ""}',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.delete_outline_rounded, color: AppColors.dangerWaste),
+              tooltip: 'حذف وإلغاء السحب (إعادة المبلغ للصندوق)',
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('تأكيد حذف حركة السحب'),
+                    content: Text(
+                      'هل أنت متأكد من حذف حركة السحب بقيمة ${w.amount.fmt} ${AppCurrency.symbol(w.currency)}؟'
+                      '${w.cashBox != "direct" ? "\nسيتم استرجاع المبلغ فوراً إلى $boxLabel." : ""}',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('إلغاء'),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.dangerWaste,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () {
+                          erp.deleteAccountantWithdrawal(w.id);
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('تم حذف حركة السحب واسترجاع المبلغ بنجاح.'),
+                              backgroundColor: AppColors.successGreen,
+                            ),
+                          );
+                        },
+                        child: const Text('حذف واسترجاع'),
+                      ),
+                    ],
                   ),
                 );
               },
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildGraniteInvoicesTable(ERPProvider erp) {
+    final graniteFactoryInvoices =
+        erp.factoryInvoices.where((i) => i.containsGranite).toList();
+    final graniteWorkshopInvoices =
+        erp.workshopInvoices.where((i) => i.isGranite).toList();
+
+    if (graniteFactoryInvoices.isEmpty && graniteWorkshopInvoices.isEmpty) {
+      return Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: AppColors.panelBorder),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+          alignment: Alignment.center,
+          child: Column(
+            children: const [
+              Icon(Icons.receipt_outlined, size: 48, color: Color(0xFF94A3B8)),
+              SizedBox(height: 12),
+              Text(
+                'لا توجد فواتير مبيعات تحتوي أصناف غرانيت بعد',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
+        ),
+      );
+    }
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AppColors.panelBorder),
+      ),
+      child: Column(
+        children: [
+          ...graniteFactoryInvoices.map((inv) {
+            double graniteRev = 0.0;
+            double graniteCogs = 0.0;
+            for (var item in inv.items) {
+              if (item.isGranite) {
+                graniteRev += item.totalPrice;
+                graniteCogs += item.totalCost;
+              }
+            }
+            final profit = (graniteRev - graniteCogs).clamp(0.0, double.infinity);
+            final accShare = profit * (erp.graniteAccountantPercentage / 100.0);
+
+            return ListTile(
+              leading: CircleAvatar(
+                backgroundColor: AppColors.chipBgBlue,
+                child: const Icon(
+                  Icons.factory_rounded,
+                  color: AppColors.accentPrimary,
+                  size: 20,
+                ),
+              ),
+              title: Text(
+                'فاتورة مصنع: ${inv.invoiceNo} • الطرف: ${inv.partyName}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                'التاريخ: ${intl.DateFormat("yyyy-MM-dd").format(inv.date)} • مبيعات الغرانيت: ${graniteRev.fmt} ${AppCurrency.symbol(inv.currency)} • التكلفة: ${graniteCogs.fmt} ${AppCurrency.symbol(inv.currency)}',
+                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+              ),
+              trailing: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    'ربح الفاتورة: ${profit.fmt} ${AppCurrency.symbol(inv.currency)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.successGreen,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    'حصة المحاسب: ${accShare.fmt} ${AppCurrency.symbol(inv.currency)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.accentPrimary,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+          ...graniteWorkshopInvoices.map((inv) {
+            final profit = (inv.agreedPrice - inv.netCost).clamp(0.0, double.infinity);
+            final accShare = profit * (erp.graniteAccountantPercentage / 100.0);
+
+            return ListTile(
+              leading: CircleAvatar(
+                backgroundColor: AppColors.chipBgSky,
+                child: const Icon(
+                  Icons.construction_rounded,
+                  color: Color(0xFF0284C7),
+                  size: 20,
+                ),
+              ),
+              title: Text(
+                'فاتورة معمل: ${inv.invoiceNo} • العميل: ${inv.clientName}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                'التاريخ: ${intl.DateFormat("yyyy-MM-dd").format(inv.date)} • القيمة: ${inv.agreedPrice.fmt} ${AppCurrency.symbol(inv.currency)} • التكلفة: ${inv.netCost.fmt} ${AppCurrency.symbol(inv.currency)}',
+                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+              ),
+              trailing: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    'ربح المعمل: ${profit.fmt} ${AppCurrency.symbol(inv.currency)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.successGreen,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    'حصة المحاسب: ${accShare.fmt} ${AppCurrency.symbol(inv.currency)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.accentPrimary,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
         ],
+      ),
+    );
+  }
+
+  void _showEditProfitPercentageDialog(BuildContext context, ERPProvider erp) {
+    final ctrl = TextEditingController(text: erp.graniteAccountantPercentage.fmt);
+    double currentPct = erp.graniteAccountantPercentage;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final parsed = double.tryParse(ctrl.text.trim()) ?? currentPct;
+          final valid = parsed >= 0.0 && parsed <= 100.0;
+          final previewShareUsd = erp.netGraniteProfit * (parsed / 100.0);
+          final previewShareSyp = erp.netGraniteProfitSyp * (parsed / 100.0);
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            title: Row(
+              children: const [
+                Icon(Icons.tune_rounded, color: AppColors.accentPrimary),
+                SizedBox(width: 8),
+                Text('تعديل نسبة أرباح محاسب الغرانيت'),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'حدد النسبة المئوية التي يستحقها المحاسب من صافي أرباح مبيعات أصناف الغرانيت. يتم تطبيق النسبة وإعادة احتساب الأرباح والقيود المحاسبية فورياً.',
+                    style: TextStyle(fontSize: 12, color: AppColors.brandSecondaryText),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Quick presets
+                  const Text(
+                    'نسب سريعة مقترحة:',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.brandSecondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [25.0, 30.0, 33.3, 40.0, 50.0, 60.0, 75.0].map((preset) {
+                      final isSelected = (parsed - preset).abs() < 0.05;
+                      return ChoiceChip(
+                        label: Text('${preset.fmt}%'),
+                        selected: isSelected,
+                        onSelected: (_) {
+                          setDialogState(() {
+                            ctrl.text = preset.fmt;
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: ctrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: 'النسبة المئوية (%)',
+                      hintText: 'مثال: 50 أو 35.5',
+                      suffixText: '%',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      errorText: valid ? null : 'النسبة يجب أن تكون بين 0 و 100',
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Live Calculation Preview
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF86EFAC)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'معاينة الأرباح بالاعتماد على النسبة الجديدة:',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF166534),
+                              ),
+                            ),
+                            Text(
+                              '${valid ? parsed.fmt : "—"}%',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF166534),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'مستحقات المحاسب الجديدة: ${AppCurrency.dual(previewShareUsd, previewShareSyp)}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'إجمالي صافي أرباح الغرانيت: ${AppCurrency.dual(erp.netGraniteProfit, erp.netGraniteProfitSyp)}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accentPrimary,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: valid
+                    ? () {
+                        erp.setGraniteAccountantPercentage(parsed);
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'تم تعديل نسبة أرباح المحاسب بنجاح إلى ${parsed.fmt}%',
+                            ),
+                            backgroundColor: AppColors.successGreen,
+                          ),
+                        );
+                      }
+                    : null,
+                child: const Text('حفظ واعتماد النسبة'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showWithdrawAccountantProfitDialog(
+    BuildContext context,
+    ERPProvider erp,
+  ) {
+    String selectedCurrency = AppCurrency.usd;
+    final amountCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
+    final recipientCtrl = TextEditingController(text: 'محاسب الغرانيت');
+    String selectedCashBox = 'main';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final availableBalance = erp.accountantAvailableBalanceOf(selectedCurrency);
+          final double enteredAmount = double.tryParse(amountCtrl.text.trim()) ?? 0.0;
+          final boxBalance = selectedCashBox == 'direct'
+              ? double.infinity
+              : erp.cashOf(selectedCashBox, selectedCurrency);
+          final bool exceedsProfit = enteredAmount > availableBalance + 0.0001;
+          final bool exceedsCash =
+              selectedCashBox != 'direct' && enteredAmount > boxBalance + 0.0001;
+          final bool isValid = enteredAmount > 0 && !exceedsProfit && !exceedsCash;
+
+          String? warningText;
+          if (enteredAmount > 0) {
+            if (exceedsProfit) {
+              warningText =
+                  'المبلغ يتجاوز رصيد الأرباح المتاح للسحب (${availableBalance.fmt} ${AppCurrency.symbol(selectedCurrency)})!';
+            } else if (exceedsCash) {
+              warningText =
+                  'رصيد الصندوق المحدد (${boxBalance.fmt} ${AppCurrency.symbol(selectedCurrency)}) لا يكفي للصرف!';
+            }
+          }
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            title: Row(
+              children: const [
+                Icon(Icons.payments_rounded, color: AppColors.successGreen),
+                SizedBox(width: 8),
+                Text('سحب دفعة من أرباح محاسب الغرانيت'),
+              ],
+            ),
+            content: SizedBox(
+              width: 480,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Balance indicator card
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'الرصيد المتبقي المتاح للسحب:',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${availableBalance.fmt} ${AppCurrency.symbol(selectedCurrency)}',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.successGreen,
+                                ),
+                              ),
+                            ],
+                          ),
+                          // Currency toggle
+                          Row(
+                            children: [
+                              ChoiceChip(
+                                label: const Text('دولار \$'),
+                                selected: selectedCurrency == AppCurrency.usd,
+                                onSelected: (val) {
+                                  if (val) {
+                                    setDialogState(() {
+                                      selectedCurrency = AppCurrency.usd;
+                                    });
+                                  }
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                              ChoiceChip(
+                                label: const Text('ليرة سورية'),
+                                selected: selectedCurrency == AppCurrency.syp,
+                                onSelected: (val) {
+                                  if (val) {
+                                    setDialogState(() {
+                                      selectedCurrency = AppCurrency.syp;
+                                    });
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Amount input with quick buttons
+                    TextField(
+                      controller: amountCtrl,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText:
+                            'مبلغ السحب (${AppCurrency.symbol(selectedCurrency)})',
+                        hintText: '0.00',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      children: [
+                        if (availableBalance > 0)
+                          ActionChip(
+                            avatar: const Icon(Icons.all_inclusive_rounded, size: 14),
+                            label: Text('كامل الرصيد (${availableBalance.fmt})'),
+                            onPressed: () {
+                              setDialogState(() {
+                                amountCtrl.text = availableBalance.fmt;
+                              });
+                            },
+                          ),
+                        if (availableBalance > 0)
+                          ActionChip(
+                            avatar: const Icon(Icons.pie_chart_outline_rounded, size: 14),
+                            label: Text('نصف الرصيد (${(availableBalance / 2).fmt})'),
+                            onPressed: () {
+                              setDialogState(() {
+                                amountCtrl.text = (availableBalance / 2).fmt;
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Source Cash Box
+                    DropdownButtonFormField<String>(
+                      value: selectedCashBox,
+                      decoration: InputDecoration(
+                        labelText: 'الصندوق المخصوم منه',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      items: [
+                        DropdownMenuItem(
+                          value: 'main',
+                          child: Text(
+                            'الصندوق الرئيسي (المتاح: ${erp.cashOf("main", selectedCurrency).fmt} ${AppCurrency.symbol(selectedCurrency)})',
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'order',
+                          child: Text(
+                            'صندوق الطلبيات (المتاح: ${erp.cashOf("order", selectedCurrency).fmt} ${AppCurrency.symbol(selectedCurrency)})',
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'scrap',
+                          child: Text(
+                            'صندوق الزيادات والسكراب (المتاح: ${erp.cashOf("scrap", selectedCurrency).fmt} ${AppCurrency.symbol(selectedCurrency)})',
+                          ),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'direct',
+                          child: Text('تسوية دفترية مباشرة (سحب خارجي بدون خصم من صندوق)'),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setDialogState(() => selectedCashBox = val);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Recipient
+                    TextField(
+                      controller: recipientCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'المستلم / صاحب المسحوبات',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Notes
+                    TextField(
+                      controller: notesCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'بيان / ملاحظات السحب (اختياري)',
+                        hintText: 'مثال: سحب دفعة نقدية من عمولة مبيعات الغرانيت',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+
+                    if (warningText != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.warning_amber_rounded,
+                              color: AppColors.dangerWaste,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                warningText,
+                                style: const TextStyle(
+                                  color: AppColors.dangerWaste,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.successGreen,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: isValid
+                    ? () {
+                        final warning = MutableWrapper<String?>(null);
+                        final success = erp.withdrawAccountantProfit(
+                          amount: enteredAmount,
+                          currency: selectedCurrency,
+                          cashBox: selectedCashBox,
+                          notes: notesCtrl.text.trim(),
+                          recipient: recipientCtrl.text.trim().isNotEmpty
+                              ? recipientCtrl.text.trim()
+                              : 'محاسب الغرانيت',
+                          outWarning: warning,
+                        );
+                        if (success) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'تم صرف دفعة ${enteredAmount.fmt} ${AppCurrency.symbol(selectedCurrency)} من أرباح المحاسب بنجاح.',
+                              ),
+                              backgroundColor: AppColors.successGreen,
+                            ),
+                          );
+                        } else {
+                          setDialogState(() {});
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                warning.value ?? 'تعذر صرف الدفعة.',
+                              ),
+                              backgroundColor: AppColors.dangerWaste,
+                            ),
+                          );
+                        }
+                      }
+                    : null,
+                child: const Text('تأكيد وصرف السحب'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -3370,7 +4261,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     syp: erp.totalSurplusInitialCostSyp,
                   ),
                   _buildPlLine(
-                    'مستحقات المحاسب عن مبيعات الغرانيت (50% Share):',
+                    'مستحقات المحاسب عن مبيعات الغرانيت (${erp.graniteAccountantPercentage.fmt}% Share):',
                     erp.accountantGraniteShare,
                     syp: erp.accountantGraniteShareSyp,
                   ),

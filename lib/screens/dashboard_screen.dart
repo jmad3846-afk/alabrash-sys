@@ -257,9 +257,9 @@ class DashboardScreen extends StatelessWidget {
                   bgColor: AppColors.chipBgGreen,
                 ),
 
-                // Metric 3: Special 50% Granite Profit (Accountant Share)
+                // Metric 3: Special Granite Profit (Accountant Share)
                 MetricCard(
-                  title: 'أرباح الغرانيت (50%)',
+                  title: 'أرباح الغرانيت (${erp.graniteAccountantPercentage.fmt}%)',
                   value: AppCurrency.dual(erp.accountantGraniteShare,
                       erp.accountantGraniteShareSyp),
                   subtitle: 'مستحقات المحاسب المعتمدة',
