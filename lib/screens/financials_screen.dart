@@ -1325,6 +1325,26 @@ class _FinancialsScreenState extends State<FinancialsScreen>
           ElevatedButton(
             onPressed: () {
               final amount = double.tryParse(ctrl.text) ?? 0.0;
+              if (amount <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('يرجى إدخال مبلغ صحيح أكبر من الصفر.'),
+                    backgroundColor: AppColors.dangerWaste,
+                  ),
+                );
+                return;
+              }
+              if (amount > max + 0.001) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'لا يمكن دفع/قبض مبلغ أكبر من المستحق المطلوب (${max.fmt} $sym)!',
+                    ),
+                    backgroundColor: AppColors.dangerWaste,
+                  ),
+                );
+                return;
+              }
               if (onConfirm(amount)) {
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -1347,6 +1367,580 @@ class _FinancialsScreenState extends State<FinancialsScreen>
             child: Text(actionLabel),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Pay button dedicated to Supplier Accounts in Factory Suppliers Financials.
+  Widget _buildSupplierPayButton(ERPProvider erp, SupplierModel supplier) {
+    final hasDebt =
+        supplier.debtBalance > 0.01 || supplier.debtBalanceSyp > 0.01;
+    if (!hasDebt) return const Chip(label: Text('خالص'));
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.dangerWaste,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      icon: const Icon(Icons.payment_rounded, size: 16),
+      label: const Text('دفع للمورد',
+          style: TextStyle(fontWeight: FontWeight.bold)),
+      onPressed: () => _showSupplierPaymentDialog(erp, supplier),
+    );
+  }
+
+  void _showSupplierPaymentDialog(ERPProvider erp, SupplierModel supplier) {
+    final hasUsd = supplier.debtBalance > 0.01;
+    final hasSyp = supplier.debtBalanceSyp > 0.01;
+    String selectedCurrency = hasUsd ? AppCurrency.usd : AppCurrency.syp;
+    double currentDue = supplier.debtOf(selectedCurrency);
+    final ctrl =
+        TextEditingController(text: currentDue > 0 ? currentDue.fmt : '');
+    String? errorMsg;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          final sym = AppCurrency.symbol(selectedCurrency);
+          final boxCash = erp.cashOf('main', selectedCurrency);
+
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.dangerWaste.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.outbox_rounded,
+                    color: AppColors.dangerWaste,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'دفع للمورد: ${supplier.name}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'المستحق الكلي: ${supplier.dualDebt}',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.brandSecondaryText),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (hasUsd && hasSyp) ...[
+                      const Text(
+                        'اختر عملة الدفع:',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: RadioListTile<String>(
+                              value: AppCurrency.usd,
+                              groupValue: selectedCurrency,
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                  'دولار (${supplier.debtBalance.fmt}\$)'),
+                              onChanged: (v) {
+                                if (v != null) {
+                                  setSt(() {
+                                    selectedCurrency = v;
+                                    currentDue = supplier.debtOf(v);
+                                    ctrl.text = currentDue > 0
+                                        ? currentDue.fmt
+                                        : '';
+                                    errorMsg = null;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          Expanded(
+                            child: RadioListTile<String>(
+                              value: AppCurrency.syp,
+                              groupValue: selectedCurrency,
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                  'ليرة (${supplier.debtBalanceSyp.fmt} ل.س)'),
+                              onChanged: (v) {
+                                if (v != null) {
+                                  setSt(() {
+                                    selectedCurrency = v;
+                                    currentDue = supplier.debtOf(v);
+                                    ctrl.text = currentDue > 0
+                                        ? currentDue.fmt
+                                        : '';
+                                    errorMsg = null;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.panelBorder),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('المستحق في هذه العملة:',
+                                  style: TextStyle(fontSize: 12)),
+                              Text(
+                                '${currentDue.fmt} $sym',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: AppColors.dangerWaste,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('الرصيد المتوفر بالصندوق الرئيسي:',
+                                  style: TextStyle(fontSize: 12)),
+                              Text(
+                                '${boxCash.fmt} $sym',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: boxCash >= currentDue
+                                      ? AppColors.successGreen
+                                      : AppColors.dangerWaste,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: ctrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      decoration: InputDecoration(
+                        labelText: 'مبلغ الدفع ($sym)',
+                        prefixIcon: const Icon(Icons.money_off_rounded),
+                        helperText: 'الحد الأقصى المسموح: ${currentDue.fmt} $sym',
+                        suffixIcon: currentDue > 0
+                            ? TextButton(
+                                onPressed: () {
+                                  setSt(() {
+                                    ctrl.text = currentDue.fmt;
+                                    errorMsg = null;
+                                  });
+                                },
+                                child: const Text('كامل المستحق',
+                                    style: TextStyle(fontSize: 12)),
+                              )
+                            : null,
+                      ),
+                      onChanged: (_) => setSt(() => errorMsg = null),
+                    ),
+                    if (errorMsg != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                        ),
+                        child: Text(
+                          errorMsg!,
+                          style: const TextStyle(
+                            color: Color(0xFF991B1B),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.dangerWaste,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 18, vertical: 10),
+                ),
+                icon: const Icon(Icons.check_circle_rounded, size: 18),
+                label: const Text('تأكيد الدفع',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                onPressed: () {
+                  final amount = double.tryParse(ctrl.text.trim()) ?? 0.0;
+                  if (amount <= 0) {
+                    setSt(
+                        () => errorMsg = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.');
+                    return;
+                  }
+                  if (amount > currentDue + 0.001) {
+                    setSt(() => errorMsg =
+                        'لا يمكن دفع مبلغ أكبر من المستحق المطلوب للمورد (${currentDue.fmt} $sym)!');
+                    return;
+                  }
+                  if (amount > boxCash + 0.001) {
+                    setSt(() => errorMsg =
+                        'رصيد الصندوق الرئيسي غير كافٍ لإتمام الدفع (المتوفر: ${boxCash.fmt} $sym).');
+                    return;
+                  }
+
+                  final ok = erp.paySupplierDebt(
+                    supplier: supplier,
+                    amount: amount,
+                    currency: selectedCurrency,
+                  );
+
+                  if (ok) {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        backgroundColor: AppColors.successGreen,
+                        content: Text(
+                            'تم دفع ${amount.fmt} $sym للمورد ${supplier.name} بنجاح.'),
+                      ),
+                    );
+                  } else {
+                    setSt(() => errorMsg =
+                        'تعذر تنفيذ عملية الدفع. تحقق من المدخلات.');
+                  }
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Collect button dedicated to Workshop Projects in Project Financials.
+  Widget _buildProjectCollectButton(
+      ERPProvider erp, WorkshopProjectModel project) {
+    final dueUsd = erp.projectDue(project.id);
+    final dueSyp = erp.projectDueSyp(project.id);
+    final hasDue = dueUsd > 0.01 || dueSyp > 0.01;
+    if (!hasDue) return const Chip(label: Text('خالص'));
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.successGreen,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      icon: const Icon(Icons.payments_rounded, size: 16),
+      label: const Text('قبض من المشروع',
+          style: TextStyle(fontWeight: FontWeight.bold)),
+      onPressed: () => _showProjectCollectionDialog(erp, project),
+    );
+  }
+
+  void _showProjectCollectionDialog(
+      ERPProvider erp, WorkshopProjectModel project) {
+    final dueUsd = erp.projectDue(project.id);
+    final dueSyp = erp.projectDueSyp(project.id);
+    final hasUsd = dueUsd > 0.01;
+    final hasSyp = dueSyp > 0.01;
+    String selectedCurrency = hasUsd ? AppCurrency.usd : AppCurrency.syp;
+    double currentDue = erp.projectDueOf(project.id, selectedCurrency);
+    final ctrl =
+        TextEditingController(text: currentDue > 0 ? currentDue.fmt : '');
+    String? errorMsg;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          final sym = AppCurrency.symbol(selectedCurrency);
+
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.successGreen.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.payments_rounded,
+                    color: AppColors.successGreen,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'تحصيل لمشروع: ${project.name}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'الزبون: ${project.clientName} • المتبقي: ${AppCurrency.dual(dueUsd, dueSyp)}',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.brandSecondaryText),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (hasUsd && hasSyp) ...[
+                      const Text(
+                        'اختر عملة التحصيل:',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: RadioListTile<String>(
+                              value: AppCurrency.usd,
+                              groupValue: selectedCurrency,
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text('دولار (${dueUsd.fmt}\$)'),
+                              onChanged: (v) {
+                                if (v != null) {
+                                  setSt(() {
+                                    selectedCurrency = v;
+                                    currentDue =
+                                        erp.projectDueOf(project.id, v);
+                                    ctrl.text = currentDue > 0
+                                        ? currentDue.fmt
+                                        : '';
+                                    errorMsg = null;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          Expanded(
+                            child: RadioListTile<String>(
+                              value: AppCurrency.syp,
+                              groupValue: selectedCurrency,
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text('ليرة (${dueSyp.fmt} ل.س)'),
+                              onChanged: (v) {
+                                if (v != null) {
+                                  setSt(() {
+                                    selectedCurrency = v;
+                                    currentDue =
+                                        erp.projectDueOf(project.id, v);
+                                    ctrl.text = currentDue > 0
+                                        ? currentDue.fmt
+                                        : '';
+                                    errorMsg = null;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.panelBorder),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('المستحق المطلوب في هذه العملة:',
+                                  style: TextStyle(fontSize: 12)),
+                          Text(
+                            '${currentDue.fmt} $sym',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: AppColors.dangerWaste,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: ctrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      decoration: InputDecoration(
+                        labelText: 'مبلغ التحصيل ($sym)',
+                        prefixIcon: const Icon(Icons.attach_money_rounded),
+                        helperText:
+                            'الحد الأقصى المسموح: ${currentDue.fmt} $sym',
+                        suffixIcon: currentDue > 0
+                            ? TextButton(
+                                onPressed: () {
+                                  setSt(() {
+                                    ctrl.text = currentDue.fmt;
+                                    errorMsg = null;
+                                  });
+                                },
+                                child: const Text('كامل المستحق',
+                                    style: TextStyle(fontSize: 12)),
+                              )
+                            : null,
+                      ),
+                      onChanged: (_) => setSt(() => errorMsg = null),
+                    ),
+                    if (errorMsg != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                        ),
+                        child: Text(
+                          errorMsg!,
+                          style: const TextStyle(
+                            color: Color(0xFF991B1B),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.successGreen,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 18, vertical: 10),
+                ),
+                icon: const Icon(Icons.check_circle_rounded, size: 18),
+                label: const Text('تأكيد التحصيل',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                onPressed: () {
+                  final amount = double.tryParse(ctrl.text.trim()) ?? 0.0;
+                  if (amount <= 0) {
+                    setSt(() =>
+                        errorMsg = 'يرجى إدخال مبلغ تحصيل صحيح أكبر من الصفر.');
+                    return;
+                  }
+                  if (amount > currentDue + 0.001) {
+                    setSt(() => errorMsg =
+                        'لا يمكن تحصيل مبلغ أكبر من المستحق المطلوب للمشروع (${currentDue.fmt} $sym)!');
+                    return;
+                  }
+
+                  final ok = erp.collectProjectPayment(
+                    projectId: project.id,
+                    amount: amount,
+                    currency: selectedCurrency,
+                  );
+
+                  if (ok) {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        backgroundColor: AppColors.successGreen,
+                        content: Text(
+                            'تم تحصيل ${amount.fmt} $sym لمشروع ${project.name} بنجاح.'),
+                      ),
+                    );
+                  } else {
+                    setSt(() => errorMsg =
+                        'تعذر تنفيذ عملية التحصيل. تحقق من المدخلات.');
+                  }
+                },
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1677,6 +2271,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 subtitle: Text(
                   'المتبقي علينا: ${s.dualDebt} • الفواتير: ${invs.length}',
                 ),
+                trailing: _buildSupplierPayButton(erp, s),
                 children: [
                   ...invs.map(
                     (inv) => ExpansionTile(
@@ -1692,25 +2287,26 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         'التاريخ: ${inv.date.toString().substring(0, 10)} • واصلة: ${inv.isGoodsDelivered ? "نعم" : "لا (شحن مرسمل ${inv.shippingFee}${inv.currencySymbol})"} • المدفوع: ${inv.advancePayment.fmt}${inv.currencySymbol} • المتبقي للمورد: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
                       ),
                       trailing: inv.isDue
-                          ? ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.dangerWaste,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
+                          ? const Chip(
+                              label: Text(
+                                'مستحق الدفع',
+                                style: TextStyle(
+                                  color: AppColors.dangerWaste,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              onPressed: () => _showMoneyDialog(
-                                title:
-                                    'دفع دفعة للمورد ${s.name} — ${inv.invoiceNo}',
-                                actionLabel: 'تأكيد الدفع',
-                                max: inv.remainingBalance,
-                                currency: inv.currency,
-                                onConfirm: (a) =>
-                                    erp.paySupplierInvoice(inv, a),
-                              ),
-                              child: const Text('دفع'),
                             )
-                          : null,
+                          : const Chip(
+                              label: Text(
+                                'مدفوعة',
+                                style: TextStyle(
+                                  color: AppColors.successGreen,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
                       children: [
                         if (inv.photoUrl.isNotEmpty)
                           Padding(
@@ -2016,24 +2612,26 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         'التاريخ: ${inv.date.toString().substring(0, 10)} • المدفوع: ${inv.advancePayment.fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
                       ),
                       trailing: inv.isDue
-                          ? ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.successGreen,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
+                          ? const Chip(
+                              label: Text(
+                                'مستحق الدفع',
+                                style: TextStyle(
+                                  color: AppColors.dangerWaste,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              onPressed: () => _showMoneyDialog(
-                                title: 'تحصيل فاتورة ${inv.invoiceNo}',
-                                actionLabel: 'تأكيد التحصيل',
-                                max: inv.remainingBalance,
-                                currency: inv.currency,
-                                onConfirm: (a) =>
-                                    erp.collectFactoryInvoice(inv, a),
-                              ),
-                              child: const Text('تحصيل'),
                             )
-                          : null,
+                          : const Chip(
+                              label: Text(
+                                'مدفوعة',
+                                style: TextStyle(
+                                  color: AppColors.successGreen,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
                       children: [
                         if (inv.photoUrl.isNotEmpty)
                           Padding(
@@ -2397,27 +2995,30 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                                           ),
                                           const SizedBox(width: 4),
                                           inv.remainingBalance > 0.01
-                                              ? ElevatedButton(
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor:
-                                                        AppColors.successGreen,
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                      horizontal: 10,
+                                              ? const Chip(
+                                                  label: Text(
+                                                    'متبقي',
+                                                    style: TextStyle(
+                                                      color:
+                                                          AppColors.dangerWaste,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.bold,
                                                     ),
                                                   ),
-                                                  onPressed: () => _showMoneyDialog(
-                                                    title:
-                                                        'تحصيل فاتورة ${inv.invoiceNo}',
-                                                    actionLabel: 'تأكيد التحصيل',
-                                                    max: inv.remainingBalance,
-                                                    currency: inv.currency,
-                                                    onConfirm: (a) => erp
-                                                        .collectWorkshopInvoice(inv, a),
-                                                  ),
-                                                  child: const Text('تحصيل'),
                                                 )
-                                              : const Chip(label: Text('خالصة')),
+                                              : const Chip(
+                                                  label: Text(
+                                                    'خالصة',
+                                                    style: TextStyle(
+                                                      color:
+                                                          AppColors.successGreen,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
                                         ],
                                       ),
                                       children: [
@@ -2489,26 +3090,26 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                                   ),
                                   const SizedBox(width: 4),
                                   inv.remainingBalance > 0.01
-                                      ? ElevatedButton(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor:
-                                                AppColors.successGreen,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
+                                      ? const Chip(
+                                          label: Text(
+                                            'متبقي',
+                                            style: TextStyle(
+                                              color: AppColors.dangerWaste,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
                                             ),
                                           ),
-                                          onPressed: () => _showMoneyDialog(
-                                            title:
-                                                'تحصيل فاتورة ${inv.invoiceNo}',
-                                            actionLabel: 'تأكيد التحصيل',
-                                            max: inv.remainingBalance,
-                                            currency: inv.currency,
-                                            onConfirm: (a) => erp
-                                                .collectWorkshopInvoice(inv, a),
-                                          ),
-                                          child: const Text('تحصيل'),
                                         )
-                                      : const Chip(label: Text('خالصة')),
+                                      : const Chip(
+                                          label: Text(
+                                            'خالصة',
+                                            style: TextStyle(
+                                              color: AppColors.successGreen,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
                                 ],
                               ),
                               children: [
@@ -2816,30 +3417,26 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                                   ),
                                   const SizedBox(width: 4),
                                   inv.remainingBalance > 0.01
-                                      ? ElevatedButton(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor:
-                                                AppColors.successGreen,
-                                            padding:
-                                                const EdgeInsets.symmetric(
-                                              horizontal: 10,
+                                      ? const Chip(
+                                          label: Text(
+                                            'متبقي',
+                                            style: TextStyle(
+                                              color: AppColors.dangerWaste,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
                                             ),
                                           ),
-                                          onPressed: () => _showMoneyDialog(
-                                            title:
-                                                'تحصيل فاتورة ${inv.invoiceNo}',
-                                            actionLabel: 'تأكيد التحصيل',
-                                            max: inv.remainingBalance,
-                                            currency: inv.currency,
-                                            onConfirm: (a) => erp
-                                                .collectWorkshopInvoice(
-                                                  inv,
-                                                  a,
-                                                ),
-                                          ),
-                                          child: const Text('تحصيل'),
                                         )
-                                      : const Chip(label: Text('خالصة')),
+                                      : const Chip(
+                                          label: Text(
+                                            'خالصة',
+                                            style: TextStyle(
+                                              color: AppColors.successGreen,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
                                 ],
                               ),
                               children: [
@@ -3059,6 +3656,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                               subtitle: Text(
                                 'الزبون: ${p.clientName}${p.phone.isNotEmpty ? " • الهاتف: ${p.phone}" : ""} • الفواتير: ${invs.length}',
                               ),
+                              trailing: _buildProjectCollectButton(erp, p),
                               children: [
                                 // Financial summary bar for the project
                                 Container(
@@ -3221,35 +3819,29 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                                           ),
                                           const SizedBox(width: 4),
                                           inv.remainingBalance > 0.01
-                                              ? ElevatedButton(
-                                                  style: ElevatedButton
-                                                      .styleFrom(
-                                                    backgroundColor: AppColors
-                                                        .successGreen,
-                                                    padding:
-                                                        const EdgeInsets
-                                                            .symmetric(
-                                                      horizontal: 10,
+                                              ? const Chip(
+                                                  label: Text(
+                                                    'متبقي',
+                                                    style: TextStyle(
+                                                      color: AppColors
+                                                          .dangerWaste,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.bold,
                                                     ),
                                                   ),
-                                                  onPressed: () =>
-                                                      _showMoneyDialog(
-                                                    title:
-                                                        'تحصيل فاتورة ${inv.invoiceNo}',
-                                                    actionLabel:
-                                                        'تأكيد التحصيل',
-                                                    max: inv.remainingBalance,
-                                                    currency: inv.currency,
-                                                    onConfirm: (a) => erp
-                                                        .collectWorkshopInvoice(
-                                                          inv,
-                                                          a,
-                                                        ),
-                                                  ),
-                                                  child: const Text('تحصيل'),
                                                 )
                                               : const Chip(
-                                                  label: Text('خالصة'),
+                                                  label: Text(
+                                                    'خالصة',
+                                                    style: TextStyle(
+                                                      color: AppColors
+                                                          .successGreen,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
                                                 ),
                                         ],
                                       ),

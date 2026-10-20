@@ -3978,6 +3978,52 @@ class ERPProvider extends ChangeNotifier {
   // FINANCIALS: payments, collections, projects, staff settlement
   // -------------------------------------------------------------
 
+  /// Pays a factory supplier's outstanding debt directly from the Main Cash Box.
+  /// [currency]: currency to pay in (USD or SYP).
+  /// Strictly prevents paying more than the supplier's due balance or available cash.
+  /// Settles the supplier's open purchase invoices in that currency FIFO.
+  bool paySupplierDebt({
+    required SupplierModel supplier,
+    required double amount,
+    required String currency,
+  }) {
+    if (amount <= 0) return false;
+    final c = AppCurrency.normalize(currency);
+    final due = supplier.debtOf(c);
+    if (amount > due + 0.001) return false;
+    final pay = amount.clamp(0.0, due).toDouble();
+    if (pay <= 0) return false;
+    if (!takeCash('main', c, pay)) return false;
+
+    supplier.reduceDebt(c, pay);
+
+    // Settle supplier open invoices FIFO in that currency
+    double remainingToSettle = pay;
+    final openInvs = factoryInvoices
+        .where(
+          (i) =>
+              i.invoiceType == 'شراء_مورد' &&
+              (i.partyId == supplier.id || i.partyName == supplier.name) &&
+              AppCurrency.normalize(i.currency) == c &&
+              i.remainingBalance > 0.01,
+        )
+        .toList();
+
+    for (final inv in openInvs) {
+      if (remainingToSettle <= 0.001) break;
+      final settlePart =
+          remainingToSettle.clamp(0.0, inv.remainingBalance).toDouble();
+      inv.advancePayment += settlePart;
+      inv.paymentStatus =
+          inv.remainingBalance > 0.01 ? 'مستحق الدفع' : 'مدفوعة';
+      remainingToSettle -= settlePart;
+    }
+
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
   /// Pays a supplier purchase invoice (we pay them): advances the invoice,
   /// reduces the supplier debt and the Main Cash Box (invoice currency).
   bool paySupplierInvoice(FactoryInvoiceModel inv, double amount) {
@@ -4069,6 +4115,7 @@ class ERPProvider extends ChangeNotifier {
   /// Multi-currency customer debt collection method.
   /// Supports direct payment (same currency) and cross-currency payment with exchange rate.
   /// Accurate double-entry accounting between Customer Account and Main Safe vaults.
+  /// Strictly prevents overcollection beyond due debt balance and settles invoices FIFO.
   bool collectCustomerPayment({
     required ClientModel client,
     required String paymentCurrency,
@@ -4078,14 +4125,18 @@ class ERPProvider extends ChangeNotifier {
     if (paymentAmount <= 0) return false;
     final payCurr = AppCurrency.normalize(paymentCurrency);
     final acctCurr = AppCurrency.normalize(client.currencyClassification);
+    final currentDebt = client.debtOf(acctCurr);
+
+    double convertedAcctAmount = 0.0;
 
     if (payCurr == acctCurr) {
       // Case A: Direct Payment (Same Currency)
-      final currentDebt = client.debtOf(acctCurr);
+      if (paymentAmount > currentDebt + 0.001) return false;
       final take = paymentAmount.clamp(0.0, currentDebt).toDouble();
       if (take <= 0) return false;
       client.reduceDebt(acctCurr, take);
       addCash('main', payCurr, take);
+      convertedAcctAmount = take;
     } else {
       // Case B: Cross-Currency Payment (Different Currency)
       if (exchangeRate == null || exchangeRate <= 0) return false;
@@ -4096,26 +4147,186 @@ class ERPProvider extends ChangeNotifier {
         final amountSyp = paymentAmount;
         final convertedUsd = amountSyp / exchangeRate;
         if (convertedUsd <= 0) return false;
+        if (convertedUsd > currentDebt + 0.001) return false;
 
-        // Accounting Effect:
-        // Customer Account (USD): Credit / Deduct Converted USD Amount
         client.reduceDebt(AppCurrency.usd, convertedUsd);
-        // Main Safe (SYP Vault): Debit / Deposit actual amount_syp
         addCash('main', AppCurrency.syp, amountSyp);
+        convertedAcctAmount = convertedUsd;
       } else if (acctCurr == AppCurrency.syp && payCurr == AppCurrency.usd) {
         // Scenario 2: SYP Customer Paying in USD
         // Converted SYP Amount = amount_usd * exchange_rate
         final amountUsd = paymentAmount;
         final convertedSyp = amountUsd * exchangeRate;
         if (convertedSyp <= 0) return false;
+        if (convertedSyp > currentDebt + 0.001) return false;
 
-        // Accounting Effect:
-        // Customer Account (SYP): Credit / Deduct Converted SYP Amount
         client.reduceDebt(AppCurrency.syp, convertedSyp);
-        // Main Safe (USD Vault): Debit / Deposit actual amount_usd
         addCash('main', AppCurrency.usd, amountUsd);
+        convertedAcctAmount = convertedSyp;
       } else {
         return false;
+      }
+    }
+
+    // Settle open invoices for this client FIFO
+    // 1. Factory Sale Invoices (if Factory Agent)
+    if (client.clientType == 'معتمد مصنع') {
+      double remainingToSettle = convertedAcctAmount;
+      final agentInvs = factoryInvoices
+          .where(
+            (i) =>
+                i.invoiceType == 'بيع_معتمد' &&
+                (i.partyId == client.id || i.partyName == client.name) &&
+                AppCurrency.normalize(i.currency) == acctCurr &&
+                i.remainingBalance > 0.01,
+          )
+          .toList();
+
+      for (final inv in agentInvs) {
+        if (remainingToSettle <= 0.001) break;
+        final settlePart =
+            remainingToSettle.clamp(0.0, inv.remainingBalance).toDouble();
+        inv.advancePayment += settlePart;
+        inv.paymentStatus =
+            inv.remainingBalance > 0.01 ? 'مستحق الدفع' : 'مدفوعة';
+        remainingToSettle -= settlePart;
+      }
+    }
+
+    // 2. Workshop Retail Invoices (if Retail Customer)
+    if (client.clientType == 'زبون معمل' || client.clientType == 'زبون عادي') {
+      double remainingToSettle = convertedAcctAmount;
+      final retailInvs = workshopInvoices
+          .where(
+            (i) =>
+                i.projectId.isEmpty &&
+                i.clientName.trim() == client.name.trim() &&
+                AppCurrency.normalize(i.currency) == acctCurr &&
+                i.remainingBalance > 0.01,
+          )
+          .toList();
+
+      for (final inv in retailInvs) {
+        if (remainingToSettle <= 0.001) break;
+        final settlePart =
+            remainingToSettle.clamp(0.0, inv.remainingBalance).toDouble();
+        final idx = workshopInvoices.indexWhere((x) => x.id == inv.id);
+        if (idx >= 0) {
+          final old = workshopInvoices[idx];
+          workshopInvoices[idx] = WorkshopInvoiceModel(
+            id: old.id,
+            invoiceNo: old.invoiceNo,
+            date: old.date,
+            clientName: old.clientName,
+            items: old.items,
+            sourceType: old.sourceType,
+            sourceId: old.sourceId,
+            projectId: old.projectId,
+            itemDescription: old.itemDescription,
+            sourceQuantity: old.sourceQuantity,
+            sourceUnitCategory: old.sourceUnitCategory,
+            agreedPrice: old.agreedPrice,
+            depositDeducted: old.depositDeducted,
+            cashPaidNow: old.cashPaidNow + settlePart,
+            netCost: old.netCost,
+            salesDiscount: old.salesDiscount,
+            adjustmentsAmount: old.adjustmentsAmount,
+            services: old.services,
+            photoPath: old.photoPath,
+            isGranite: old.isGranite,
+            isCashInvoice: old.isCashInvoice,
+            currency: old.currency,
+          );
+        }
+        remainingToSettle -= settlePart;
+      }
+    }
+
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  /// Collects a payment directly on a workshop project.
+  /// [currency]: currency collected (USD or SYP).
+  /// Strictly prevents collecting more than the project's remaining due in that currency.
+  /// Settles open workshop invoices for this project FIFO, updates the project client's debt,
+  /// and deposits the cash into the Main Cash Box (or Scrap Box if scrap-only).
+  bool collectProjectPayment({
+    required String projectId,
+    required double amount,
+    required String currency,
+  }) {
+    if (amount <= 0) return false;
+    final c = AppCurrency.normalize(currency);
+    final due = projectDueOf(projectId, c);
+    if (amount > due + 0.001) return false;
+    final take = amount.clamp(0.0, due).toDouble();
+    if (take <= 0) return false;
+
+    // Apply FIFO to project invoices in that currency
+    double remainingToSettle = take;
+    final projInvs = workshopInvoices
+        .where(
+          (i) =>
+              i.projectId == projectId &&
+              AppCurrency.normalize(i.currency) == c &&
+              i.remainingBalance > 0.01,
+        )
+        .toList();
+
+    for (final inv in projInvs) {
+      if (remainingToSettle <= 0.001) break;
+      final settlePart =
+          remainingToSettle.clamp(0.0, inv.remainingBalance).toDouble();
+      final hasOnlyScrap = inv.items.isNotEmpty
+          ? inv.items.every((i) => i.sourceType == 'قطع زائدة')
+          : inv.sourceType == 'قطع زائدة';
+      if (hasOnlyScrap) {
+        addCash('scrap', c, settlePart);
+      } else {
+        addCash('main', c, settlePart);
+      }
+
+      final idx = workshopInvoices.indexWhere((x) => x.id == inv.id);
+      if (idx >= 0) {
+        final old = workshopInvoices[idx];
+        workshopInvoices[idx] = WorkshopInvoiceModel(
+          id: old.id,
+          invoiceNo: old.invoiceNo,
+          date: old.date,
+          clientName: old.clientName,
+          items: old.items,
+          sourceType: old.sourceType,
+          sourceId: old.sourceId,
+          projectId: old.projectId,
+          itemDescription: old.itemDescription,
+          sourceQuantity: old.sourceQuantity,
+          sourceUnitCategory: old.sourceUnitCategory,
+          agreedPrice: old.agreedPrice,
+          depositDeducted: old.depositDeducted,
+          cashPaidNow: old.cashPaidNow + settlePart,
+          netCost: old.netCost,
+          salesDiscount: old.salesDiscount,
+          adjustmentsAmount: old.adjustmentsAmount,
+          services: old.services,
+          photoPath: old.photoPath,
+          isGranite: old.isGranite,
+          isCashInvoice: old.isCashInvoice,
+          currency: old.currency,
+        );
+      }
+      remainingToSettle -= settlePart;
+    }
+
+    // Also reduce client debt if matching client exists
+    final proj = workshopProjects.where((p) => p.id == projectId).firstOrNull;
+    if (proj != null) {
+      final client = clients
+          .where((cl) => cl.name.trim() == proj.clientName.trim())
+          .firstOrNull;
+      if (client != null) {
+        client.reduceDebt(c, take);
       }
     }
 

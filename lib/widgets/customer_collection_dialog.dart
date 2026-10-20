@@ -670,9 +670,18 @@ class _CustomerCollectionDialogState extends State<CustomerCollectionDialog> {
               setState(() => _errorMessage = 'يرجى إدخال مبلغ تحصيل صحيح أكبر من الصفر.');
               return;
             }
-            if (!isSameCurrency && exchangeRate <= 0) {
-              setState(() => _errorMessage = 'يرجى إدخال سعر صرف صحيح لتحويل العملة.');
-              return;
+            if (isSameCurrency) {
+              if (enteredAmount > dueInAccountCurrency + 0.001) {
+                setState(() => _errorMessage =
+                    'لا يمكن تحصيل مبلغ أكبر من المستحق المطلوب (${dueInAccountCurrency.fmt} ${AppCurrency.symbol(accountCurrency)})!');
+                return;
+              }
+            } else {
+              if (convertedAmount > dueInAccountCurrency + 0.001) {
+                setState(() => _errorMessage =
+                    'المبلغ المعادل (${convertedAmount.fmt} ${AppCurrency.symbol(accountCurrency)}) أكبر من المستحق المطلوب (${dueInAccountCurrency.fmt} ${AppCurrency.symbol(accountCurrency)})! لا يمكن تحصيل أكثر من المستحق.');
+                return;
+              }
             }
 
             final success = erp.collectCustomerPayment(
