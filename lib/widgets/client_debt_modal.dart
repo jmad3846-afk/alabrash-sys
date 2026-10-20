@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
+import 'customer_collection_dialog.dart';
 
 class ClientDebtModal extends StatelessWidget {
   final String titleFilter; // 'الكل' | 'معتمد مصنع' | 'زبون معمل' | 'مشروع معمل'
@@ -74,11 +75,40 @@ class ClientDebtModal extends StatelessWidget {
                       backgroundColor: AppColors.accentPrimary.withValues(alpha: 0.1),
                       child: Text(client.name[0], style: const TextStyle(color: AppColors.accentPrimary, fontWeight: FontWeight.bold)),
                     ),
-                    title: Text(client.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Row(
+                      children: [
+                        Flexible(
+                          child: Text(client.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                        const SizedBox(width: 8),
+                        CustomerClassificationBadge(client: client, compact: true),
+                      ],
+                    ),
                     subtitle: Text('${client.clientType} • ${client.phone} • ${client.location}'),
-                    trailing: Text(
-                      client.dualDebt,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.dangerWaste),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          client.dualDebt,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.dangerWaste),
+                        ),
+                        if (client.debtBalance > 0.01 || client.debtBalanceSyp > 0.01) ...[
+                          const SizedBox(width: 10),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.successGreen,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              minimumSize: const Size(50, 30),
+                            ),
+                            onPressed: () => CustomerCollectionDialog.show(
+                              context,
+                              client: client,
+                              erp: erp,
+                            ),
+                            child: const Text('تحصيل', style: TextStyle(fontSize: 11)),
+                          ),
+                        ],
+                      ],
                     ),
                   );
                 },

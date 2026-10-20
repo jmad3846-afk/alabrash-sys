@@ -8,6 +8,7 @@ import '../widgets/currency_selector.dart';
 import '../widgets/a4_invoice_print_dialog.dart';
 import '../widgets/a4_statement_print_dialog.dart';
 import '../widgets/app_image_attachment.dart';
+import '../widgets/customer_collection_dialog.dart';
 import 'accounting_screens.dart';
 
 class FinancialsScreen extends StatefulWidget {
@@ -1352,6 +1353,26 @@ class _FinancialsScreenState extends State<FinancialsScreen>
     );
   }
 
+  /// Collect button dedicated to Customer Accounts.
+  /// Launches the Multi-Currency Customer Collection Dialog with automatic
+  /// currency classification display, direct payment, and real-time cross-currency conversion.
+  Widget _buildCustomerCollectButton(ERPProvider erp, ClientModel client) {
+    final hasDebt = client.debtBalance > 0.01 || client.debtBalanceSyp > 0.01;
+    if (!hasDebt) return const Chip(label: Text('خالص'));
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.successGreen,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      ),
+      onPressed: () => CustomerCollectionDialog.show(
+        context,
+        client: client,
+        erp: erp,
+      ),
+      child: const Text('تحصيل', style: TextStyle(fontWeight: FontWeight.bold)),
+    );
+  }
+
   /// Collect/settle button that lets the user pick the fund currency
   /// when the account holds BOTH Dollar and Syrian balances.
   Widget _buildDualCollectButton(
@@ -1926,12 +1947,20 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 title: Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        'المعتمد: ${c.name}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'المعتمد: ${c.name}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          CustomerClassificationBadge(client: c),
+                        ],
                       ),
                     ),
                     ElevatedButton.icon(
@@ -1973,13 +2002,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 subtitle: Text(
                   'المتبقي عليه: ${c.dualDebt} • الفواتير: ${invs.length}',
                 ),
-                trailing: _buildDualCollectButton(
-                  erp,
-                  c.name,
-                  c.debtBalance,
-                  c.debtBalanceSyp,
-                  (cur, amt) => erp.collectClientDebt(c, amt, cur),
-                ),
+                trailing: _buildCustomerCollectButton(erp, c),
                 children: [
                   ...invs.map(
                     (inv) => ExpansionTile(
@@ -2559,12 +2582,20 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                               title: Row(
                                 children: [
                                   Expanded(
-                                    child: Text(
-                                      'الزبون: ${c.name}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 15,
-                                      ),
+                                    child: Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            'الزبون: ${c.name}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        CustomerClassificationBadge(client: c),
+                                      ],
                                     ),
                                   ),
                                   ElevatedButton.icon(
@@ -2607,13 +2638,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                               subtitle: Text(
                                 'الرصيد المتبقي عليه: ${c.dualDebt} • الفواتير: ${clientInvs.length}${c.phone.isNotEmpty ? " • الهاتف: ${c.phone}" : ""}',
                               ),
-                              trailing: _buildDualCollectButton(
-                                erp,
-                                c.name,
-                                c.debtBalance,
-                                c.debtBalanceSyp,
-                                (cur, amt) => erp.collectClientDebt(c, amt, cur),
-                              ),
+                              trailing: _buildCustomerCollectButton(erp, c),
                               children: [
                                 if (clientInvs.isEmpty)
                                   const Padding(

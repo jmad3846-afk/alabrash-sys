@@ -2675,12 +2675,15 @@ class ERPProvider extends ChangeNotifier {
       addCash('main', inv.currency, inv.advancePayment);
     }
 
-    if (inv.remainingBalance > 0 && clients.isNotEmpty) {
-      var client = clients.firstWhere(
-        (c) => c.id == inv.partyId,
-        orElse: () => clients.first,
-      );
-      client.addDebt(inv.currency, inv.remainingBalance);
+    if (clients.isNotEmpty) {
+      final clientMatches = clients.where(
+        (c) => c.id == inv.partyId || c.name.trim() == inv.partyName.trim(),
+      ).toList();
+      final client = clientMatches.isNotEmpty ? clientMatches.first : clients.first;
+      client.currencyClassification = inv.currency;
+      if (inv.remainingBalance > 0) {
+        client.addDebt(inv.currency, inv.remainingBalance);
+      }
     }
 
     // Deduct stock from Factory Warehouse or Tailoring
@@ -2779,6 +2782,35 @@ class ERPProvider extends ChangeNotifier {
         currency: order.currency,
       ),
     );
+
+    final remaining = (order.agreedPrice - order.depositAmount - cashPaidNow).clamp(0.0, double.infinity);
+    if (order.clientName.trim().isNotEmpty) {
+      final existingClient = clients
+          .where((c) =>
+              c.name.trim() == order.clientName.trim() &&
+              c.clientType == 'زبون معمل')
+          .firstOrNull;
+      final ClientModel client;
+      if (existingClient == null) {
+        client = ClientModel(
+          id: 'cli_wrk_${DateTime.now().millisecondsSinceEpoch}',
+          name: order.clientName.trim(),
+          phone: '',
+          location: '',
+          clientType: 'زبون معمل',
+          debtBalance: 0.0,
+          debtBalanceSyp: 0.0,
+          currencyClassification: order.currency,
+        );
+        clients.add(client);
+      } else {
+        client = existingClient;
+        client.currencyClassification = order.currency;
+      }
+      if (remaining > 0.01) {
+        client.addDebt(order.currency, remaining);
+      }
+    }
 
     notifyListeners();
     saveToDisk();
@@ -2971,10 +3003,12 @@ class ERPProvider extends ChangeNotifier {
             clientType: 'زبون معمل',
             debtBalance: 0.0,
             debtBalanceSyp: 0.0,
+            currencyClassification: inv.currency,
           );
           clients.add(client);
         } else {
           client = existingClient;
+          client.currencyClassification = inv.currency;
         }
         if (inv.remainingBalance > 0.01) {
           client.addDebt(inv.currency, inv.remainingBalance);
@@ -3077,10 +3111,12 @@ class ERPProvider extends ChangeNotifier {
           clientType: 'زبون معمل',
           debtBalance: 0.0,
           debtBalanceSyp: 0.0,
+          currencyClassification: inv.currency,
         );
         clients.add(client);
       } else {
         client = existingClient;
+        client.currencyClassification = inv.currency;
       }
       if (inv.remainingBalance > 0.01) {
         client.addDebt(inv.currency, inv.remainingBalance);
@@ -3692,22 +3728,76 @@ class ERPProvider extends ChangeNotifier {
     return true;
   }
 
+  /// Multi-currency customer debt collection method.
+  /// Supports direct payment (same currency) and cross-currency payment with exchange rate.
+  /// Accurate double-entry accounting between Customer Account and Main Safe vaults.
+  bool collectCustomerPayment({
+    required ClientModel client,
+    required String paymentCurrency,
+    required double paymentAmount,
+    double? exchangeRate,
+  }) {
+    if (paymentAmount <= 0) return false;
+    final payCurr = AppCurrency.normalize(paymentCurrency);
+    final acctCurr = AppCurrency.normalize(client.currencyClassification);
+
+    if (payCurr == acctCurr) {
+      // Case A: Direct Payment (Same Currency)
+      final currentDebt = client.debtOf(acctCurr);
+      final take = paymentAmount.clamp(0.0, currentDebt).toDouble();
+      if (take <= 0) return false;
+      client.reduceDebt(acctCurr, take);
+      addCash('main', payCurr, take);
+    } else {
+      // Case B: Cross-Currency Payment (Different Currency)
+      if (exchangeRate == null || exchangeRate <= 0) return false;
+
+      if (acctCurr == AppCurrency.usd && payCurr == AppCurrency.syp) {
+        // Scenario 1: USD Customer Paying in SYP
+        // Converted USD Amount = amount_syp / exchange_rate
+        final amountSyp = paymentAmount;
+        final convertedUsd = amountSyp / exchangeRate;
+        if (convertedUsd <= 0) return false;
+
+        // Accounting Effect:
+        // Customer Account (USD): Credit / Deduct Converted USD Amount
+        client.reduceDebt(AppCurrency.usd, convertedUsd);
+        // Main Safe (SYP Vault): Debit / Deposit actual amount_syp
+        addCash('main', AppCurrency.syp, amountSyp);
+      } else if (acctCurr == AppCurrency.syp && payCurr == AppCurrency.usd) {
+        // Scenario 2: SYP Customer Paying in USD
+        // Converted SYP Amount = amount_usd * exchange_rate
+        final amountUsd = paymentAmount;
+        final convertedSyp = amountUsd * exchangeRate;
+        if (convertedSyp <= 0) return false;
+
+        // Accounting Effect:
+        // Customer Account (SYP): Credit / Deduct Converted SYP Amount
+        client.reduceDebt(AppCurrency.syp, convertedSyp);
+        // Main Safe (USD Vault): Debit / Deposit actual amount_usd
+        addCash('main', AppCurrency.usd, amountUsd);
+      } else {
+        return false;
+      }
+    }
+
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
   /// Collects a retail/approved client balance not tied to a single invoice.
-  /// [currency] selects which fund/debt (USD default; pass SYP for ل.س).
+  /// [currency] selects which fund/debt (defaults to customer's account currency).
   bool collectClientDebt(
     ClientModel client,
     double amount, [
     String? currency,
   ]) {
-    final c = AppCurrency.normalize(currency ?? AppCurrency.usd);
-    if (amount <= 0) return false;
-    final take = amount.clamp(0.0, client.debtOf(c)).toDouble();
-    if (take <= 0) return false;
-    client.reduceDebt(c, take);
-    addCash('main', c, take);
-    notifyListeners();
-    saveToDisk();
-    return true;
+    return collectCustomerPayment(
+      client: client,
+      paymentCurrency: currency ?? client.currencyClassification,
+      paymentAmount: amount,
+    );
   }
 
   /// Settles everything owed to a staff member from the Main Cash Box.
@@ -4242,6 +4332,21 @@ class ERPProvider extends ChangeNotifier {
         workshopInvoices = (jsonDecode(workshopInvoicesJson) as List)
             .map((item) => WorkshopInvoiceModel.fromJson(item))
             .toList();
+      }
+
+      // Sync customer currency classifications from invoices if not explicitly stored
+      for (final client in clients) {
+        final facInvs = factoryInvoices
+            .where((i) => i.partyId == client.id || i.partyName.trim() == client.name.trim())
+            .toList();
+        final wrkInvs = workshopInvoices
+            .where((i) => i.clientName.trim() == client.name.trim())
+            .toList();
+        if (facInvs.isNotEmpty) {
+          client.currencyClassification = facInvs.last.currency;
+        } else if (wrkInvs.isNotEmpty) {
+          client.currencyClassification = wrkInvs.last.currency;
+        }
       }
       final workshopProjectsJson = prefs.getString('workshopProjects');
       if (workshopProjectsJson != null) {

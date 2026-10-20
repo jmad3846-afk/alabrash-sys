@@ -663,6 +663,7 @@ class ClientModel {
   final String description;
   double debtBalance; // USD — Client to us (لنا على الزبون)
   double debtBalanceSyp; // SYP — same person can hold both currencies
+  String? _currencyClassification;
 
   ClientModel({
     required this.id,
@@ -673,7 +674,32 @@ class ClientModel {
     this.description = '',
     this.debtBalance = 0.0,
     this.debtBalanceSyp = 0.0,
-  });
+    String? currencyClassification,
+  }) : _currencyClassification = (currencyClassification != null && currencyClassification.isNotEmpty)
+            ? AppCurrency.normalize(currencyClassification)
+            : null;
+
+  String get currencyClassification {
+    if (_currencyClassification != null && _currencyClassification!.isNotEmpty) {
+      return _currencyClassification!;
+    }
+    return debtBalanceSyp > 0.01 && debtBalance <= 0.01 ? AppCurrency.syp : AppCurrency.usd;
+  }
+
+  set currencyClassification(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _currencyClassification = AppCurrency.normalize(value);
+    }
+  }
+
+  bool get isSypCustomer => AppCurrency.isSyp(currencyClassification);
+  bool get isUsdCustomer => !isSypCustomer;
+
+  String get currencyClassificationLabel =>
+      isSypCustomer ? 'SYP Customer' : 'USD Customer';
+
+  String get currencyClassificationLabelAr =>
+      isSypCustomer ? 'زبون ليرة سورية' : 'زبون دولار';
 
   double debtOf(String? currency) =>
       AppCurrency.isSyp(currency) ? debtBalanceSyp : debtBalance;
@@ -705,6 +731,7 @@ class ClientModel {
     'description': description,
     'debtBalance': debtBalance,
     'debtBalanceSyp': debtBalanceSyp,
+    'currencyClassification': currencyClassification,
   };
 
   factory ClientModel.fromJson(Map<String, dynamic> json) => ClientModel(
@@ -716,6 +743,7 @@ class ClientModel {
     description: json['description'] ?? '',
     debtBalance: (json['debtBalance'] ?? 0.0).toDouble(),
     debtBalanceSyp: (json['debtBalanceSyp'] ?? 0.0).toDouble(),
+    currencyClassification: json['currencyClassification'],
   );
 }
 
