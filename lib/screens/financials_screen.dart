@@ -36,9 +36,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   void initState() {
     super.initState();
     _financialsTabController = TabController(
-      length: 9,
+      length: 8,
       vsync: this,
-      initialIndex: widget.showOnlyIncomeStatement ? 7 : 0,
+      initialIndex: widget.showOnlyIncomeStatement ? 6 : 0,
     );
   }
 
@@ -76,11 +76,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 Tab(text: '2. الصناديق المعزولة'),
                 Tab(text: '3. مالية موردي المصنع'),
                 Tab(text: '4. مالية معتمدي المصنع'),
-                Tab(text: '5. مالية القوى العاملة'),
-                Tab(text: '6. مالية المعمل'),
-                Tab(text: '7. مالية الزيادات (Surplus Financials)'),
-                Tab(text: '8. ملخص الدخل (P&L)'),
-                Tab(text: '9. المالية القديمة • أرصدة القيد الافتتاحي'),
+                Tab(text: '5. مالية المعمل'),
+                Tab(text: '6. مالية الزيادات (Surplus Financials)'),
+                Tab(text: '7. ملخص الدخل (P&L)'),
+                Tab(text: '8. المالية القديمة • أرصدة القيد الافتتاحي'),
               ],
             ),
           ),
@@ -94,7 +93,6 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 _buildIsolatedCashBoxesTab(erp),
                 _buildFactorySuppliersTab(erp),
                 _buildFactoryClientsTab(erp),
-                _buildWorkforceTab(erp),
                 _buildWorkshopFinancesTab(erp),
                 _buildSurplusTab(erp),
                 _buildIncomeStatementTab(erp),
@@ -2089,287 +2087,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   }
 
   // -------------------------------------------------------------
-  // TAB 5: WORKFORCE FINANCIALS (Workers / Masters / Admin)
-  // All dues are settled from here.
-  // -------------------------------------------------------------
-  Widget _buildWorkforceTab(ERPProvider erp) {
-    Widget section(String category, String label) {
-      final people = erp.staffList
-          .where(
-            (s) =>
-                s.category == category &&
-                (s.netRemainingBalance.abs() > 0.01 ||
-                    s.netRemainingBalanceSyp.abs() > 0.01),
-          )
-          .toList();
-      final totalDue = people.fold<double>(
-        0.0,
-        (s, x) => s + x.netRemainingBalance,
-      );
-      final totalDueSyp = people.fold<double>(
-        0.0,
-        (s, x) => s + x.netRemainingBalanceSyp,
-      );
-      if (people.isEmpty) {
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Center(child: Text('لا يوجد $label مسجلون.')),
-          ),
-        );
-      }
-      return Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.chipBgAmber,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.partnersEquityAccent),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    'إجمالي المستحق لـ$label:',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  AppCurrency.dual(totalDue, totalDueSyp),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: AppColors.partnersEquityAccent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...people.map((stf) {
-            final attendance = erp.staffAttendance
-                .where((entry) => entry.staffId == stf.id)
-                .toList()
-              ..sort((a, b) => a.date.compareTo(b.date));
-            final days = erp.workdayEntries
-                .where(
-                  (d) =>
-                      d.staffId == stf.id ||
-                      (d.staffId.isEmpty && d.staffNames.contains(stf.name)),
-                )
-                .toList();
-            return Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ExpansionTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppColors.chipBgAmber,
-                  child: Text(
-                    stf.name.isEmpty ? '؟' : stf.name[0],
-                    style: const TextStyle(
-                      color: AppColors.partnersEquityAccent,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                title: Text(
-                  stf.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(
-                  'المكتسب: ${AppCurrency.dual(stf.totalEarned, stf.totalEarnedSyp)} • المسلف: ${AppCurrency.dual(stf.cashAdvancesDisbursed, stf.cashAdvancesDisbursedSyp)} • الصافي: ${stf.dualNet}',
-                ),
-                trailing:
-                    (stf.netRemainingBalance > 0.01 ||
-                        stf.netRemainingBalanceSyp > 0.01)
-                    ? ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.partnersEquityAccent,
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                        ),
-                        onPressed: () {
-                          final hasUsd = stf.netRemainingBalance > 0.01;
-                          final hasSyp = stf.netRemainingBalanceSyp > 0.01;
-                          if (hasUsd && !hasSyp) {
-                            _showMoneyDialog(
-                              title: 'تسديد مستحقات ${stf.name}',
-                              actionLabel: 'تأكيد التسديد',
-                              max: stf.netRemainingBalance,
-                              currency: AppCurrency.usd,
-                              onConfirm: (_) => erp.settleStaffDue(stf),
-                            );
-                          } else {
-                            String picked = hasUsd
-                                ? AppCurrency.usd
-                                : AppCurrency.syp;
-                            showDialog(
-                              context: context,
-                              builder: (ctx) => StatefulBuilder(
-                                builder: (ctx, setSt) => AlertDialog(
-                                  title: Text(
-                                    'تسديد مستحقات ${stf.name} — اختر العملة',
-                                  ),
-                                  content: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (hasUsd)
-                                        RadioListTile<String>(
-                                          value: AppCurrency.usd,
-                                          groupValue: picked,
-                                          title: Text(
-                                            'دولار: ${stf.netRemainingBalance.fmt} \$',
-                                          ),
-                                          onChanged: (v) =>
-                                              setSt(() => picked = v!),
-                                        ),
-                                      if (hasSyp)
-                                        RadioListTile<String>(
-                                          value: AppCurrency.syp,
-                                          groupValue: picked,
-                                          title: Text(
-                                            'ليرة: ${stf.netRemainingBalanceSyp.fmt} ل.س',
-                                          ),
-                                          onChanged: (v) =>
-                                              setSt(() => picked = v!),
-                                        ),
-                                    ],
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(ctx),
-                                      child: const Text('إلغاء'),
-                                    ),
-                                    ElevatedButton(
-                                      onPressed: () {
-                                        Navigator.pop(ctx);
-                                        _showMoneyDialog(
-                                          title: 'تسديد مستحقات ${stf.name}',
-                                          actionLabel: 'تأكيد التسديد',
-                                          max: picked == AppCurrency.syp
-                                              ? stf.netRemainingBalanceSyp
-                                              : stf.netRemainingBalance,
-                                          currency: picked,
-                                          onConfirm: (_) =>
-                                              erp.settleStaffDue(stf, picked),
-                                        );
-                                      },
-                                      child: const Text('متابعة'),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                        child: const Text('تسديد'),
-                      )
-                    : Chip(
-                        label: Text(
-                          stf.netRemainingBalance < -0.01 ||
-                                  stf.netRemainingBalanceSyp < -0.01
-                              ? 'سلفة مستحقة لنا'
-                              : 'خالص',
-                        ),
-                      ),
-                children: [
-                  ...attendance.map(
-                    (entry) => ListTile(
-                      dense: true,
-                      leading: CurrencyBadge(currency: entry.currency),
-                      title: const Text('حضور يومي'),
-                      subtitle: Text(
-                        'التاريخ: ${entry.date.toString().substring(0, 10)} • الأجر حسب النوع',
-                      ),
-                      trailing: Text(
-                        AppCurrency.single(entry.dailyRate, entry.currency),
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                  ...days.map(
-                    (d) => ListTile(
-                      dense: true,
-                      leading: CurrencyBadge(currency: d.currency),
-                      title: Text(d.workDescription),
-                      subtitle: Text(
-                        'التاريخ: ${d.date.toString().substring(0, 10)} • ${d.rateType}',
-                      ),
-                      trailing: Text(
-                        AppCurrency.single(d.agreedAmountPerPerson, d.currency),
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                  if (days.isEmpty && attendance.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: Text(
-                        'لا توجد أيام عمل مسجلة لهذا الشخص.',
-                        style: TextStyle(color: AppColors.brandSecondaryText),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          }),
-        ],
-      );
-    }
-
-    return DefaultTabController(
-      length: 3,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'مالية القوى العاملة (Workforce)',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontSize: 20),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'جميع المستحقات تُسوّى من هنا عبر الصندوق الرئيسي',
-              style: TextStyle(color: AppColors.brandSecondaryText),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              color: const Color(0xFFF1F5F9),
-              child: const TabBar(
-                tabs: [
-                  Tab(text: 'العمال (Workers)'),
-                  Tab(text: 'المعلمون (Masters)'),
-                  Tab(text: 'الإداريون (Admin)'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 520,
-              child: TabBarView(
-                children: [
-                  SingleChildScrollView(child: section('عمال', 'العمال')),
-                  SingleChildScrollView(child: section('معلمين', 'المعلمين')),
-                  SingleChildScrollView(child: section('إداريين', 'الإداريين')),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // -------------------------------------------------------------
-  // TAB 6: WORKSHOP FINANCIALS (Retail + Projects)
+  // TAB 5: WORKSHOP FINANCIALS (Retail + Projects)
   // -------------------------------------------------------------
   Widget _buildWorkshopFinancesTab(ERPProvider erp) {
     return DefaultTabController(
@@ -4204,6 +3922,11 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     'إيرادات بيع الأصول:',
                     erp.assetSaleRevenueOf(AppCurrency.usd),
                     syp: erp.assetSaleRevenueOf(AppCurrency.syp),
+                  ),
+                  _buildPlLine(
+                    'إيرادات تحصيل واسترداد سُلف العمالة:',
+                    erp.totalAdvanceRepaymentsRevenueOf(AppCurrency.usd),
+                    syp: erp.totalAdvanceRepaymentsRevenueOf(AppCurrency.syp),
                   ),
                   const Divider(height: 16),
                   _buildPlLine(

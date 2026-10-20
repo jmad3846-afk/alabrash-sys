@@ -188,6 +188,7 @@ class ERPProvider extends ChangeNotifier {
   List<StaffModel> staffList = [];
   List<StaffAttendanceModel> staffAttendance = [];
   List<WorkdayEntryModel> workdayEntries = [];
+  List<AdvanceRepaymentModel> advanceRepayments = [];
   late DateTime activeWorkweekStart;
 
   // Returns Log
@@ -1792,6 +1793,15 @@ class ERPProvider extends ChangeNotifier {
           expense.currency == AppCurrency.normalize(currency))
       .fold<double>(0, (sum, expense) => sum + expense.amount);
 
+  double totalAdvanceRepaymentsRevenueOf(String? currency) =>
+      advanceRepayments
+          .where((r) => r.collectedCurrency == AppCurrency.normalize(currency))
+          .fold<double>(0.0, (sum, r) => sum + r.collectedAmount);
+  double get totalAdvanceRepaymentsRevenue =>
+      totalAdvanceRepaymentsRevenueOf(AppCurrency.usd);
+  double get totalAdvanceRepaymentsRevenueSyp =>
+      totalAdvanceRepaymentsRevenueOf(AppCurrency.syp);
+
   double totalRevenuesOf(String? currency) =>
       totalFactoryRevenueOf(currency) +
       totalWorkshopRevenueOf(currency) +
@@ -1801,7 +1811,8 @@ class ERPProvider extends ChangeNotifier {
       adjustmentTotalOf('purchase_return', currency) +
       adjustmentTotalOf('purchase_allowance', currency) +
       supplierDiscountsOf(currency) +
-      assetSaleRevenueOf(currency);
+      assetSaleRevenueOf(currency) +
+      totalAdvanceRepaymentsRevenueOf(currency);
   double get totalRevenues => totalRevenuesOf(AppCurrency.usd);
   double get totalRevenuesSyp => totalRevenuesOf(AppCurrency.syp);
 
@@ -4170,6 +4181,162 @@ class ERPProvider extends ChangeNotifier {
     return true;
   }
 
+  /// 1. Pay Staff Wages:
+  /// Allows paying worker's wage with currency selection (USD or SYP).
+  /// Routed to Expenses under 'الرواتب والأجور' (Salaries & Wages)
+  /// and deducted from Main Safe.
+  bool payStaffWages(
+    StaffModel staff,
+    double amount,
+    String currency, {
+    String note = '',
+  }) {
+    final c = AppCurrency.normalize(currency);
+    if (amount <= 0.0001) return false;
+    if (cashOf('main', c) < amount) return false;
+    if (!takeCash('main', c, amount)) return false;
+
+    const defaultWageTypeId = 'salaries_and_wages_expense';
+    final matchingWageTypes = expenseTypes
+        .where(
+          (type) =>
+              type.id == defaultWageTypeId ||
+              type.name.trim() == 'الرواتب والأجور' ||
+              type.name.trim() == 'الرواتب والأجور (Salaries & Wages)' ||
+              type.name.trim() == 'أجور العمال',
+        )
+        .toList();
+    final wageTypeId = matchingWageTypes.isEmpty
+        ? defaultWageTypeId
+        : matchingWageTypes.first.id;
+    if (matchingWageTypes.isEmpty) {
+      expenseTypes.add(
+        ExpenseTypeModel(
+          id: wageTypeId,
+          name: 'الرواتب والأجور (Salaries & Wages)',
+          description: 'رواتب وأجور العمال والمعلمين والإداريين',
+        ),
+      );
+    }
+    expenseRecords.add(
+      ExpenseRecordModel(
+        id: 'wage_exp_${DateTime.now().microsecondsSinceEpoch}',
+        typeId: wageTypeId,
+        amount: amount,
+        currency: c,
+        personName: staff.name,
+        staffId: staff.id,
+        description: note.isNotEmpty
+            ? note
+            : 'دفع أجور (${staff.category}): ${staff.name}',
+      ),
+    );
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  /// 2. Pay Staff Advance:
+  /// Issues advance payment with currency selection (USD or SYP).
+  /// Routed to Expenses under 'السُلف' (Advances) category,
+  /// deducted from Main Safe, and added to staff advance balance.
+  bool payStaffAdvance(
+    StaffModel staff,
+    double amount,
+    String currency, {
+    String note = '',
+  }) {
+    final c = AppCurrency.normalize(currency);
+    if (amount <= 0.0001) return false;
+    if (cashOf('main', c) < amount) return false;
+    if (!takeCash('main', c, amount)) return false;
+
+    staff.addAdvance(c, amount);
+
+    const defaultAdvTypeId = 'advances_expense';
+    final matchingAdvTypes = expenseTypes
+        .where(
+          (type) =>
+              type.id == defaultAdvTypeId ||
+              type.name.trim() == 'السُلف' ||
+              type.name.trim() == 'السلف' ||
+              type.name.trim() == 'السُلف (Advances)',
+        )
+        .toList();
+    final advTypeId = matchingAdvTypes.isEmpty
+        ? defaultAdvTypeId
+        : matchingAdvTypes.first.id;
+    if (matchingAdvTypes.isEmpty) {
+      expenseTypes.add(
+        ExpenseTypeModel(
+          id: advTypeId,
+          name: 'السُلف (Advances)',
+          description: 'سُلف العمال والمعلمين والإداريين',
+        ),
+      );
+    }
+    expenseRecords.add(
+      ExpenseRecordModel(
+        id: 'adv_exp_${DateTime.now().microsecondsSinceEpoch}',
+        typeId: advTypeId,
+        amount: amount,
+        currency: c,
+        personName: staff.name,
+        staffId: staff.id,
+        description: note.isNotEmpty
+            ? note
+            : 'سلفة نقدية لـ (${staff.category}): ${staff.name}',
+      ),
+    );
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  /// 3. Collect/Repay Staff Advance:
+  /// Repays portion or all of advance balance.
+  /// Collected amount enters Main Safe.
+  /// Deducted amount reduces staff advance balance in original currency.
+  /// Recorded under Revenues section.
+  bool collectStaffAdvance({
+    required StaffModel staff,
+    required String originalCurrency,
+    required String collectedCurrency,
+    required double collectedAmount,
+    required double deductedAmount,
+    double exchangeRate = 1.0,
+    String note = '',
+  }) {
+    final origC = AppCurrency.normalize(originalCurrency);
+    final collC = AppCurrency.normalize(collectedCurrency);
+    if (collectedAmount <= 0.0001 || deductedAmount <= 0.0001) return false;
+
+    addCash('main', collC, collectedAmount);
+    staff.reduceAdvance(origC, deductedAmount);
+
+    advanceRepayments.add(
+      AdvanceRepaymentModel(
+        id: 'adv_repay_${DateTime.now().microsecondsSinceEpoch}',
+        staffId: staff.id,
+        staffName: staff.name,
+        staffCategory: staff.category,
+        originalCurrency: origC,
+        collectedCurrency: collC,
+        collectedAmount: collectedAmount,
+        deductedAmount: deductedAmount,
+        exchangeRate: exchangeRate,
+        date: DateTime.now(),
+        note: note.isNotEmpty
+            ? note
+            : 'تحصيل سلفة (${staff.category}): ${staff.name}',
+      ),
+    );
+
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
   /// Outstanding balance of a project across its invoices, per currency.
   double projectDueOf(String projectId, String? currency) => workshopInvoices
       .where(
@@ -4337,11 +4504,8 @@ class ERPProvider extends ChangeNotifier {
   }
 
   void addStaff(StaffModel stf) {
-    if ((stf.category == 'عمال' || stf.category == 'إداريين') &&
-        !staffTypes.any(
-          (type) => type.id == stf.typeId && type.category == stf.category,
-        )) {
-      throw ArgumentError('A valid worker or administrative staff type is required.');
+    if (stf.name.trim().isEmpty) {
+      throw ArgumentError('Staff name cannot be empty.');
     }
     staffList.add(stf);
     notifyListeners();
@@ -4386,6 +4550,7 @@ class ERPProvider extends ChangeNotifier {
     expenseRecords.clear();
     adjustmentInvoices.clear();
     dailyReports.clear();
+    advanceRepayments.clear();
 
     // 2. Reset isolated cash registers (both USD and SYP funds).
     mainCashBox = 0.0;
@@ -4598,6 +4763,10 @@ class ERPProvider extends ChangeNotifier {
         jsonEncode(expenseRecords.map((e) => e.toJson()).toList()),
       );
       await prefs.setString(
+        'advanceRepayments',
+        jsonEncode(advanceRepayments.map((a) => a.toJson()).toList()),
+      );
+      await prefs.setString(
         'adjustmentInvoices',
         jsonEncode(adjustmentInvoices.map((e) => e.toJson()).toList()),
       );
@@ -4797,6 +4966,12 @@ class ERPProvider extends ChangeNotifier {
             .map((item) => ExpenseRecordModel.fromJson(item))
             .toList();
       }
+      final advanceRepaymentsJson = prefs.getString('advanceRepayments');
+      if (advanceRepaymentsJson != null) {
+        advanceRepayments = (jsonDecode(advanceRepaymentsJson) as List)
+            .map((item) => AdvanceRepaymentModel.fromJson(item))
+            .toList();
+      }
       final adjustmentInvoicesJson = prefs.getString('adjustmentInvoices');
       if (adjustmentInvoicesJson != null) {
         adjustmentInvoices = (jsonDecode(adjustmentInvoicesJson) as List)
@@ -4970,6 +5145,8 @@ class ERPProvider extends ChangeNotifier {
         'returnInvoices': returnInvoices.map((r) => r.toJson()).toList(),
         'expenseTypes': expenseTypes.map((e) => e.toJson()).toList(),
         'expenseRecords': expenseRecords.map((e) => e.toJson()).toList(),
+        'advanceRepayments':
+            advanceRepayments.map((a) => a.toJson()).toList(),
         'adjustmentInvoices':
             adjustmentInvoices.map((a) => a.toJson()).toList(),
         'services': services.map((s) => s.toJson()).toList(),
@@ -5203,6 +5380,17 @@ class ERPProvider extends ChangeNotifier {
       expenseRecords = (ops['expenseRecords'] as List)
           .map((item) =>
               ExpenseRecordModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (ops['advanceRepayments'] is List) {
+      advanceRepayments = (ops['advanceRepayments'] as List)
+          .map((item) =>
+              AdvanceRepaymentModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    } else if (raw['advanceRepayments'] is List) {
+      advanceRepayments = (raw['advanceRepayments'] as List)
+          .map((item) =>
+              AdvanceRepaymentModel.fromJson(Map<String, dynamic>.from(item)))
           .toList();
     }
     if (ops['adjustmentInvoices'] is List) {

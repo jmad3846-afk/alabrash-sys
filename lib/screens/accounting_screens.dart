@@ -393,6 +393,10 @@ class ChartOfAccountsScreen extends StatelessWidget {
               'الخصومات المكتسبة',
               '${(purchaseDiscount(AppCurrency.usd) + adjustmentAmount('purchase_discount', AppCurrency.usd)).fmt} \$ • ${(purchaseDiscount(AppCurrency.syp) + adjustmentAmount('purchase_discount', AppCurrency.syp)).fmt} ل.س',
             ),
+            _accountLine(
+              'إيرادات تحصيل واسترداد سُلف العمالة',
+              '${erp.totalAdvanceRepaymentsRevenueOf(AppCurrency.usd).fmt} \$ • ${erp.totalAdvanceRepaymentsRevenueOf(AppCurrency.syp).fmt} ل.س',
+            ),
           ]),
           _accountGroup('المصروفات', Icons.trending_down, [
             _accountLine(

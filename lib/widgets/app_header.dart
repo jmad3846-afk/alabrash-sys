@@ -1,10 +1,9 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import 'partner_management_modal.dart';
-import 'workday_modal.dart';
 
 class AppHeader extends StatelessWidget {
   const AppHeader({super.key});
@@ -91,26 +90,7 @@ class AppHeader extends StatelessWidget {
 
           const Spacer(),
 
-          // QUICK ACTION BUTTON 1: Workdays Execution
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.accentPrimary,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (ctx) => const WorkdayModal(),
-              );
-            },
-            icon: const Icon(Icons.date_range_rounded, size: 18),
-            label: const Text('أيام عمل'),
-          ),
-          const SizedBox(width: 12),
-
-          // QUICK ACTION BUTTON 2: Partners Equity Management
+          // QUICK ACTION BUTTON: Partners Equity Management
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.partnersEquityAccent,

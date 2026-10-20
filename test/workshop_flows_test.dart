@@ -113,7 +113,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('9. طلبيات المصنع (Orders)'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('إضافة طلبية مصنع'));
+    await tester.tap(find.textContaining('إضافة طلبية مصنع'));
     await tester.pumpAndSettle();
     expect(find.text('إضافة طلبية مصنع (قيد التنفيذ)'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -139,36 +139,33 @@ void main() {
     for (final label in [
       '3. مالية موردي المصنع',
       '4. مالية معتمدي المصنع',
-      '5. مالية القوى العاملة',
-      '6. مالية المعمل',
+      '5. مالية المعمل',
+      '6. مالية الزيادات (Surplus Financials)',
     ]) {
       expect(find.text(label), findsOneWidget);
     }
-    // Old supplier tab is gone.
+    // Old workforce tab and old supplier tab are gone.
+    expect(
+      find.textContaining('مالية القوى العاملة'),
+      findsNothing,
+    );
     expect(
       find.textContaining('مالية الموردين (Supplier Finances)'),
       findsNothing,
     );
 
-    // Workforce tab renders its three inner tabs.
-    await tester.tap(find.text('5. مالية القوى العاملة'));
-    await tester.pumpAndSettle();
-    expect(find.text('العمال (Workers)'), findsOneWidget);
-    expect(find.text('المعلمون (Masters)'), findsOneWidget);
-    expect(find.text('الإداريون (Admin)'), findsOneWidget);
-
     // Workshop finances tab renders retail + projects.
-    await tester.tap(find.text('6. مالية المعمل'));
+    await tester.tap(find.text('5. مالية المعمل'));
     await tester.pumpAndSettle();
-    expect(find.text('زبائن الجزافي (Retail Clients)'), findsOneWidget);
-    expect(find.text('المشاريع (Projects)'), findsOneWidget);
+    expect(find.text('زبائن المعمل (الطلبيات والجزافي)'), findsOneWidget);
+    expect(find.text('مالية المشاريع (Project Financials)'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('workshop projects section CRUD tabs render', (tester) async {
     await openWorkshopTab(tester, ERPProvider(), '7. المشاريع (Projects)');
-    expect(find.text('بانتظار الدفع (Pending Payment)'), findsOneWidget);
-    expect(find.text('مكتملة / مدفوعة (Completed)'), findsOneWidget);
+    expect(find.textContaining('بانتظار الدفع'), findsWidgets);
+    expect(find.textContaining('مكتملة / مدفوعة'), findsWidgets);
     await tester.tap(find.text('إضافة مشروع'));
     await tester.pumpAndSettle();
     expect(find.text('إضافة مشروع جديد'), findsOneWidget);
@@ -721,7 +718,7 @@ void main() {
     expect(erp.totalOperationalExpenses, operationalExpensesBefore);
   });
 
-  testWidgets('workforce opens Labor Selection with the three work sections', (
+  testWidgets('workforce renders Add New Worker and category tabs', (
     tester,
   ) async {
     final erp = ERPProvider();
@@ -737,55 +734,79 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.tap(find.text('تحديد عمالة'));
-    await tester.pumpAndSettle();
+    expect(find.text('إضافة موظف/عامل جديد'), findsOneWidget);
+    expect(find.textContaining('1. العمال (Workers)'), findsOneWidget);
+    expect(find.textContaining('2. المعلمون (Masters)'), findsOneWidget);
+    expect(find.textContaining('3. الإداريون (Administrators)'), findsOneWidget);
 
-    expect(find.text('العمال'), findsOneWidget);
-    expect(find.text('المعلمون'), findsOneWidget);
-    expect(find.text('الإداريون'), findsOneWidget);
-    expect(find.text('مسح الجدول وفتح أسبوع جديد'), findsOneWidget);
-    expect(find.text('الجمعة'), findsNothing);
-    expect(find.text('الأحد'), findsOneWidget);
-    await tester.tap(find.text('الإداريون'));
-    await tester.pumpAndSettle();
-    expect(find.text('الجمعة'), findsNothing);
-    expect(find.text('الأحد'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    // Old buttons removed
+    expect(find.text('تحديد عمالة'), findsNothing);
+    expect(find.text('إضافة نوع عامل'), findsNothing);
+    expect(find.text('إضافة نوع إداري'), findsNothing);
+
+    // The three action buttons are present for staff in list
+    expect(find.text('دفع أجور'), findsWidgets);
+    expect(find.text('دفع سلفة'), findsWidgets);
+    expect(find.text('قبض/تحصيل سلفة'), findsWidgets);
   });
 
-  testWidgets('fully paid workforce members disappear from Financials', (
-    tester,
-  ) async {
+  test('workforce advance payment, collection and wages flow', () {
     final erp = ERPProvider();
-    erp.mainCashBox = 100000;
+    erp.mainCashBox = 10000;
+    erp.mainCashBoxSyp = 100000000;
     final worker = erp.staffList.firstWhere(
       (staff) => staff.category == 'عمال',
     );
-    erp.staffList
-      ..clear()
-      ..add(worker);
-    expect(erp.settleStaffDue(worker), isTrue);
+    final initialCashUsd = erp.cashOf('main', AppCurrency.usd);
 
-    await setDesktop(tester);
-    await tester.pumpWidget(
-      ChangeNotifierProvider<ERPProvider>.value(
-        value: erp,
-        child: MaterialApp(
-          theme: AppTheme.lightTheme,
-          home: Directionality(
-            textDirection: TextDirection.rtl,
-            child: const FinancialsScreen(),
-          ),
-        ),
-      ),
+    // 1. Pay Wages
+    expect(erp.payStaffWages(worker, 150, AppCurrency.usd), isTrue);
+    expect(erp.cashOf('main', AppCurrency.usd), initialCashUsd - 150);
+    expect(
+      erp.expenseRecords.any((e) => e.amount == 150 && e.personName == worker.name),
+      isTrue,
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('5. مالية القوى العاملة'));
-    await tester.pumpAndSettle();
 
-    expect(find.text(worker.name), findsNothing);
-    expect(find.text('لا يوجد العمال مسجلون.'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    // 2. Pay Advance
+    final workerAdvBefore = worker.cashAdvancesDisbursed;
+    expect(erp.payStaffAdvance(worker, 200, AppCurrency.usd), isTrue);
+    expect(worker.cashAdvancesDisbursed, workerAdvBefore + 200);
+    expect(
+      erp.expenseRecords.any((e) => e.amount == 200 && e.personName == worker.name),
+      isTrue,
+    );
+
+    // 3. Collect Advance (Same Currency)
+    final revBefore = erp.totalAdvanceRepaymentsRevenue;
+    expect(
+      erp.collectStaffAdvance(
+        staff: worker,
+        originalCurrency: AppCurrency.usd,
+        collectedCurrency: AppCurrency.usd,
+        collectedAmount: 50,
+        deductedAmount: 50,
+      ),
+      isTrue,
+    );
+    expect(worker.cashAdvancesDisbursed, workerAdvBefore + 150);
+    expect(erp.totalAdvanceRepaymentsRevenue, revBefore + 50);
+
+    // 4. Collect Advance (Cross-Currency: original advance USD, paid in SYP)
+    // 100$ deducted with rate 14000 = 1,400,000 SYP collected
+    final sypCashBefore = erp.cashOf('main', AppCurrency.syp);
+    expect(
+      erp.collectStaffAdvance(
+        staff: worker,
+        originalCurrency: AppCurrency.usd,
+        collectedCurrency: AppCurrency.syp,
+        collectedAmount: 1400000,
+        deductedAmount: 100,
+        exchangeRate: 14000,
+      ),
+      isTrue,
+    );
+    expect(erp.cashOf('main', AppCurrency.syp), sypCashBefore + 1400000);
+    expect(worker.cashAdvancesDisbursed, workerAdvBefore + 50);
   });
 
   test('project lifecycle: pending -> invoiced -> completed', () async {

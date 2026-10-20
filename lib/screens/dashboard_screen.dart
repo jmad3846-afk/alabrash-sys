@@ -9,7 +9,6 @@ import '../widgets/metric_card.dart';
 import '../widgets/client_debt_modal.dart';
 import '../widgets/supplier_worker_debt_modal.dart';
 import '../widgets/partner_management_modal.dart';
-import '../widgets/workday_modal.dart';
 import '../widgets/system_reset_modal.dart';
 import '../widgets/backup_restore_modal.dart';
 import 'daily_reports_screen.dart';
@@ -1468,22 +1467,7 @@ class DashboardScreen extends StatelessWidget {
             ),
           ),
 
-          // 1. Working Days (أيام عمل)
-          _buildNavbarItem(
-            icon: Icons.date_range_rounded,
-            label: 'أيام عمل',
-            primaryColor: const Color(0xFF2563EB),
-            bgColor: const Color(0xFFEFF6FF),
-            borderColor: const Color(0xFFBFDBFE),
-            onTap: () {
-              showDialog(
-                context: context,
-                builder: (_) => const WorkdayModal(),
-              );
-            },
-          ),
-
-          // 2. Partners & Ownership (الشركاء وحقوق الملكية)
+          // 1. Partners & Ownership (الشركاء وحقوق الملكية)
           _buildNavbarItem(
             icon: Icons.groups_rounded,
             label: 'الشركاء وحقوق الملكية',

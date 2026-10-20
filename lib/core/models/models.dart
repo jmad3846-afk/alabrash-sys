@@ -2506,6 +2506,7 @@ class StaffModel {
   final String name;
   final String category; // 'عمال' | 'معلمين' | 'إداريين'
   final String phone;
+  final String location;
   String typeId;
   double totalEarned; // USD
   double cashAdvancesDisbursed; // USD — Disbursed from Main Cash Box
@@ -2517,6 +2518,7 @@ class StaffModel {
     required this.name,
     required this.category,
     required this.phone,
+    this.location = '',
     this.typeId = '',
     this.totalEarned = 0.0,
     this.cashAdvancesDisbursed = 0.0,
@@ -2556,6 +2558,16 @@ class StaffModel {
     }
   }
 
+  void reduceAdvance(String? currency, double amount) {
+    if (AppCurrency.isSyp(currency)) {
+      cashAdvancesDisbursedSyp =
+          (cashAdvancesDisbursedSyp - amount).clamp(0.0, double.infinity);
+    } else {
+      cashAdvancesDisbursed =
+          (cashAdvancesDisbursed - amount).clamp(0.0, double.infinity);
+    }
+  }
+
   String get dualNet =>
       AppCurrency.dual(netRemainingBalance, netRemainingBalanceSyp);
 
@@ -2564,6 +2576,7 @@ class StaffModel {
     'name': name,
     'category': category,
     'phone': phone,
+    'location': location,
     'typeId': typeId,
     'totalEarned': totalEarned,
     'cashAdvancesDisbursed': cashAdvancesDisbursed,
@@ -2576,12 +2589,69 @@ class StaffModel {
     name: json['name'],
     category: json['category'],
     phone: json['phone'] ?? '',
+    location: json['location'] ?? '',
     typeId: json['typeId'] ?? '',
     totalEarned: (json['totalEarned'] as num).toDouble(),
     cashAdvancesDisbursed: (json['cashAdvancesDisbursed'] as num).toDouble(),
     totalEarnedSyp: (json['totalEarnedSyp'] ?? 0.0).toDouble(),
     cashAdvancesDisbursedSyp: (json['cashAdvancesDisbursedSyp'] ?? 0.0)
         .toDouble(),
+  );
+}
+
+class AdvanceRepaymentModel {
+  final String id;
+  final String staffId;
+  final String staffName;
+  final String staffCategory;
+  final String originalCurrency;
+  final String collectedCurrency;
+  final double collectedAmount;
+  final double deductedAmount;
+  final double exchangeRate;
+  final DateTime date;
+  final String note;
+
+  AdvanceRepaymentModel({
+    required this.id,
+    required this.staffId,
+    required this.staffName,
+    required this.staffCategory,
+    required this.originalCurrency,
+    required this.collectedCurrency,
+    required this.collectedAmount,
+    required this.deductedAmount,
+    this.exchangeRate = 1.0,
+    DateTime? date,
+    this.note = '',
+  }) : date = date ?? DateTime.now();
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'staffId': staffId,
+    'staffName': staffName,
+    'staffCategory': staffCategory,
+    'originalCurrency': originalCurrency,
+    'collectedCurrency': collectedCurrency,
+    'collectedAmount': collectedAmount,
+    'deductedAmount': deductedAmount,
+    'exchangeRate': exchangeRate,
+    'date': date.toIso8601String(),
+    'note': note,
+  };
+
+  factory AdvanceRepaymentModel.fromJson(Map<String, dynamic> json) => AdvanceRepaymentModel(
+    id: json['id'],
+    staffId: json['staffId'] ?? '',
+    staffName: json['staffName'] ?? '',
+    staffCategory: json['staffCategory'] ?? '',
+    originalCurrency: AppCurrency.normalize(json['originalCurrency']),
+    collectedCurrency: AppCurrency.normalize(json['collectedCurrency']),
+    collectedAmount: (json['collectedAmount'] as num).toDouble(),
+    deductedAmount: (json['deductedAmount'] as num).toDouble(),
+    exchangeRate: (json['exchangeRate'] as num?)?.toDouble() ?? 1.0,
+    date: DateTime.parse(json['date']),
+    note: json['note'] ?? '',
   );
 }
 
