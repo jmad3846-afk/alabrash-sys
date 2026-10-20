@@ -9,6 +9,7 @@ import '../widgets/thermal_receipt_dialog.dart';
 import '../widgets/a4_invoice_print_dialog.dart';
 import '../widgets/a4_statement_print_dialog.dart';
 import '../widgets/app_image_attachment.dart';
+import '../widgets/workshop_order_dialogs.dart';
 import 'accounting_screens.dart';
 
 class _TailoringStockOption {
@@ -1352,11 +1353,23 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               ],
                             ),
                             const SizedBox(width: 12),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2563EB),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                              onPressed: () => showWorkshopOrderPreview(context, ord),
+                              icon: const Icon(Icons.print_outlined, size: 16),
+                              label: const Text('معاينة للورشة'),
+                            ),
+                            const SizedBox(width: 8),
                             OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: AppColors.dangerWaste,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               ),
-                              onPressed: () => _showCancelOrderDialog(erp, ord),
+                              onPressed: () => showCancelWorkshopOrderDialog(context, erp, ord),
                               icon: const Icon(Icons.cancel_outlined, size: 16),
                               label: const Text('إلغاء الطلبية'),
                             ),
@@ -1375,41 +1388,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
   }
 
   void _showCancelOrderDialog(ERPProvider erp, WorkshopOrderModel ord) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إلغاء طلبية المعمل'),
-        content: const Text(
-          'العربون غير قابل للاسترداد كأصل عام ويُحتفظ به كربح، إلا في الحالات الخاصة.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('تراجع'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.dangerWaste,
-            ),
-            onPressed: () {
-              erp.cancelWorkshopOrder(ord, false);
-              Navigator.pop(ctx);
-            },
-            child: const Text('إلغاء مع الاحتفاظ بالعربون'),
-          ),
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.dangerWaste,
-            ),
-            onPressed: () {
-              erp.cancelWorkshopOrder(ord, true);
-              Navigator.pop(ctx);
-            },
-            child: const Text('إلغاء مع رد العربون (خاص)'),
-          ),
-        ],
-      ),
-    );
+    showCancelWorkshopOrderDialog(context, erp, ord);
   }
 
   // -------------------------------------------------------------

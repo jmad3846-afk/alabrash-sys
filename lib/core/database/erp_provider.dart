@@ -2745,11 +2745,143 @@ class ERPProvider extends ChangeNotifier {
   // 7. Workshop Order & Isolated Order Cash Box
   // The order carries its currency (SYP/$); the invoice created from it
   // inherits that currency directly.
+  void _deductWorkshopOrderItemStock(WorkshopInvoiceItem item) {
+    if (item.sourceType == 'بيع خياطة بسيطة' || item.sourceType == 'تفصيل بسيط') {
+      final matches = simpleTailorings.where((t) => t.id == item.sourceId).toList();
+      if (matches.isNotEmpty) {
+        final t = matches.first;
+        t.quantity = (t.quantity - item.quantity).clamp(0.0, double.infinity);
+        if (item.sourceLineItemId.isNotEmpty) {
+          final liMatches = t.lineItems.where((li) => li.id == item.sourceLineItemId).toList();
+          if (liMatches.isNotEmpty) {
+            final li = liMatches.first;
+            final pieceArea = (li.lengthCm > 0 && li.widthCm > 0)
+                ? (li.lengthCm / 100.0) * (li.widthCm / 100.0) * (li.category == 'متر مكعب' && li.heightCm > 0 ? li.heightCm / 100.0 : 1.0)
+                : 0.0;
+            if (pieceArea > 0) {
+              li.quantity = (li.quantity - (item.quantity / pieceArea)).clamp(0.0, double.infinity);
+            } else {
+              li.quantity = (li.quantity - item.quantity).clamp(0.0, double.infinity);
+            }
+          }
+        }
+      }
+    } else if (item.sourceType == 'بيع خياطة معقدة' || item.sourceType == 'تفصيل معقد') {
+      final matches = complexTailorings.where((t) => t.id == item.sourceId).toList();
+      if (matches.isNotEmpty) {
+        matches.first.quantity = (matches.first.quantity - item.quantity).clamp(0.0, double.infinity);
+      }
+    } else if (item.sourceType == 'بيع مواد خام من المعمل' || item.sourceType == 'مواد خام') {
+      if (item.sourceId.isNotEmpty) {
+        final matches = workshopStock.where((w) => w.id == item.sourceId).toList();
+        if (matches.isNotEmpty) {
+          matches.first.availableQty = (matches.first.availableQty - item.quantity).clamp(0.0, double.infinity);
+        }
+      }
+    } else if (item.sourceType == 'بيع قطع إضافية' || item.sourceType == 'قطع زائدة') {
+      if (item.sourceId.isNotEmpty) {
+        final matches = scrapItems.where((s) => s.id == item.sourceId).toList();
+        if (matches.isNotEmpty) matches.first.isSold = true;
+      }
+    }
+  }
+
+  void _restoreWorkshopOrderItemStock(WorkshopInvoiceItem item) {
+    if (item.sourceType == 'بيع خياطة بسيطة' || item.sourceType == 'تفصيل بسيط') {
+      final matches = simpleTailorings.where((t) => t.id == item.sourceId).toList();
+      if (matches.isNotEmpty) {
+        final t = matches.first;
+        t.quantity += item.quantity;
+        if (item.sourceLineItemId.isNotEmpty) {
+          final liMatches = t.lineItems.where((li) => li.id == item.sourceLineItemId).toList();
+          if (liMatches.isNotEmpty) {
+            final li = liMatches.first;
+            final pieceArea = (li.lengthCm > 0 && li.widthCm > 0)
+                ? (li.lengthCm / 100.0) * (li.widthCm / 100.0) * (li.category == 'متر مكعب' && li.heightCm > 0 ? li.heightCm / 100.0 : 1.0)
+                : 0.0;
+            if (pieceArea > 0) {
+              li.quantity += (item.quantity / pieceArea);
+            } else {
+              li.quantity += item.quantity;
+            }
+          }
+        }
+      } else {
+        simpleTailorings.add(
+          WorkshopTailoringModel(
+            id: item.sourceId.isNotEmpty ? item.sourceId : 'st_${DateTime.now().microsecondsSinceEpoch}',
+            name: item.description,
+            complexity: 'بسيط',
+            rawMaterialDescription: item.description,
+            quantity: item.quantity,
+            materialNetCost: item.netCost,
+            unitCategory: item.unitCategory,
+            sellingPrice: item.agreedPrice,
+            isGranite: item.isGranite,
+            photoPath: item.photoPath,
+          ),
+        );
+      }
+    } else if (item.sourceType == 'بيع خياطة معقدة' || item.sourceType == 'تفصيل معقد') {
+      final matches = complexTailorings.where((t) => t.id == item.sourceId).toList();
+      if (matches.isNotEmpty) {
+        matches.first.quantity += item.quantity;
+      } else {
+        complexTailorings.add(
+          WorkshopTailoringModel(
+            id: item.sourceId.isNotEmpty ? item.sourceId : 'ct_${DateTime.now().microsecondsSinceEpoch}',
+            name: item.description,
+            complexity: 'معقد',
+            rawMaterialDescription: item.description,
+            quantity: item.quantity,
+            materialNetCost: item.netCost,
+            unitCategory: item.unitCategory,
+            sellingPrice: item.agreedPrice,
+            isGranite: item.isGranite,
+            photoPath: item.photoPath,
+          ),
+        );
+      }
+    } else if (item.sourceType == 'بيع مواد خام من المعمل' || item.sourceType == 'مواد خام') {
+      final matches = workshopStock.where((w) => w.id == item.sourceId).toList();
+      if (matches.isNotEmpty) {
+        matches.first.availableQty += item.quantity;
+      } else {
+        final byName = workshopStock.where((w) => item.description.contains(w.typeName)).toList();
+        if (byName.isNotEmpty) {
+          byName.first.availableQty += item.quantity;
+        } else if (workshopStock.isNotEmpty) {
+          workshopStock.first.availableQty += item.quantity;
+        }
+      }
+    } else if (item.sourceType == 'بيع قطع إضافية' || item.sourceType == 'قطع زائدة') {
+      final matches = scrapItems.where((s) => s.id == item.sourceId).toList();
+      if (matches.isNotEmpty) {
+        matches.first.isSold = false;
+      } else {
+        scrapItems.add(
+          ScrapItemModel(
+            id: item.sourceId.isNotEmpty ? item.sourceId : 'sc_${DateTime.now().microsecondsSinceEpoch}',
+            description: item.description,
+            baseCost: item.netCost,
+            sellingPrice: item.agreedPrice,
+            isSold: false,
+            photoPath: item.photoPath,
+          ),
+        );
+      }
+    }
+  }
+
   void createWorkshopOrder(WorkshopOrderModel order) {
     workshopOrders.add(order);
     if (order.depositAmount > 0) {
       // CRITICAL ACCOUNTING RULE: Down payment stored in isolated Order Cash Box
       addCash('order', order.currency, order.depositAmount);
+    }
+    // Deduct stock for all order line items consumed
+    for (final it in order.items) {
+      _deductWorkshopOrderItemStock(it);
     }
     notifyListeners();
     saveToDisk();
@@ -2757,6 +2889,7 @@ class ERPProvider extends ChangeNotifier {
 
   void assignOrderToInvoice(WorkshopOrderModel order, double cashPaidNow) {
     order.status = 'مكتملة ومرحلة';
+    order.isCompleted = true;
 
     // Transfer deposit from isolated Order Cash Box to Main Cash Box (same currency)
     if (order.depositAmount > 0) {
@@ -2816,18 +2949,146 @@ class ERPProvider extends ChangeNotifier {
     saveToDisk();
   }
 
-  void cancelWorkshopOrder(WorkshopOrderModel order, bool isSpecialRefund) {
-    order.status = 'ملغاة';
-    order.isSpecialRefund = isSpecialRefund;
+  /// Comprehensive Workshop Order Cancellation Workflow:
+  /// Option A (isCompleted == false):
+  ///   - Refund deposit from isolated Order Safe to customer.
+  ///   - Return all consumed materials/line items back to exact original locations (including raw stock).
+  /// Option B (isCompleted == true):
+  ///   - Retain deposit in isolated Order Safe as profit (no refund).
+  ///   - Return standard line items (simple/complex tailoring, extras) back to their respective inventories.
+  ///   - Convert raw material line items into tailored stock (simple or complex tailoring) based on user assignments.
+  void cancelWorkshopOrderWorkflow({
+    required WorkshopOrderModel order,
+    required bool isCompleted,
+    List<RawMaterialTailoringAssignment>? rawMaterialAssignments,
+  }) {
+    order.isCompleted = isCompleted;
+    order.status = isCompleted ? 'ملغاة (مكتملة)' : 'ملغاة (غير مكتملة)';
+    order.isSpecialRefund = !isCompleted;
 
-    if (isSpecialRefund) {
-      // Special case: refund deposit back to customer from Order Cash Box
-      takeCash('order', order.currency, order.depositAmount);
+    if (!isCompleted) {
+      // -------------------------------------------------------------
+      // OPTION A: ORDER IS NOT COMPLETED
+      // -------------------------------------------------------------
+      // 1. Financial handling: Refund the Deposit (العربون) to the customer from Order Safe
+      if (order.depositAmount > 0) {
+        takeCash('order', order.currency, order.depositAmount);
+      }
+
+      // 2. Inventory rollback: Return all consumed materials back to exact original locations
+      for (final item in order.items) {
+        _restoreWorkshopOrderItemStock(item);
+      }
     } else {
-      // Default rule: deposit is non-refundable and kept as profit.
+      // -------------------------------------------------------------
+      // OPTION B: ORDER IS COMPLETED
+      // -------------------------------------------------------------
+      // 1. Financial handling: Do NOT refund deposit. Retained in Order Safe as profit.
+
+      // 2. Inventory rollback:
+      if (order.items.isEmpty) {
+        // Fallback for orders created without explicit line items
+        convertCancelledOrderToTailoring(order);
+      } else {
+        for (final item in order.items) {
+          final isRaw = item.sourceType == 'بيع مواد خام من المعمل' || item.sourceType == 'مواد خام';
+          if (!isRaw) {
+            // Standard line items (Simple Tailoring, Complex Tailoring, Extras)
+            _restoreWorkshopOrderItemStock(item);
+          } else {
+            // Raw Material line items: Must convert to tailored stock instead of returning as raw material
+            final assign = rawMaterialAssignments?.where(
+              (a) =>
+                  a.itemId == item.id ||
+                  a.itemId == item.sourceId ||
+                  (a.rawMaterialName == item.description && a.quantity == item.quantity),
+            ).firstOrNull;
+
+            final toSimple = assign?.isSimpleTailoring ?? true;
+            final existingId = assign?.existingTailoringId;
+            final newName = assign?.newTailoringName?.trim();
+
+            if (toSimple) {
+              WorkshopTailoringModel? target;
+              if (existingId != null && existingId.isNotEmpty) {
+                target = simpleTailorings.where((t) => t.id == existingId).firstOrNull;
+              }
+              if (target != null) {
+                target.quantity += item.quantity;
+              } else {
+                final createdName = (newName != null && newName.isNotEmpty)
+                    ? newName
+                    : 'تفصيل من طلبية ملغاة ${order.orderNo} (${item.description})';
+                simpleTailorings.add(
+                  WorkshopTailoringModel(
+                    id: 'st_c_${DateTime.now().microsecondsSinceEpoch}',
+                    name: createdName,
+                    complexity: 'بسيط',
+                    rawMaterialDescription: item.description,
+                    lengthCm: item.lengthCm,
+                    widthCm: item.widthCm,
+                    heightCm: item.heightCm,
+                    unitCategory: item.unitCategory.isNotEmpty ? item.unitCategory : 'متر مربع',
+                    quantity: item.quantity,
+                    materialNetCost: item.netCost,
+                    laborCostPerMeter: 0.0,
+                    photoPath: item.photoPath.isNotEmpty ? item.photoPath : order.photoPath,
+                    sellingPrice: (assign != null && assign.sellingPrice > 0)
+                        ? assign.sellingPrice
+                        : (item.agreedPrice > 0 ? item.agreedPrice : item.unitPrice),
+                    isGranite: item.isGranite,
+                  ),
+                );
+              }
+            } else {
+              // Assign to Complex Tailoring
+              WorkshopTailoringModel? target;
+              if (existingId != null && existingId.isNotEmpty) {
+                target = complexTailorings.where((t) => t.id == existingId).firstOrNull;
+              }
+              if (target != null) {
+                target.quantity += item.quantity;
+              } else {
+                final createdName = (newName != null && newName.isNotEmpty)
+                    ? newName
+                    : 'تفصيل معقد من طلبية ملغاة ${order.orderNo} (${item.description})';
+                complexTailorings.add(
+                  WorkshopTailoringModel(
+                    id: 'ct_c_${DateTime.now().microsecondsSinceEpoch}',
+                    name: createdName,
+                    complexity: 'معقد',
+                    rawMaterialDescription: item.description,
+                    lengthCm: item.lengthCm,
+                    widthCm: item.widthCm,
+                    heightCm: item.heightCm,
+                    unitCategory: item.unitCategory.isNotEmpty ? item.unitCategory : 'متر مربع',
+                    quantity: item.quantity,
+                    materialNetCost: item.netCost,
+                    laborCostPerMeter: 0.0,
+                    photoPath: item.photoPath.isNotEmpty ? item.photoPath : order.photoPath,
+                    sellingPrice: (assign != null && assign.sellingPrice > 0)
+                        ? assign.sellingPrice
+                        : (item.agreedPrice > 0 ? item.agreedPrice : item.unitPrice),
+                    isGranite: item.isGranite,
+                  ),
+                );
+              }
+            }
+          }
+        }
+      }
     }
+
     notifyListeners();
     saveToDisk();
+  }
+
+  void cancelWorkshopOrder(WorkshopOrderModel order, bool isSpecialRefund) {
+    cancelWorkshopOrderWorkflow(
+      order: order,
+      isCompleted: !isSpecialRefund,
+    );
+    order.status = 'ملغاة';
   }
 
   /// Converts a cancelled order's ready work into a tailored piece and keeps
@@ -2865,6 +3126,15 @@ class ERPProvider extends ChangeNotifier {
 
     // Multi-item path
     if (inv.items.isNotEmpty) {
+      final linkedOrders = inv.sourceId.isNotEmpty
+          ? workshopOrders.where((o) => o.id == inv.sourceId && o.status == 'قيد التنفيذ').toList()
+          : <WorkshopOrderModel>[];
+      if (linkedOrders.isNotEmpty) {
+        for (final it in linkedOrders.first.items) {
+          _restoreWorkshopOrderItemStock(it);
+        }
+      }
+
       // 1. Validation phase
       for (final item in inv.items) {
         if (item.sourceType == 'بيع خياطة بسيطة' ||
@@ -2878,17 +3148,32 @@ class ERPProvider extends ChangeNotifier {
           );
           if (isOpeningStockItem &&
               (!openingEntry.isLocked || !openingEntry.openingStockApplied)) {
+            if (linkedOrders.isNotEmpty) {
+              for (final it in linkedOrders.first.items) {
+                _deductWorkshopOrderItemStock(it);
+              }
+            }
             return false;
           }
           final items = isSimple ? simpleTailorings : complexTailorings;
           final matches = items.where((t) => t.id == item.sourceId).toList();
           if (matches.isEmpty || item.quantity <= 0 || matches.first.quantity + 0.0001 < item.quantity) {
+            if (linkedOrders.isNotEmpty) {
+              for (final it in linkedOrders.first.items) {
+                _deductWorkshopOrderItemStock(it);
+              }
+            }
             return false;
           }
         } else if (item.sourceType == 'بيع مواد خام من المعمل' || item.sourceType == 'مواد خام') {
           if (item.sourceId.isNotEmpty) {
             final stock = workshopStock.where((w) => w.id == item.sourceId).toList();
             if (stock.isEmpty || stock.first.availableQty + 0.0001 < item.quantity) {
+              if (linkedOrders.isNotEmpty) {
+                for (final it in linkedOrders.first.items) {
+                  _deductWorkshopOrderItemStock(it);
+                }
+              }
               return false;
             }
           }
@@ -2896,6 +3181,11 @@ class ERPProvider extends ChangeNotifier {
           if (item.depositAmount > 0 && item.sourceId.isNotEmpty) {
             final orders = workshopOrders.where((o) => o.id == item.sourceId).toList();
             if (orders.isNotEmpty && cashOf('order', inv.currency) + 0.0001 < item.depositAmount) {
+              if (linkedOrders.isNotEmpty) {
+                for (final it in linkedOrders.first.items) {
+                  _deductWorkshopOrderItemStock(it);
+                }
+              }
               return false;
             }
           }

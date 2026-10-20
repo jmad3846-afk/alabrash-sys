@@ -1792,6 +1792,7 @@ class WorkshopOrderModel {
   depositAmount; // Stored in Isolated Order Cash Box (صندوق الطلبيات)
   final String photoPath;
   String status; // 'قيد التنفيذ' | 'مكتملة ومرحلة' | 'ملغاة'
+  bool isCompleted;
   bool isSpecialRefund;
   final String
   currency; // AppCurrency.usd | AppCurrency.syp — invoice inherits it
@@ -1808,6 +1809,7 @@ class WorkshopOrderModel {
     required this.depositAmount,
     this.photoPath = '',
     this.status = 'قيد التنفيذ',
+    this.isCompleted = false,
     this.isSpecialRefund = false,
     this.currency = AppCurrency.usd,
     this.items = const [],
@@ -1826,6 +1828,7 @@ class WorkshopOrderModel {
     'depositAmount': depositAmount,
     'photoPath': photoPath,
     'status': status,
+    'isCompleted': isCompleted,
     'isSpecialRefund': isSpecialRefund,
     'currency': currency,
     'items': items.map((i) => i.toJson()).toList(),
@@ -1843,6 +1846,7 @@ class WorkshopOrderModel {
         depositAmount: (json['depositAmount'] as num).toDouble(),
         photoPath: json['photoPath'] ?? '',
         status: json['status'] ?? 'قيد التنفيذ',
+        isCompleted: json['isCompleted'] ?? false,
         isSpecialRefund: json['isSpecialRefund'] ?? false,
         currency: AppCurrency.normalize(json['currency']),
         items: json['items'] != null
@@ -1851,6 +1855,31 @@ class WorkshopOrderModel {
                 .toList()
             : [],
       );
+}
+
+// ==========================================
+// 12c. WORKSHOP ORDER CANCELLATION RAW MATERIAL ASSIGNMENT
+// ==========================================
+class RawMaterialTailoringAssignment {
+  final String itemId;
+  final String rawMaterialName;
+  final double quantity;
+  final String unitCategory;
+  final bool isSimpleTailoring; // true = simple, false = complex
+  final String? existingTailoringId; // if assigning to existing tailoring record
+  final String? newTailoringName; // if creating a new tailoring type/name on the fly
+  final double sellingPrice;
+
+  const RawMaterialTailoringAssignment({
+    required this.itemId,
+    required this.rawMaterialName,
+    required this.quantity,
+    this.unitCategory = 'متر مربع',
+    this.isSimpleTailoring = true,
+    this.existingTailoringId,
+    this.newTailoringName,
+    this.sellingPrice = 0.0,
+  });
 }
 
 // ==========================================

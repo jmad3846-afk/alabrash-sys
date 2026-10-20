@@ -223,6 +223,84 @@ class A4InvoiceData {
     );
   }
 
+  /// Factory adapter for Workshop Custom Orders (أمر تشغيل وتنفيذ ورشة المعمل).
+  factory A4InvoiceData.fromWorkshopOrder(WorkshopOrderModel ord) {
+    final items = <A4InvoiceLineItem>[];
+
+    if (ord.items.isNotEmpty) {
+      for (int i = 0; i < ord.items.length; i++) {
+        final it = ord.items[i];
+        final dim = (it.lengthCm > 0 && it.widthCm > 0)
+            ? '${it.lengthCm.fmt} × ${it.widthCm.fmt}${it.heightCm > 0 ? " × ${it.heightCm.fmt}" : ""} سم'
+            : '${it.quantity.fmt} ${it.unitCategory}';
+        final srvText = it.services.isNotEmpty
+            ? it.services.map((s) {
+                final note = s.notes.trim();
+                return note.isNotEmpty
+                    ? '${s.serviceName} ($note)'
+                    : s.serviceName;
+              }).join('\n')
+            : '—';
+        final qtyLabel = '${it.quantity.fmt} ${it.unitCategory}';
+        final specs = '${it.sourceType}${it.isGranite ? " • جرانيت" : " • رخام"}';
+
+        items.add(A4InvoiceLineItem(
+          index: i + 1,
+          description: it.description.isNotEmpty ? it.description : 'بند طلبية معمل',
+          gradeAndSpecs: specs,
+          dimensionsText: dim,
+          quantityText: qtyLabel,
+          unitPrice: it.unitPrice > 0 ? it.unitPrice : it.agreedPrice,
+          servicesText: srvText,
+          lineTotal: it.agreedPrice + it.servicesTotal,
+        ));
+      }
+    } else {
+      items.add(A4InvoiceLineItem(
+        index: 1,
+        description: ord.customDimensionsText.isNotEmpty
+            ? ord.customDimensionsText
+            : 'طلبية معمل خاصة',
+        gradeAndSpecs: 'تفصيل وتجهيز حسب الطلب والمخطط',
+        dimensionsText: ord.customDimensionsText.isNotEmpty ? ord.customDimensionsText : 'حسب المخطط',
+        quantityText: '1 طلبية',
+        unitPrice: ord.agreedPrice,
+        servicesText: 'تنفيذ وتجهيز ورشة المعمل',
+        lineTotal: ord.agreedPrice,
+      ));
+    }
+
+    final subtotal = ord.items.isNotEmpty
+        ? ord.items.fold(0.0, (s, i) => s + i.agreedPrice)
+        : ord.agreedPrice;
+    final srvTotal = ord.items.fold(0.0, (s, i) => s + i.servicesTotal);
+
+    return A4InvoiceData(
+      invoiceTypeTitle: 'أمر تشغيل وتنفيذ ورشة المعمل (Workshop Fulfillment Order)',
+      invoiceNo: ord.orderNo,
+      date: ord.date,
+      partyName: ord.clientName,
+      partyRole: 'الزبون / العميل',
+      partyPhone: ord.clientPhone.isNotEmpty ? ord.clientPhone : '—',
+      currency: ord.currency,
+      paymentStatus: 'عربون محجوز: ${ord.depositAmount.fmt} ${ord.currencySymbol} (صندوق الطلبيات المعزول)',
+      items: items,
+      subtotal: subtotal,
+      servicesTotal: srvTotal,
+      shippingFee: 0.0,
+      discount: 0.0,
+      grandTotal: ord.agreedPrice,
+      paidAmount: ord.depositAmount,
+      remainingBalance: (ord.agreedPrice - ord.depositAmount).clamp(0.0, double.infinity),
+      notes: ord.photoPath.isNotEmpty
+          ? 'مرفق صورة / مخطط تنفيذي خاص بالطلبية في الورشة'
+          : 'أمر تشغيل وتفصيل ورشة المعمل',
+      isGoodsDelivered: true,
+      hasFulfillmentSection: true,
+      fulfillmentTitle: 'أمر تجهيز وتفصيل وتصنيع ورشة المعمل',
+    );
+  }
+
   /// Factory adapter for Workshop Workspace Invoices, Factory Invoices, and Project Invoices.
   factory A4InvoiceData.fromWorkshopInvoice(
     WorkshopInvoiceModel inv, {
