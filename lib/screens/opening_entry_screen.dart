@@ -332,9 +332,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         : (isMeter || isSimple || isComplex)
         ? 'سعر تكلفة المتر الأولي (Initial Meter Price)'
         : 'سعر التكلفة الأولي (Initial Cost Price)';
-    final sellingPriceLabel = isBlock
-        ? 'سعر بيع الطن (Selling Price per Ton)'
-        : (isMeter || isSimple || isComplex)
+    final sellingPriceLabel = (isMeter || isSimple || isComplex)
         ? 'سعر بيع المتر (Selling Price per Meter)'
         : 'سعر البيع (Selling Price)';
 
@@ -342,7 +340,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
       typeField ? 'النوع' : 'اسم الصنف / النوع',
       qtyLabel,
       costPriceLabel,
-      sellingPriceLabel,
+      if (!isBlock) sellingPriceLabel,
       if (isBlock) 'اسم المورد',
       'الوصف',
     ], initialValues: {
@@ -351,7 +349,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
       if (existing != null && !typeField) 'اسم الصنف / النوع': existing.typeName,
       if (existing != null) qtyLabel: existing.quantity.fmt,
       if (existing != null) costPriceLabel: existing.unitPrice.fmt,
-      if (existing != null)
+      if (existing != null && !isBlock)
         sellingPriceLabel: existing.sellingPrice > 0 ? existing.sellingPrice.fmt : '',
       if (existing != null) 'اسم المورد': existing.supplierName,
       if (existing != null) 'الوصف': existing.description,
@@ -382,13 +380,17 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         : null;
     final quantity = double.tryParse(value[qtyLabel] ?? '') ?? 0;
     final unitPrice = double.tryParse(value[costPriceLabel] ?? '') ?? 0;
-    final sellingPrice = double.tryParse(value[sellingPriceLabel] ?? '') ?? 0;
+    final sellingPrice = isBlock
+        ? 0.0
+        : (double.tryParse(value[sellingPriceLabel] ?? '') ?? 0.0);
     if (quantity <= 0 ||
         unitPrice < 0 ||
         sellingPrice < 0 ||
         (isBlock &&
             (unitPrice <= 0 || (value['اسم المورد'] ?? '').isEmpty))) {
-      _showMessage('تحقق من الكمية وسعر التكلفة وسعر البيع.');
+      _showMessage(isBlock
+          ? 'تحقق من كمية الطن وسعر التكلفة واسم المورد.'
+          : 'تحقق من الكمية وسعر التكلفة وسعر البيع.');
       return;
     }
     final item = OpeningStockItemModel(
@@ -406,7 +408,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         supplierName: value['اسم المورد'] ?? '',
         quantity: quantity,
         unitPrice: unitPrice,
-        sellingPrice: sellingPrice,
+        sellingPrice: isBlock ? 0.0 : sellingPrice,
         description: value['الوصف'] ?? '',
         currency: AppCurrency.usd,
       );
