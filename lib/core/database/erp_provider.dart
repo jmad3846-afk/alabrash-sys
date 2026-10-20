@@ -2024,9 +2024,17 @@ class ERPProvider extends ChangeNotifier {
                       candidate.typeName == item.typeName,
                 ),
               ) ==
+              null &&
+          _firstOrNull(
+                blockTypes.where(
+                  (candidate) =>
+                      (item.typeId.isNotEmpty && candidate.id == item.typeId) ||
+                      candidate.typeName == item.typeName,
+                ),
+              ) ==
               null) {
         throw StateError(
-          'Register the meter type before approving opening stock: ${item.typeName}.',
+          'Register the item type before approving opening stock: ${item.typeName}.',
         );
       }
       if ((item.category == 'تفصيل بسيط' || item.category == 'تفصيل معقد') &&
@@ -2080,41 +2088,61 @@ class ERPProvider extends ChangeNotifier {
           break;
         case 'أمتار المصنع':
         case 'أمتار المعمل':
-          final type = _firstOrNull(
+          final meterType = _firstOrNull(
             meterTypes.where(
               (candidate) =>
                   (item.typeId.isNotEmpty && candidate.id == item.typeId) ||
                   candidate.typeName == item.typeName,
             ),
-          )!;
+          );
+          final blockType = meterType == null
+              ? _firstOrNull(
+                  blockTypes.where(
+                    (candidate) =>
+                        (item.typeId.isNotEmpty && candidate.id == item.typeId) ||
+                        candidate.typeName == item.typeName,
+                  ),
+                )
+              : null;
+          final typeName = item.typeName.isNotEmpty
+              ? item.typeName
+              : (meterType?.typeName ?? blockType?.typeName ?? '');
+          final grade = item.grade.isNotEmpty
+              ? item.grade
+              : (meterType?.grade ?? blockType?.grade ?? 'درجة أولى');
+          final isGranite = item.isGranite || (meterType?.isGranite ?? blockType?.isGranite ?? false);
+          final thickness = item.thicknessCm > 0
+              ? item.thicknessCm
+              : (meterType?.thicknessCm ?? 2.0);
+          final category = thickness <= 5 ? 'متر مربع' : 'متر مكعب';
           final salePrice =
               item.sellingPrice > 0 ? item.sellingPrice : item.unitPrice;
           if (item.category == 'أمتار المصنع') {
             factoryWarehouse.add(
               FactoryWarehouseModel(
                 id: item.id,
-                typeName: type.typeName,
-                grade: type.grade,
-                thicknessCm: type.thicknessCm,
-                category: type.category,
+                typeName: typeName,
+                grade: grade,
+                thicknessCm: thickness,
+                category: category,
                 availableQty: item.quantity,
                 netCostPerUnit: item.unitPrice,
                 recommendedSalePrice: salePrice,
-                isGranite: type.isGranite,
+                isGranite: isGranite,
               ),
             );
           } else {
             workshopStock.add(
               WorkshopStockModel(
                 id: item.id,
-                typeName: type.typeName,
-                grade: type.grade,
-                thicknessCm: type.thicknessCm,
-                category: type.category,
+                typeName: typeName,
+                grade: grade,
+                thicknessCm: thickness,
+                category: category,
                 availableQty: item.quantity,
                 netCostPerUnit: item.unitPrice,
                 recommendedSalePrice: salePrice,
-                isGranite: type.isGranite,
+                isGranite: isGranite,
               ),
             );
           }
@@ -4208,6 +4236,50 @@ class ERPProvider extends ChangeNotifier {
 
   void addBlockType(BlockTypeModel bt) {
     blockTypes.add(bt);
+    notifyListeners();
+    saveToDisk();
+  }
+
+  void updateBlockType(BlockTypeModel updated) {
+    final index = blockTypes.indexWhere((type) => type.id == updated.id);
+    if (index < 0) throw StateError('Block type was not found.');
+    final previous = blockTypes[index];
+    blockTypes[index] = updated;
+
+    // Cascade name/grade/granite changes to blocks in stock
+    for (var i = 0; i < factoryBlocks.length; i++) {
+      final block = factoryBlocks[i];
+      if (block.typeName == previous.typeName && block.grade == previous.grade) {
+        factoryBlocks[i] = FactoryBlockModel(
+          id: block.id,
+          blockCode: block.blockCode,
+          typeName: updated.typeName,
+          grade: updated.grade,
+          supplierId: block.supplierId,
+          supplierName: block.supplierName,
+          weightTons: block.weightTons,
+          tonCost: block.tonCost,
+          tonSellingPrice: block.tonSellingPrice,
+          isGranite: updated.isGranite,
+        );
+      }
+    }
+
+    // Also cascade to matching meterTypes entry if exists
+    final meterIdx = meterTypes.indexWhere((mt) =>
+        mt.typeName == previous.typeName && mt.grade == previous.grade);
+    if (meterIdx >= 0) {
+      final prevMt = meterTypes[meterIdx];
+      meterTypes[meterIdx] = MeterTypeModel(
+        id: prevMt.id,
+        typeName: updated.typeName,
+        grade: updated.grade,
+        thicknessCm: prevMt.thicknessCm,
+        category: prevMt.category,
+        isGranite: updated.isGranite,
+      );
+    }
+
     notifyListeners();
     saveToDisk();
   }

@@ -1242,7 +1242,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 ],
               ),
               FilledButton.icon(
-                onPressed: () => _showAddUnifiedItemTypeDialog(erp),
+                onPressed: () => _showUnifiedItemTypeDialog(erp),
                 icon: const Icon(Icons.add_circle_outline),
                 label: const Text('إضافة نوع مادة جديد (Add New Item Type)'),
                 style: FilledButton.styleFrom(
@@ -1256,14 +1256,27 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             ],
           ),
           const SizedBox(height: 20),
-          const Text(
-            'أنواع البلوكات الخام (Block Types)',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'قائمة الأصناف والخامات العامة (Unified Item Types)',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                'إجمالي الأنواع: ${erp.blockTypes.length}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.brandSecondaryText,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Card(
             child: erp.blockTypes.isEmpty
-                ? const ListTile(title: Text('لا توجد أنواع بلوكات معرفة.'))
+                ? const ListTile(title: Text('لا توجد أنواع خامات أو مواد معرفة بعد.'))
                 : ListView.separated(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -1271,61 +1284,31 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     separatorBuilder: (context, index) =>
                         const Divider(height: 1),
                     itemBuilder: (context, idx) {
-                      final bt = erp.blockTypes[idx];
+                      final type = erp.blockTypes[idx];
                       return ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: bt.isGranite
+                          backgroundColor: type.isGranite
                               ? AppColors.chipBgBlue
                               : AppColors.chipBgAmber,
                           child: Icon(
-                            bt.isGranite ? Icons.grid_on : Icons.view_comfy,
-                            color: bt.isGranite
+                            type.isGranite ? Icons.grid_on : Icons.view_comfy,
+                            color: type.isGranite
                                 ? AppColors.accentPrimary
                                 : AppColors.partnersEquityAccent,
                           ),
                         ),
                         title: Text(
-                          bt.typeName,
+                          type.typeName,
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
-                          'الدرجة: ${bt.grade} • النوع الخامي: ${bt.isGranite ? "غرانيت مستورد" : "رخام محلي/مستورد"}',
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'أنواع الأمتار والمقاسات المتاحة في المستودع (Meter Types)',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            child: erp.meterTypes.isEmpty
-                ? const ListTile(title: Text('لا توجد أنواع أمتار معرفة.'))
-                : ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: erp.meterTypes.length,
-                    separatorBuilder: (context, index) =>
-                        const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final type = erp.meterTypes[index];
-                      return ListTile(
-                        leading: const Icon(Icons.straighten),
-                        title: Text(
-                          '${type.typeName} • ${type.grade}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text(
-                          '${type.thicknessCm.fmt} سم • ${type.category} • ${type.isGranite ? 'غرانيت' : 'رخام'}',
+                          'النخب / الدرجة: ${type.grade} • الخامة: ${type.isGranite ? "غرانيت مستورد" : "رخام طبيعي"}',
                         ),
                         trailing: IconButton(
-                          tooltip: 'تعديل نوع المتر',
-                          icon: const Icon(Icons.edit_outlined),
+                          tooltip: 'تعديل نوع المادة',
+                          icon: const Icon(Icons.edit_outlined, color: AppColors.accentPrimary),
                           onPressed: () =>
-                              _showAddMeterTypeDialog(erp, existing: type),
+                              _showUnifiedItemTypeDialog(erp, existing: type),
                         ),
                       );
                     },
@@ -1336,12 +1319,13 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     );
   }
 
-  Future<void> _showAddUnifiedItemTypeDialog(
-    ERPProvider erp,
-  ) async {
-    final nameController = TextEditingController();
-    final gradeController = TextEditingController(text: 'درجة أولى');
-    bool isGranite = false;
+  Future<void> _showUnifiedItemTypeDialog(
+    ERPProvider erp, {
+    BlockTypeModel? existing,
+  }) async {
+    final nameController = TextEditingController(text: existing?.typeName ?? '');
+    final gradeController = TextEditingController(text: existing?.grade ?? 'درجة أولى');
+    bool isGranite = existing?.isGranite ?? false;
 
     final saved = await showDialog<bool>(
       context: context,
@@ -1349,10 +1333,17 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
         builder: (context, setDialogState) {
           return AlertDialog(
             title: Row(
-              children: const [
-                Icon(Icons.add_circle_outline, color: AppColors.accentPrimary),
-                SizedBox(width: 8),
-                Text('إضافة نوع صنف عام (Add New Item Type)'),
+              children: [
+                Icon(
+                  existing == null ? Icons.add_circle_outline : Icons.edit_outlined,
+                  color: AppColors.accentPrimary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  existing == null
+                      ? 'إضافة نوع صنف عام (Add New Item Type)'
+                      : 'تعديل نوع المادة (Edit Item Type)',
+                ),
               ],
             ),
             content: SizedBox(
@@ -1415,31 +1406,40 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     return;
                   }
 
-                  // 1. Comprehensive auto-route to Blocks
-                  erp.addBlockType(
-                    BlockTypeModel(
-                      id: 'bt_${DateTime.now().millisecondsSinceEpoch}',
-                      typeName: name,
-                      grade: grade,
-                      isGranite: isGranite,
-                    ),
-                  );
-
-                  // 2. Comprehensive auto-route to Meters (standard 2cm)
-                  erp.addMeterType(
-                    MeterTypeModel(
-                      id: 'meter_${DateTime.now().microsecondsSinceEpoch}',
-                      typeName: name,
-                      grade: grade,
-                      thicknessCm: 2.0,
-                      category: 'متر مربع',
-                      isGranite: isGranite,
-                    ),
-                  );
+                  if (existing == null) {
+                    final newId = 'bt_${DateTime.now().millisecondsSinceEpoch}';
+                    erp.addBlockType(
+                      BlockTypeModel(
+                        id: newId,
+                        typeName: name,
+                        grade: grade,
+                        isGranite: isGranite,
+                      ),
+                    );
+                    erp.addMeterType(
+                      MeterTypeModel(
+                        id: 'meter_$newId',
+                        typeName: name,
+                        grade: grade,
+                        thicknessCm: 0.0,
+                        category: 'متر مربع',
+                        isGranite: isGranite,
+                      ),
+                    );
+                  } else {
+                    erp.updateBlockType(
+                      BlockTypeModel(
+                        id: existing.id,
+                        typeName: name,
+                        grade: grade,
+                        isGranite: isGranite,
+                      ),
+                    );
+                  }
 
                   Navigator.pop(dialogContext, true);
                 },
-                child: const Text('حفظ وإضافة'),
+                child: Text(existing == null ? 'حفظ وإضافة' : 'حفظ التعديلات'),
               ),
             ],
           );
@@ -1452,109 +1452,16 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     if (saved == true && mounted) {
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'تمت إضافة نوع المادة كصنف عام وشامل في البلوكات والألواح.',
+            existing == null
+                ? 'تمت إضافة نوع المادة كصنف عام وشامل في البلوكات والألواح.'
+                : 'تم حفظ تعديل نوع المادة بنجاح.',
           ),
           backgroundColor: AppColors.successGreen,
         ),
       );
     }
-  }
-
-  Future<void> _showAddMeterTypeDialog(
-    ERPProvider erp, {
-    MeterTypeModel? existing,
-  }) async {
-    if (existing == null) {
-      await _showAddUnifiedItemTypeDialog(erp);
-      return;
-    }
-    final nameController = TextEditingController(
-      text: existing.typeName,
-    );
-    final gradeController = TextEditingController(
-      text: existing.grade,
-    );
-    final thicknessController = TextEditingController(
-      text: existing.thicknessCm.fmt,
-    );
-    var isGranite = existing.isGranite;
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(existing == null ? 'إضافة نوع متر' : 'تعديل نوع متر'),
-          content: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'اسم النوع'),
-                ),
-                TextField(
-                  controller: gradeController,
-                  decoration: const InputDecoration(labelText: 'الدرجة'),
-                ),
-                TextField(
-                  controller: thicknessController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(labelText: 'السماكة (سم)'),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('غرانيت'),
-                  value: isGranite,
-                  onChanged: (value) =>
-                      setDialogState(() => isGranite = value),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final thickness = double.tryParse(thicknessController.text);
-                if (nameController.text.trim().isEmpty ||
-                    gradeController.text.trim().isEmpty ||
-                    thickness == null ||
-                    thickness <= 0) {
-                  return;
-                }
-                final type = MeterTypeModel(
-                  id: existing?.id ??
-                      'meter_${DateTime.now().microsecondsSinceEpoch}',
-                  typeName: nameController.text.trim(),
-                  grade: gradeController.text.trim(),
-                  thicknessCm: thickness,
-                  category: thickness <= 5 ? 'متر مربع' : 'متر مكعب',
-                  isGranite: isGranite,
-                );
-                if (existing == null) {
-                  erp.addMeterType(type);
-                } else {
-                  erp.updateMeterType(type);
-                }
-                Navigator.pop(dialogContext, true);
-              },
-              child: const Text('حفظ'),
-            ),
-          ],
-        ),
-      ),
-    );
-    nameController.dispose();
-    gradeController.dispose();
-    thicknessController.dispose();
-    if (saved == true && mounted) setState(() {});
   }
 
   // -------------------------------------------------------------
@@ -2940,7 +2847,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   }
 
   Future<void> _showAddBlockTypeDialog(ERPProvider erp) async {
-    await _showAddUnifiedItemTypeDialog(erp);
+    await _showUnifiedItemTypeDialog(erp);
   }
 
   void _showAddSupplierInvoiceDialog(
@@ -2962,7 +2869,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           content: Text(
             'يجب توفر بيانات أساسية أولاً:\n'
             '${erp.suppliers.isEmpty ? "• مورد واحد على الأقل\n" : ""}'
-            '${(erp.blockTypes.isEmpty && erp.meterTypes.isEmpty) ? "• نوع بلوك أو نوع متر واحد على الأقل\n" : ""}',
+            '${(erp.blockTypes.isEmpty && erp.meterTypes.isEmpty) ? "• نوع مادة أو صنف واحد على الأقل\n" : ""}',
           ),
           actions: [
             TextButton(
@@ -2978,23 +2885,14 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 icon: const Icon(Icons.person_add_alt_1),
                 label: const Text('إضافة مورد الآن'),
               ),
-            if (erp.blockTypes.isEmpty)
+            if (erp.blockTypes.isEmpty && erp.meterTypes.isEmpty)
               ElevatedButton.icon(
                 onPressed: () {
                   Navigator.pop(ctx);
-                  _showAddBlockTypeDialog(erp);
+                  _showUnifiedItemTypeDialog(erp);
                 },
                 icon: const Icon(Icons.add_box_outlined),
-                label: const Text('إضافة نوع بلوك'),
-              ),
-            if (erp.meterTypes.isEmpty)
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _showAddMeterTypeDialog(erp);
-                },
-                icon: const Icon(Icons.straighten_outlined),
-                label: const Text('إضافة نوع متر'),
+                label: const Text('إضافة نوع مادة جديد'),
               ),
           ],
         ),
@@ -3534,10 +3432,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           const SizedBox(width: 8),
                           OutlinedButton.icon(
                             onPressed: () => refreshAfterAdd(
-                              () => _showAddMeterTypeDialog(erp),
+                              () => _showUnifiedItemTypeDialog(erp),
                             ),
                             icon: const Icon(Icons.add, size: 18),
-                            label: const Text('نوع متر جديد +'),
+                            label: const Text('نوع مادة جديد +'),
                           ),
                         ],
                       ),

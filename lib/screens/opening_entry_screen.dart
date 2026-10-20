@@ -271,13 +271,21 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
             ),
           )?.id
         : isMeter
-        ? _firstOrNull(
+        ? (_firstOrNull(
+            erp.blockTypes.where(
+              (type) =>
+                  type.id == existing.typeId ||
+                  (type.typeName == existing.typeName &&
+                      (existing.grade.isEmpty || type.grade == existing.grade)),
+            ),
+          )?.id ??
+          _firstOrNull(
             erp.meterTypes.where(
               (type) =>
                   type.id == existing.typeId ||
                   type.typeName == existing.typeName,
             ),
-          )?.id
+          )?.id)
         : isSimple || isComplex
         ? _firstOrNull(
             (isSimple ? erp.simpleTailorings : erp.complexTailorings).where(
@@ -297,13 +305,23 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         ),
       );
     } else if (isMeter) {
+      final meterSourceTypes = erp.blockTypes.isNotEmpty
+          ? erp.blockTypes
+          : erp.meterTypes
+              .map(
+                (m) => BlockTypeModel(
+                  id: m.id,
+                  typeName: m.typeName,
+                  grade: m.grade,
+                  isGranite: m.isGranite,
+                ),
+              )
+              .toList();
       options.addAll(
-        erp.meterTypes.map(
+        meterSourceTypes.map(
           (type) => DropdownMenuItem(
             value: type.id,
-            child: Text(
-              '${type.typeName} • ${type.grade} • ${type.thicknessCm} سم',
-            ),
+            child: Text('${type.typeName} • ${type.grade}'),
           ),
         ),
       );
@@ -327,6 +345,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         : (isSimple || isComplex)
         ? 'الكمية بالمتر المربع أو المكعب'
         : 'الكمية';
+    const thicknessLabel = 'السماكة (سم)';
     final costPriceLabel = isBlock
         ? 'سعر تكلفة الطن الأولي (Initial Ton Price)'
         : (isMeter || isSimple || isComplex)
@@ -338,6 +357,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
 
     final value = await _showEntryDialog('إضافة مخزون • $category', [
       typeField ? 'النوع' : 'اسم الصنف / النوع',
+      if (isMeter) thicknessLabel,
       qtyLabel,
       costPriceLabel,
       if (!isBlock) sellingPriceLabel,
@@ -347,6 +367,10 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
       if (existing != null)
         'النوع': existingTypeId ?? '',
       if (existing != null && !typeField) 'اسم الصنف / النوع': existing.typeName,
+      if (existing != null && isMeter)
+        thicknessLabel: existing.thicknessCm > 0 ? existing.thicknessCm.fmt : '2',
+      if (existing == null && isMeter)
+        thicknessLabel: '2',
       if (existing != null) qtyLabel: existing.quantity.fmt,
       if (existing != null) costPriceLabel: existing.unitPrice.fmt,
       if (existing != null && !isBlock)
@@ -364,7 +388,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
       return;
     }
     final selectedId = value['النوع'] ?? '';
-    final blockType = isBlock
+    final blockType = isBlock || isMeter
         ? _firstOrNull(erp.blockTypes.where((type) => type.id == selectedId))
         : null;
     final meterType = isMeter
@@ -378,6 +402,9 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
     final tailoredItem = (isSimple || isComplex)
         ? _firstOrNull(tailoringItems.where((item) => item.id == selectedId))
         : null;
+    final thickness = isMeter
+        ? (double.tryParse(value[thicknessLabel] ?? '') ?? 0.0)
+        : 0.0;
     final quantity = double.tryParse(value[qtyLabel] ?? '') ?? 0;
     final unitPrice = double.tryParse(value[costPriceLabel] ?? '') ?? 0;
     final sellingPrice = isBlock
@@ -386,11 +413,14 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
     if (quantity <= 0 ||
         unitPrice < 0 ||
         sellingPrice < 0 ||
+        (isMeter && thickness <= 0) ||
         (isBlock &&
             (unitPrice <= 0 || (value['اسم المورد'] ?? '').isEmpty))) {
       _showMessage(isBlock
           ? 'تحقق من كمية الطن وسعر التكلفة واسم المورد.'
-          : 'تحقق من الكمية وسعر التكلفة وسعر البيع.');
+          : (isMeter && thickness <= 0)
+              ? 'يرجى إدخال سماكة صحيحة للأمتار بالسنتيمتر (سم).'
+              : 'تحقق من الكمية وسعر التكلفة وسعر البيع.');
       return;
     }
     final item = OpeningStockItemModel(
@@ -404,7 +434,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         typeId: blockType?.id ?? meterType?.id ?? tailoredItem?.id ?? '',
         grade: blockType?.grade ?? meterType?.grade ?? '',
         isGranite: blockType?.isGranite ?? meterType?.isGranite ?? false,
-        thicknessCm: meterType?.thicknessCm ?? 0,
+        thicknessCm: isMeter ? thickness : (meterType?.thicknessCm ?? 0),
         supplierName: value['اسم المورد'] ?? '',
         quantity: quantity,
         unitPrice: unitPrice,
@@ -422,10 +452,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
   String _openingStockUnit(ERPProvider erp, OpeningStockItemModel item) {
     if (item.category == 'بلوكات خام المصنع') return 'طن';
     if (item.category == 'أمتار المصنع' || item.category == 'أمتار المعمل') {
-      final type = _firstOrNull(
-        erp.meterTypes.where((candidate) => candidate.id == item.typeId),
-      );
-      return type?.category == 'متر مكعب' ? 'م³' : 'م²';
+      return item.thicknessCm > 5 ? 'م³' : 'م²';
     }
     if (item.category == 'تفصيل بسيط' || item.category == 'تفصيل معقد') {
       final products = item.category == 'تفصيل بسيط'
@@ -710,9 +737,9 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                       (item) => ListTile(
                         dense: true,
                         leading: const Icon(Icons.inventory_2_outlined),
-                        title: Text('${item.typeName} • ${item.category}'),
+                        title: Text('${item.typeName} • ${item.category}${item.thicknessCm > 0 ? " (${item.thicknessCm.fmt} سم)" : ""}'),
                         subtitle: Text(
-                          'الكمية: ${item.quantity.fmt} ${_openingStockUnit(erp, item)} • سعر التكلفة: ${item.unitPrice.fmt} ${AppCurrency.symbol(item.currency)}${item.sellingPrice > 0 ? ' • سعر البيع: ${item.sellingPrice.fmt} ${AppCurrency.symbol(item.currency)}' : ''}${item.supplierName.isEmpty ? '' : ' • المورد: ${item.supplierName}'} • ${item.description}',
+                          'الكمية: ${item.quantity.fmt} ${_openingStockUnit(erp, item)}${item.thicknessCm > 0 ? " • سماكة: ${item.thicknessCm.fmt} سم" : ""} • سعر التكلفة: ${item.unitPrice.fmt} ${AppCurrency.symbol(item.currency)}${item.sellingPrice > 0 ? ' • سعر البيع: ${item.sellingPrice.fmt} ${AppCurrency.symbol(item.currency)}' : ''}${item.supplierName.isEmpty ? '' : ' • المورد: ${item.supplierName}'} • ${item.description}',
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,

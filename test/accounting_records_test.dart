@@ -757,4 +757,107 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('8. مرتجعات ومسموحات المبيعات'), findsOneWidget);
   });
+
+  test('updateBlockType cascades changes to blocks and meter types', () {
+    SharedPreferences.setMockInitialValues({});
+    final erp = ERPProvider();
+
+    erp.addBlockType(
+      BlockTypeModel(
+        id: 'bt_test',
+        typeName: 'مرمر يوناني',
+        grade: 'درجة أولى',
+        isGranite: false,
+      ),
+    );
+    erp.addMeterType(
+      MeterTypeModel(
+        id: 'meter_bt_test',
+        typeName: 'مرمر يوناني',
+        grade: 'درجة أولى',
+        thicknessCm: 0.0,
+        category: 'متر مربع',
+        isGranite: false,
+      ),
+    );
+    erp.factoryBlocks.add(
+      FactoryBlockModel(
+        id: 'block_test',
+        blockCode: 'BLK-001',
+        typeName: 'مرمر يوناني',
+        grade: 'درجة أولى',
+        supplierId: 'sup1',
+        supplierName: 'مورد الرخام',
+        weightTons: 10,
+        tonCost: 100,
+        tonSellingPrice: 0,
+        isGranite: false,
+      ),
+    );
+
+    erp.updateBlockType(
+      BlockTypeModel(
+        id: 'bt_test',
+        typeName: 'مرمر يوناني معدل',
+        grade: 'نخب أول ممتاز',
+        isGranite: true,
+      ),
+    );
+
+    final updatedType = erp.blockTypes.firstWhere((b) => b.id == 'bt_test');
+    expect(updatedType.typeName, 'مرمر يوناني معدل');
+    expect(updatedType.grade, 'نخب أول ممتاز');
+    expect(updatedType.isGranite, isTrue);
+
+    final updatedBlock = erp.factoryBlocks.firstWhere((b) => b.id == 'block_test');
+    expect(updatedBlock.typeName, 'مرمر يوناني معدل');
+    expect(updatedBlock.grade, 'نخب أول ممتاز');
+    expect(updatedBlock.isGranite, isTrue);
+
+    final updatedMeterType = erp.meterTypes.firstWhere((m) => m.id == 'meter_bt_test');
+    expect(updatedMeterType.typeName, 'مرمر يوناني معدل');
+    expect(updatedMeterType.grade, 'نخب أول ممتاز');
+    expect(updatedMeterType.isGranite, isTrue);
+  });
+
+  test('Opening meters inventory allows custom manual thickness and posts properly', () {
+    SharedPreferences.setMockInitialValues({});
+    final erp = ERPProvider();
+
+    erp.addBlockType(
+      BlockTypeModel(
+        id: 'type_ordo',
+        typeName: 'بيج أوردو',
+        grade: 'نخب أول',
+        isGranite: false,
+      ),
+    );
+
+    // Create an opening meter item with custom 3.5cm thickness
+    erp.openingEntry.openingStock.add(
+      OpeningStockItemModel(
+        id: 'open_meter_1',
+        category: 'أمتار المصنع',
+        typeName: 'بيج أوردو',
+        typeId: 'type_ordo',
+        grade: 'نخب أول',
+        thicknessCm: 3.5,
+        supplierName: '',
+        quantity: 50,
+        unitPrice: 25,
+        sellingPrice: 40,
+        currency: AppCurrency.usd,
+      ),
+    );
+
+    erp.lockOpeningEntry();
+
+    final addedStock = erp.factoryWarehouse.firstWhere((item) => item.id == 'open_meter_1');
+    expect(addedStock.typeName, 'بيج أوردو');
+    expect(addedStock.thicknessCm, 3.5);
+    expect(addedStock.category, 'متر مربع');
+    expect(addedStock.availableQty, 50);
+    expect(addedStock.netCostPerUnit, 25);
+    expect(addedStock.recommendedSalePrice, 40);
+  });
 }
