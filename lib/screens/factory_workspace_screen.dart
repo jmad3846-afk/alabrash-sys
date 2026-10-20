@@ -4071,6 +4071,264 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     );
   }
 
+  void _showEditFactoryDraftItemModal({
+    required BuildContext context,
+    required FactoryInvoiceItem item,
+    required ERPProvider erp,
+    required void Function(FactoryInvoiceItem updatedItem) onSave,
+  }) {
+    String editMeterUnit = item.meterUnit;
+    final descCtrl = TextEditingController(text: item.description);
+    final lenCtrl = TextEditingController(text: item.lengthCm > 0 ? item.lengthCm.fmt : '');
+    final widCtrl = TextEditingController(text: item.widthCm > 0 ? item.widthCm.fmt : '');
+    final heiCtrl = TextEditingController(
+      text: item.heightCm > 0
+          ? item.heightCm.fmt
+          : (item.thicknessCm > 0 ? item.thicknessCm.fmt : ''),
+    );
+    final qtyCtrl = TextEditingController(text: item.quantity.fmt);
+    final unitPriceCtrl = TextEditingController(text: item.unitPrice.fmt);
+
+    double lookupPredefinedThickness() {
+      final whMatches = erp.factoryWarehouse.where((w) => w.id == item.itemId).toList();
+      if (whMatches.isNotEmpty) return whMatches.first.thicknessCm;
+      final typeMatches = erp.factoryWarehouse.where((w) => w.typeName == item.typeName).toList();
+      if (typeMatches.isNotEmpty) return typeMatches.first.thicknessCm;
+      return item.thicknessCm > 0 ? item.thicknessCm : (item.heightCm > 0 ? item.heightCm : 2.0);
+    }
+
+    double lookupCubicPrice() {
+      final whMatches = erp.factoryWarehouse.where((w) => w.id == item.itemId).toList();
+      if (whMatches.isNotEmpty) {
+        final wh = whMatches.first;
+        if (wh.category == 'متر مكعب' && wh.recommendedSalePrice > 0) return wh.recommendedSalePrice;
+        final cMatches = erp.factoryWarehouse.where((w) => w.typeName.trim() == wh.typeName.trim() && w.category == 'متر مكعب' && w.recommendedSalePrice > 0).toList();
+        if (cMatches.isNotEmpty) return cMatches.first.recommendedSalePrice;
+        return wh.recommendedSalePrice;
+      }
+      final typeMatches = erp.factoryWarehouse.where((w) => w.typeName.trim() == item.typeName.trim() && w.category == 'متر مكعب' && w.recommendedSalePrice > 0).toList();
+      if (typeMatches.isNotEmpty) return typeMatches.first.recommendedSalePrice;
+      return item.unitPrice;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) {
+          final bool isCube = editMeterUnit == 'متر مكعب';
+          final double l = double.tryParse(lenCtrl.text) ?? 0.0;
+          final double w = double.tryParse(widCtrl.text) ?? 0.0;
+          final double h = double.tryParse(heiCtrl.text) ?? 0.0;
+          final double q = double.tryParse(qtyCtrl.text) ?? 0.0;
+          final double up = double.tryParse(unitPriceCtrl.text) ?? 0.0;
+
+          final double calculatedVolumeOrArea = isCube
+              ? ((l > 0 && w > 0 && h > 0 && q > 0) ? (l / 100.0) * (w / 100.0) * (h / 100.0) * q : 0.0)
+              : ((l > 0 && w > 0 && q > 0) ? (l / 100.0) * (w / 100.0) * q : q);
+          final double lineTotal = calculatedVolumeOrArea * up;
+
+          return Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Container(
+              width: 540,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.edit_note_rounded, color: AppColors.accentPrimary, size: 26),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'تعديل بند: ${item.description}',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 20),
+                    Row(
+                      children: [
+                        const Text('وحدة القياس / البيع:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        const SizedBox(width: 12),
+                        ChoiceChip(
+                          label: const Text('متر مربع (م²)'),
+                          selected: editMeterUnit == 'متر مربع',
+                          onSelected: (sel) {
+                            if (sel) {
+                              setSt(() {
+                                editMeterUnit = 'متر مربع';
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('متر مكعب (م³)'),
+                          selected: editMeterUnit == 'متر مكعب',
+                          selectedColor: const Color(0xFFDCFCE7),
+                          onSelected: (sel) {
+                            if (sel) {
+                              setSt(() {
+                                editMeterUnit = 'متر مكعب';
+                                heiCtrl.text = lookupPredefinedThickness().fmt;
+                                final cp = lookupCubicPrice();
+                                if (cp > 0) unitPriceCtrl.text = cp.fmt;
+                              });
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: descCtrl,
+                      decoration: const InputDecoration(labelText: 'وصف البند', isDense: true),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: lenCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'الطول (سم)', isDense: true),
+                            onChanged: (_) => setSt(() {}),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: widCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'العرض (سم)', isDense: true),
+                            onChanged: (_) => setSt(() {}),
+                          ),
+                        ),
+                        if (isCube) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: heiCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: const InputDecoration(labelText: 'الارتفاع = السماكة (سم)', isDense: true),
+                              onChanged: (_) => setSt(() {}),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: qtyCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'الكمية (العدد)', isDense: true),
+                            onChanged: (_) => setSt(() {}),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: unitPriceCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(
+                              labelText: 'سعر بيع المتر (${isCube ? "م³" : "م²"} \$)',
+                              isDense: true,
+                            ),
+                            onChanged: (_) => setSt(() {}),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF86EFAC)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'الأمتار المحسوبة: ${calculatedVolumeOrArea.fmt} ${isCube ? "م³" : "م²"}',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF166534)),
+                              ),
+                              if (isCube)
+                                Text(
+                                  'الحجم = ${(l/100).fmt}م × ${(w/100).fmt}م × ${(h/100).fmt}م × ${q.fmt} قطع',
+                                  style: const TextStyle(fontSize: 11, color: Color(0xFF15803D)),
+                                ),
+                            ],
+                          ),
+                          Text(
+                            'الإجمالي: ${lineTotal.fmt} \$',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF15803D)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('إلغاء'),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.accentPrimary,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () {
+                            final updated = item.copyWith(
+                              description: descCtrl.text.trim().isNotEmpty ? descCtrl.text.trim() : item.description,
+                              lengthCm: l,
+                              widthCm: w,
+                              heightCm: isCube ? h : 0.0,
+                              quantity: q,
+                              unitPrice: up,
+                              meterUnit: editMeterUnit,
+                              thicknessCm: isCube && h > 0 ? h : item.thicknessCm,
+                            );
+                            onSave(updated);
+                            Navigator.pop(ctx);
+                          },
+                          icon: const Icon(Icons.check, size: 18),
+                          label: const Text('حفظ التعديلات'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   void _showAddPOSInvoiceDialog(
     ERPProvider erp, {
     bool cashInvoice = false,
@@ -4169,6 +4427,20 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final serviceNotesCtrl = TextEditingController();
     final List<ServiceAttachment> draftServices = [];
     String posCurrency = initialOrder?.currency ?? AppCurrency.usd;
+    String selectedItemMeterUnit = 'متر مربع';
+
+    double getFactoryCubicSellingPrice(FactoryWarehouseModel item) {
+      if (item.category == 'متر مكعب' && item.recommendedSalePrice > 0) {
+        return item.recommendedSalePrice;
+      }
+      final matches = erp.factoryWarehouse.where(
+        (w) => w.typeName.trim() == item.typeName.trim() && w.category == 'متر مكعب' && w.recommendedSalePrice > 0,
+      ).toList();
+      if (matches.isNotEmpty) {
+        return matches.first.recommendedSalePrice;
+      }
+      return item.recommendedSalePrice;
+    }
 
     double draftArea(
       FactoryWarehouseModel? wh,
@@ -4176,9 +4448,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       double w,
       double h,
       double q,
+      bool isCube,
     ) {
       if (wh == null || l <= 0 || w <= 0 || q <= 0) return 0.0;
-      if (wh.category == 'متر مكعب') {
+      if (isCube) {
         if (h <= 0) return 0.0;
         return (l / 100.0) * (w / 100.0) * (h / 100.0) * q;
       }
@@ -4217,11 +4490,23 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           final FactoryWarehouseModel? wh = matches.isEmpty
               ? null
               : matches.first;
-          final bool isCube = wh?.category == 'متر مكعب';
+          final bool isCube = selectedItemMeterUnit == 'متر مكعب' || wh?.category == 'متر مكعب';
 
-          // Auto-populate price per meter from Factory Warehouse interface if empty
-          if (wh != null && unitPriceCtrl.text.isEmpty && wh.recommendedSalePrice > 0) {
-            unitPriceCtrl.text = wh.recommendedSalePrice.fmt;
+          // Auto-populate price per meter and height from Factory Warehouse interface if empty
+          if (wh != null) {
+            if (isCube) {
+              if (heightCtrl.text.isEmpty && wh.thicknessCm > 0) {
+                heightCtrl.text = wh.thicknessCm.fmt;
+              }
+              if (unitPriceCtrl.text.isEmpty) {
+                final cp = getFactoryCubicSellingPrice(wh);
+                if (cp > 0) unitPriceCtrl.text = cp.fmt;
+              }
+            } else {
+              if (unitPriceCtrl.text.isEmpty && wh.recommendedSalePrice > 0) {
+                unitPriceCtrl.text = wh.recommendedSalePrice.fmt;
+              }
+            }
           }
 
           final double l = double.tryParse(lengthCtrl.text) ?? 0.0;
@@ -4229,7 +4514,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           final double h = double.tryParse(heightCtrl.text) ?? 0.0;
           final double q = double.tryParse(qtyCtrl.text) ?? 0.0;
           final double price = double.tryParse(unitPriceCtrl.text) ?? 0.0;
-          final double area = draftArea(wh, l, w, h, q);
+          final double area = draftArea(wh, l, w, h, q, isCube);
           final double draftTotal = area * price;
           final double draftServicesTotal = draftServices.fold(
             0.0,
@@ -4555,8 +4840,16 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               final mList = erp.factoryWarehouse.where((g) => g.id == v).toList();
                               if (mList.isNotEmpty) {
                                 final selWh = mList.first;
-                                if (selWh.recommendedSalePrice > 0) {
-                                  unitPriceCtrl.text = selWh.recommendedSalePrice.fmt;
+                                selectedItemMeterUnit = selWh.category == 'متر مكعب' ? 'متر مكعب' : 'متر مربع';
+                                if (selectedItemMeterUnit == 'متر مكعب') {
+                                  heightCtrl.text = selWh.thicknessCm.fmt;
+                                  final cp = getFactoryCubicSellingPrice(selWh);
+                                  unitPriceCtrl.text = cp > 0 ? cp.fmt : (selWh.recommendedSalePrice > 0 ? selWh.recommendedSalePrice.fmt : '');
+                                } else {
+                                  heightCtrl.clear();
+                                  if (selWh.recommendedSalePrice > 0) {
+                                    unitPriceCtrl.text = selWh.recommendedSalePrice.fmt;
+                                  }
                                 }
                               }
                             }
@@ -4571,6 +4864,47 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           style: TextStyle(color: AppColors.brandSecondaryText),
                         ),
                       if (wh != null) ...[
+                        Row(
+                          children: [
+                            const Text(
+                              'وحدة القياس / البيع:',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                            const SizedBox(width: 12),
+                            ChoiceChip(
+                              label: const Text('متر مربع (م²)'),
+                              selected: !isCube,
+                              onSelected: (sel) {
+                                if (sel) {
+                                  setSt(() {
+                                    selectedItemMeterUnit = 'متر مربع';
+                                    heightCtrl.clear();
+                                    if (wh.recommendedSalePrice > 0) {
+                                      unitPriceCtrl.text = wh.recommendedSalePrice.fmt;
+                                    }
+                                  });
+                                }
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            ChoiceChip(
+                              label: const Text('متر مكعب (م³)'),
+                              selected: isCube,
+                              selectedColor: const Color(0xFFDCFCE7),
+                              onSelected: (sel) {
+                                if (sel) {
+                                  setSt(() {
+                                    selectedItemMeterUnit = 'متر مكعب';
+                                    heightCtrl.text = wh.thicknessCm.fmt;
+                                    final cp = getFactoryCubicSellingPrice(wh);
+                                    if (cp > 0) unitPriceCtrl.text = cp.fmt;
+                                  });
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
                         Row(
                           children: [
                             Expanded(
@@ -4603,8 +4937,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                 child: TextField(
                                   controller: heightCtrl,
                                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  decoration: const InputDecoration(
-                                    labelText: 'الارتفاع (سم) لحساب الحجم',
+                                  decoration: InputDecoration(
+                                    labelText: 'الارتفاع = السماكة (سم)',
+                                    helperText: 'سماكة المادة: ${wh.thicknessCm.fmt} سم',
                                   ),
                                   onChanged: (_) => setSt(() {}),
                                 ),
@@ -4635,9 +4970,11 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 decoration: InputDecoration(
                                   labelText: 'سعر بيع المتر (${isCube ? "م³" : "م²"} \$)',
-                                  helperText: wh.recommendedSalePrice > 0
-                                      ? 'سعر المستودع: ${wh.recommendedSalePrice.fmt} \$'
-                                      : null,
+                                  helperText: isCube
+                                      ? 'سعر المتر المكعب للمادة: ${getFactoryCubicSellingPrice(wh).fmt} \$'
+                                      : (wh.recommendedSalePrice > 0
+                                          ? 'سعر المستودع: ${wh.recommendedSalePrice.fmt} \$'
+                                          : null),
                                 ),
                                 onChanged: (_) => setSt(() {}),
                               ),
@@ -4812,6 +5149,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     unitCost: wh.netCostPerUnit,
                                     isGranite: wh.isGranite,
                                     services: List.of(draftServices),
+                                    thicknessCm: wh.thicknessCm,
+                                    meterUnit: isCube ? 'متر مكعب' : 'متر مربع',
                                   ),
                                 );
                                 draftServices.clear();
@@ -4856,15 +5195,36 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             ),
                           ),
                           subtitle: Text(
-                            '${e.value.calculatedArea.fmt} ${e.value.heightCm > 5 ? "م³" : "م²"} × ${e.value.unitPrice}\$ + خدمات ${e.value.servicesTotal.fmt}\$ = ${e.value.grandTotal.fmt}\$',
+                            '${e.value.calculatedArea.fmt} ${e.value.meterUnit == "متر مكعب" || e.value.heightCm > 0 ? "م³" : "م²"} × ${e.value.unitPrice}\$ + خدمات ${e.value.servicesTotal.fmt}\$ = ${e.value.grandTotal.fmt}\$',
                           ),
-                          trailing: IconButton(
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              color: AppColors.dangerWaste,
-                            ),
-                            onPressed: () =>
-                                setSt(() => draftItems.removeAt(e.key)),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.edit_outlined,
+                                  color: AppColors.accentPrimary,
+                                ),
+                                onPressed: () {
+                                  _showEditFactoryDraftItemModal(
+                                    context: context,
+                                    item: e.value,
+                                    erp: erp,
+                                    onSave: (updated) => setSt(() {
+                                      draftItems[e.key] = updated;
+                                    }),
+                                  );
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: AppColors.dangerWaste,
+                                ),
+                                onPressed: () =>
+                                    setSt(() => draftItems.removeAt(e.key)),
+                              ),
+                            ],
                           ),
                           children: [
                             ...e.value.services.map(

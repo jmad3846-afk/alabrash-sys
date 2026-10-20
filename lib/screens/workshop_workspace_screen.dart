@@ -5919,6 +5919,19 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     );
   }
 
+  double getWorkshopCubicSellingPrice(ERPProvider erp, WorkshopStockModel w) {
+    if (w.category == 'متر مكعب' && w.recommendedSalePrice > 0) return w.recommendedSalePrice;
+    final exactWorkshop = erp.workshopStock.where((s) => s.typeName.trim() == w.typeName.trim() && s.grade.trim() == w.grade.trim() && s.category == 'متر مكعب' && s.recommendedSalePrice > 0).toList();
+    if (exactWorkshop.isNotEmpty) return exactWorkshop.first.recommendedSalePrice;
+    final matches = erp.workshopStock.where((s) => s.typeName.trim() == w.typeName.trim() && s.category == 'متر مكعب' && s.recommendedSalePrice > 0).toList();
+    if (matches.isNotEmpty) return matches.first.recommendedSalePrice;
+    final exactFac = erp.factoryWarehouse.where((f) => f.typeName.trim() == w.typeName.trim() && f.grade.trim() == w.grade.trim() && f.category == 'متر مكعب' && f.recommendedSalePrice > 0).toList();
+    if (exactFac.isNotEmpty) return exactFac.first.recommendedSalePrice;
+    final facMatches = erp.factoryWarehouse.where((f) => f.typeName.trim() == w.typeName.trim() && f.category == 'متر مكعب' && f.recommendedSalePrice > 0).toList();
+    if (facMatches.isNotEmpty) return facMatches.first.recommendedSalePrice;
+    return w.recommendedSalePrice > 0 ? w.recommendedSalePrice : (w.netCostPerUnit * 1.3);
+  }
+
   void _showEditWorkshopDraftItemModal({
     required BuildContext context,
     required WorkshopInvoiceItem item,
@@ -5926,8 +5939,27 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     required ERPProvider erp,
     required void Function(WorkshopInvoiceItem updatedItem) onSave,
   }) {
+    String editUnitCategory = item.unitCategory;
     final descCtrl = TextEditingController(text: item.description);
-    final qtyCtrl = TextEditingController(text: item.quantity.fmt);
+    final lenCtrl = TextEditingController(text: item.lengthCm > 0 ? item.lengthCm.fmt : '');
+    final widCtrl = TextEditingController(text: item.widthCm > 0 ? item.widthCm.fmt : '');
+    final heiCtrl = TextEditingController(text: item.heightCm > 0 ? item.heightCm.fmt : '');
+
+    double initialCount = 1.0;
+    if (item.lengthCm > 0 && item.widthCm > 0) {
+      final singlePiece = item.isCubicMeter && item.heightCm > 0
+          ? (item.lengthCm / 100.0) * (item.widthCm / 100.0) * (item.heightCm / 100.0)
+          : (item.lengthCm / 100.0) * (item.widthCm / 100.0);
+      if (singlePiece > 0.000001 && item.quantity >= singlePiece) {
+        final calcCount = (item.quantity / singlePiece).roundToDouble();
+        if ((item.quantity - (calcCount * singlePiece)).abs() < 0.001) {
+          initialCount = calcCount;
+        }
+      }
+    } else {
+      initialCount = item.quantity > 0 ? item.quantity : 1.0;
+    }
+    final countCtrl = TextEditingController(text: initialCount.fmt);
     final unitPriceCtrl = TextEditingController(text: item.unitPrice.fmt);
     final agreedCtrl = TextEditingController(text: item.agreedPrice.fmt);
     final List<ServiceAttachment> editServices = List.of(item.services);
@@ -5935,18 +5967,80 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     final editServicePriceCtrl = TextEditingController();
     final editServiceNotesCtrl = TextEditingController();
 
+    double lookupPredefinedThickness() {
+      final stockMatches = erp.workshopStock.where((w) => w.id == item.sourceId).toList();
+      if (stockMatches.isNotEmpty && stockMatches.first.thicknessCm > 0) return stockMatches.first.thicknessCm;
+      final facMatches = erp.factoryWarehouse.where((w) => w.id == item.sourceId).toList();
+      if (facMatches.isNotEmpty && facMatches.first.thicknessCm > 0) return facMatches.first.thicknessCm;
+      for (final s in erp.workshopStock) {
+        if (s.thicknessCm > 0 && item.description.contains(s.typeName)) return s.thicknessCm;
+      }
+      for (final f in erp.factoryWarehouse) {
+        if (f.thicknessCm > 0 && item.description.contains(f.typeName)) return f.thicknessCm;
+      }
+      return item.heightCm > 0 ? item.heightCm : 2.0;
+    }
+
+    double lookupCubicPrice() {
+      final stockMatches = erp.workshopStock.where((w) => w.id == item.sourceId).toList();
+      if (stockMatches.isNotEmpty) {
+        return getWorkshopCubicSellingPrice(erp, stockMatches.first);
+      }
+      final facMatches = erp.factoryWarehouse.where((w) => w.id == item.sourceId).toList();
+      if (facMatches.isNotEmpty) {
+        final f = facMatches.first;
+        if (f.category == 'متر مكعب' && f.recommendedSalePrice > 0) return f.recommendedSalePrice;
+        final cMatches = erp.factoryWarehouse.where((w) => w.typeName.trim() == f.typeName.trim() && w.category == 'متر مكعب' && w.recommendedSalePrice > 0).toList();
+        if (cMatches.isNotEmpty) return cMatches.first.recommendedSalePrice;
+        return f.recommendedSalePrice;
+      }
+      for (final s in erp.workshopStock) {
+        if (item.description.contains(s.typeName)) {
+          return getWorkshopCubicSellingPrice(erp, s);
+        }
+      }
+      for (final f in erp.factoryWarehouse) {
+        if (item.description.contains(f.typeName)) {
+          if (f.category == 'متر مكعب' && f.recommendedSalePrice > 0) return f.recommendedSalePrice;
+          final cMatches = erp.factoryWarehouse.where((w) => w.typeName.trim() == f.typeName.trim() && w.category == 'متر مكعب' && w.recommendedSalePrice > 0).toList();
+          if (cMatches.isNotEmpty) return cMatches.first.recommendedSalePrice;
+          return f.recommendedSalePrice;
+        }
+      }
+      return item.unitPrice;
+    }
+
+    if (item.unitCategory == 'متر مكعب' && heiCtrl.text.isEmpty) {
+      heiCtrl.text = lookupPredefinedThickness().fmt;
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) {
+          final bool isCube = editUnitCategory == 'متر مكعب';
+          final double l = double.tryParse(lenCtrl.text) ?? 0.0;
+          final double w = double.tryParse(widCtrl.text) ?? 0.0;
+          final double h = double.tryParse(heiCtrl.text) ?? 0.0;
+          final double cnt = double.tryParse(countCtrl.text) ?? 0.0;
+          final double up = double.tryParse(unitPriceCtrl.text) ?? 0.0;
+
+          final bool hasDimensions = l > 0 && w > 0;
+          final double totalVolumeOrArea = isCube
+              ? ((hasDimensions && h > 0 && cnt > 0) ? (l / 100.0) * (w / 100.0) * (h / 100.0) * cnt : 0.0)
+              : (hasDimensions && cnt > 0 ? (l / 100.0) * (w / 100.0) * cnt : cnt);
+
+          final double itemBasePrice = (hasDimensions || isCube)
+              ? (totalVolumeOrArea * up)
+              : (double.tryParse(agreedCtrl.text) ?? (cnt * up));
+
           final double srvTotal = editServices.fold(0.0, (s, e) => s + e.price);
-          final double itemBasePrice = double.tryParse(agreedCtrl.text) ?? 0.0;
           final double grandTotalWithServices = itemBasePrice + srvTotal;
 
           return Dialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Container(
-              width: 560,
+              width: 580,
               padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -5974,6 +6068,48 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       ],
                     ),
                     const Divider(height: 20),
+                    Row(
+                      children: [
+                        const Text(
+                          'وحدة القياس / البيع:',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                        const SizedBox(width: 12),
+                        ChoiceChip(
+                          label: const Text('متر مربع (م²)'),
+                          selected: !isCube,
+                          onSelected: (sel) {
+                            if (sel) {
+                              setSt(() {
+                                editUnitCategory = 'متر مربع';
+                                heiCtrl.clear();
+                                final stockMatches = erp.workshopStock.where((s) => s.id == item.sourceId).toList();
+                                if (stockMatches.isNotEmpty && stockMatches.first.recommendedSalePrice > 0) {
+                                  unitPriceCtrl.text = stockMatches.first.recommendedSalePrice.fmt;
+                                }
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('متر مكعب (م³)'),
+                          selected: isCube,
+                          selectedColor: const Color(0xFFDCFCE7),
+                          onSelected: (sel) {
+                            if (sel) {
+                              setSt(() {
+                                editUnitCategory = 'متر مكعب';
+                                heiCtrl.text = lookupPredefinedThickness().fmt;
+                                final cp = lookupCubicPrice();
+                                if (cp > 0) unitPriceCtrl.text = cp.fmt;
+                              });
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     TextField(
                       controller: descCtrl,
                       decoration: const InputDecoration(
@@ -5987,17 +6123,56 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                       children: [
                         Expanded(
                           child: TextField(
-                            controller: qtyCtrl,
+                            controller: lenCtrl,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: InputDecoration(
-                              labelText: 'الكمية (${item.unitCategory})',
+                            decoration: const InputDecoration(
+                              labelText: 'الطول (سم)',
                               isDense: true,
                             ),
-                            onChanged: (_) => setSt(() {
-                              final nq = double.tryParse(qtyCtrl.text) ?? 0.0;
-                              final nup = double.tryParse(unitPriceCtrl.text) ?? 0.0;
-                              agreedCtrl.text = (nq * nup).fmt;
-                            }),
+                            onChanged: (_) => setSt(() {}),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: widCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(
+                              labelText: 'العرض (سم)',
+                              isDense: true,
+                            ),
+                            onChanged: (_) => setSt(() {}),
+                          ),
+                        ),
+                        if (isCube) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: heiCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: InputDecoration(
+                                labelText: 'الارتفاع = السماكة (سم)',
+                                helperText: 'سماكة المادة: ${lookupPredefinedThickness().fmt} سم',
+                                isDense: true,
+                              ),
+                              onChanged: (_) => setSt(() {}),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: countCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(
+                              labelText: 'الكمية (العدد / القطع)',
+                              isDense: true,
+                            ),
+                            onChanged: (_) => setSt(() {}),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -6006,25 +6181,53 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             controller: unitPriceCtrl,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             decoration: InputDecoration(
-                              labelText: 'سعر الوحدة (${AppCurrency.symbol(currency)})',
+                              labelText: 'سعر بيع المتر (${isCube ? "م³" : "م²"} ${AppCurrency.symbol(currency)})',
+                              helperText: isCube ? 'سعر المتر المكعب للمادة' : null,
                               isDense: true,
                             ),
-                            onChanged: (_) => setSt(() {
-                              final nq = double.tryParse(qtyCtrl.text) ?? 0.0;
-                              final nup = double.tryParse(unitPriceCtrl.text) ?? 0.0;
-                              agreedCtrl.text = (nq * nup).fmt;
-                            }),
+                            onChanged: (_) => setSt(() {}),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: agreedCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: InputDecoration(
-                        labelText: 'إجمالي سعر الأمتار / القطع (${AppCurrency.symbol(currency)})',
-                        isDense: true,
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF86EFAC)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'الأمتار المحسوبة: ${totalVolumeOrArea.fmt} ${isCube ? "م³" : "م²"}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: Color(0xFF166534),
+                                ),
+                              ),
+                              if (isCube)
+                                Text(
+                                  'الحجم = ${(l / 100).fmt}م × ${(w / 100).fmt}م × ${(h / 100).fmt}م × ${cnt.fmt} قطع',
+                                  style: const TextStyle(fontSize: 11, color: Color(0xFF15803D)),
+                                ),
+                            ],
+                          ),
+                          Text(
+                            'الإجمالي: ${itemBasePrice.fmt} ${AppCurrency.symbol(currency)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Color(0xFF15803D),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -6176,12 +6379,16 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                           ),
                           onPressed: () {
-                            final nq = double.tryParse(qtyCtrl.text) ?? item.quantity;
+                            final nq = (isCube || hasDimensions) ? totalVolumeOrArea : cnt;
                             final nup = double.tryParse(unitPriceCtrl.text) ?? item.unitPrice;
-                            final nagreed = double.tryParse(agreedCtrl.text) ?? (nq * nup);
+                            final nagreed = itemBasePrice;
                             final updated = item.copyWith(
                               description: descCtrl.text.trim().isNotEmpty ? descCtrl.text.trim() : item.description,
-                              quantity: nq,
+                              unitCategory: editUnitCategory,
+                              lengthCm: l,
+                              widthCm: w,
+                              heightCm: isCube ? h : 0.0,
+                              quantity: nq > 0 ? nq : item.quantity,
                               unitPrice: nup,
                               agreedPrice: nagreed,
                               services: List.of(editServices),
@@ -6271,7 +6478,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             if (m.isNotEmpty) selectedRaw = m.first;
           }
 
-          final bool rawCube = selectedRaw?.category == 'متر مكعب';
+          final bool rawCube = itemUnitCat == 'متر مكعب' || selectedRaw?.category == 'متر مكعب';
           final double rl = double.tryParse(rawLenCtrl.text) ?? 0.0;
           final double rw = double.tryParse(rawWidCtrl.text) ?? 0.0;
           final double rh = double.tryParse(rawHeiCtrl.text) ?? 0.0;
@@ -6590,16 +6797,70 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                     .toList(),
                                                 onChanged: (v) => setSt(() {
                                                   selectedRawId = v;
-                                                  if (selectedRaw != null) {
-                                                    itemUnitCat = selectedRaw.category;
-                                                    itemIsGranite = selectedRaw.isGranite;
-                                                    rawPriceCtrl.text = selectedRaw.recommendedSalePrice > 0
-                                                        ? selectedRaw.recommendedSalePrice.fmt
-                                                        : (selectedRaw.netCostPerUnit * 1.3).fmt;
+                                                  final newlySelected = erp.workshopStock.where((w) => w.id == v).firstOrNull;
+                                                  if (newlySelected != null) {
+                                                    itemUnitCat = newlySelected.category;
+                                                    itemIsGranite = newlySelected.isGranite;
+                                                    final isCube = itemUnitCat == 'متر مكعب';
+                                                    if (isCube) {
+                                                      rawHeiCtrl.text = newlySelected.thicknessCm.fmt;
+                                                      final cp = getWorkshopCubicSellingPrice(erp, newlySelected);
+                                                      rawPriceCtrl.text = cp.fmt;
+                                                    } else {
+                                                      rawHeiCtrl.clear();
+                                                      rawPriceCtrl.text = newlySelected.recommendedSalePrice > 0
+                                                          ? newlySelected.recommendedSalePrice.fmt
+                                                          : (newlySelected.netCostPerUnit * 1.3).fmt;
+                                                    }
                                                   }
                                                 }),
                                               ),
                                               if (selectedRaw != null) ...[
+                                                const SizedBox(height: 8),
+                                                Row(
+                                                  children: [
+                                                    const Text(
+                                                      'وحدة القياس / البيع:',
+                                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    ChoiceChip(
+                                                      label: const Text('متر مربع (م²)'),
+                                                      selected: !rawCube,
+                                                      onSelected: (sel) {
+                                                        if (sel) {
+                                                          setSt(() {
+                                                            itemUnitCat = 'متر مربع';
+                                                            rawHeiCtrl.clear();
+                                                            rawPriceCtrl.text = selectedRaw!.recommendedSalePrice > 0
+                                                                ? selectedRaw!.recommendedSalePrice.fmt
+                                                                : (selectedRaw!.netCostPerUnit * 1.3).fmt;
+                                                            final p = double.tryParse(rawPriceCtrl.text) ?? 0;
+                                                            itemAgreedCtrl.text = (rawArea * p).fmt;
+                                                          });
+                                                        }
+                                                      },
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    ChoiceChip(
+                                                      label: const Text('متر مكعب (م³)'),
+                                                      selected: rawCube,
+                                                      selectedColor: const Color(0xFFDCFCE7),
+                                                      onSelected: (sel) {
+                                                        if (sel) {
+                                                          setSt(() {
+                                                            itemUnitCat = 'متر مكعب';
+                                                            rawHeiCtrl.text = selectedRaw!.thicknessCm.fmt;
+                                                            final cp = getWorkshopCubicSellingPrice(erp, selectedRaw!);
+                                                            rawPriceCtrl.text = cp.fmt;
+                                                            final p = double.tryParse(rawPriceCtrl.text) ?? 0;
+                                                            itemAgreedCtrl.text = (rawArea * p).fmt;
+                                                          });
+                                                        }
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
                                                 const SizedBox(height: 8),
                                                 Row(
                                                   children: [
@@ -6638,8 +6899,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                         child: TextField(
                                                           controller: rawHeiCtrl,
                                                           keyboardType: TextInputType.number,
-                                                          decoration: const InputDecoration(
-                                                            labelText: 'الارتفاع (سم)',
+                                                          decoration: InputDecoration(
+                                                            labelText: 'الارتفاع = السماكة (سم)',
+                                                            helperText: 'سماكة المادة: ${selectedRaw.thicknessCm.fmt} سم',
                                                             isDense: true,
                                                           ),
                                                           onChanged: (_) => setSt(() {
@@ -6673,8 +6935,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       child: TextField(
                                                         controller: rawPriceCtrl,
                                                         keyboardType: TextInputType.number,
-                                                        decoration: const InputDecoration(
-                                                          labelText: 'سعر بيع المتر (\$)',
+                                                        decoration: InputDecoration(
+                                                          labelText: 'سعر بيع المتر (${rawCube ? "م³" : "م²"} \$)',
+                                                          helperText: rawCube
+                                                              ? 'سعر المتر المكعب: ${getWorkshopCubicSellingPrice(erp, selectedRaw!).fmt} \$'
+                                                              : (selectedRaw.recommendedSalePrice > 0 ? 'سعر المستودع: ${selectedRaw.recommendedSalePrice.fmt} \$' : null),
                                                           isDense: true,
                                                         ),
                                                         onChanged: (_) => setSt(() {
@@ -6698,9 +6963,14 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                 ),
                                                 const SizedBox(height: 4),
                                                 Text(
-                                                  'الأمتار المحسوبة: ${rawArea.fmt} ${selectedRaw.category == "متر مكعب" ? "م³" : "م²"} • المتاح: ${selectedRaw.availableQty.fmt}',
+                                                  'الأمتار المحسوبة: ${rawArea.fmt} ${rawCube ? "م³" : "م²"} • المتاح: ${selectedRaw.availableQty.fmt}',
                                                   style: const TextStyle(fontSize: 11, color: AppColors.accentPrimary),
                                                 ),
+                                                if (rawCube)
+                                                  Text(
+                                                    'الحجم = ${(rl / 100).fmt}م × ${(rw / 100).fmt}م × ${(rh / 100).fmt}م × ${rq.fmt} قطع = ${rawArea.fmt} م³',
+                                                    style: const TextStyle(fontSize: 11, color: Color(0xFF15803D)),
+                                                  ),
                                               ],
                                             ] else if (itemSourceType == 'بيع خياطة بسيطة') ...[
                                               // Select Simple Tailoring
@@ -7180,7 +7450,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                     sourceLineItemId: selectedLineItemId ?? '',
                                                     description: itemDesc,
                                                     quantity: itemQty,
-                                                    unitCategory: itemUnitCat,
+                                                    unitCategory: rawCube ? 'متر مكعب' : itemUnitCat,
                                                     unitPrice: itemUnitPrice,
                                                     agreedPrice: itemAgreed,
                                                     netCost: itemNet,
@@ -7190,7 +7460,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                     photoPath: itemPhoto,
                                                     lengthCm: rl,
                                                     widthCm: rw,
-                                                    heightCm: rh,
+                                                    heightCm: rawCube ? rh : 0.0,
                                                   );
 
                                                   setSt(() {
@@ -7200,6 +7470,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                     selectedRawId = null;
                                                     recordSearch = '';
                                                     rawSearch = '';
+                                                    itemUnitCat = 'متر مربع';
                                                     currentItemServices.clear();
                                                     itemDescCtrl.clear();
                                                     itemQtyCtrl.text = '1';
@@ -7299,15 +7570,18 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                         children: [
                                           const Icon(Icons.list_alt_rounded, size: 20, color: AppColors.orderDepositBoxAccent),
                                           const SizedBox(width: 8),
-                                          const Text(
-                                            'أصناف وبنود الطلبية المحددة (اضغط على أي بند لتعديله)',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14,
-                                              color: Color(0xFF0F172A),
+                                          const Expanded(
+                                            child: Text(
+                                              'أصناف وبنود الطلبية المحددة (اضغط على أي بند لتعديله)',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                                color: Color(0xFF0F172A),
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
-                                          const Spacer(),
+                                          const SizedBox(width: 8),
                                           Text(
                                             '${draftItems.length} بند',
                                             style: const TextStyle(
@@ -7830,7 +8104,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             if (m.isNotEmpty) selectedRaw = m.first;
           }
 
-          final bool rawCube = selectedRaw?.category == 'متر مكعب';
+          final bool rawCube = itemUnitCat == 'متر مكعب' || selectedRaw?.category == 'متر مكعب';
           final double rl = double.tryParse(rawLenCtrl.text) ?? 0.0;
           final double rw = double.tryParse(rawWidCtrl.text) ?? 0.0;
           final double rh = double.tryParse(rawHeiCtrl.text) ?? 0.0;
@@ -8376,16 +8650,70 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                     .toList(),
                                                 onChanged: (v) => setSt(() {
                                                   selectedRawId = v;
-                                                  if (selectedRaw != null) {
-                                                    itemUnitCat = selectedRaw.category;
-                                                    itemIsGranite = selectedRaw.isGranite;
-                                                    rawPriceCtrl.text = selectedRaw.recommendedSalePrice > 0
-                                                        ? selectedRaw.recommendedSalePrice.fmt
-                                                        : (selectedRaw.netCostPerUnit * 1.3).fmt;
+                                                  final newlySelected = erp.workshopStock.where((w) => w.id == v).firstOrNull;
+                                                  if (newlySelected != null) {
+                                                    itemUnitCat = newlySelected.category;
+                                                    itemIsGranite = newlySelected.isGranite;
+                                                    final isCube = itemUnitCat == 'متر مكعب';
+                                                    if (isCube) {
+                                                      rawHeiCtrl.text = newlySelected.thicknessCm.fmt;
+                                                      final cp = getWorkshopCubicSellingPrice(erp, newlySelected);
+                                                      rawPriceCtrl.text = cp.fmt;
+                                                    } else {
+                                                      rawHeiCtrl.clear();
+                                                      rawPriceCtrl.text = newlySelected.recommendedSalePrice > 0
+                                                          ? newlySelected.recommendedSalePrice.fmt
+                                                          : (newlySelected.netCostPerUnit * 1.3).fmt;
+                                                    }
                                                   }
                                                 }),
                                               ),
                                               if (selectedRaw != null) ...[
+                                                const SizedBox(height: 8),
+                                                Row(
+                                                  children: [
+                                                    const Text(
+                                                      'وحدة القياس / البيع:',
+                                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    ChoiceChip(
+                                                      label: const Text('متر مربع (م²)'),
+                                                      selected: !rawCube,
+                                                      onSelected: (sel) {
+                                                        if (sel) {
+                                                          setSt(() {
+                                                            itemUnitCat = 'متر مربع';
+                                                            rawHeiCtrl.clear();
+                                                            rawPriceCtrl.text = selectedRaw!.recommendedSalePrice > 0
+                                                                ? selectedRaw!.recommendedSalePrice.fmt
+                                                                : (selectedRaw!.netCostPerUnit * 1.3).fmt;
+                                                            final p = double.tryParse(rawPriceCtrl.text) ?? 0;
+                                                            itemAgreedCtrl.text = (rawArea * p).fmt;
+                                                          });
+                                                        }
+                                                      },
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    ChoiceChip(
+                                                      label: const Text('متر مكعب (م³)'),
+                                                      selected: rawCube,
+                                                      selectedColor: const Color(0xFFDCFCE7),
+                                                      onSelected: (sel) {
+                                                        if (sel) {
+                                                          setSt(() {
+                                                            itemUnitCat = 'متر مكعب';
+                                                            rawHeiCtrl.text = selectedRaw!.thicknessCm.fmt;
+                                                            final cp = getWorkshopCubicSellingPrice(erp, selectedRaw!);
+                                                            rawPriceCtrl.text = cp.fmt;
+                                                            final p = double.tryParse(rawPriceCtrl.text) ?? 0;
+                                                            itemAgreedCtrl.text = (rawArea * p).fmt;
+                                                          });
+                                                        }
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
                                                 const SizedBox(height: 8),
                                                 Row(
                                                   children: [
@@ -8424,8 +8752,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                         child: TextField(
                                                           controller: rawHeiCtrl,
                                                           keyboardType: TextInputType.number,
-                                                          decoration: const InputDecoration(
-                                                            labelText: 'الارتفاع (سم)',
+                                                          decoration: InputDecoration(
+                                                            labelText: 'الارتفاع = السماكة (سم)',
+                                                            helperText: 'سماكة المادة: ${selectedRaw.thicknessCm.fmt} سم',
                                                             isDense: true,
                                                           ),
                                                           onChanged: (_) => setSt(() {
@@ -8459,8 +8788,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       child: TextField(
                                                         controller: rawPriceCtrl,
                                                         keyboardType: TextInputType.number,
-                                                        decoration: const InputDecoration(
-                                                          labelText: 'سعر بيع المتر (\$)',
+                                                        decoration: InputDecoration(
+                                                          labelText: 'سعر بيع المتر (${rawCube ? "م³" : "م²"} \$)',
+                                                          helperText: rawCube
+                                                              ? 'سعر المتر المكعب: ${getWorkshopCubicSellingPrice(erp, selectedRaw!).fmt} \$'
+                                                              : (selectedRaw.recommendedSalePrice > 0 ? 'سعر المستودع: ${selectedRaw.recommendedSalePrice.fmt} \$' : null),
                                                           isDense: true,
                                                         ),
                                                         onChanged: (_) => setSt(() {
@@ -8484,9 +8816,14 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                 ),
                                                 const SizedBox(height: 4),
                                                 Text(
-                                                  'الأمتار المحسوبة: ${rawArea.fmt} ${selectedRaw.category == "متر مكعب" ? "م³" : "م²"} • المتاح: ${getAvailableStockForRaw(selectedRaw).fmt}',
+                                                  'الأمتار المحسوبة: ${rawArea.fmt} ${rawCube ? "م³" : "م²"} • المتاح: ${getAvailableStockForRaw(selectedRaw).fmt}',
                                                   style: const TextStyle(fontSize: 11, color: AppColors.accentPrimary),
                                                 ),
+                                                if (rawCube)
+                                                  Text(
+                                                    'الحجم = ${(rl / 100).fmt}م × ${(rw / 100).fmt}م × ${(rh / 100).fmt}م × ${rq.fmt} قطع = ${rawArea.fmt} م³',
+                                                    style: const TextStyle(fontSize: 11, color: Color(0xFF15803D)),
+                                                  ),
                                               ],
                                             ] else if (itemSourceType == 'بيع خياطة بسيطة') ...[
                                               // ----------------------------------------------------
@@ -8991,7 +9328,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       sourceLineItemId: selectedLineItemId ?? '',
                                                       description: itemDesc,
                                                       quantity: itemQty,
-                                                      unitCategory: itemUnitCat,
+                                                      unitCategory: rawCube ? 'متر مكعب' : itemUnitCat,
                                                       unitPrice: itemUnitPrice,
                                                       agreedPrice: itemAgreed,
                                                       netCost: itemNet,
@@ -9001,7 +9338,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       photoPath: itemPhoto,
                                                       lengthCm: rl,
                                                       widthCm: rw,
-                                                      heightCm: rh,
+                                                      heightCm: rawCube ? rh : 0.0,
                                                     );
 
                                                     setSt(() {
@@ -9011,6 +9348,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       selectedRawId = null;
                                                       recordSearch = '';
                                                       rawSearch = '';
+                                                      itemUnitCat = 'متر مربع';
                                                       currentItemServices.clear();
                                                       itemDescCtrl.clear();
                                                       itemQtyCtrl.text = '1';
@@ -9187,15 +9525,18 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                         children: [
                                           const Icon(Icons.list_alt_rounded, size: 20, color: AppColors.accentPrimary),
                                           const SizedBox(width: 8),
-                                          const Text(
-                                            'أصناف وبنود الفاتورة المحددة (اضغط على أي بند لتعديله)',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14,
-                                              color: Color(0xFF0F172A),
+                                          const Expanded(
+                                            child: Text(
+                                              'أصناف وبنود الفاتورة المحددة (اضغط على أي بند لتعديله)',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                                color: Color(0xFF0F172A),
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
-                                          const Spacer(),
+                                          const SizedBox(width: 8),
                                           Text(
                                             '${draftItems.length} بند',
                                             style: const TextStyle(

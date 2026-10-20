@@ -68,6 +68,20 @@ void showAddFactoryOrderDialog(
   final servicePriceCtrl = TextEditingController();
   final serviceNotesCtrl = TextEditingController();
   final List<ServiceAttachment> draftServices = [];
+  String selectedItemMeterUnit = 'متر مربع';
+
+  double getFactoryCubicSellingPrice(FactoryWarehouseModel item) {
+    if (item.category == 'متر مكعب' && item.recommendedSalePrice > 0) {
+      return item.recommendedSalePrice;
+    }
+    final matches = erp.factoryWarehouse.where(
+      (w) => w.typeName.trim() == item.typeName.trim() && w.category == 'متر مكعب' && w.recommendedSalePrice > 0,
+    ).toList();
+    if (matches.isNotEmpty) {
+      return matches.first.recommendedSalePrice;
+    }
+    return item.recommendedSalePrice;
+  }
 
   double draftArea(
     FactoryWarehouseModel? wh,
@@ -75,9 +89,10 @@ void showAddFactoryOrderDialog(
     double w,
     double h,
     double q,
+    bool isCube,
   ) {
     if (wh == null || l <= 0 || w <= 0 || q <= 0) return 0.0;
-    if (wh.category == 'متر مكعب') {
+    if (isCube) {
       if (h <= 0) return 0.0;
       return (l / 100.0) * (w / 100.0) * (h / 100.0) * q;
     }
@@ -113,12 +128,22 @@ void showAddFactoryOrderDialog(
             erp.factoryWarehouse.where((w) => w.id == selectedWhId).toList();
         final FactoryWarehouseModel? wh =
             matches.isEmpty ? null : matches.first;
-        final bool isCube = wh?.category == 'متر مكعب';
+        final bool isCube = selectedItemMeterUnit == 'متر مكعب' || wh?.category == 'متر مكعب';
 
-        if (wh != null &&
-            unitPriceCtrl.text.isEmpty &&
-            wh.recommendedSalePrice > 0) {
-          unitPriceCtrl.text = wh.recommendedSalePrice.fmt;
+        if (wh != null) {
+          if (isCube) {
+            if (heightCtrl.text.isEmpty && wh.thicknessCm > 0) {
+              heightCtrl.text = wh.thicknessCm.fmt;
+            }
+            if (unitPriceCtrl.text.isEmpty) {
+              final cp = getFactoryCubicSellingPrice(wh);
+              if (cp > 0) unitPriceCtrl.text = cp.fmt;
+            }
+          } else {
+            if (unitPriceCtrl.text.isEmpty && wh.recommendedSalePrice > 0) {
+              unitPriceCtrl.text = wh.recommendedSalePrice.fmt;
+            }
+          }
         }
 
         final double l = double.tryParse(lengthCtrl.text) ?? 0.0;
@@ -126,7 +151,7 @@ void showAddFactoryOrderDialog(
         final double h = double.tryParse(heightCtrl.text) ?? 0.0;
         final double q = double.tryParse(qtyCtrl.text) ?? 0.0;
         final double price = double.tryParse(unitPriceCtrl.text) ?? 0.0;
-        final double area = draftArea(wh, l, w, h, q);
+        final double area = draftArea(wh, l, w, h, q, isCube);
         final double draftTotal = area * price;
 
         void autoCalcServicePrice() {
@@ -325,9 +350,17 @@ void showAddFactoryOrderDialog(
                               .toList();
                           if (mList.isNotEmpty) {
                             final selWh = mList.first;
-                            if (selWh.recommendedSalePrice > 0) {
-                              unitPriceCtrl.text =
-                                  selWh.recommendedSalePrice.fmt;
+                            selectedItemMeterUnit = selWh.category == 'متر مكعب' ? 'متر مكعب' : 'متر مربع';
+                            if (selectedItemMeterUnit == 'متر مكعب') {
+                              heightCtrl.text = selWh.thicknessCm.fmt;
+                              final cp = getFactoryCubicSellingPrice(selWh);
+                              unitPriceCtrl.text = cp > 0 ? cp.fmt : (selWh.recommendedSalePrice > 0 ? selWh.recommendedSalePrice.fmt : '');
+                            } else {
+                              heightCtrl.clear();
+                              if (selWh.recommendedSalePrice > 0) {
+                                unitPriceCtrl.text =
+                                    selWh.recommendedSalePrice.fmt;
+                              }
                             }
                           }
                         }
@@ -338,6 +371,47 @@ void showAddFactoryOrderDialog(
                   const SizedBox(height: 8),
 
                   if (wh != null) ...[
+                    Row(
+                      children: [
+                        const Text(
+                          'وحدة القياس / البيع:',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                        const SizedBox(width: 12),
+                        ChoiceChip(
+                          label: const Text('متر مربع (م²)'),
+                          selected: !isCube,
+                          onSelected: (sel) {
+                            if (sel) {
+                              setSt(() {
+                                selectedItemMeterUnit = 'متر مربع';
+                                heightCtrl.clear();
+                                if (wh.recommendedSalePrice > 0) {
+                                  unitPriceCtrl.text = wh.recommendedSalePrice.fmt;
+                                }
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('متر مكعب (م³)'),
+                          selected: isCube,
+                          selectedColor: const Color(0xFFDCFCE7),
+                          onSelected: (sel) {
+                            if (sel) {
+                              setSt(() {
+                                selectedItemMeterUnit = 'متر مكعب';
+                                heightCtrl.text = wh.thicknessCm.fmt;
+                                final cp = getFactoryCubicSellingPrice(wh);
+                                if (cp > 0) unitPriceCtrl.text = cp.fmt;
+                              });
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Expanded(
@@ -377,8 +451,9 @@ void showAddFactoryOrderDialog(
                                   const TextInputType.numberWithOptions(
                                     decimal: true,
                                   ),
-                              decoration: const InputDecoration(
-                                labelText: 'الارتفاع (سم) لحساب الحجم',
+                              decoration: InputDecoration(
+                                labelText: 'الارتفاع = السماكة (سم)',
+                                helperText: 'سماكة المادة: ${wh.thicknessCm.fmt} سم',
                               ),
                               onChanged: (_) => setSt(() {}),
                             ),
@@ -414,9 +489,11 @@ void showAddFactoryOrderDialog(
                             decoration: InputDecoration(
                               labelText:
                                   'سعر المتر (${isCube ? "م³" : "م²"} \$)',
-                              helperText: wh.recommendedSalePrice > 0
-                                  ? 'سعر المستودع: ${wh.recommendedSalePrice.fmt} \$'
-                                  : null,
+                              helperText: isCube
+                                  ? 'سعر المتر المكعب للمادة: ${getFactoryCubicSellingPrice(wh).fmt} \$'
+                                  : (wh.recommendedSalePrice > 0
+                                      ? 'سعر المستودع: ${wh.recommendedSalePrice.fmt} \$'
+                                      : null),
                             ),
                             onChanged: (_) => setSt(() {}),
                           ),

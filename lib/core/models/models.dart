@@ -1034,19 +1034,20 @@ class FactoryInvoiceItem {
 
   bool get isMeterItem => itemCategory == 'meter' || itemCategory == 'متر';
   bool get isTailoringItem => itemCategory == 'tailoring' || itemCategory == 'تفصيل';
+  bool get isCubicMeter => meterUnit == 'متر مكعب';
 
   double get calculatedArea {
     if (isMeterItem) {
       return quantity;
     }
-    if (heightCm > 5.0) {
-      // Volume m³
+    if (isCubicMeter || (heightCm > 0 && meterUnit != 'متر مربع' && meterUnit != 'متر طولي' && heightCm > 5.0)) {
+      // Volume m³: Length(m) * Width(m) * Height(m) * Quantity
       return (lengthCm / 100.0) *
           (widthCm / 100.0) *
           (heightCm / 100.0) *
           quantity;
     } else if (lengthCm > 0 && widthCm > 0) {
-      // Area m²
+      // Area m²: Length(m) * Width(m) * Quantity
       return (lengthCm / 100.0) * (widthCm / 100.0) * quantity;
     }
     return quantity; // Default unit quantity (e.g. Tons or pcs)
@@ -1925,6 +1926,30 @@ class WorkshopInvoiceItem {
     this.heightCm = 0.0,
   });
 
+  bool get isCubicMeter => unitCategory == 'متر مكعب';
+
+  double get thicknessCm => heightCm;
+
+  double get calculatedVolume {
+    if (lengthCm > 0 && widthCm > 0 && heightCm > 0) {
+      return (lengthCm / 100.0) *
+          (widthCm / 100.0) *
+          (heightCm / 100.0) *
+          quantity;
+    }
+    return quantity;
+  }
+
+  double get calculatedArea {
+    if (isCubicMeter) {
+      return calculatedVolume;
+    }
+    if (lengthCm > 0 && widthCm > 0) {
+      return (lengthCm / 100.0) * (widthCm / 100.0) * quantity;
+    }
+    return quantity;
+  }
+
   double get servicesTotal => services.fold(0.0, (s, e) => s + e.price);
   double get grandTotal => agreedPrice + servicesTotal;
 
@@ -2254,7 +2279,7 @@ class FactoryOrderModel {
     this.partyId = '',
     required this.clientName,
     this.clientPhone = '',
-    this.items = const [],
+    List<FactoryInvoiceItem> items = const [],
     this.services = const [],
     this.shippingFee = 0.0,
     this.isGoodsDelivered = true,
@@ -2276,10 +2301,10 @@ class FactoryOrderModel {
     double? quantity,
     double? unitPrice,
     double? agreedPrice,
-  }) {
+  }) : items = List.of(items) {
     // If items were empty but legacy single-item fields were passed, populate items
-    if (items.isEmpty && (warehouseItemId != null && warehouseItemId.isNotEmpty || itemDescription != null && itemDescription.isNotEmpty)) {
-      items.add(
+    if (this.items.isEmpty && (warehouseItemId != null && warehouseItemId.isNotEmpty || itemDescription != null && itemDescription.isNotEmpty)) {
+      this.items.add(
         FactoryInvoiceItem(
           itemId: warehouseItemId ?? '',
           description: itemDescription ?? '',
