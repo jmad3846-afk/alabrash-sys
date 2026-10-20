@@ -42,7 +42,23 @@ class A4DailyReportPrintDialog extends StatefulWidget {
 class _A4DailyReportPrintDialogState extends State<A4DailyReportPrintDialog> {
   final List<GlobalKey> _pageKeys = [];
   bool _isPrinting = false;
+  bool _isBlackAndWhite = false;
   int _totalPages = 2;
+
+  static const ColorFilter _blackAndWhiteFilter = ColorFilter.matrix(<double>[
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0,      0,      0,      1, 0,
+  ]);
+
+  Widget _wrapWithPrintMode(Widget child) {
+    if (!_isBlackAndWhite) return child;
+    return ColorFiltered(
+      colorFilter: _blackAndWhiteFilter,
+      child: child,
+    );
+  }
 
   // Paginated chunks
   late final List<DailyReportInvoiceSummary> _salesPage1;
@@ -175,7 +191,7 @@ class _A4DailyReportPrintDialogState extends State<A4DailyReportPrintDialog> {
       final dateStr = intl.DateFormat('yyyy-MM-dd').format(widget.report.reportDate);
       await Printing.layoutPdf(
         onLayout: (PdfPageFormat format) async => pdfDoc.save(),
-        name: 'تقرير_اليومية_الشامل_${widget.report.reportNo}_$dateStr.pdf',
+        name: 'تقرير_اليومية_الشامل_${widget.report.reportNo}_$dateStr${_isBlackAndWhite ? "_BW" : ""}.pdf',
       );
     } catch (e) {
       if (mounted) {
@@ -265,9 +281,93 @@ class _A4DailyReportPrintDialogState extends State<A4DailyReportPrintDialog> {
                   ),
                   Row(
                     children: [
+                      // Color / B&W Version Toggle
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F172A),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF334155)),
+                        ),
+                        padding: const EdgeInsets.all(2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            InkWell(
+                              onTap: () => setState(() => _isBlackAndWhite = false),
+                              borderRadius: BorderRadius.circular(6),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: !_isBlackAndWhite ? const Color(0xFF1E293B) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: !_isBlackAndWhite
+                                      ? Border.all(color: const Color(0x8038BDF8))
+                                      : null,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.palette_rounded,
+                                      size: 14,
+                                      color: !_isBlackAndWhite ? const Color(0xFF38BDF8) : const Color(0xFF94A3B8),
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'ملونة (الأصل)',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: !_isBlackAndWhite ? FontWeight.w900 : FontWeight.w600,
+                                        color: !_isBlackAndWhite ? Colors.white : const Color(0xFF94A3B8),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () => setState(() => _isBlackAndWhite = true),
+                              borderRadius: BorderRadius.circular(6),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: _isBlackAndWhite ? const Color(0xFF1E293B) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: _isBlackAndWhite
+                                      ? Border.all(color: const Color(0x80E2E8F0))
+                                      : null,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.filter_b_and_w_rounded,
+                                      size: 14,
+                                      color: _isBlackAndWhite ? Colors.white : const Color(0xFF94A3B8),
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'أبيض وأسود',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: _isBlackAndWhite ? FontWeight.w900 : FontWeight.w600,
+                                        color: _isBlackAndWhite ? Colors.white : const Color(0xFF94A3B8),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF059669),
+                          backgroundColor: _isBlackAndWhite ? const Color(0xFF334155) : const Color(0xFF059669),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
                               horizontal: 18, vertical: 12),
@@ -286,9 +386,16 @@ class _A4DailyReportPrintDialogState extends State<A4DailyReportPrintDialog> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Icon(Icons.print_rounded, size: 18),
+                            : Icon(
+                                _isBlackAndWhite ? Icons.print_outlined : Icons.print_rounded,
+                                size: 18,
+                              ),
                         label: Text(
-                          _isPrinting ? 'جاري التجهيز...' : 'طباعة التقرير (A4)',
+                          _isPrinting
+                              ? 'جاري التجهيز...'
+                              : _isBlackAndWhite
+                                  ? 'طباعة أبيض وأسود (A4)'
+                                  : 'طباعة ملونة (A4)',
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
@@ -323,7 +430,9 @@ class _A4DailyReportPrintDialogState extends State<A4DailyReportPrintDialog> {
                           padding: const EdgeInsets.only(bottom: 24),
                           child: RepaintBoundary(
                             key: _pageKeys[0],
-                            child: _buildPage1(context, centerInfo, report),
+                            child: _wrapWithPrintMode(
+                              _buildPage1(context, centerInfo, report),
+                            ),
                           ),
                         ),
 
@@ -332,7 +441,9 @@ class _A4DailyReportPrintDialogState extends State<A4DailyReportPrintDialog> {
                           padding: const EdgeInsets.only(bottom: 24),
                           child: RepaintBoundary(
                             key: _pageKeys[1],
-                            child: _buildPage2(context, centerInfo, report),
+                            child: _wrapWithPrintMode(
+                              _buildPage2(context, centerInfo, report),
+                            ),
                           ),
                         ),
 
@@ -342,7 +453,9 @@ class _A4DailyReportPrintDialogState extends State<A4DailyReportPrintDialog> {
                             padding: const EdgeInsets.only(bottom: 24),
                             child: RepaintBoundary(
                               key: _pageKeys[2],
-                              child: _buildPage3(context, centerInfo, report),
+                              child: _wrapWithPrintMode(
+                                _buildPage3(context, centerInfo, report),
+                              ),
                             ),
                           ),
                       ],

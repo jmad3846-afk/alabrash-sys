@@ -537,6 +537,22 @@ class A4StatementPrintDialog extends StatefulWidget {
 class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
   final List<GlobalKey> _pageKeys = [];
   bool _isPrinting = false;
+  bool _isBlackAndWhite = false;
+
+  static const ColorFilter _blackAndWhiteFilter = ColorFilter.matrix(<double>[
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0,      0,      0,      1, 0,
+  ]);
+
+  Widget _wrapWithPrintMode(Widget child) {
+    if (!_isBlackAndWhite) return child;
+    return ColorFiltered(
+      colorFilter: _blackAndWhiteFilter,
+      child: child,
+    );
+  }
 
   late final List<List<A4StatementLineItem>> _paginatedItems;
 
@@ -612,7 +628,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
 
       await Printing.layoutPdf(
         onLayout: (PdfPageFormat format) async => pdfDoc.save(),
-        name: 'كشف_حساب_${widget.statementData.accountName}.pdf',
+        name: 'كشف_حساب_${widget.statementData.accountName}${_isBlackAndWhite ? "_BW" : ""}.pdf',
       );
     } catch (e) {
       if (mounted) {
@@ -709,9 +725,93 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   const SizedBox(width: 12),
                   Row(
                     children: [
+                      // Color / B&W Version Toggle
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F172A),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF334155)),
+                        ),
+                        padding: const EdgeInsets.all(2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            InkWell(
+                              onTap: () => setState(() => _isBlackAndWhite = false),
+                              borderRadius: BorderRadius.circular(6),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: !_isBlackAndWhite ? const Color(0xFF1E293B) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: !_isBlackAndWhite
+                                      ? Border.all(color: const Color(0x8038BDF8))
+                                      : null,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.palette_rounded,
+                                      size: 14,
+                                      color: !_isBlackAndWhite ? const Color(0xFF38BDF8) : const Color(0xFF94A3B8),
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'ملونة (الأصل)',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: !_isBlackAndWhite ? FontWeight.w900 : FontWeight.w600,
+                                        color: !_isBlackAndWhite ? Colors.white : const Color(0xFF94A3B8),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () => setState(() => _isBlackAndWhite = true),
+                              borderRadius: BorderRadius.circular(6),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: _isBlackAndWhite ? const Color(0xFF1E293B) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: _isBlackAndWhite
+                                      ? Border.all(color: const Color(0x80E2E8F0))
+                                      : null,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.filter_b_and_w_rounded,
+                                      size: 14,
+                                      color: _isBlackAndWhite ? Colors.white : const Color(0xFF94A3B8),
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'أبيض وأسود',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: _isBlackAndWhite ? FontWeight.w900 : FontWeight.w600,
+                                        color: _isBlackAndWhite ? Colors.white : const Color(0xFF94A3B8),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0284C7),
+                          backgroundColor: _isBlackAndWhite ? const Color(0xFF334155) : const Color(0xFF0284C7),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 18,
@@ -732,9 +832,16 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Icon(Icons.print_rounded, size: 18),
+                            : Icon(
+                                _isBlackAndWhite ? Icons.print_outlined : Icons.print_rounded,
+                                size: 18,
+                              ),
                         label: Text(
-                          _isPrinting ? 'جارٍ المعالجة...' : 'طباعة كشف الحساب / PDF',
+                          _isPrinting
+                              ? 'جارٍ المعالجة...'
+                              : _isBlackAndWhite
+                                  ? 'طباعة أبيض وأسود / PDF'
+                                  : 'طباعة ملونة / PDF',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -767,15 +874,17 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                           padding: const EdgeInsets.only(bottom: 24),
                           child: RepaintBoundary(
                             key: _pageKeys[pageIdx],
-                            child: _buildA4Paper(
-                              context: context,
-                              centerInfo: centerInfo,
-                              data: data,
-                              pageItems: pageItems,
-                              pageNumber: pageIdx + 1,
-                              totalPages: _paginatedItems.length,
-                              isFirstPage: isFirstPage,
-                              isLastPage: isLastPage,
+                            child: _wrapWithPrintMode(
+                              _buildA4Paper(
+                                context: context,
+                                centerInfo: centerInfo,
+                                data: data,
+                                pageItems: pageItems,
+                                pageNumber: pageIdx + 1,
+                                totalPages: _paginatedItems.length,
+                                isFirstPage: isFirstPage,
+                                isLastPage: isLastPage,
+                              ),
                             ),
                           ),
                         );

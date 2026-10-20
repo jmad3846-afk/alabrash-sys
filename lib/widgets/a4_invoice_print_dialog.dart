@@ -471,6 +471,22 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
   bool _isPrinting = false;
   late bool _includeFulfillment;
   late bool _forceTwoPages;
+  bool _isBlackAndWhite = false;
+
+  static const ColorFilter _blackAndWhiteFilter = ColorFilter.matrix(<double>[
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0,      0,      0,      1, 0,
+  ]);
+
+  Widget _wrapWithPrintMode(Widget child) {
+    if (!_isBlackAndWhite) return child;
+    return ColorFiltered(
+      colorFilter: _blackAndWhiteFilter,
+      child: child,
+    );
+  }
 
   @override
   void initState() {
@@ -530,7 +546,7 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
 
       await Printing.layoutPdf(
         onLayout: (PdfPageFormat format) async => pdfDoc.save(),
-        name: 'فاتورة_${widget.invoiceData.invoiceNo}.pdf',
+        name: 'فاتورة_${widget.invoiceData.invoiceNo}${_isBlackAndWhite ? "_BW" : ""}.pdf',
       );
     } catch (e) {
       if (mounted) {
@@ -713,10 +729,106 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
                         const SizedBox(width: 8),
                       ],
 
+                      // Color / B&W Version Toggle
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                        ),
+                        padding: const EdgeInsets.all(2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            InkWell(
+                              onTap: () => setState(() => _isBlackAndWhite = false),
+                              borderRadius: BorderRadius.circular(6),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: !_isBlackAndWhite ? Colors.white : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(6),
+                                  boxShadow: !_isBlackAndWhite
+                                      ? const [
+                                          BoxShadow(
+                                            color: Color(0x14000000),
+                                            blurRadius: 4,
+                                            offset: Offset(0, 1),
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.palette_rounded,
+                                      size: 13,
+                                      color: !_isBlackAndWhite ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'ملونة (الأصل)',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: !_isBlackAndWhite ? FontWeight.w900 : FontWeight.w600,
+                                        color: !_isBlackAndWhite ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () => setState(() => _isBlackAndWhite = true),
+                              borderRadius: BorderRadius.circular(6),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: _isBlackAndWhite ? Colors.white : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(6),
+                                  boxShadow: _isBlackAndWhite
+                                      ? const [
+                                          BoxShadow(
+                                            color: Color(0x14000000),
+                                            blurRadius: 4,
+                                            offset: Offset(0, 1),
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.filter_b_and_w_rounded,
+                                      size: 13,
+                                      color: _isBlackAndWhite ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'أبيض وأسود',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: _isBlackAndWhite ? FontWeight.w900 : FontWeight.w600,
+                                        color: _isBlackAndWhite ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
                       // Print button
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2563EB),
+                          backgroundColor: _isBlackAndWhite ? const Color(0xFF0F172A) : const Color(0xFF2563EB),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
@@ -735,11 +847,16 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Icon(Icons.print_rounded, size: 16),
+                            : Icon(
+                                _isBlackAndWhite ? Icons.print_outlined : Icons.print_rounded,
+                                size: 16,
+                              ),
                         label: Text(
                           _isPrinting
                               ? 'طباعة...'
-                              : 'طباعة (${_pageKeys.length})',
+                              : _isBlackAndWhite
+                                  ? 'طباعة أبيض وأسود (${_pageKeys.length})'
+                                  : 'طباعة ملونة (${_pageKeys.length})',
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                         ),
                       ),
@@ -786,12 +903,14 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
       // Single Financial Invoice Page
       return RepaintBoundary(
         key: _pageKeys[0],
-        child: _buildA4PaperInvoice(
-          context,
-          centerInfo,
-          inv,
-          pageNumber: 1,
-          totalPages: 1,
+        child: _wrapWithPrintMode(
+          _buildA4PaperInvoice(
+            context,
+            centerInfo,
+            inv,
+            pageNumber: 1,
+            totalPages: 1,
+          ),
         ),
       );
     }
@@ -801,7 +920,9 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
       // Merged single A4 page with perforated cut-line
       return RepaintBoundary(
         key: _pageKeys[0],
-        child: _buildA4PaperCombined(context, centerInfo, inv),
+        child: _wrapWithPrintMode(
+          _buildA4PaperCombined(context, centerInfo, inv),
+        ),
       );
     }
 
@@ -813,17 +934,19 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
           pageNumber: 1,
           totalPages: 2,
           title: 'القسم الأول: الفاتورة المالية المعتمدة (نسخة العميل / المحاسبة)',
-          accentColor: const Color(0xFF2563EB),
+          accentColor: _isBlackAndWhite ? const Color(0xFF334155) : const Color(0xFF2563EB),
         ),
         const SizedBox(height: 8),
         RepaintBoundary(
           key: _pageKeys[0],
-          child: _buildA4PaperInvoice(
-            context,
-            centerInfo,
-            inv,
-            pageNumber: 1,
-            totalPages: 2,
+          child: _wrapWithPrintMode(
+            _buildA4PaperInvoice(
+              context,
+              centerInfo,
+              inv,
+              pageNumber: 1,
+              totalPages: 2,
+            ),
           ),
         ),
         const SizedBox(height: 32),
@@ -833,17 +956,19 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
           pageNumber: 2,
           totalPages: 2,
           title: 'القسم الثاني: أمر تشغيل وتجهيز المصنع / المعمل (نسخة الورشة والمستودع)',
-          accentColor: const Color(0xFF0D9488),
+          accentColor: _isBlackAndWhite ? const Color(0xFF475569) : const Color(0xFF0D9488),
         ),
         const SizedBox(height: 8),
         RepaintBoundary(
           key: _pageKeys[1],
-          child: _buildA4PaperFulfillment(
-            context,
-            centerInfo,
-            inv,
-            pageNumber: 2,
-            totalPages: 2,
+          child: _wrapWithPrintMode(
+            _buildA4PaperFulfillment(
+              context,
+              centerInfo,
+              inv,
+              pageNumber: 2,
+              totalPages: 2,
+            ),
           ),
         ),
       ],
