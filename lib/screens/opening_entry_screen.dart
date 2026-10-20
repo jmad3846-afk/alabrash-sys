@@ -320,40 +320,39 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         ),
       );
     }
+    final qtyLabel = isBlock
+        ? 'الكمية بالطن'
+        : isMeter
+        ? 'الكمية بالأمتار'
+        : (isSimple || isComplex)
+        ? 'الكمية بالمتر المربع أو المكعب'
+        : 'الكمية';
+    final costPriceLabel = isBlock
+        ? 'سعر تكلفة الطن الأولي (Initial Ton Price)'
+        : (isMeter || isSimple || isComplex)
+        ? 'سعر تكلفة المتر الأولي (Initial Meter Price)'
+        : 'سعر التكلفة الأولي (Initial Cost Price)';
+    final sellingPriceLabel = isBlock
+        ? 'سعر بيع الطن (Selling Price per Ton)'
+        : (isMeter || isSimple || isComplex)
+        ? 'سعر بيع المتر (Selling Price per Meter)'
+        : 'سعر البيع (Selling Price)';
+
     final value = await _showEntryDialog('إضافة مخزون • $category', [
       typeField ? 'النوع' : 'اسم الصنف / النوع',
-      isBlock
-          ? 'الكمية بالطن'
-          : isMeter
-          ? 'الكمية بالأمتار'
-          : (isSimple || isComplex)
-          ? 'الكمية بالمتر المربع أو المكعب'
-          : 'الكمية',
-      isBlock
-          ? 'سعر الطن'
-          : (isMeter || isSimple || isComplex)
-          ? 'سعر المتر'
-          : 'سعر الوحدة',
+      qtyLabel,
+      costPriceLabel,
+      sellingPriceLabel,
       if (isBlock) 'اسم المورد',
       'الوصف',
     ], initialValues: {
       if (existing != null)
         'النوع': existingTypeId ?? '',
       if (existing != null && !typeField) 'اسم الصنف / النوع': existing.typeName,
+      if (existing != null) qtyLabel: existing.quantity.fmt,
+      if (existing != null) costPriceLabel: existing.unitPrice.fmt,
       if (existing != null)
-        isBlock
-            ? 'الكمية بالطن'
-            : isMeter
-            ? 'الكمية بالأمتار'
-            : (isSimple || isComplex)
-            ? 'الكمية بالمتر المربع أو المكعب'
-            : 'الكمية': existing.quantity.fmt,
-      if (existing != null)
-        isBlock
-            ? 'سعر الطن'
-            : (isMeter || isSimple || isComplex)
-            ? 'سعر المتر'
-            : 'سعر الوحدة': existing.unitPrice.fmt,
+        sellingPriceLabel: existing.sellingPrice > 0 ? existing.sellingPrice.fmt : '',
       if (existing != null) 'اسم المورد': existing.supplierName,
       if (existing != null) 'الوصف': existing.description,
     },
@@ -381,31 +380,15 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
     final tailoredItem = (isSimple || isComplex)
         ? _firstOrNull(tailoringItems.where((item) => item.id == selectedId))
         : null;
-    final quantity =
-        double.tryParse(
-          value[isBlock
-              ? 'الكمية بالطن'
-              : isMeter
-              ? 'الكمية بالأمتار'
-              : (isSimple || isComplex)
-              ? 'الكمية بالمتر المربع أو المكعب'
-              : 'الكمية']!,
-        ) ??
-        0;
-    final unitPrice =
-        double.tryParse(
-          value[isBlock
-              ? 'سعر الطن'
-              : (isMeter || isSimple || isComplex)
-              ? 'سعر المتر'
-              : 'سعر الوحدة']!,
-        ) ??
-        0;
+    final quantity = double.tryParse(value[qtyLabel] ?? '') ?? 0;
+    final unitPrice = double.tryParse(value[costPriceLabel] ?? '') ?? 0;
+    final sellingPrice = double.tryParse(value[sellingPriceLabel] ?? '') ?? 0;
     if (quantity <= 0 ||
         unitPrice < 0 ||
+        sellingPrice < 0 ||
         (isBlock &&
             (unitPrice <= 0 || (value['اسم المورد'] ?? '').isEmpty))) {
-      _showMessage('تحقق من الكمية وسعر الوحدة.');
+      _showMessage('تحقق من الكمية وسعر التكلفة وسعر البيع.');
       return;
     }
     final item = OpeningStockItemModel(
@@ -423,6 +406,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         supplierName: value['اسم المورد'] ?? '',
         quantity: quantity,
         unitPrice: unitPrice,
+        sellingPrice: sellingPrice,
         description: value['الوصف'] ?? '',
         currency: AppCurrency.usd,
       );
@@ -726,7 +710,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                         leading: const Icon(Icons.inventory_2_outlined),
                         title: Text('${item.typeName} • ${item.category}'),
                         subtitle: Text(
-                          'الكمية: ${item.quantity.fmt} ${_openingStockUnit(erp, item)} • سعر الوحدة: ${item.unitPrice.fmt} ${AppCurrency.symbol(item.currency)}${item.supplierName.isEmpty ? '' : ' • المورد: ${item.supplierName}'} • ${item.description}',
+                          'الكمية: ${item.quantity.fmt} ${_openingStockUnit(erp, item)} • سعر التكلفة: ${item.unitPrice.fmt} ${AppCurrency.symbol(item.currency)}${item.sellingPrice > 0 ? ' • سعر البيع: ${item.sellingPrice.fmt} ${AppCurrency.symbol(item.currency)}' : ''}${item.supplierName.isEmpty ? '' : ' • المورد: ${item.supplierName}'} • ${item.description}',
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,

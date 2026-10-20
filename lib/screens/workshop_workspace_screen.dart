@@ -179,24 +179,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             Expanded(
               child: TabBarView(
                 children: [
-                  Column(
-                    children: [
-                      Expanded(child: _buildWorkshopStockGrid(erp, m2, 'م²')),
-                      OpeningStockItemsPanel(
-                        items: erp.openingEntry.openingStock,
-                        category: 'أمتار المعمل',
-                      ),
-                    ],
-                  ),
-                  Column(
-                    children: [
-                      Expanded(child: _buildWorkshopStockGrid(erp, m3, 'م³')),
-                      OpeningStockItemsPanel(
-                        items: erp.openingEntry.openingStock,
-                        category: 'أمتار المعمل',
-                      ),
-                    ],
-                  ),
+                  _buildWorkshopStockGrid(erp, m2, 'م²'),
+                  _buildWorkshopStockGrid(erp, m3, 'م³'),
                 ],
               ),
             ),
@@ -443,11 +427,6 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             ],
           ],
         ),
-        if (openingCategory != null)
-          OpeningStockItemsPanel(
-            items: erp.openingEntry.openingStock,
-            category: openingCategory,
-          ),
         const SizedBox(height: 12),
         Expanded(
           child: items.isEmpty
@@ -933,10 +912,6 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             ],
           ),
           const SizedBox(height: 16),
-          OpeningStockItemsPanel(
-            items: erp.openingEntry.openingStock,
-            category: 'قطع زائدة وخردة',
-          ),
           Expanded(
             child: GridView.builder(
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(

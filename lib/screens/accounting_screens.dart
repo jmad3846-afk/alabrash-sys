@@ -24,31 +24,8 @@ class OpeningStockItemsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final matching = items.where((item) => item.category == category).toList();
-    if (matching.isEmpty) return const SizedBox.shrink();
-    return Card(
-      margin: const EdgeInsets.all(12),
-      child: ExpansionTile(
-        initiallyExpanded: true,
-        title: Text('رصيد القيد الافتتاحي • $category'),
-        subtitle: Text(
-          'الإجمالي: ${matching.fold<double>(0, (sum, item) => sum + item.totalPrice).fmt}',
-        ),
-        children: [
-          for (final item in matching)
-            ListTile(
-              dense: true,
-              title: Text(item.typeName),
-              subtitle: Text(
-                'الكمية ${item.quantity.fmt} × ${item.unitPrice.fmt} ${AppCurrency.symbol(item.currency)} للوحدة • ${item.description}',
-              ),
-              trailing: Text(
-                '${item.totalPrice.fmt} ${AppCurrency.symbol(item.currency)}',
-              ),
-            ),
-        ],
-      ),
-    );
+    // Hidden per specification: opening stocks integrate natively into operational inventory interfaces
+    return const SizedBox.shrink();
   }
 }
 

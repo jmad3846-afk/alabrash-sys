@@ -2068,9 +2068,12 @@ class ERPProvider extends ChangeNotifier {
               typeName: type.typeName,
               grade: type.grade,
               supplierId: supplier?.id ?? '',
-              supplierName: item.supplierName,
+              supplierName: item.supplierName.isNotEmpty
+                  ? item.supplierName
+                  : 'رصيد افتتاحي',
               weightTons: item.quantity,
               tonCost: item.unitPrice,
+              tonSellingPrice: item.sellingPrice,
               isGranite: type.isGranite,
             ),
           );
@@ -2084,6 +2087,8 @@ class ERPProvider extends ChangeNotifier {
                   candidate.typeName == item.typeName,
             ),
           )!;
+          final salePrice =
+              item.sellingPrice > 0 ? item.sellingPrice : item.unitPrice;
           if (item.category == 'أمتار المصنع') {
             factoryWarehouse.add(
               FactoryWarehouseModel(
@@ -2094,7 +2099,7 @@ class ERPProvider extends ChangeNotifier {
                 category: type.category,
                 availableQty: item.quantity,
                 netCostPerUnit: item.unitPrice,
-                recommendedSalePrice: item.unitPrice,
+                recommendedSalePrice: salePrice,
                 isGranite: type.isGranite,
               ),
             );
@@ -2108,7 +2113,7 @@ class ERPProvider extends ChangeNotifier {
                 category: type.category,
                 availableQty: item.quantity,
                 netCostPerUnit: item.unitPrice,
-                recommendedSalePrice: item.unitPrice,
+                recommendedSalePrice: salePrice,
                 isGranite: type.isGranite,
               ),
             );
@@ -2127,6 +2132,9 @@ class ERPProvider extends ChangeNotifier {
             ),
           )!;
           product.quantity += item.quantity;
+          if (item.sellingPrice > 0) {
+            product.sellingPrice = item.sellingPrice;
+          }
           break;
         case 'قطع زائدة وخردة':
           scrapItems.add(
@@ -2134,7 +2142,8 @@ class ERPProvider extends ChangeNotifier {
               id: item.id,
               description: item.typeName,
               baseCost: item.totalPrice,
-              sellingPrice: item.unitPrice,
+              sellingPrice:
+                  item.sellingPrice > 0 ? item.sellingPrice : item.unitPrice,
               currency: item.currency,
             ),
           );

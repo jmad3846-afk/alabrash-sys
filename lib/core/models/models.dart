@@ -303,6 +303,7 @@ class OpeningStockItemModel {
   final String supplierName;
   double quantity;
   final double unitPrice;
+  final double sellingPrice;
   final String description;
   final String currency;
 
@@ -317,6 +318,7 @@ class OpeningStockItemModel {
     this.supplierName = '',
     required this.quantity,
     required this.unitPrice,
+    this.sellingPrice = 0.0,
     this.description = '',
     this.currency = AppCurrency.usd,
   });
@@ -334,6 +336,7 @@ class OpeningStockItemModel {
     'supplierName': supplierName,
     'quantity': quantity,
     'unitPrice': unitPrice,
+    'sellingPrice': sellingPrice,
     'description': description,
     'currency': currency,
   };
@@ -350,6 +353,7 @@ class OpeningStockItemModel {
         supplierName: json['supplierName'] ?? '',
         quantity: (json['quantity'] as num).toDouble(),
         unitPrice: (json['unitPrice'] as num).toDouble(),
+        sellingPrice: (json['sellingPrice'] as num?)?.toDouble() ?? 0.0,
         description: json['description'] ?? '',
         currency: AppCurrency.normalize(json['currency']),
       );
@@ -826,6 +830,7 @@ class FactoryBlockModel {
   final String supplierName;
   double weightTons;
   double tonCost;
+  double tonSellingPrice;
   final bool isGranite;
 
   FactoryBlockModel({
@@ -837,6 +842,7 @@ class FactoryBlockModel {
     required this.supplierName,
     required this.weightTons,
     required this.tonCost,
+    this.tonSellingPrice = 0.0,
     this.isGranite = false,
   });
 
@@ -851,6 +857,7 @@ class FactoryBlockModel {
     'supplierName': supplierName,
     'weightTons': weightTons,
     'tonCost': tonCost,
+    'tonSellingPrice': tonSellingPrice,
     'isGranite': isGranite,
   };
 
@@ -864,6 +871,7 @@ class FactoryBlockModel {
         supplierName: json['supplierName'],
         weightTons: (json['weightTons'] as num).toDouble(),
         tonCost: (json['tonCost'] as num).toDouble(),
+        tonSellingPrice: (json['tonSellingPrice'] as num?)?.toDouble() ?? 0.0,
         isGranite: json['isGranite'] ?? false,
       );
 }
