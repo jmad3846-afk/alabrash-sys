@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../core/theme/app_theme.dart';
+import '../widgets/currency_selector.dart';
 
 const _fixedAssetCategories = [
   'أراضي',
@@ -1887,7 +1888,30 @@ class HistoricalFinancialsScreen extends StatefulWidget {
 
 class _HistoricalFinancialsScreenState
     extends State<HistoricalFinancialsScreen> {
+  final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
+  String _currencyFilter = 'ALL';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _matches(LegacyFinancialRecordModel record) {
+    if (_currencyFilter != 'ALL') {
+      if (AppCurrency.isSyp(_currencyFilter) && !AppCurrency.isSyp(record.currency)) {
+        return false;
+      }
+      if (AppCurrency.isUsd(_currencyFilter) && !AppCurrency.isUsd(record.currency)) {
+        return false;
+      }
+    }
+    if (_searchQuery.trim().isEmpty) return true;
+    final text =
+        '${record.name} ${record.phone} ${record.description} ${record.amount} ${record.currency} ${record.category}';
+    return arabicFuzzyMatch(text, _searchQuery);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1898,12 +1922,7 @@ class _HistoricalFinancialsScreenState
       'clients': 'ديون العملاء المعتمدين وزبائن المفرق القديمة',
       'employees': 'الذمم القديمة للموظفين',
     };
-    final query = _searchQuery.toLowerCase();
-    bool matches(LegacyFinancialRecordModel record) =>
-        query.isEmpty ||
-        '${record.name} ${record.phone} ${record.description} ${record.amount} ${record.currency} ${record.category}'
-            .toLowerCase()
-            .contains(query);
+
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -1915,57 +1934,96 @@ class _HistoricalFinancialsScreenState
         const Text(
           'سجل تاريخي دائم للذمم التي أُدخلت عند إعداد القيد الافتتاحي. تتم التسويات من هذا السجل.',
         ),
-        const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: TextField(
-            decoration: const InputDecoration(
-              labelText: 'بحث بالاسم أو الهاتف أو الوصف أو المبلغ...',
-              prefixIcon: Icon(Icons.search),
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (value) => setState(() => _searchQuery = value.trim()),
-          ),
+        const SizedBox(height: 14),
+        SectionSearchAndFilterBar(
+          searchController: _searchCtrl,
+          searchQuery: _searchQuery,
+          onSearchChanged: (value) => setState(() => _searchQuery = value),
+          selectedCurrency: _currencyFilter,
+          onCurrencyChanged: (curr) => setState(() => _currencyFilter = curr),
+          hintText: 'بحث في الأرصدة السابقة بالاسم أو الهاتف أو الوصف أو المبلغ...',
+          onClear: () => setState(() => _searchQuery = ''),
         ),
-        const SizedBox(height: 12),
-        for (final category in categories.entries)
-          Card(
-            child: ExpansionTile(
-              initiallyExpanded: true,
-              title: Text(
-                category.value,
-                style: const TextStyle(fontWeight: FontWeight.bold),
+        const SizedBox(height: 16),
+        for (final category in categories.entries) ...[
+          () {
+            final categoryMatches = records
+                .where((item) => item.category == category.key && _matches(item))
+                .toList();
+            return Card(
+              key: ValueKey('legacy_${category.key}_${_searchQuery}_$_currencyFilter'),
+              margin: const EdgeInsets.only(bottom: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey.shade300),
               ),
-              children: [
-                for (final record in records.where(
-                  (item) => item.category == category.key && matches(item),
-                ))
-                  ListTile(
-                    title: Text(record.name),
-                    subtitle: Text(
-                      '${record.phone} • ${record.description} • المتبقي ${record.amount.fmt} ${AppCurrency.symbol(record.currency)}',
+              child: ExpansionTile(
+                initiallyExpanded: true,
+                title: Row(
+                  children: [
+                    Text(
+                      category.value,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    trailing: record.amount == 0
-                        ? const Chip(label: Text('مسدد'))
-                        : IconButton(
-                            tooltip: category.key == 'clients'
-                                ? 'تحصيل من العميل'
-                                : 'دفع',
-                            onPressed: () =>
-                                _settle(context, erp, record, category.key),
-                            icon: const Icon(Icons.payments_outlined),
-                          ),
-                  ),
-                if (records
-                    .where(
-                      (item) =>
-                          item.category == category.key && matches(item),
-                    )
-                    .isEmpty)
-                  const ListTile(title: Text('لا توجد أرصدة في هذا القسم.')),
-              ],
-            ),
-          ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: categoryMatches.isNotEmpty
+                            ? const Color(0xFF0F172A).withValues(alpha: 0.08)
+                            : Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${categoryMatches.length}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: categoryMatches.isNotEmpty
+                              ? const Color(0xFF0F172A)
+                              : Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                children: [
+                  for (final record in categoryMatches)
+                    ListTile(
+                      title: Text(
+                        record.name,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(
+                        '${record.phone} • ${record.description} • المتبقي ${record.amount.fmt} ${AppCurrency.symbol(record.currency)}',
+                      ),
+                      trailing: record.amount == 0
+                          ? const Chip(
+                              label: Text('مسدد', style: TextStyle(color: Colors.green)),
+                              backgroundColor: Color(0xFFDCFCE7),
+                            )
+                          : IconButton(
+                              tooltip: category.key == 'clients'
+                                  ? 'تحصيل من العميل'
+                                  : 'دفع',
+                              onPressed: () =>
+                                  _settle(context, erp, record, category.key),
+                              icon: const Icon(Icons.payments_outlined,
+                                  color: Color(0xFF2563EB)),
+                            ),
+                    ),
+                  if (categoryMatches.isEmpty)
+                    const ListTile(
+                      title: Text(
+                        'لا توجد أرصدة مطابقة للبحث أو التصفية الحالية في هذا القسم.',
+                        style: TextStyle(color: Colors.grey, fontSize: 13),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }(),
+        ],
       ],
     );
   }

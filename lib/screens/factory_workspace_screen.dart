@@ -37,8 +37,78 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   String _foStatusFilter = 'الكل';
   String _foSearchQuery = '';
 
+  // Supplier Purchase Invoices filter/search
+  final TextEditingController _supplierInvoicesSearchCtrl = TextEditingController();
+  String _supplierInvoicesSearch = '';
+  String _supplierInvoicesCurrency = 'ALL';
+
+  // Agent Sales Invoices (POS) filter/search
+  final TextEditingController _agentSalesSearchCtrl = TextEditingController();
+  String _agentSalesSearch = '';
+  String _agentSalesCurrency = 'ALL';
+
+  // Cash Invoices filter/search
+  final TextEditingController _cashInvoicesSearchCtrl = TextEditingController();
+  String _cashInvoicesSearch = '';
+  String _cashInvoicesCurrency = 'ALL';
+
   TextEditingController _cuttingQtyCtrl(String blockId) {
     return cuttingQtyCtrls.putIfAbsent(blockId, () => TextEditingController());
+  }
+
+  bool _matchesFactoryInvoice(
+    FactoryInvoiceModel inv,
+    String query,
+    String currencyFilter,
+    ERPProvider erp,
+  ) {
+    if (currencyFilter != 'ALL') {
+      final isInvSyp = AppCurrency.isSyp(inv.currency);
+      final isInvUsd = AppCurrency.isUsd(inv.currency);
+
+      final client = erp.clients
+          .where((c) => c.id == inv.partyId || c.name.trim() == inv.partyName.trim())
+          .firstOrNull;
+      final supplier = erp.suppliers
+          .where((s) => s.id == inv.partyId || s.name.trim() == inv.partyName.trim())
+          .firstOrNull;
+
+      final isSypHolder = (client != null && client.isSypCustomer) ||
+          (supplier != null && supplier.debtBalanceSyp > 0 && supplier.debtBalance <= 0);
+      final isUsdHolder = (client != null && client.isUsdCustomer) ||
+          (supplier != null && supplier.debtBalance > 0);
+
+      if (currencyFilter == AppCurrency.syp) {
+        if (isInvSyp) {
+          // matches
+        } else if (isSypHolder && !isInvUsd) {
+          // matches
+        } else {
+          return false;
+        }
+      } else {
+        if (isInvUsd) {
+          // matches
+        } else if (isUsdHolder && !isInvSyp) {
+          // matches
+        } else {
+          return false;
+        }
+      }
+    }
+
+    if (query.trim().isEmpty) return true;
+
+    final client = erp.clients
+        .where((c) => c.id == inv.partyId || c.name.trim() == inv.partyName.trim())
+        .firstOrNull;
+    final supplier = erp.suppliers
+        .where((s) => s.id == inv.partyId || s.name.trim() == inv.partyName.trim())
+        .firstOrNull;
+    final phone = client?.phone ?? supplier?.phone ?? '';
+
+    final text = '${inv.invoiceNo} ${inv.partyName} $phone';
+    return arabicFuzzyMatch(text, query);
   }
 
   @override
@@ -46,6 +116,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     for (final c in cuttingQtyCtrls.values) {
       c.dispose();
     }
+    _supplierInvoicesSearchCtrl.dispose();
+    _agentSalesSearchCtrl.dispose();
+    _cashInvoicesSearchCtrl.dispose();
     _navTabController.dispose();
     super.dispose();
   }
@@ -1469,14 +1542,32 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   // SUB-TAB 6: SUPPLIER PURCHASE INVOICES
   // -------------------------------------------------------------
   Widget _buildCashFactoryInvoices(ERPProvider erp) {
-    final purchases = erp.factoryInvoices
+    final allPurchases = erp.factoryInvoices
         .where((invoice) => invoice.isCashInvoice &&
             invoice.invoiceType == 'شراء_مورد')
         .toList();
-    final sales = erp.factoryInvoices
+    final allSales = erp.factoryInvoices
         .where((invoice) => invoice.isCashInvoice &&
             invoice.invoiceType == 'بيع_معتمد')
         .toList();
+
+    final purchases = allPurchases
+        .where((inv) => _matchesFactoryInvoice(
+              inv,
+              _cashInvoicesSearch,
+              _cashInvoicesCurrency,
+              erp,
+            ))
+        .toList();
+    final sales = allSales
+        .where((inv) => _matchesFactoryInvoice(
+              inv,
+              _cashInvoicesSearch,
+              _cashInvoicesCurrency,
+              erp,
+            ))
+        .toList();
+
     return DefaultTabController(
       length: 2,
       child: Padding(
@@ -1489,6 +1580,16 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 'فواتير نقدية مسددة بالكامل من/إلى الصندوق الرئيسي',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
+            ),
+            const SizedBox(height: 12),
+            SectionSearchAndFilterBar(
+              searchController: _cashInvoicesSearchCtrl,
+              searchQuery: _cashInvoicesSearch,
+              onSearchChanged: (v) => setState(() => _cashInvoicesSearch = v),
+              selectedCurrency: _cashInvoicesCurrency,
+              onCurrencyChanged: (c) => setState(() => _cashInvoicesCurrency = c),
+              hintText: 'بحث في الفواتير النقدية بالاسم، الهاتف، أو رقم الفاتورة...',
+              onClear: () => setState(() => _cashInvoicesSearch = ''),
             ),
             const SizedBox(height: 12),
             Container(
@@ -1554,12 +1655,21 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   }
 
   Widget _buildSubTab6SupplierPurchases(ERPProvider erp) {
-    final due = erp.factoryInvoices
-        .where((i) => i.invoiceType == 'شراء_مورد' && i.isDue)
+    final allPurchases = erp.factoryInvoices
+        .where((i) => i.invoiceType == 'شراء_مورد')
         .toList();
-    final paid = erp.factoryInvoices
-        .where((i) => i.invoiceType == 'شراء_مورد' && !i.isDue)
+    final filtered = allPurchases
+        .where((i) => _matchesFactoryInvoice(
+              i,
+              _supplierInvoicesSearch,
+              _supplierInvoicesCurrency,
+              erp,
+            ))
         .toList();
+
+    final due = filtered.where((i) => i.isDue).toList();
+    final paid = filtered.where((i) => !i.isDue).toList();
+
     return DefaultTabController(
       length: 2,
       child: Padding(
@@ -1581,6 +1691,18 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               ],
             ),
             const SizedBox(height: 12),
+            SectionSearchAndFilterBar(
+              searchController: _supplierInvoicesSearchCtrl,
+              searchQuery: _supplierInvoicesSearch,
+              onSearchChanged: (v) =>
+                  setState(() => _supplierInvoicesSearch = v),
+              selectedCurrency: _supplierInvoicesCurrency,
+              onCurrencyChanged: (c) =>
+                  setState(() => _supplierInvoicesCurrency = c),
+              hintText: 'بحث في فواتير الشراء بالاسم، الهاتف، أو رقم الفاتورة...',
+              onClear: () => setState(() => _supplierInvoicesSearch = ''),
+            ),
+            const SizedBox(height: 12),
             Container(
               color: const Color(0xFFF1F5F9),
               child: const TabBar(
@@ -1596,11 +1718,11 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 children: [
                   _buildSupplierInvoiceList(
                     due,
-                    emptyHint: 'لا توجد فواتير مستحقة الدفع.',
+                    emptyHint: 'لا توجد فواتير مستحقة الدفع مطابقة للبحث.',
                   ),
                   _buildSupplierInvoiceList(
                     paid,
-                    emptyHint: 'لا توجد فواتير مدفوعة بالكامل بعد.',
+                    emptyHint: 'لا توجد فواتير مدفوعة بالكامل مطابقة للبحث.',
                   ),
                 ],
               ),
@@ -1736,12 +1858,20 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   // SUB-TAB 7: POS FACTORY SALES TO CLIENTS
   // -------------------------------------------------------------
   Widget _buildSubTab7POSSales(ERPProvider erp) {
-    final pending = erp.factoryInvoices
-        .where((i) => i.invoiceType == 'بيع_معتمد' && i.isDue)
+    final allSales = erp.factoryInvoices
+        .where((i) => i.invoiceType == 'بيع_معتمد')
         .toList();
-    final paid = erp.factoryInvoices
-        .where((i) => i.invoiceType == 'بيع_معتمد' && !i.isDue)
+    final filtered = allSales
+        .where((i) => _matchesFactoryInvoice(
+              i,
+              _agentSalesSearch,
+              _agentSalesCurrency,
+              erp,
+            ))
         .toList();
+
+    final pending = filtered.where((i) => i.isDue).toList();
+    final paid = filtered.where((i) => !i.isDue).toList();
 
     return DefaultTabController(
       length: 2,
@@ -1767,6 +1897,17 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               ],
             ),
             const SizedBox(height: 12),
+            SectionSearchAndFilterBar(
+              searchController: _agentSalesSearchCtrl,
+              searchQuery: _agentSalesSearch,
+              onSearchChanged: (v) => setState(() => _agentSalesSearch = v),
+              selectedCurrency: _agentSalesCurrency,
+              onCurrencyChanged: (c) =>
+                  setState(() => _agentSalesCurrency = c),
+              hintText: 'بحث في فواتير المعتمدين بالاسم، الهاتف، أو رقم الفاتورة...',
+              onClear: () => setState(() => _agentSalesSearch = ''),
+            ),
+            const SizedBox(height: 12),
             Container(
               color: const Color(0xFFF1F5F9),
               child: const TabBar(
@@ -1782,11 +1923,11 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 children: [
                   _buildPosInvoiceList(
                     pending,
-                    emptyHint: 'لا توجد فواتير بانتظار التحصيل.',
+                    emptyHint: 'لا توجد فواتير بانتظار التحصيل مطابقة للبحث.',
                   ),
                   _buildPosInvoiceList(
                     paid,
-                    emptyHint: 'لا توجد فواتير مدفوعة بالكامل بعد.',
+                    emptyHint: 'لا توجد فواتير مدفوعة بالكامل مطابقة للبحث.',
                   ),
                 ],
               ),

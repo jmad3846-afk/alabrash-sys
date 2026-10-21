@@ -9,6 +9,7 @@ class AppCurrency {
 
   static String normalize(String? c) => c == syp ? syp : usd;
   static bool isSyp(String? c) => normalize(c) == syp;
+  static bool isUsd(String? c) => normalize(c) == usd;
   static String symbol(String? c) => isSyp(c) ? 'ل.س' : '\$';
   static String label(String? c) => isSyp(c) ? 'ليرة سورية' : 'دولار';
 

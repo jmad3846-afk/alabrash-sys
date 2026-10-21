@@ -53,14 +53,129 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     with SingleTickerProviderStateMixin {
   late TabController _workshopTabController;
 
+  // Workshop Invoices (Tab 6) search/filter
+  final TextEditingController _workshopInvoicesSearchCtrl = TextEditingController();
+  String _workshopInvoicesSearch = '';
+  String _workshopInvoicesCurrency = 'ALL';
+
+  // Projects (Tab 7) search/filter
+  final TextEditingController _projectsSearchCtrl = TextEditingController();
+  String _projectsSearch = '';
+  String _projectsCurrency = 'ALL';
+
+  // Cash Invoices (Tab 9) search/filter
+  final TextEditingController _cashInvoicesSearchCtrl = TextEditingController();
+  String _cashInvoicesSearch = '';
+  String _cashInvoicesCurrency = 'ALL';
+
   @override
   void initState() {
     super.initState();
     _workshopTabController = TabController(length: 9, vsync: this);
   }
 
+  bool _matchesWorkshopInvoice(
+    WorkshopInvoiceModel inv,
+    String query,
+    String currencyFilter,
+    ERPProvider erp,
+  ) {
+    if (currencyFilter != 'ALL') {
+      final isInvSyp = AppCurrency.isSyp(inv.currency);
+      final isInvUsd = AppCurrency.isUsd(inv.currency);
+
+      final client = erp.clients
+          .where((c) => c.name.trim() == inv.clientName.trim())
+          .firstOrNull;
+
+      final isSypHolder = client != null && client.isSypCustomer;
+      final isUsdHolder = client != null && client.isUsdCustomer;
+
+      if (currencyFilter == AppCurrency.syp) {
+        if (isInvSyp) {
+          // matches
+        } else if (isSypHolder && !isInvUsd) {
+          // matches
+        } else {
+          return false;
+        }
+      } else {
+        if (isInvUsd) {
+          // matches
+        } else if (isUsdHolder && !isInvSyp) {
+          // matches
+        } else {
+          return false;
+        }
+      }
+    }
+
+    if (query.trim().isEmpty) return true;
+
+    final client = erp.clients
+        .where((c) => c.name.trim() == inv.clientName.trim())
+        .firstOrNull;
+    final phone = client?.phone ?? '';
+
+    final text = '${inv.invoiceNo} ${inv.clientName} $phone ${inv.itemDescription}';
+    return arabicFuzzyMatch(text, query);
+  }
+
+  bool _matchesWorkshopProject(
+    WorkshopProjectModel project,
+    String query,
+    String currencyFilter,
+    ERPProvider erp,
+  ) {
+    final linkedInvoices = erp.workshopInvoices
+        .where((i) => i.projectId == project.id)
+        .toList();
+
+    if (currencyFilter != 'ALL') {
+      final hasSypInvoice = linkedInvoices.any((i) => AppCurrency.isSyp(i.currency));
+      final hasUsdInvoice = linkedInvoices.any((i) => AppCurrency.isUsd(i.currency));
+
+      final client = erp.clients
+          .where((c) => c.name.trim() == project.clientName.trim())
+          .firstOrNull;
+      final isSypHolder = client != null && client.isSypCustomer;
+      final isUsdHolder = client != null && client.isUsdCustomer;
+
+      if (currencyFilter == AppCurrency.syp) {
+        if (hasSypInvoice) {
+          // matches
+        } else if (isSypHolder && !hasUsdInvoice) {
+          // matches
+        } else if (linkedInvoices.isEmpty && isSypHolder) {
+          // matches
+        } else {
+          return false;
+        }
+      } else {
+        if (hasUsdInvoice) {
+          // matches
+        } else if (isUsdHolder && !hasSypInvoice) {
+          // matches
+        } else if (linkedInvoices.isEmpty && isUsdHolder) {
+          // matches
+        } else {
+          return false;
+        }
+      }
+    }
+
+    if (query.trim().isEmpty) return true;
+
+    final invNos = linkedInvoices.map((i) => i.invoiceNo).join(' ');
+    final text = '${project.name} ${project.clientName} ${project.phone} ${project.description} $invNos';
+    return arabicFuzzyMatch(text, query);
+  }
+
   @override
   void dispose() {
+    _workshopInvoicesSearchCtrl.dispose();
+    _projectsSearchCtrl.dispose();
+    _cashInvoicesSearchCtrl.dispose();
     _workshopTabController.dispose();
     super.dispose();
   }
@@ -1370,11 +1485,28 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
   // SUB-TAB 6: WORKSHOP INVOICES
   // -------------------------------------------------------------
   Widget _buildTab6Invoices(ERPProvider erp, {bool cashOnly = false}) {
-    final invoices = cashOnly
+    final rawInvoices = cashOnly
         ? erp.workshopInvoices
               .where((invoice) => invoice.isCashInvoice)
               .toList()
         : erp.workshopInvoices;
+
+    final searchCtrl =
+        cashOnly ? _cashInvoicesSearchCtrl : _workshopInvoicesSearchCtrl;
+    final searchQuery =
+        cashOnly ? _cashInvoicesSearch : _workshopInvoicesSearch;
+    final currencyFilter =
+        cashOnly ? _cashInvoicesCurrency : _workshopInvoicesCurrency;
+
+    final invoices = rawInvoices
+        .where((inv) => _matchesWorkshopInvoice(
+              inv,
+              searchQuery,
+              currencyFilter,
+              erp,
+            ))
+        .toList();
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -1387,7 +1519,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                   cashOnly
                       ? 'فواتير مبيعات المعمل النقدية (مسددة بالكامل)'
                       : 'فواتير مبيعات المعمل (Workshop Invoices)',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1404,9 +1536,51 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          SectionSearchAndFilterBar(
+            searchController: searchCtrl,
+            searchQuery: searchQuery,
+            onSearchChanged: (v) => setState(() {
+              if (cashOnly) {
+                _cashInvoicesSearch = v;
+              } else {
+                _workshopInvoicesSearch = v;
+              }
+            }),
+            selectedCurrency: currencyFilter,
+            onCurrencyChanged: (c) => setState(() {
+              if (cashOnly) {
+                _cashInvoicesCurrency = c;
+              } else {
+                _workshopInvoicesCurrency = c;
+              }
+            }),
+            hintText: cashOnly
+                ? 'بحث في فواتير المعمل النقدية بالاسم، الهاتف، أو رقم الفاتورة...'
+                : 'بحث في فواتير المعمل بالاسم، الهاتف، أو رقم الفاتورة...',
+            onClear: () => setState(() {
+              if (cashOnly) {
+                _cashInvoicesSearch = '';
+              } else {
+                _workshopInvoicesSearch = '';
+              }
+            }),
+          ),
+          const SizedBox(height: 12),
           Expanded(
-            child: Card(
+            child: invoices.isEmpty
+                ? const Card(
+                    child: Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          'لا توجد فواتير مطابقة للبحث أو التصفية الحالية.',
+                          style: TextStyle(color: Colors.grey, fontSize: 14),
+                        ),
+                      ),
+                    ),
+                  )
+                : Card(
               child: ListView.separated(
                 itemCount: invoices.length,
                 separatorBuilder: (context, index) => const Divider(height: 1),
@@ -1629,10 +1803,27 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
   // SUB-TAB 7: WORKSHOP PROJECTS (All / Pending / Completed-Paid)
   // -------------------------------------------------------------
   Widget _buildTab7Projects(ERPProvider erp) {
-    final allProjects = erp.workshopProjects;
-    final pending = erp.pendingProjects;
-    final completed = erp.completedProjects;
-    final projectInvs = erp.workshopInvoices.where((i) => i.projectId.isNotEmpty).toList();
+    final filteredProjects = erp.workshopProjects
+        .where((p) => _matchesWorkshopProject(
+              p,
+              _projectsSearch,
+              _projectsCurrency,
+              erp,
+            ))
+        .toList();
+
+    final allProjects = filteredProjects;
+    final pending = filteredProjects
+        .where((p) => erp.pendingProjects.contains(p))
+        .toList();
+    final completed = filteredProjects
+        .where((p) => erp.completedProjects.contains(p))
+        .toList();
+    final projectInvs = erp.workshopInvoices
+        .where((i) =>
+            i.projectId.isNotEmpty &&
+            filteredProjects.any((p) => p.id == i.projectId))
+        .toList();
 
     return DefaultTabController(
       length: 3,
@@ -1672,6 +1863,16 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                 const SizedBox(width: 8),
                 _buildProjectSummaryStatCard('فواتير المشاريع', '${projectInvs.length}', const Color(0xFF6366F1)),
               ],
+            ),
+            const SizedBox(height: 12),
+            SectionSearchAndFilterBar(
+              searchController: _projectsSearchCtrl,
+              searchQuery: _projectsSearch,
+              onSearchChanged: (v) => setState(() => _projectsSearch = v),
+              selectedCurrency: _projectsCurrency,
+              onCurrencyChanged: (c) => setState(() => _projectsCurrency = c),
+              hintText: 'بحث في المشاريع بالاسم، العميل، الهاتف، أو رقم الفاتورة...',
+              onClear: () => setState(() => _projectsSearch = ''),
             ),
             const SizedBox(height: 12),
             Container(
