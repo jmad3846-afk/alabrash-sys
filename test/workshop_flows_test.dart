@@ -115,7 +115,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('إضافة طلبية مصنع'));
     await tester.pumpAndSettle();
-    expect(find.text('إضافة طلبية مصنع (قيد التنفيذ)'), findsOneWidget);
+    expect(find.text('إضافة طلبية مصنع جديدة (Factory Order)'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

@@ -227,42 +227,46 @@ void showAddFactoryOrderDialog(
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppColors.orderDepositBoxAccent
-                                  .withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.post_add_rounded,
-                              color: AppColors.orderDepositBoxAccent,
-                              size: 24,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Text(
-                                'إضافة طلبية مصنع جديدة (Factory Order)',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 17,
-                                ),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.orderDepositBoxAccent
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              Text(
-                                'تخضع لبنية فاتورة مبيعات المعتمدين وتتضمن عربوناً يودع في صندوق الطلبيات المعزول',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.brandSecondaryText,
-                                ),
+                              child: const Icon(
+                                Icons.post_add_rounded,
+                                color: AppColors.orderDepositBoxAccent,
+                                size: 24,
                               ),
-                            ],
-                          ),
-                        ],
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: const [
+                                  Text(
+                                    'إضافة طلبية مصنع جديدة (Factory Order)',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 17,
+                                    ),
+                                  ),
+                                  Text(
+                                    'تخضع لبنية فاتورة مبيعات المعتمدين وتتضمن عربوناً يودع في صندوق الطلبيات المعزول',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.brandSecondaryText,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       IconButton(
                         onPressed: () => Navigator.pop(ctx),
@@ -980,12 +984,14 @@ void showAddFactoryOrderDialog(
                                     size: 20,
                                   ),
                                   SizedBox(width: 8),
-                                  Text(
-                                    'العربون / الدفعة المقدمة (Deposit / Down Payment):',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.orderDepositBoxAccent,
-                                      fontSize: 13,
+                                  Expanded(
+                                    child: Text(
+                                      'العربون / الدفعة المقدمة (Deposit / Down Payment):',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.orderDepositBoxAccent,
+                                        fontSize: 13,
+                                      ),
                                     ),
                                   ),
                                 ],

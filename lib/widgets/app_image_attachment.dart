@@ -544,22 +544,25 @@ class _AppImageAttachmentPickerState extends State<AppImageAttachmentPicker> {
                 size: 18,
                 color: hasImage ? AppColors.successGreen : const Color(0xFF64748B),
               ),
-              const SizedBox(width: 8),
-              Text(
-                widget.label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  color: Color(0xFF1E293B),
+              Expanded(
+                child: Text(
+                  widget.label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: Color(0xFF1E293B),
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Spacer(),
-              if (_isUploading)
+              if (_isUploading) ...[
+                const SizedBox(width: 8),
                 const SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 10),

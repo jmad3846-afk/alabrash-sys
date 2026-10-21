@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
@@ -3036,1004 +3037,1302 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             );
           }
 
+          final screenWidth = MediaQuery.sizeOf(context).width;
+          final screenHeight = MediaQuery.sizeOf(context).height;
+
+          void submitInvoice() {
+            if (selectedSupplierId == null) {
+              setSt(() => formError = 'اختر المورد أولاً.');
+              return;
+            }
+            if (draftItems.isEmpty) {
+              setSt(
+                () => formError = 'أضف صنفاً واحداً على الأقل بزر +.',
+              );
+              return;
+            }
+            if (isDelivered == null) {
+              setSt(() => formError = 'أجب: هل وصلت الشحنة أم لا؟');
+              return;
+            }
+            if (discount < 0 || discount > itemsTotal) {
+              setSt(
+                () => formError =
+                    'قيمة الخصم يجب أن تكون بين صفر وإجمالي الفاتورة.',
+              );
+              return;
+            }
+            if (!cashInvoice && wantsPay == null) {
+              setSt(
+                () => formError = 'أجب: هل نريد الدفع له أم لا؟',
+              );
+              return;
+            }
+            double advance = cashInvoice
+                ? grandTotal
+                : wantsPay == true
+                ? (double.tryParse(downPayCtrl.text) ?? 0.0)
+                : 0.0;
+            if (advance < 0) advance = 0.0;
+            if (advance > grandTotal) advance = grandTotal;
+            if (cashInvoice &&
+                erp.cashOf('main', invCurrency) + 0.0001 < grandTotal) {
+              setSt(
+                () => formError =
+                    'رصيد الصندوق الرئيسي غير كافٍ لتسديد الفاتورة النقدية بهذه العملة.',
+              );
+              return;
+            }
+
+            final sup = erp.suppliers.firstWhere(
+              (s) => s.id == selectedSupplierId,
+              orElse: () => erp.suppliers.first,
+            );
+            final created = erp.addSupplierPurchaseInvoice(
+              FactoryInvoiceModel(
+                id: 'fi_${DateTime.now().millisecondsSinceEpoch}',
+                invoiceNo: 'FAC-PUR-${erp.factoryInvoices.length + 101}',
+                date: DateTime.now(),
+                partyId: sup.id,
+                partyName: sup.name,
+                invoiceType: 'شراء_مورد',
+                items: List.of(draftItems),
+                isGoodsDelivered: isDelivered == true,
+                shippingFee: shipping,
+                advancePayment: advance,
+                discountAmount: discount,
+                isCashInvoice: cashInvoice,
+                photoUrl: photoPath,
+                currency: invCurrency,
+              ),
+            );
+            if (!created) {
+              setSt(
+                () => formError =
+                    'تعذر اعتماد الفاتورة. تحقق من رصيد الصندوق الرئيسي وتسديد كامل الإجمالي.',
+              );
+              return;
+            }
+            Navigator.pop(ctx);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  cashInvoice
+                      ? 'تم حفظ فاتورة الشراء النقدية وتسديدها بالكامل من الصندوق.'
+                      : advance >= grandTotal - 0.01
+                      ? 'تم حفظ الفاتورة مدفوعة بالكامل وتسجيلها في المالية وقسم المدفوعة.'
+                      : 'تم حفظ الفاتورة وتسجيلها في المالية وقسم مستحق الدفع.',
+                ),
+                backgroundColor: AppColors.successGreen,
+              ),
+            );
+          }
+
           return Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
             child: Container(
-              width: 760,
-              padding: const EdgeInsets.all(24),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      cashInvoice
-                          ? 'إنشاء فاتورة شراء نقدية من مورد'
-                          : 'إنشاء فاتورة شراء من مورد',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.titleLarge?.copyWith(fontSize: 18),
-                    ),
-                    const Divider(height: 20),
-
-                    // 1. Supplier searchable dropdown + inline add.
-                    const Text(
-                      '1. اختر المورد (قائمة قابلة للبحث):',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            decoration: const InputDecoration(
-                              labelText: 'بحث عن مورد...',
-                              prefixIcon: Icon(Icons.search),
-                              isDense: true,
+              width: math.min(screenWidth * 0.95, 1200),
+              height: math.min(screenHeight * 0.92, 850),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Title Bar
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: cashInvoice
+                                  ? AppColors.chipBgGreen
+                                  : AppColors.chipBgBlue,
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                            onChanged: (v) =>
-                                setSt(() => supplierSearch = v.trim()),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          onPressed: () => refreshAfterAdd(
-                            () => _showAddSupplierDialog(erp),
-                          ),
-                          icon: const Icon(Icons.person_add_alt_1, size: 18),
-                          label: const Text('مورد جديد +'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: supplierValue,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'المورد'),
-                      items: suppliersFiltered
-                          .map(
-                            (s) => DropdownMenuItem(
-                              value: s.id,
-                              child: Text(s.name),
+                            child: Icon(
+                              cashInvoice
+                                  ? Icons.payments_outlined
+                                  : Icons.shopping_cart_checkout_rounded,
+                              color: cashInvoice
+                                  ? AppColors.successGreen
+                                  : AppColors.accentPrimary,
+                              size: 22,
                             ),
-                          )
-                          .toList(),
-                      onChanged: (v) => setSt(() => selectedSupplierId = v),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // 2. Item mode selector (Blocks vs Meters) + item inputs
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            '2. أصناف الفاتورة (أضف كل صنف بزر +):',
-                            style: TextStyle(fontWeight: FontWeight.bold),
                           ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            'الأصناف المضافة: ${draftItems.length}',
-                            style: const TextStyle(
-                              fontSize: 12,
+                          const SizedBox(width: 12),
+                          Text(
+                            cashInvoice
+                                ? 'إنشاء فاتورة شراء نقدية من مورد'
+                                : 'إنشاء فاتورة شراء من مورد',
+                            style: Theme.of(
+                              context,
+                            ).textTheme.titleLarge?.copyWith(
+                              fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Switcher between Blocks purchase item and Meters purchase item
-                    Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      padding: const EdgeInsets.all(4),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: InkWell(
-                              onTap: () => setSt(() {
-                                itemMode = 'block';
-                                formError = null;
-                              }),
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: itemMode == 'block'
-                                      ? Colors.white
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(8),
-                                  boxShadow: itemMode == 'block'
-                                      ? [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(
-                                              0.05,
-                                            ),
-                                            blurRadius: 4,
-                                            offset: const Offset(0, 1),
-                                          ),
-                                        ]
-                                      : null,
-                                ),
-                                alignment: Alignment.center,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.view_in_ar_rounded,
-                                      size: 18,
-                                      color: itemMode == 'block'
-                                          ? AppColors.accentPrimary
-                                          : AppColors.brandSecondaryText,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Flexible(
-                                      child: Text(
-                                        'بند شراء بلوكات (Blocks)',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                          color: itemMode == 'block'
-                                              ? AppColors.accentPrimary
-                                              : AppColors.brandSecondaryText,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: InkWell(
-                              onTap: () => setSt(() {
-                                itemMode = 'meter';
-                                formError = null;
-                              }),
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: itemMode == 'meter'
-                                      ? Colors.white
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(8),
-                                  boxShadow: itemMode == 'meter'
-                                      ? [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(
-                                              0.05,
-                                            ),
-                                            blurRadius: 4,
-                                            offset: const Offset(0, 1),
-                                          ),
-                                        ]
-                                      : null,
-                                ),
-                                alignment: Alignment.center,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.straighten_rounded,
-                                      size: 18,
-                                      color: itemMode == 'meter'
-                                          ? AppColors.accentPrimary
-                                          : AppColors.brandSecondaryText,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Flexible(
-                                      child: Text(
-                                        'بند شراء أمتار (Meters)',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                          color: itemMode == 'meter'
-                                              ? AppColors.accentPrimary
-                                              : AppColors.brandSecondaryText,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    if (itemMode == 'block') ...[
-                      // Blocks purchase item form
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              decoration: const InputDecoration(
-                                labelText: 'بحث نوع البلوك والدرجة...',
-                                prefixIcon: Icon(Icons.search),
-                                isDense: true,
-                              ),
-                              onChanged: (v) =>
-                                  setSt(() => blockSearch = v.trim()),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: () => refreshAfterAdd(
-                              () => _showAddBlockTypeDialog(erp),
-                            ),
-                            icon: const Icon(Icons.add_box_outlined, size: 18),
-                            label: const Text('نوع بلوك جديد +'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        initialValue: blockValue,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'نوع البلوك حسب النوع والدرجة',
-                        ),
-                        items: optionsFiltered
-                            .map(
-                              (b) => DropdownMenuItem(
-                                value: '${b.typeName}||${b.grade}',
-                                child: Text('${b.typeName} • ${b.grade}'),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) => setSt(() => selectedBlockKey = v),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: tonsCtrl,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              decoration: const InputDecoration(
-                                labelText: 'عدد الأطنان لهذا النوع والدرجة',
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: priceCtrl,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              decoration: InputDecoration(
-                                labelText:
-                                    'سعر الوحدة (سعر الطن ${AppCurrency.symbol(invCurrency)})',
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 14,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.chipBgBlue,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                'الإجمالي: ${draftBlockTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.accentPrimary,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            if (selectedSupplierId == null) {
-                              setSt(
-                                () => formError =
-                                    'اختر المورد أولاً قبل إضافة الأصناف.',
-                              );
-                              return;
-                            }
-                            if (selectedBlockKey == null) {
-                              setSt(
-                                () => formError = 'اختر نوع البلوك والدرجة.',
-                              );
-                              return;
-                            }
-                            if (draftTons <= 0 || draftPrice < 0) {
-                              setSt(
-                                () => formError =
-                                    'أدخل عدد أطنان صحيح وسعر وحدة صحيح.',
-                              );
-                              return;
-                            }
-                            final parts = selectedBlockKey!.split('||');
-                            final bt = erp.blockTypes.firstWhere(
-                              (b) =>
-                                  b.typeName == parts[0] &&
-                                  b.grade == parts[1],
-                              orElse: () => erp.blockTypes.first,
-                            );
-                            setSt(() {
-                              formError = null;
-                              draftItems.add(
-                                FactoryInvoiceItem(
-                                  itemId:
-                                      'draft_b_${DateTime.now().millisecondsSinceEpoch}_${draftItems.length}',
-                                  description: '${parts[0]} (${parts[1]})',
-                                  typeName: parts[0],
-                                  grade: parts.length > 1 ? parts[1] : '',
-                                  quantity: draftTons,
-                                  unitPrice: draftPrice,
-                                  unitCost: draftPrice,
-                                  isGranite: bt.isGranite,
-                                  itemCategory: 'block',
-                                ),
-                              );
-                              tonsCtrl.clear();
-                              priceCtrl.clear();
-                              selectedBlockKey = null;
-                            });
-                          },
-                          icon: const Icon(Icons.add),
-                          label: const Text('إضافة بند البلوك للفاتورة +'),
-                        ),
-                      ),
-                    ] else ...[
-                      // Meters purchase item form
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              decoration: const InputDecoration(
-                                labelText: 'بحث نوع المتر أو السماكة...',
-                                prefixIcon: Icon(Icons.search),
-                                isDense: true,
-                              ),
-                              onChanged: (v) =>
-                                  setSt(() => meterSearch = v.trim()),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: () => refreshAfterAdd(
-                              () => _showUnifiedItemTypeDialog(erp),
-                            ),
-                            icon: const Icon(Icons.add, size: 18),
-                            label: const Text('نوع مادة جديد +'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        initialValue: meterValue,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText:
-                              'نوع المتر (النوع • الدرجة • السماكة • الفئة)',
-                        ),
-                        items: meterOptionsFiltered
-                            .map(
-                              (m) => DropdownMenuItem(
-                                value: m.id,
-                                child: Text(
-                                  '${m.typeName} • ${m.grade} • ${m.thicknessCm.fmt} سم • ${m.category} ${m.isGranite ? "(غرانيت)" : "(رخام)"}',
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) {
-                          setSt(() {
-                            selectedMeterTypeId = v;
-                            if (v != null) {
-                              final mt = erp.meterTypes.firstWhere(
-                                (m) => m.id == v,
-                                orElse: () => erp.meterTypes.first,
-                              );
-                              selectedMeterUnit = mt.category.isNotEmpty
-                                  ? mt.category
-                                  : 'متر مربع';
-                            }
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          const Text(
-                            'وحدة القياس: ',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                          ChoiceChip(
-                            label: const Text('متر مربع (م²)'),
-                            selected: selectedMeterUnit == 'متر مربع',
-                            onSelected: (v) {
-                              if (v) {
-                                setSt(() => selectedMeterUnit = 'متر مربع');
-                              }
-                            },
-                          ),
-                          ChoiceChip(
-                            label: const Text('متر طولي (م.ط)'),
-                            selected: selectedMeterUnit == 'متر طولي',
-                            onSelected: (v) {
-                              if (v) {
-                                setSt(() => selectedMeterUnit = 'متر طولي');
-                              }
-                            },
-                          ),
-                          ChoiceChip(
-                            label: const Text('متر مكعب (م³)'),
-                            selected: selectedMeterUnit == 'متر مكعب',
-                            onSelected: (v) {
-                              if (v) {
-                                setSt(() => selectedMeterUnit = 'متر مكعب');
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: meterQtyCtrl,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              decoration: InputDecoration(
-                                labelText:
-                                    'إجمالي الأمتار المربعة / الطولية ($selectedMeterUnit)',
-                              ),
-                              onChanged: (v) {
-                                final q = double.tryParse(v) ?? 0.0;
-                                final p =
-                                    double.tryParse(meterPriceCtrl.text) ?? 0.0;
-                                if (p > 0) {
-                                  meterTotalCostCtrl.text = (q * p).fmt;
-                                }
-                                setSt(() {});
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: meterPriceCtrl,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              decoration: InputDecoration(
-                                labelText:
-                                    'سعر الوحدة للمتر (${AppCurrency.symbol(invCurrency)})',
-                              ),
-                              onChanged: (v) {
-                                final p = double.tryParse(v) ?? 0.0;
-                                final q =
-                                    double.tryParse(meterQtyCtrl.text) ?? 0.0;
-                                meterTotalCostCtrl.text = (q * p).fmt;
-                                setSt(() {});
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: meterTotalCostCtrl,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              decoration: InputDecoration(
-                                labelText:
-                                    'إجمالي التكلفة (${AppCurrency.symbol(invCurrency)})',
-                              ),
-                              onChanged: (v) {
-                                final t = double.tryParse(v) ?? 0.0;
-                                final q =
-                                    double.tryParse(meterQtyCtrl.text) ?? 0.0;
-                                if (q > 0) {
-                                  meterPriceCtrl.text = (t / q).fmt;
-                                }
-                                setSt(() {});
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            if (selectedSupplierId == null) {
-                              setSt(
-                                () => formError =
-                                    'اختر المورد أولاً قبل إضافة الأصناف.',
-                              );
-                              return;
-                            }
-                            if (selectedMeterTypeId == null) {
-                              setSt(() => formError = 'اختر نوع المتر.');
-                              return;
-                            }
-                            final double q =
-                                double.tryParse(meterQtyCtrl.text) ?? 0.0;
-                            var p =
-                                double.tryParse(meterPriceCtrl.text) ?? 0.0;
-                            final t =
-                                double.tryParse(meterTotalCostCtrl.text) ?? 0.0;
-                            if (p <= 0 && t > 0 && q > 0) {
-                              p = t / q;
-                            }
-                            if (q <= 0 || p < 0) {
-                              setSt(
-                                () => formError =
-                                    'أدخل إجمالي أمتار صحيح وسعر وحدة صحيح.',
-                              );
-                              return;
-                            }
-                            final mt = erp.meterTypes.firstWhere(
-                              (m) => m.id == selectedMeterTypeId,
-                              orElse: () => erp.meterTypes.first,
-                            );
-                            setSt(() {
-                              formError = null;
-                              draftItems.add(
-                                FactoryInvoiceItem(
-                                  itemId: mt.id,
-                                  description:
-                                      '${mt.typeName} (${mt.grade}) ${mt.thicknessCm.fmt}سم - $selectedMeterUnit',
-                                  typeName: mt.typeName,
-                                  grade: mt.grade,
-                                  thicknessCm: mt.thicknessCm,
-                                  quantity: q,
-                                  unitPrice: p,
-                                  unitCost: p,
-                                  isGranite: mt.isGranite,
-                                  itemCategory: 'meter',
-                                  meterUnit: selectedMeterUnit,
-                                ),
-                              );
-                              meterQtyCtrl.clear();
-                              meterPriceCtrl.clear();
-                              meterTotalCostCtrl.clear();
-                              selectedMeterTypeId = null;
-                            });
-                          },
-                          icon: const Icon(Icons.add),
-                          label: const Text('إضافة بند الأمتار للفاتورة +'),
-                        ),
-                      ),
-                    ],
-                    if (formError != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        formError!,
-                        style: const TextStyle(
-                          color: AppColors.dangerWaste,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    if (draftItems.isEmpty)
-                      const Text(
-                        'لم تتم إضافة أصناف بعد.',
-                        style: TextStyle(color: AppColors.brandSecondaryText),
-                      ),
-                    ...draftItems.asMap().entries.map(
-                      (e) {
-                        final it = e.value;
-                        final isMeter = it.isMeterItem;
-                        return Card(
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          child: ListTile(
-                            leading: Container(
+                          if (cashInvoice) ...[
+                            const SizedBox(width: 10),
+                            Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
-                                vertical: 4,
+                                vertical: 3,
                               ),
                               decoration: BoxDecoration(
-                                color: isMeter
-                                    ? AppColors.chipBgBlue
-                                    : AppColors.chipBgAmber,
+                                color: const Color(0xFFDCFCE7),
                                 borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: const Color(0xFF86EFAC),
+                                ),
                               ),
-                              child: Text(
-                                isMeter ? 'أمتار' : 'بلوك',
+                              child: const Text(
+                                'نقدية فورية',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
-                                  color: isMeter
-                                      ? AppColors.accentPrimary
-                                      : AppColors.partnersEquityAccent,
+                                  color: Color(0xFF15803D),
                                 ),
                               ),
-                            ),
-                            title: Text(
-                              it.description,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            subtitle: Text(
-                              isMeter
-                                  ? '${it.quantity.fmt} ${it.meterUnit} × ${it.unitPrice.fmt}${AppCurrency.symbol(invCurrency)} = ${(it.quantity * it.unitPrice).fmt}${AppCurrency.symbol(invCurrency)}'
-                                  : '${it.quantity.fmt} طن × ${it.unitPrice.fmt}${AppCurrency.symbol(invCurrency)} = ${(it.quantity * it.unitPrice).fmt}${AppCurrency.symbol(invCurrency)}',
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(
-                                Icons.delete_outline,
-                                color: AppColors.dangerWaste,
-                              ),
-                              onPressed: () =>
-                                  setSt(() => draftItems.removeAt(e.key)),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    // 3. Shipment question.
-                    const Text(
-                      '3. هل وصلت هذه الشحنة أم لا؟',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    Row(
-                      children: [
-                        yesNoOption(
-                          'نعم وصلت',
-                          true,
-                          isDelivered,
-                          (v) => setSt(() => isDelivered = v),
-                        ),
-                        yesNoOption(
-                          'لا لم تصل',
-                          false,
-                          isDelivered,
-                          (v) => setSt(() => isDelivered = v),
-                        ),
-                      ],
-                    ),
-                    if (isDelivered == false) ...[
-                      TextField(
-                        controller: shippingFeeCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText:
-                              'تكاليف الشحن (تُدمج مع رأس مال المواد وتُسجل في المصروفات)',
-                        ),
-                        onChanged: (_) => setSt(() {}),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'ملاحظة: تكاليف الشحن تُوزّع على التكلفة الرأسمالية للمواد المشتراة وتُسجَّل في صفحة المصروفات كقيد إعلامي، ولا تُحمَّل على حساب المورد أو إجمالي هذه الفاتورة.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.accentPrimary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-
-                    // 4. Totals + payment question.
-                    CurrencySelector(
-                      value: invCurrency,
-                      dense: true,
-                      onChanged: (v) => setSt(() => invCurrency = v),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: discountCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'الخصم المكتسب من المورد (اختياري)',
-                      ),
-                      onChanged: (_) => setSt(() {}),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.panelBorder),
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('إجمالي الفاتورة المستحق للمورد:'),
-                              Row(
-                                children: [
-                                  Text(
-                                    '${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  CurrencyBadge(currency: invCurrency),
-                                ],
-                              ),
-                            ],
-                          ),
-                          if (shipping > 0) ...[
-                            const SizedBox(height: 6),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'تكاليف الشحن (مرسملة على المواد ومسجلة بالمصروفات):',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.brandSecondaryText,
-                                  ),
-                                ),
-                                Text(
-                                  '${shipping.fmt} ${AppCurrency.symbol(invCurrency)}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.accentPrimary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: AlignmentDirectional.centerEnd,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF4F46E5),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                              ),
-                              onPressed: () {
-                                final currentNet = grandTotal;
-                                final truncated = currentNet.truncateToDouble();
-                                final diff = currentNet - truncated;
-                                if (diff > 0.0001) {
-                                  final curDisc =
-                                      double.tryParse(discountCtrl.text) ??
-                                      0.0;
-                                  discountCtrl.text = (curDisc + diff).fmt;
-                                  if (cashInvoice) {
-                                    downPayCtrl.text = truncated.fmt;
-                                  }
-                                  setSt(() {});
-                                }
-                              },
-                              icon: const Icon(
-                                Icons.content_cut_rounded,
-                                size: 16,
-                              ),
-                              label: const Text(
-                                'تجاهل القروش (Ignore Cents)',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          if (cashInvoice)
-                            Text(
-                              'فاتورة نقدية: سيتم دفع كامل مستحقات المورد (${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}) من الصندوق الرئيسي.',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.accentPrimary,
-                              ),
-                            )
-                          else ...[
-                            const Text(
-                              'هل نريد الدفع له أم لا؟',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            Row(
-                              children: [
-                                yesNoOption(
-                                  'نعم',
-                                  true,
-                                  wantsPay,
-                                  (v) => setSt(() => wantsPay = v),
-                                ),
-                                yesNoOption(
-                                  'لا',
-                                  false,
-                                  wantsPay,
-                                  (v) => setSt(() => wantsPay = v),
-                                ),
-                              ],
-                            ),
-                          ],
-                          if (!cashInvoice && wantsPay == true)
-                            TextField(
-                              controller: downPayCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'الدفعة المقدمة (تُخصم من الإجمالي)',
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          if (!cashInvoice && wantsPay == true) ...[
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text('المتبقي بعد الدفعة:'),
-                                Text(
-                                  '${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(invCurrency)}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.dangerWaste,
-                                  ),
-                                ),
-                              ],
                             ),
                           ],
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    AppImageAttachmentPicker(
-                      initialPath: photoPath,
-                      label: 'صورة فاتورة الشراء من المورد / وصل الاستلام',
-                      onImageChanged: (p) => setSt(() => photoPath = p),
-                    ),
-                    const SizedBox(height: 20),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 16),
 
-                    ElevatedButton(
-                      onPressed: () {
-                        if (selectedSupplierId == null) {
-                          setSt(() => formError = 'اختر المورد.');
-                          return;
-                        }
-                        if (draftItems.isEmpty) {
-                          setSt(
-                            () =>
-                                formError = 'أضف صنفاً واحداً على الأقل بزر +.',
-                          );
-                          return;
-                        }
-                        if (isDelivered == null) {
-                          setSt(() => formError = 'أجب: هل وصلت الشحنة أم لا؟');
-                          return;
-                        }
-                        if (discount < 0 || discount > itemsTotal) {
-                          setSt(
-                            () => formError =
-                                'قيمة الخصم يجب أن تكون بين صفر وإجمالي الفاتورة.',
-                          );
-                          return;
-                        }
-                        if (!cashInvoice && wantsPay == null) {
-                          setSt(
-                            () => formError = 'أجب: هل نريد الدفع له أم لا؟',
-                          );
-                          return;
-                        }
-                        double advance = cashInvoice
-                            ? grandTotal
-                            : wantsPay == true
-                            ? (double.tryParse(downPayCtrl.text) ?? 0.0)
-                            : 0.0;
-                        if (advance < 0) advance = 0.0;
-                        if (advance > grandTotal) advance = grandTotal;
-                        if (cashInvoice &&
-                            erp.cashOf('main', invCurrency) + 0.0001 <
-                                grandTotal) {
-                          setSt(
-                            () => formError =
-                                'رصيد الصندوق الرئيسي غير كافٍ لتسديد الفاتورة النقدية بهذه العملة.',
-                          );
-                          return;
-                        }
+                  // Split 2-Column Layout:
+                  // Left Side = Input Fields
+                  // Right Side = Added Line Items
+                  Expanded(
+                    child: Row(
+                      textDirection: TextDirection.ltr,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // LEFT SIDE: Input Fields
+                        Expanded(
+                          flex: 6,
+                          child: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFAFAFA),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppColors.panelBorder),
+                              ),
+                              padding: const EdgeInsets.all(16),
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    // 1. Supplier searchable dropdown + inline add.
+                                    const Text(
+                                      '1. اختر المورد (قائمة قابلة للبحث):',
+                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextField(
+                                            decoration: const InputDecoration(
+                                              labelText: 'بحث عن مورد...',
+                                              prefixIcon: Icon(Icons.search),
+                                              isDense: true,
+                                            ),
+                                            onChanged: (v) =>
+                                                setSt(() => supplierSearch = v.trim()),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        OutlinedButton.icon(
+                                          onPressed: () => refreshAfterAdd(
+                                            () => _showAddSupplierDialog(erp),
+                                          ),
+                                          icon: const Icon(Icons.person_add_alt_1, size: 18),
+                                          label: const Text('مورد جديد +'),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    DropdownButtonFormField<String>(
+                                      initialValue: supplierValue,
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(labelText: 'المورد'),
+                                      items: suppliersFiltered
+                                          .map(
+                                            (s) => DropdownMenuItem(
+                                              value: s.id,
+                                              child: Text(s.name),
+                                            ),
+                                          )
+                                          .toList(),
+                                      onChanged: (v) => setSt(() => selectedSupplierId = v),
+                                    ),
+                                    const SizedBox(height: 16),
 
-                        final sup = erp.suppliers.firstWhere(
-                          (s) => s.id == selectedSupplierId,
-                          orElse: () => erp.suppliers.first,
-                        );
-                        final created = erp.addSupplierPurchaseInvoice(
-                          FactoryInvoiceModel(
-                            id: 'fi_${DateTime.now().millisecondsSinceEpoch}',
-                            invoiceNo:
-                                'FAC-PUR-${erp.factoryInvoices.length + 101}',
-                            date: DateTime.now(),
-                            partyId: sup.id,
-                            partyName: sup.name,
-                            invoiceType: 'شراء_مورد',
-                            items: List.of(draftItems),
-                            isGoodsDelivered: isDelivered == true,
-                            shippingFee: shipping,
-                            advancePayment: advance,
-                            discountAmount: discount,
-                            isCashInvoice: cashInvoice,
-                            photoUrl: photoPath,
-                            currency: invCurrency,
-                          ),
-                        );
-                        if (!created) {
-                          setSt(
-                            () => formError =
-                                'تعذر اعتماد الفاتورة. تحقق من رصيد الصندوق الرئيسي وتسديد كامل الإجمالي.',
-                          );
-                          return;
-                        }
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              cashInvoice
-                                  ? 'تم حفظ فاتورة الشراء النقدية وتسديدها بالكامل من الصندوق.'
-                                  : advance >= grandTotal - 0.01
-                                  ? 'تم حفظ الفاتورة مدفوعة بالكامل وتسجيلها في المالية وقسم المدفوعة.'
-                                  : 'تم حفظ الفاتورة وتسجيلها في المالية وقسم مستحق الدفع.',
+                                    // 2. Item mode selector (Blocks vs Meters) + item inputs
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Expanded(
+                                          child: Text(
+                                            '2. تفاصيل الصنف المراد إضافته:',
+                                            style: TextStyle(fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF1F5F9),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            'الأصناف المضافة: ${draftItems.length}',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+
+                                    // Switcher between Blocks and Meters
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFE2E8F0),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      padding: const EdgeInsets.all(4),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: InkWell(
+                                              onTap: () => setSt(() {
+                                                itemMode = 'block';
+                                                formError = null;
+                                              }),
+                                              borderRadius: BorderRadius.circular(8),
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  vertical: 8,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: itemMode == 'block'
+                                                      ? Colors.white
+                                                      : Colors.transparent,
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  boxShadow: itemMode == 'block'
+                                                      ? [
+                                                          BoxShadow(
+                                                            color: Colors.black.withOpacity(
+                                                              0.05,
+                                                            ),
+                                                            blurRadius: 4,
+                                                            offset: const Offset(0, 1),
+                                                          ),
+                                                        ]
+                                                      : null,
+                                                ),
+                                                alignment: Alignment.center,
+                                                child: Row(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.view_in_ar_rounded,
+                                                      size: 18,
+                                                      color: itemMode == 'block'
+                                                          ? AppColors.accentPrimary
+                                                          : AppColors.brandSecondaryText,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Flexible(
+                                                      child: Text(
+                                                        'بند شراء بلوكات (Blocks)',
+                                                        style: TextStyle(
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 13,
+                                                          color: itemMode == 'block'
+                                                              ? AppColors.accentPrimary
+                                                              : AppColors.brandSecondaryText,
+                                                        ),
+                                                        overflow: TextOverflow.ellipsis,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: InkWell(
+                                              onTap: () => setSt(() {
+                                                itemMode = 'meter';
+                                                formError = null;
+                                              }),
+                                              borderRadius: BorderRadius.circular(8),
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  vertical: 8,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: itemMode == 'meter'
+                                                      ? Colors.white
+                                                      : Colors.transparent,
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  boxShadow: itemMode == 'meter'
+                                                      ? [
+                                                          BoxShadow(
+                                                            color: Colors.black.withOpacity(
+                                                              0.05,
+                                                            ),
+                                                            blurRadius: 4,
+                                                            offset: const Offset(0, 1),
+                                                          ),
+                                                        ]
+                                                      : null,
+                                                ),
+                                                alignment: Alignment.center,
+                                                child: Row(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.straighten_rounded,
+                                                      size: 18,
+                                                      color: itemMode == 'meter'
+                                                          ? AppColors.accentPrimary
+                                                          : AppColors.brandSecondaryText,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Flexible(
+                                                      child: Text(
+                                                        'بند شراء أمتار (Meters)',
+                                                        style: TextStyle(
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 13,
+                                                          color: itemMode == 'meter'
+                                                              ? AppColors.accentPrimary
+                                                              : AppColors.brandSecondaryText,
+                                                        ),
+                                                        overflow: TextOverflow.ellipsis,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+
+                                    if (itemMode == 'block') ...[
+                                      // Blocks purchase item form
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              decoration: const InputDecoration(
+                                                labelText: 'بحث نوع البلوك والدرجة...',
+                                                prefixIcon: Icon(Icons.search),
+                                                isDense: true,
+                                              ),
+                                              onChanged: (v) =>
+                                                  setSt(() => blockSearch = v.trim()),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          OutlinedButton.icon(
+                                            onPressed: () => refreshAfterAdd(
+                                              () => _showAddBlockTypeDialog(erp),
+                                            ),
+                                            icon: const Icon(Icons.add_box_outlined, size: 18),
+                                            label: const Text('نوع بلوك جديد +'),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      DropdownButtonFormField<String>(
+                                        initialValue: blockValue,
+                                        isExpanded: true,
+                                        decoration: const InputDecoration(
+                                          labelText: 'نوع البلوك حسب النوع والدرجة',
+                                        ),
+                                        items: optionsFiltered
+                                            .map(
+                                              (b) => DropdownMenuItem(
+                                                value: '${b.typeName}||${b.grade}',
+                                                child: Text('${b.typeName} • ${b.grade}'),
+                                              ),
+                                            )
+                                            .toList(),
+                                        onChanged: (v) => setSt(() => selectedBlockKey = v),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              controller: tonsCtrl,
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                decimal: true,
+                                              ),
+                                              decoration: const InputDecoration(
+                                                labelText: 'عدد الأطنان لهذا النوع والدرجة',
+                                              ),
+                                              onChanged: (_) => setSt(() {}),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: TextField(
+                                              controller: priceCtrl,
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                decimal: true,
+                                              ),
+                                              decoration: InputDecoration(
+                                                labelText:
+                                                    'سعر الوحدة (سعر الطن ${AppCurrency.symbol(invCurrency)})',
+                                              ),
+                                              onChanged: (_) => setSt(() {}),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 14,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.chipBgBlue,
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Text(
+                                                'الإجمالي: ${draftBlockTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: AppColors.accentPrimary,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Align(
+                                        alignment: AlignmentDirectional.centerStart,
+                                        child: ElevatedButton.icon(
+                                          onPressed: () {
+                                            if (selectedSupplierId == null) {
+                                              setSt(
+                                                () => formError =
+                                                    'اختر المورد أولاً قبل إضافة الأصناف.',
+                                              );
+                                              return;
+                                            }
+                                            if (selectedBlockKey == null) {
+                                              setSt(
+                                                () => formError = 'اختر نوع البلوك والدرجة.',
+                                              );
+                                              return;
+                                            }
+                                            if (draftTons <= 0 || draftPrice < 0) {
+                                              setSt(
+                                                () => formError =
+                                                    'أدخل عدد أطنان صحيح وسعر وحدة صحيح.',
+                                              );
+                                              return;
+                                            }
+                                            final parts = selectedBlockKey!.split('||');
+                                            final bt = erp.blockTypes.firstWhere(
+                                              (b) =>
+                                                  b.typeName == parts[0] &&
+                                                  b.grade == parts[1],
+                                              orElse: () => erp.blockTypes.first,
+                                            );
+                                            setSt(() {
+                                              formError = null;
+                                              draftItems.add(
+                                                FactoryInvoiceItem(
+                                                  itemId:
+                                                      'draft_b_${DateTime.now().millisecondsSinceEpoch}_${draftItems.length}',
+                                                  description: '${parts[0]} (${parts[1]})',
+                                                  typeName: parts[0],
+                                                  grade: parts.length > 1 ? parts[1] : '',
+                                                  quantity: draftTons,
+                                                  unitPrice: draftPrice,
+                                                  unitCost: draftPrice,
+                                                  isGranite: bt.isGranite,
+                                                  itemCategory: 'block',
+                                                ),
+                                              );
+                                              tonsCtrl.clear();
+                                              priceCtrl.clear();
+                                              selectedBlockKey = null;
+                                            });
+                                          },
+                                          icon: const Icon(Icons.add),
+                                          label: const Text('إضافة بند البلوك للفاتورة +'),
+                                        ),
+                                      ),
+                                    ] else ...[
+                                      // Meters purchase item form
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              decoration: const InputDecoration(
+                                                labelText: 'بحث نوع المتر أو السماكة...',
+                                                prefixIcon: Icon(Icons.search),
+                                                isDense: true,
+                                              ),
+                                              onChanged: (v) =>
+                                                  setSt(() => meterSearch = v.trim()),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          OutlinedButton.icon(
+                                            onPressed: () => refreshAfterAdd(
+                                              () => _showUnifiedItemTypeDialog(erp),
+                                            ),
+                                            icon: const Icon(Icons.add, size: 18),
+                                            label: const Text('نوع مادة جديد +'),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      DropdownButtonFormField<String>(
+                                        initialValue: meterValue,
+                                        isExpanded: true,
+                                        decoration: const InputDecoration(
+                                          labelText:
+                                              'نوع المتر (النوع • الدرجة • السماكة • الفئة)',
+                                        ),
+                                        items: meterOptionsFiltered
+                                            .map(
+                                              (m) => DropdownMenuItem(
+                                                value: m.id,
+                                                child: Text(
+                                                  '${m.typeName} • ${m.grade} • ${m.thicknessCm.fmt} سم • ${m.category} ${m.isGranite ? "(غرانيت)" : "(رخام)"}',
+                                                ),
+                                              ),
+                                            )
+                                            .toList(),
+                                        onChanged: (v) {
+                                          setSt(() {
+                                            selectedMeterTypeId = v;
+                                            if (v != null) {
+                                              final mt = erp.meterTypes.firstWhere(
+                                                (m) => m.id == v,
+                                                orElse: () => erp.meterTypes.first,
+                                              );
+                                              selectedMeterUnit = mt.category.isNotEmpty
+                                                  ? mt.category
+                                                  : 'متر مربع';
+                                            }
+                                          });
+                                        },
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Wrap(
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        spacing: 8,
+                                        runSpacing: 6,
+                                        children: [
+                                          const Text(
+                                            'وحدة القياس: ',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          ChoiceChip(
+                                            label: const Text('متر مربع (م²)'),
+                                            selected: selectedMeterUnit == 'متر مربع',
+                                            onSelected: (v) {
+                                              if (v) {
+                                                setSt(() => selectedMeterUnit = 'متر مربع');
+                                              }
+                                            },
+                                          ),
+                                          ChoiceChip(
+                                            label: const Text('متر طولي (م.ط)'),
+                                            selected: selectedMeterUnit == 'متر طولي',
+                                            onSelected: (v) {
+                                              if (v) {
+                                                setSt(() => selectedMeterUnit = 'متر طولي');
+                                              }
+                                            },
+                                          ),
+                                          ChoiceChip(
+                                            label: const Text('متر مكعب (م³)'),
+                                            selected: selectedMeterUnit == 'متر مكعب',
+                                            onSelected: (v) {
+                                              if (v) {
+                                                setSt(() => selectedMeterUnit = 'متر مكعب');
+                                              }
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              controller: meterQtyCtrl,
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                decimal: true,
+                                              ),
+                                              decoration: InputDecoration(
+                                                labelText:
+                                                    'إجمالي الأمتار ($selectedMeterUnit)',
+                                              ),
+                                              onChanged: (v) {
+                                                final q = double.tryParse(v) ?? 0.0;
+                                                final p =
+                                                    double.tryParse(meterPriceCtrl.text) ?? 0.0;
+                                                if (p > 0) {
+                                                  meterTotalCostCtrl.text = (q * p).fmt;
+                                                }
+                                                setSt(() {});
+                                              },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: TextField(
+                                              controller: meterPriceCtrl,
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                decimal: true,
+                                              ),
+                                              decoration: InputDecoration(
+                                                labelText:
+                                                    'سعر الوحدة للمتر (${AppCurrency.symbol(invCurrency)})',
+                                              ),
+                                              onChanged: (v) {
+                                                final p = double.tryParse(v) ?? 0.0;
+                                                final q =
+                                                    double.tryParse(meterQtyCtrl.text) ?? 0.0;
+                                                meterTotalCostCtrl.text = (q * p).fmt;
+                                                setSt(() {});
+                                              },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: TextField(
+                                              controller: meterTotalCostCtrl,
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                decimal: true,
+                                              ),
+                                              decoration: InputDecoration(
+                                                labelText:
+                                                    'إجمالي التكلفة (${AppCurrency.symbol(invCurrency)})',
+                                              ),
+                                              onChanged: (v) {
+                                                final t = double.tryParse(v) ?? 0.0;
+                                                final q =
+                                                    double.tryParse(meterQtyCtrl.text) ?? 0.0;
+                                                if (q > 0) {
+                                                  meterPriceCtrl.text = (t / q).fmt;
+                                                }
+                                                setSt(() {});
+                                              },
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Align(
+                                        alignment: AlignmentDirectional.centerStart,
+                                        child: ElevatedButton.icon(
+                                          onPressed: () {
+                                            if (selectedSupplierId == null) {
+                                              setSt(
+                                                () => formError =
+                                                    'اختر المورد أولاً قبل إضافة الأصناف.',
+                                              );
+                                              return;
+                                            }
+                                            if (selectedMeterTypeId == null) {
+                                              setSt(() => formError = 'اختر نوع المتر.');
+                                              return;
+                                            }
+                                            final double q =
+                                                double.tryParse(meterQtyCtrl.text) ?? 0.0;
+                                            var p =
+                                                double.tryParse(meterPriceCtrl.text) ?? 0.0;
+                                            final t =
+                                                double.tryParse(meterTotalCostCtrl.text) ?? 0.0;
+                                            if (p <= 0 && t > 0 && q > 0) {
+                                              p = t / q;
+                                            }
+                                            if (q <= 0 || p < 0) {
+                                              setSt(
+                                                () => formError =
+                                                    'أدخل إجمالي أمتار صحيح وسعر وحدة صحيح.',
+                                              );
+                                              return;
+                                            }
+                                            final mt = erp.meterTypes.firstWhere(
+                                              (m) => m.id == selectedMeterTypeId,
+                                              orElse: () => erp.meterTypes.first,
+                                            );
+                                            setSt(() {
+                                              formError = null;
+                                              draftItems.add(
+                                                FactoryInvoiceItem(
+                                                  itemId: mt.id,
+                                                  description:
+                                                      '${mt.typeName} (${mt.grade}) ${mt.thicknessCm.fmt}سم - $selectedMeterUnit',
+                                                  typeName: mt.typeName,
+                                                  grade: mt.grade,
+                                                  thicknessCm: mt.thicknessCm,
+                                                  quantity: q,
+                                                  unitPrice: p,
+                                                  unitCost: p,
+                                                  isGranite: mt.isGranite,
+                                                  itemCategory: 'meter',
+                                                  meterUnit: selectedMeterUnit,
+                                                ),
+                                              );
+                                              meterQtyCtrl.clear();
+                                              meterPriceCtrl.clear();
+                                              meterTotalCostCtrl.clear();
+                                              selectedMeterTypeId = null;
+                                            });
+                                          },
+                                          icon: const Icon(Icons.add),
+                                          label: const Text('إضافة بند الأمتار للفاتورة +'),
+                                        ),
+                                      ),
+                                    ],
+                                    if (formError != null) ...[
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFEF2F2),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.error_outline, color: AppColors.dangerWaste, size: 18),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                formError!,
+                                                style: const TextStyle(
+                                                  color: AppColors.dangerWaste,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 16),
+
+                                    // 3. Shipment question.
+                                    const Text(
+                                      '3. هل وصلت هذه الشحنة أم لا؟',
+                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    Row(
+                                      children: [
+                                        yesNoOption(
+                                          'نعم وصلت',
+                                          true,
+                                          isDelivered,
+                                          (v) => setSt(() => isDelivered = v),
+                                        ),
+                                        yesNoOption(
+                                          'لا لم تصل',
+                                          false,
+                                          isDelivered,
+                                          (v) => setSt(() => isDelivered = v),
+                                        ),
+                                      ],
+                                    ),
+                                    if (isDelivered == false) ...[
+                                      TextField(
+                                        controller: shippingFeeCtrl,
+                                        keyboardType: TextInputType.number,
+                                        decoration: const InputDecoration(
+                                          labelText:
+                                              'تكاليف الشحن (تُدمج مع رأس مال المواد وتُسجل في المصروفات)',
+                                        ),
+                                        onChanged: (_) => setSt(() {}),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      const Text(
+                                        'ملاحظة: تكاليف الشحن تُوزّع على التكلفة الرأسمالية للمواد المشتراة وتُسجَّل في صفحة المصروفات كقيد إعلامي، ولا تُحمَّل على حساب المورد أو إجمالي هذه الفاتورة.',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.accentPrimary,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 16),
+
+                                    // 4. Financial & Payment settings
+                                    const Text(
+                                      '4. الشروط المالية والعملة:',
+                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    CurrencySelector(
+                                      value: invCurrency,
+                                      dense: true,
+                                      onChanged: (v) => setSt(() => invCurrency = v),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    TextField(
+                                      controller: discountCtrl,
+                                      keyboardType: const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                      decoration: const InputDecoration(
+                                        labelText: 'الخصم المكتسب من المورد (اختياري)',
+                                      ),
+                                      onChanged: (_) => setSt(() {}),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    if (cashInvoice)
+                                      Container(
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF0FDF4),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: const Color(0xFF86EFAC)),
+                                        ),
+                                        child: Text(
+                                          'فاتورة نقدية: سيتم دفع كامل مستحقات المورد (${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}) من الصندوق الرئيسي فوراً.',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF166534),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      )
+                                    else ...[
+                                      const Text(
+                                        'هل نريد الدفع له أم لا؟',
+                                        style: TextStyle(fontWeight: FontWeight.bold),
+                                      ),
+                                      Row(
+                                        children: [
+                                          yesNoOption(
+                                            'نعم (تسديد دفعة)',
+                                            true,
+                                            wantsPay,
+                                            (v) => setSt(() => wantsPay = v),
+                                          ),
+                                          yesNoOption(
+                                            'لا (آجل بالكامل)',
+                                            false,
+                                            wantsPay,
+                                            (v) => setSt(() => wantsPay = v),
+                                          ),
+                                        ],
+                                      ),
+                                      if (wantsPay == true) ...[
+                                        TextField(
+                                          controller: downPayCtrl,
+                                          keyboardType: TextInputType.number,
+                                          decoration: const InputDecoration(
+                                            labelText: 'الدفعة المقدمة (تُخصم من الإجمالي)',
+                                          ),
+                                          onChanged: (_) => setSt(() {}),
+                                        ),
+                                      ],
+                                    ],
+                                    const SizedBox(height: 16),
+
+                                    // 5. Image Attachment
+                                    AppImageAttachmentPicker(
+                                      initialPath: photoPath,
+                                      label: 'صورة فاتورة الشراء من المورد / وصل الاستلام',
+                                      onImageChanged: (p) => setSt(() => photoPath = p),
+                                    ),
+                                    const SizedBox(height: 24),
+
+                                    // Action buttons
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: AppColors.successGreen,
+                                              foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(vertical: 14),
+                                            ),
+                                            onPressed: submitInvoice,
+                                            icon: const Icon(Icons.check_circle_outline),
+                                            label: const Text(
+                                              'اعتماد وحفظ الفاتورة',
+                                              style: TextStyle(fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        OutlinedButton(
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                                          ),
+                                          onPressed: () => Navigator.pop(ctx),
+                                          child: const Text('إلغاء'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                            backgroundColor: AppColors.successGreen,
                           ),
-                        );
-                      },
-                      child: const Text('اعتماد وحفظ الفاتورة'),
+                        ),
+
+                        const SizedBox(width: 16),
+
+                        // RIGHT SIDE: Added Line Items & Live Invoice Summary
+                        Expanded(
+                          flex: 5,
+                          child: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppColors.panelBorder),
+                              ),
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Header
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: const [
+                                          Icon(Icons.receipt_long_rounded, color: AppColors.accentPrimary),
+                                          SizedBox(width: 8),
+                                          Text(
+                                            'أصناف وبنود الفاتورة',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: draftItems.isNotEmpty
+                                              ? AppColors.chipBgBlue
+                                              : const Color(0xFFF1F5F9),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Text(
+                                          '${draftItems.length} صنف',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: draftItems.isNotEmpty
+                                                ? AppColors.accentPrimary
+                                                : AppColors.brandSecondaryText,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  // Scrollable Added Items List
+                                  Expanded(
+                                    child: draftItems.isEmpty
+                                        ? Center(
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: const [
+                                                Icon(
+                                                  Icons.playlist_add_rounded,
+                                                  size: 48,
+                                                  color: Color(0xFFCBD5E1),
+                                                ),
+                                                SizedBox(height: 10),
+                                                Text(
+                                                  'لم تتم إضافة أي أصناف حتى الآن',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    color: AppColors.brandSecondaryText,
+                                                  ),
+                                                ),
+                                                SizedBox(height: 4),
+                                                Text(
+                                                  'املأ بيانات الصنف من جهة المدخلات (يساراً)\nثم اضغط "إضافة البند" لإدراجه في الفاتورة.',
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Color(0xFF94A3B8),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          )
+                                        : ListView.builder(
+                                            itemCount: draftItems.length,
+                                            itemBuilder: (context, idx) {
+                                              final it = draftItems[idx];
+                                              final isMeter = it.isMeterItem;
+                                              return Card(
+                                                margin: const EdgeInsets.only(bottom: 8),
+                                                elevation: 0,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  side: BorderSide(
+                                                    color: AppColors.panelBorder,
+                                                  ),
+                                                ),
+                                                child: ListTile(
+                                                  dense: true,
+                                                  leading: Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: isMeter
+                                                          ? AppColors.chipBgBlue
+                                                          : AppColors.chipBgAmber,
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    child: Text(
+                                                      isMeter ? 'أمتار' : 'بلوك',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: isMeter
+                                                            ? AppColors.accentPrimary
+                                                            : AppColors.partnersEquityAccent,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  title: Text(
+                                                    it.description,
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                  subtitle: Text(
+                                                    isMeter
+                                                        ? '${it.quantity.fmt} ${it.meterUnit} × ${it.unitPrice.fmt}${AppCurrency.symbol(invCurrency)} = ${(it.quantity * it.unitPrice).fmt}${AppCurrency.symbol(invCurrency)}'
+                                                        : '${it.quantity.fmt} طن × ${it.unitPrice.fmt}${AppCurrency.symbol(invCurrency)} = ${(it.quantity * it.unitPrice).fmt}${AppCurrency.symbol(invCurrency)}',
+                                                  ),
+                                                  trailing: IconButton(
+                                                    icon: const Icon(
+                                                      Icons.delete_outline,
+                                                      color: AppColors.dangerWaste,
+                                                      size: 20,
+                                                    ),
+                                                    tooltip: 'حذف البند',
+                                                    onPressed: () => setSt(
+                                                      () => draftItems.removeAt(idx),
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                  ),
+
+                                  const SizedBox(height: 12),
+
+                                  // Invoice Live Totals Summary Card
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: AppColors.panelBorder),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text('إجمالي قيمة المواد:', style: TextStyle(fontSize: 12)),
+                                            Text(
+                                              '${itemsTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
+                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                            ),
+                                          ],
+                                        ),
+                                        if (discount > 0) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('الخصم المكتسب:', style: TextStyle(fontSize: 12, color: AppColors.successGreen)),
+                                              Text(
+                                                '-${discount.fmt} ${AppCurrency.symbol(invCurrency)}',
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.successGreen),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                        if (shipping > 0) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text(
+                                                'الشحن (مرسمل على المواد):',
+                                                style: TextStyle(fontSize: 11, color: AppColors.brandSecondaryText),
+                                              ),
+                                              Text(
+                                                '${shipping.fmt} ${AppCurrency.symbol(invCurrency)}',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: AppColors.accentPrimary,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                        const Divider(height: 14),
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text(
+                                              'صافي إجمالي الفاتورة:',
+                                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                            ),
+                                            Row(
+                                              children: [
+                                                Text(
+                                                  '${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                    color: AppColors.accentPrimary,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                CurrencyBadge(currency: invCurrency),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Align(
+                                          alignment: AlignmentDirectional.centerEnd,
+                                          child: TextButton.icon(
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: const Color(0xFF4F46E5),
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 4,
+                                              ),
+                                            ),
+                                            onPressed: () {
+                                              final currentNet = grandTotal;
+                                              final truncated = currentNet.truncateToDouble();
+                                              final diff = currentNet - truncated;
+                                              if (diff > 0.0001) {
+                                                final curDisc =
+                                                    double.tryParse(discountCtrl.text) ?? 0.0;
+                                                discountCtrl.text = (curDisc + diff).fmt;
+                                                if (cashInvoice) {
+                                                  downPayCtrl.text = truncated.fmt;
+                                                }
+                                                setSt(() {});
+                                              }
+                                            },
+                                            icon: const Icon(Icons.content_cut_rounded, size: 14),
+                                            label: const Text(
+                                              'تجاهل القروش (Ignore Cents)',
+                                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ),
+                                        if (cashInvoice) ...[
+                                          const Divider(height: 10),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('المسدد بالكامل من الصندوق:', style: TextStyle(fontSize: 12, color: AppColors.successGreen)),
+                                              Text(
+                                                '${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.successGreen),
+                                              ),
+                                            ],
+                                          ),
+                                        ] else if (wantsPay == true) ...[
+                                          const Divider(height: 10),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('الدفعة المسددة مقدماً:', style: TextStyle(fontSize: 12)),
+                                              Text(
+                                                '${downPay.fmt} ${AppCurrency.symbol(invCurrency)}',
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.accentPrimary),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('المتبقي بذمة المورد:', style: TextStyle(fontSize: 12, color: AppColors.dangerWaste)),
+                                              Text(
+                                                '${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(invCurrency)}',
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.dangerWaste),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           );
@@ -4553,936 +4852,1340 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               .where((it) => it.itemId == whId)
               .fold(0.0, (s, it) => s + it.calculatedArea);
 
+          final screenWidth = MediaQuery.sizeOf(context).width;
+          final screenHeight = MediaQuery.sizeOf(context).height;
+
+          void submitInvoice() {
+            if (selectedClientId == null) {
+              setSt(() => formError = 'اختر المعتمد.');
+              return;
+            }
+            if (draftItems.isEmpty) {
+              setSt(
+                () => formError = 'أضف صنفاً واحداً على الأقل بزر +.',
+              );
+              return;
+            }
+            if (deliverByUs == null) {
+              setSt(() => formError = 'اختر خيار التوصيل.');
+              return;
+            }
+            if (salesDiscount < 0 ||
+                salesDiscount >
+                    itemsTotal + itemsServicesTotal + shipping) {
+              setSt(
+                () => formError =
+                    'قيمة خصم المبيعات يجب أن تكون بين صفر وإجمالي الفاتورة.',
+              );
+              return;
+            }
+            double advance = cashInvoice
+                ? grandTotal
+                : (double.tryParse(downPayCtrl.text) ?? 0.0);
+            if (advance < 0) advance = 0.0;
+            if (advance > grandTotal) {
+              advance = grandTotal;
+            }
+            final client = erp.clients.firstWhere(
+              (c) => c.id == selectedClientId,
+              orElse: () => erp.clients.first,
+            );
+            final newInvoice = FactoryInvoiceModel(
+              id: 'fi_pos_${DateTime.now().millisecondsSinceEpoch}',
+              invoiceNo:
+                  'FAC-POS-${erp.factoryInvoices.length + 101}',
+              date: DateTime.now(),
+              partyId: client.id,
+              partyName: client.name,
+              invoiceType: 'بيع_معتمد',
+              items: List.of(draftItems),
+              isGoodsDelivered: deliverByUs == true,
+              shippingFee: shipping,
+              advancePayment: advance,
+              discountAmount: salesDiscount,
+              isCashInvoice: cashInvoice,
+              photoUrl: photoCtrl.text.trim(),
+              currency: posCurrency,
+            );
+            final created = assignedOrder != null
+                ? erp.assignFactoryOrderToPOSInvoice(
+                    assignedOrder!,
+                    newInvoice,
+                  )
+                : erp.addFactoryPOSInvoice(newInvoice);
+            if (!created) {
+              setSt(
+                () => formError =
+                    'تعذر اعتماد الفاتورة النقدية؛ تحقق من تسديد كامل الإجمالي.',
+              );
+              return;
+            }
+            Navigator.pop(ctx);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  assignedOrder != null
+                      ? 'تم حفظ الفاتورة وإسناد طلبية المصنع (${assignedOrder!.orderNo}) ونقل العربون إلى الصندوق الرئيسي بنجاح.'
+                      : cashInvoice
+                          ? 'تم إصدار فاتورة البيع النقدية وتحصيلها بالكامل في الصندوق الرئيسي.'
+                          : advance >= grandTotal - 0.01
+                              ? 'تم حفظ الفاتورة مدفوعة بالكامل وتسجيلها في قسم المدفوعة.'
+                              : 'تم حفظ الفاتورة وتسجيلها في قسم التحصيل المعلق.',
+                ),
+                backgroundColor: AppColors.successGreen,
+              ),
+            );
+          }
+
           return Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
             child: Container(
-              width: 760,
-              padding: const EdgeInsets.all(24),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'إنشاء فاتورة مصنع لمعتمد',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.titleLarge?.copyWith(fontSize: 18),
-                    ),
-                    const Divider(height: 20),
-
-                    // Factory Order Assignment Section
-                    Builder(builder: (context) {
-                      final pendingOrders = erp.factoryOrders
-                          .where((o) => o.status == 'قيد التنفيذ')
-                          .toList();
-
-                      if (assignedOrder != null) {
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEFF6FF),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFF93C5FD)),
+              width: math.min(screenWidth * 0.95, 1200),
+              height: math.min(screenHeight * 0.92, 850),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Title Bar
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: cashInvoice
+                                  ? AppColors.chipBgGreen
+                                  : AppColors.chipBgBlue,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              cashInvoice
+                                  ? Icons.point_of_sale_rounded
+                                  : Icons.storefront_rounded,
+                              color: cashInvoice
+                                  ? AppColors.successGreen
+                                  : AppColors.accentPrimary,
+                              size: 22,
+                            ),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.link_rounded,
-                                          color: Color(0xFF2563EB), size: 22),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'تم إسناد طلبية المصنع: ${assignedOrder!.orderNo} للزبون ${assignedOrder!.clientName}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFF1E40AF),
+                          const SizedBox(width: 12),
+                          Text(
+                            cashInvoice
+                                ? 'إنشاء فاتورة بيع نقدية لمعتمد'
+                                : 'إنشاء فاتورة مصنع لمعتمد',
+                            style: Theme.of(
+                              context,
+                            ).textTheme.titleLarge?.copyWith(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (cashInvoice) ...[
+                            const SizedBox(width: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFDCFCE7),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: const Color(0xFF86EFAC),
+                                ),
+                              ),
+                              child: const Text(
+                                'نقدية فورية',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF15803D),
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (assignedOrder != null) ...[
+                            const SizedBox(width: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: const Color(0xFF93C5FD),
+                                ),
+                              ),
+                              child: Text(
+                                'طلبية: ${assignedOrder!.orderNo}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E40AF),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 16),
+
+                  // Split 2-Column Layout:
+                  // Left Side = Input Fields
+                  // Right Side = Added Line Items
+                  Expanded(
+                    child: Row(
+                      textDirection: TextDirection.ltr,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // LEFT SIDE: Input Fields
+                        Expanded(
+                          flex: 6,
+                          child: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFAFAFA),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppColors.panelBorder),
+                              ),
+                              padding: const EdgeInsets.all(16),
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    // Factory Order Assignment Section
+                                    Builder(builder: (context) {
+                                      final pendingOrders = erp.factoryOrders
+                                          .where((o) => o.status == 'قيد التنفيذ')
+                                          .toList();
+
+                                      if (assignedOrder != null) {
+                                        return Container(
+                                          margin: const EdgeInsets.only(bottom: 16),
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFEFF6FF),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: const Color(0xFF93C5FD)),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      const Icon(Icons.link_rounded,
+                                                          color: Color(0xFF2563EB), size: 22),
+                                                      const SizedBox(width: 8),
+                                                      Text(
+                                                        'إسناد طلبية: ${assignedOrder!.orderNo} (${assignedOrder!.clientName})',
+                                                        style: const TextStyle(
+                                                          fontWeight: FontWeight.bold,
+                                                          color: Color(0xFF1E40AF),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  TextButton.icon(
+                                                    style: TextButton.styleFrom(
+                                                      foregroundColor: AppColors.dangerWaste,
+                                                    ),
+                                                    onPressed: () {
+                                                      setSt(() {
+                                                        assignedOrder = null;
+                                                      });
+                                                    },
+                                                    icon: const Icon(
+                                                      Icons.link_off_rounded,
+                                                      size: 16,
+                                                    ),
+                                                    label: const Text('إلغاء الربط'),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                children: [
+                                                  const Text(
+                                                    'العربون المحجوز في صندوق الطلبيات: ',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: Color(0xFF1E3A8A),
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '${assignedOrder!.depositAmount.fmt} ${assignedOrder!.currencySymbol}',
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 13,
+                                                      color: AppColors.orderDepositBoxAccent,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              const Text(
+                                                '• تم استيراد أصناف الطلبية، ويمكنك تعديل المقاسات، والأسعار، أو إضافة بنود وخدمات.\n'
+                                                '• عند حفظ الفاتورة، سيتم تحويل العربون تلقائياً إلى الصندوق الرئيسي وتحديث حالة الطلبية.',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Color(0xFF3B82F6),
+                                                  height: 1.4,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      } else if (pendingOrders.isNotEmpty) {
+                                        return Container(
+                                          margin: const EdgeInsets.only(bottom: 16),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF8FAFC),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: AppColors.panelBorder),
+                                          ),
+                                          child: DropdownButtonFormField<String>(
+                                            decoration: const InputDecoration(
+                                              labelText:
+                                                  '📥 إسناد من طلبية مصنع معلقة (اختياري)',
+                                              prefixIcon: Icon(
+                                                Icons.file_download_outlined,
+                                                color: AppColors.orderDepositBoxAccent,
+                                              ),
+                                              isDense: true,
+                                              border: InputBorder.none,
+                                            ),
+                                            items: pendingOrders
+                                                .map((ord) => DropdownMenuItem(
+                                                      value: ord.id,
+                                                      child: Text(
+                                                        '${ord.orderNo} • ${ord.clientName} (${ord.totalArea.fmt} م) • عربون: ${ord.depositAmount.fmt} ${ord.currencySymbol}',
+                                                      ),
+                                                    ))
+                                                .toList(),
+                                            onChanged: (ordId) {
+                                              if (ordId == null) return;
+                                              final ord = pendingOrders
+                                                  .firstWhere((o) => o.id == ordId);
+                                              setSt(() {
+                                                assignedOrder = ord;
+                                                final matchClient = approvedClients
+                                                    .where(
+                                                      (c) =>
+                                                          c.id == ord.partyId ||
+                                                          c.name == ord.clientName,
+                                                    )
+                                                    .toList();
+                                                if (matchClient.isNotEmpty) {
+                                                  selectedClientId = matchClient.first.id;
+                                                }
+                                                posCurrency = ord.currency;
+                                                draftItems.clear();
+                                                draftItems.addAll(ord.items);
+                                                deliverByUs = ord.isGoodsDelivered;
+                                                if (ord.shippingFee > 0) {
+                                                  shippingCtrl.text = ord.shippingFee.fmt;
+                                                }
+                                                if (ord.discountAmount > 0) {
+                                                  salesDiscountCtrl.text =
+                                                      ord.discountAmount.fmt;
+                                                }
+                                                downPayCtrl.text = ord.depositAmount > 0
+                                                    ? ord.depositAmount.fmt
+                                                    : '';
+                                                if (ord.photoPath.isNotEmpty) {
+                                                  photoCtrl.text = ord.photoPath;
+                                                }
+                                              });
+                                            },
+                                          ),
+                                        );
+                                      }
+                                      return const SizedBox.shrink();
+                                    }),
+
+                                    // 1. Approved client searchable + inline add.
+                                    const Text(
+                                      '1. المعتمد (قائمة قابلة للبحث):',
+                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextField(
+                                            decoration: const InputDecoration(
+                                              labelText: 'بحث عن معتمد...',
+                                              prefixIcon: Icon(Icons.search),
+                                              isDense: true,
+                                            ),
+                                            onChanged: (v) =>
+                                                setSt(() => clientSearch = v.trim()),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        OutlinedButton.icon(
+                                          onPressed: () =>
+                                              refreshAfterAdd(() => _showAddClientDialog(erp)),
+                                          icon: const Icon(Icons.person_add_alt_1, size: 18),
+                                          label: const Text('معتمد جديد +'),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    DropdownButtonFormField<String>(
+                                      initialValue: clientValue,
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(labelText: 'المعتمد'),
+                                      items: clientsFiltered
+                                          .map(
+                                            (c) => DropdownMenuItem(
+                                              value: c.id,
+                                              child: Text(c.name),
+                                            ),
+                                          )
+                                          .toList(),
+                                      onChanged: (v) => setSt(() => selectedClientId = v),
+                                    ),
+                                    const SizedBox(height: 16),
+
+                                    // 2. Factory Warehouse Goods
+                                    const Text(
+                                      '2. تفاصيل الصنف من مستودع المصنع:',
+                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    TextField(
+                                      decoration: const InputDecoration(
+                                        labelText: 'بحث صنف المستودع (النوع والدرجة)...',
+                                        prefixIcon: Icon(Icons.search),
+                                        isDense: true,
+                                      ),
+                                      onChanged: (v) => setSt(() => goodsSearch = v.trim()),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    DropdownButtonFormField<String>(
+                                      initialValue: goodsValue,
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(
+                                        labelText: 'نوع البضاعة حسب مستودع المصنع',
+                                      ),
+                                      items: goodsFiltered
+                                          .map(
+                                            (g) => DropdownMenuItem(
+                                              value: g.id,
+                                              child: Text(
+                                                '${g.typeName} ${g.grade} ${g.thicknessCm}سم (${g.category}) — المتاح: ${g.availableQty} — سعر بيع المتر: ${g.recommendedSalePrice.fmt} \$',
+                                              ),
+                                            ),
+                                          )
+                                          .toList(),
+                                      onChanged: (v) {
+                                        setSt(() {
+                                          selectedWhId = v;
+                                          if (v != null) {
+                                            final mList = erp.factoryWarehouse.where((g) => g.id == v).toList();
+                                            if (mList.isNotEmpty) {
+                                              final selWh = mList.first;
+                                              selectedItemMeterUnit = selWh.category == 'متر مكعب' ? 'متر مكعب' : 'متر مربع';
+                                              if (selectedItemMeterUnit == 'متر مكعب') {
+                                                heightCtrl.text = selWh.thicknessCm.fmt;
+                                                final cp = getFactoryCubicSellingPrice(selWh);
+                                                unitPriceCtrl.text = cp > 0 ? cp.fmt : (selWh.recommendedSalePrice > 0 ? selWh.recommendedSalePrice.fmt : '');
+                                              } else {
+                                                heightCtrl.clear();
+                                                if (selWh.recommendedSalePrice > 0) {
+                                                  unitPriceCtrl.text = selWh.recommendedSalePrice.fmt;
+                                                }
+                                              }
+                                            }
+                                          }
+                                          autoCalcServicePrice();
+                                        });
+                                      },
+                                    ),
+                                    const SizedBox(height: 8),
+                                    if (wh == null)
+                                      const Text(
+                                        'اختر الصنف من القائمة أعلاه لإدخال القياسات والأسعار.',
+                                        style: TextStyle(color: AppColors.brandSecondaryText),
+                                      ),
+                                    if (wh != null) ...[
+                                      Row(
+                                        children: [
+                                          const Text(
+                                            'وحدة القياس / البيع:',
+                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          ChoiceChip(
+                                            label: const Text('متر مربع (م²)'),
+                                            selected: !isCube,
+                                            onSelected: (sel) {
+                                              if (sel) {
+                                                setSt(() {
+                                                  selectedItemMeterUnit = 'متر مربع';
+                                                  heightCtrl.clear();
+                                                  if (wh.recommendedSalePrice > 0) {
+                                                    unitPriceCtrl.text = wh.recommendedSalePrice.fmt;
+                                                  }
+                                                });
+                                              }
+                                            },
+                                          ),
+                                          const SizedBox(width: 8),
+                                          ChoiceChip(
+                                            label: const Text('متر مكعب (م³)'),
+                                            selected: isCube,
+                                            selectedColor: const Color(0xFFDCFCE7),
+                                            onSelected: (sel) {
+                                              if (sel) {
+                                                setSt(() {
+                                                  selectedItemMeterUnit = 'متر مكعب';
+                                                  heightCtrl.text = wh.thicknessCm.fmt;
+                                                  final cp = getFactoryCubicSellingPrice(wh);
+                                                  if (cp > 0) unitPriceCtrl.text = cp.fmt;
+                                                });
+                                              }
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              controller: lengthCtrl,
+                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                              decoration: const InputDecoration(
+                                                labelText: 'الطول (سم)',
+                                              ),
+                                              onChanged: (_) {
+                                                autoCalcServicePrice();
+                                                setSt(() {});
+                                              },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: TextField(
+                                              controller: widthCtrl,
+                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                              decoration: const InputDecoration(
+                                                labelText: 'العرض (سم)',
+                                              ),
+                                              onChanged: (_) => setSt(() {}),
+                                            ),
+                                          ),
+                                          if (isCube) ...[
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: TextField(
+                                                controller: heightCtrl,
+                                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                decoration: InputDecoration(
+                                                  labelText: 'الارتفاع = السماكة (سم)',
+                                                  helperText: 'سماكة المادة: ${wh.thicknessCm.fmt} سم',
+                                                ),
+                                                onChanged: (_) => setSt(() {}),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              controller: qtyCtrl,
+                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                              decoration: const InputDecoration(
+                                                labelText: 'الكمية (العدد)',
+                                              ),
+                                              onChanged: (_) {
+                                                autoCalcServicePrice();
+                                                setSt(() {});
+                                              },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: TextField(
+                                              controller: unitPriceCtrl,
+                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                              decoration: InputDecoration(
+                                                labelText: 'سعر بيع المتر (${isCube ? "م³" : "م²"} \$)',
+                                                helperText: isCube
+                                                    ? 'سعر المتر المكعب: ${getFactoryCubicSellingPrice(wh).fmt} \$'
+                                                    : (wh.recommendedSalePrice > 0
+                                                        ? 'سعر المستودع: ${wh.recommendedSalePrice.fmt} \$'
+                                                        : null),
+                                              ),
+                                              onChanged: (_) => setSt(() {}),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 10,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.chipBgBlue,
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Text(
+                                                    'إجمالي قيمة البضاعة:',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color: Color(0xFF64748B),
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '${draftTotal.fmt} \$',
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 14,
+                                                      color: AppColors.accentPrimary,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+
+                                      // Calculated number of meters preview
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF0FDF4),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: const Color(0xFF86EFAC), width: 1.2),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFDCFCE7),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: const Icon(Icons.straighten_rounded, color: Color(0xFF15803D), size: 22),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      const Text(
+                                                        'إجمالي الأمتار المحسوبة للبند:',
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          fontWeight: FontWeight.bold,
+                                                          color: Color(0xFF166534),
+                                                        ),
+                                                      ),
+                                                      Text(
+                                                        '${area.fmt} ${isCube ? "متر مكعب (م³)" : "متر مربع (م²)"}',
+                                                        style: const TextStyle(
+                                                          fontSize: 16,
+                                                          fontWeight: FontWeight.w900,
+                                                          color: Color(0xFF15803D),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 3),
+                                                  Text(
+                                                    (l > 0 && w > 0 && q > 0)
+                                                        ? 'الحساب: (${(l / 100.0).fmt}م × ${(w / 100.0).fmt}م ${isCube ? "× ${(h / 100.0).fmt}م " : ""}× ${q.fmt} قطع) = ${area.fmt} ${isCube ? "م³" : "م²"}'
+                                                        : 'أدخل الطول والعرض والعدد لاحتساب إجمالي الأمتار تلقائياً',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: (l > 0 && w > 0 && q > 0) ? const Color(0xFF166534) : const Color(0xFF64748B),
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+
+                                      // Attach services to warehouse item
+                                      _buildServicesAttachmentSection(
+                                        setSt: setSt,
+                                        erp: erp,
+                                        serviceSearch: serviceSearch,
+                                        onSearchChanged: (v) => setSt(() => serviceSearch = v),
+                                        serviceValue: serviceValue,
+                                        servicesFiltered: servicesFiltered,
+                                        onServiceChanged: (v) {
+                                          setSt(() {
+                                            selectedServiceId = v;
+                                            autoCalcServicePrice();
+                                          });
+                                        },
+                                        servicePriceCtrl: servicePriceCtrl,
+                                        serviceNotesCtrl: serviceNotesCtrl,
+                                        selectedServiceId: selectedServiceId,
+                                        draftServices: draftServices,
+                                        draftServicesTotal: draftServicesTotal,
+                                        curLengthM: l > 0 ? (l / 100.0) : 0.0,
+                                        curQuantity: q,
+                                        onError: (err) => setSt(() => formError = err),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Align(
+                                        alignment: AlignmentDirectional.centerStart,
+                                        child: ElevatedButton.icon(
+                                          onPressed: () {
+                                            if (selectedClientId == null) {
+                                              setSt(() => formError = 'اختر المعتمد أولاً.');
+                                              return;
+                                            }
+                                            if (area <= 0) {
+                                              setSt(
+                                                () => formError = 'أدخل أبعاداً وكمية صحيحة.',
+                                              );
+                                              return;
+                                            }
+                                            if (price < 0) {
+                                              setSt(() => formError = 'أدخل سعر وحدة صحيح.');
+                                              return;
+                                            }
+                                            final available =
+                                                wh.availableQty - draftedFor(wh.id);
+                                            if (area > available + 0.0001) {
+                                              setSt(
+                                                () => formError =
+                                                    'الكمية تتجاوز المتاح في المستودع (${available.fmt}).',
+                                              );
+                                              return;
+                                            }
+                                            setSt(() {
+                                              formError = null;
+                                              draftItems.add(
+                                                FactoryInvoiceItem(
+                                                  itemId: wh.id,
+                                                  description:
+                                                      '${wh.typeName} ${wh.grade} ${wh.thicknessCm}سم',
+                                                  typeName: wh.typeName,
+                                                  grade: wh.grade,
+                                                  lengthCm: l,
+                                                  widthCm: w,
+                                                  heightCm: isCube ? h : 0.0,
+                                                  quantity: q,
+                                                  unitPrice: price,
+                                                  unitCost: wh.netCostPerUnit,
+                                                  isGranite: wh.isGranite,
+                                                  services: List.of(draftServices),
+                                                  thicknessCm: wh.thicknessCm,
+                                                  meterUnit: isCube ? 'متر مكعب' : 'متر مربع',
+                                                ),
+                                              );
+                                              draftServices.clear();
+                                              lengthCtrl.clear();
+                                              widthCtrl.clear();
+                                              heightCtrl.clear();
+                                              qtyCtrl.clear();
+                                              unitPriceCtrl.clear();
+                                              selectedWhId = null;
+                                            });
+                                          },
+                                          icon: const Icon(Icons.add),
+                                          label: const Text('إضافة الصنف للفاتورة +'),
                                         ),
                                       ),
                                     ],
-                                  ),
-                                  TextButton.icon(
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: AppColors.dangerWaste,
-                                    ),
-                                    onPressed: () {
-                                      setSt(() {
-                                        assignedOrder = null;
-                                      });
-                                    },
-                                    icon: const Icon(
-                                      Icons.link_off_rounded,
-                                      size: 16,
-                                    ),
-                                    label: const Text('إلغاء الربط بالطلبية'),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  const Text(
-                                    'العربون المحجوز في صندوق الطلبيات المعزول: ',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF1E3A8A),
-                                    ),
-                                  ),
-                                  Text(
-                                    '${assignedOrder!.depositAmount.fmt} ${assignedOrder!.currencySymbol}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                      color: AppColors.orderDepositBoxAccent,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              const Text(
-                                '• تم استيراد أصناف الطلبية أدناه، ولك كامل الحرية في تعديل المقاسات، والأسعار، أو حذف وإضافة بنود وخدمات.\n'
-                                '• عند حفظ الفاتورة، سيتم تحويل العربون تلقائياً إلى الصندوق الرئيسي وتحديث حالة الطلبية إلى "مكتملة ومرحلة".',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xFF3B82F6),
-                                  height: 1.4,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      } else if (pendingOrders.isNotEmpty) {
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppColors.panelBorder),
-                          ),
-                          child: DropdownButtonFormField<String>(
-                            decoration: const InputDecoration(
-                              labelText:
-                                  '📥 إسناد من طلبية مصنع معلقة (اختياري)',
-                              prefixIcon: Icon(
-                                Icons.file_download_outlined,
-                                color: AppColors.orderDepositBoxAccent,
-                              ),
-                              isDense: true,
-                              border: InputBorder.none,
-                            ),
-                            items: pendingOrders
-                                .map((ord) => DropdownMenuItem(
-                                      value: ord.id,
-                                      child: Text(
-                                        '${ord.orderNo} • ${ord.clientName} (${ord.totalArea.fmt} م) • عربون: ${ord.depositAmount.fmt} ${ord.currencySymbol}',
+                                    if (formError != null) ...[
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFEF2F2),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.error_outline, color: AppColors.dangerWaste, size: 18),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                formError!,
+                                                style: const TextStyle(
+                                                  color: AppColors.dangerWaste,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ))
-                                .toList(),
-                            onChanged: (ordId) {
-                              if (ordId == null) return;
-                              final ord = pendingOrders
-                                  .firstWhere((o) => o.id == ordId);
-                              setSt(() {
-                                assignedOrder = ord;
-                                final matchClient = approvedClients
-                                    .where(
-                                      (c) =>
-                                          c.id == ord.partyId ||
-                                          c.name == ord.clientName,
-                                    )
-                                    .toList();
-                                if (matchClient.isNotEmpty) {
-                                  selectedClientId = matchClient.first.id;
-                                }
-                                posCurrency = ord.currency;
-                                draftItems.clear();
-                                draftItems.addAll(ord.items);
-                                deliverByUs = ord.isGoodsDelivered;
-                                if (ord.shippingFee > 0) {
-                                  shippingCtrl.text = ord.shippingFee.fmt;
-                                }
-                                if (ord.discountAmount > 0) {
-                                  salesDiscountCtrl.text =
-                                      ord.discountAmount.fmt;
-                                }
-                                downPayCtrl.text = ord.depositAmount > 0
-                                    ? ord.depositAmount.fmt
-                                    : '';
-                                if (ord.photoPath.isNotEmpty) {
-                                  photoCtrl.text = ord.photoPath;
-                                }
-                              });
-                            },
-                          ),
-                        );
-                      }
-                      return const SizedBox.shrink();
-                    }),
+                                    ],
+                                    const SizedBox(height: 16),
 
-                    // 1. Approved client searchable + inline add.
-                    const Text(
-                      '1. المعتمد (قائمة قابلة للبحث):',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            decoration: const InputDecoration(
-                              labelText: 'بحث عن معتمد...',
-                              prefixIcon: Icon(Icons.search),
-                              isDense: true,
-                            ),
-                            onChanged: (v) =>
-                                setSt(() => clientSearch = v.trim()),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          onPressed: () =>
-                              refreshAfterAdd(() => _showAddClientDialog(erp)),
-                          icon: const Icon(Icons.person_add_alt_1, size: 18),
-                          label: const Text('معتمد جديد +'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: clientValue,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'المعتمد'),
-                      items: clientsFiltered
-                          .map(
-                            (c) => DropdownMenuItem(
-                              value: c.id,
-                              child: Text(c.name),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) => setSt(() => selectedClientId = v),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // 2. Factory Warehouse Goods (بضاعة مستودع المصنع).
-                    const Text(
-                      '2. أصناف بضاعة مستودع المصنع (بزر +):',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                      TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'بحث صنف المستودع (النوع والدرجة)...',
-                          prefixIcon: Icon(Icons.search),
-                          isDense: true,
-                        ),
-                        onChanged: (v) => setSt(() => goodsSearch = v.trim()),
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        initialValue: goodsValue,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'نوع البضاعة حسب مستودع المصنع',
-                        ),
-                        items: goodsFiltered
-                            .map(
-                              (g) => DropdownMenuItem(
-                                value: g.id,
-                                child: Text(
-                                  '${g.typeName} ${g.grade} ${g.thicknessCm}سم (${g.category}) — المتاح: ${g.availableQty} — سعر بيع المتر: ${g.recommendedSalePrice.fmt} \$',
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) {
-                          setSt(() {
-                            selectedWhId = v;
-                            if (v != null) {
-                              final mList = erp.factoryWarehouse.where((g) => g.id == v).toList();
-                              if (mList.isNotEmpty) {
-                                final selWh = mList.first;
-                                selectedItemMeterUnit = selWh.category == 'متر مكعب' ? 'متر مكعب' : 'متر مربع';
-                                if (selectedItemMeterUnit == 'متر مكعب') {
-                                  heightCtrl.text = selWh.thicknessCm.fmt;
-                                  final cp = getFactoryCubicSellingPrice(selWh);
-                                  unitPriceCtrl.text = cp > 0 ? cp.fmt : (selWh.recommendedSalePrice > 0 ? selWh.recommendedSalePrice.fmt : '');
-                                } else {
-                                  heightCtrl.clear();
-                                  if (selWh.recommendedSalePrice > 0) {
-                                    unitPriceCtrl.text = selWh.recommendedSalePrice.fmt;
-                                  }
-                                }
-                              }
-                            }
-                            autoCalcServicePrice();
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      if (wh == null)
-                        const Text(
-                          'اختر الصنف أولاً.',
-                          style: TextStyle(color: AppColors.brandSecondaryText),
-                        ),
-                      if (wh != null) ...[
-                        Row(
-                          children: [
-                            const Text(
-                              'وحدة القياس / البيع:',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                            ),
-                            const SizedBox(width: 12),
-                            ChoiceChip(
-                              label: const Text('متر مربع (م²)'),
-                              selected: !isCube,
-                              onSelected: (sel) {
-                                if (sel) {
-                                  setSt(() {
-                                    selectedItemMeterUnit = 'متر مربع';
-                                    heightCtrl.clear();
-                                    if (wh.recommendedSalePrice > 0) {
-                                      unitPriceCtrl.text = wh.recommendedSalePrice.fmt;
-                                    }
-                                  });
-                                }
-                              },
-                            ),
-                            const SizedBox(width: 8),
-                            ChoiceChip(
-                              label: const Text('متر مكعب (م³)'),
-                              selected: isCube,
-                              selectedColor: const Color(0xFFDCFCE7),
-                              onSelected: (sel) {
-                                if (sel) {
-                                  setSt(() {
-                                    selectedItemMeterUnit = 'متر مكعب';
-                                    heightCtrl.text = wh.thicknessCm.fmt;
-                                    final cp = getFactoryCubicSellingPrice(wh);
-                                    if (cp > 0) unitPriceCtrl.text = cp.fmt;
-                                  });
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: lengthCtrl,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                decoration: const InputDecoration(
-                                  labelText: 'الطول (سم)',
-                                ),
-                                onChanged: (_) {
-                                  autoCalcServicePrice();
-                                  setSt(() {});
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                controller: widthCtrl,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                decoration: const InputDecoration(
-                                  labelText: 'العرض (سم)',
-                                ),
-                                onChanged: (_) => setSt(() {}),
-                              ),
-                            ),
-                            if (isCube) ...[
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  controller: heightCtrl,
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  decoration: InputDecoration(
-                                    labelText: 'الارتفاع = السماكة (سم)',
-                                    helperText: 'سماكة المادة: ${wh.thicknessCm.fmt} سم',
-                                  ),
-                                  onChanged: (_) => setSt(() {}),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: qtyCtrl,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                decoration: const InputDecoration(
-                                  labelText: 'الكمية (العدد)',
-                                ),
-                                onChanged: (_) {
-                                  autoCalcServicePrice();
-                                  setSt(() {});
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                controller: unitPriceCtrl,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                decoration: InputDecoration(
-                                  labelText: 'سعر بيع المتر (${isCube ? "م³" : "م²"} \$)',
-                                  helperText: isCube
-                                      ? 'سعر المتر المكعب للمادة: ${getFactoryCubicSellingPrice(wh).fmt} \$'
-                                      : (wh.recommendedSalePrice > 0
-                                          ? 'سعر المستودع: ${wh.recommendedSalePrice.fmt} \$'
-                                          : null),
-                                ),
-                                onChanged: (_) => setSt(() {}),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.chipBgBlue,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
+                                    // 3. Delivery options
                                     const Text(
-                                      'إجمالي قيمة البضاعة:',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: Color(0xFF64748B),
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                      '3. خيار التوصيل:',
+                                      style: TextStyle(fontWeight: FontWeight.bold),
                                     ),
-                                    Text(
-                                      '${draftTotal.fmt} \$',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                        color: AppColors.accentPrimary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-
-                        // Prominently display calculated number of meters before adding the line item
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF0FDF4),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFF86EFAC), width: 1.2),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFDCFCE7),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Icon(Icons.straighten_rounded, color: Color(0xFF15803D), size: 22),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        const Text(
-                                          'إجمالي عدد الأمتار المحسوبة للبند:',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF166534),
+                                        Expanded(
+                                          child: InkWell(
+                                            onTap: () => setSt(() => deliverByUs = false),
+                                            child: Row(
+                                              children: [
+                                                Radio<bool>(
+                                                  value: false,
+                                                  groupValue: deliverByUs,
+                                                  onChanged: (v) =>
+                                                      setSt(() => deliverByUs = v),
+                                                ),
+                                                const Expanded(child: Text('الزبون يستلم النقل')),
+                                              ],
+                                            ),
                                           ),
                                         ),
-                                        Text(
-                                          '${area.fmt} ${isCube ? "متر مكعب (م³)" : "متر مربع (م²)"}',
-                                          style: const TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w900,
-                                            color: Color(0xFF15803D),
+                                        Expanded(
+                                          child: InkWell(
+                                            onTap: () => setSt(() => deliverByUs = true),
+                                            child: Row(
+                                              children: [
+                                                Radio<bool>(
+                                                  value: true,
+                                                  groupValue: deliverByUs,
+                                                  onChanged: (v) =>
+                                                      setSt(() => deliverByUs = v),
+                                                ),
+                                                const Expanded(child: Text('نوصّل نحن')),
+                                              ],
+                                            ),
                                           ),
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      (l > 0 && w > 0 && q > 0)
-                                          ? 'طريقة الحساب: (الطول ${(l / 100.0).fmt}م × العرض ${(w / 100.0).fmt}م ${isCube ? "× الارتفاع ${(h / 100.0).fmt}م " : ""}× العدد ${q.fmt} قطع) = ${area.fmt} ${isCube ? "م³" : "م²"}'
-                                          : 'أدخل الطول والعرض والعدد لاحتساب إجمالي الأمتار تلقائياً قبل إضافة الصنف',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: (l > 0 && w > 0 && q > 0) ? const Color(0xFF166534) : const Color(0xFF64748B),
-                                        fontWeight: FontWeight.w600,
+                                    if (deliverByUs == true)
+                                      TextField(
+                                        controller: shippingCtrl,
+                                        keyboardType: TextInputType.number,
+                                        decoration: const InputDecoration(
+                                          labelText: 'تكلفة التوصيل / الشحن (\$)',
+                                          isDense: true,
+                                        ),
+                                        onChanged: (_) => setSt(() {}),
                                       ),
+                                    const SizedBox(height: 16),
+
+                                    // 4. Financial & Payment settings
+                                    const Text(
+                                      '4. الشروط المالية والعملة:',
+                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    CurrencySelector(
+                                      value: posCurrency,
+                                      dense: true,
+                                      onChanged: (v) => setSt(() => posCurrency = v),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    TextField(
+                                      controller: salesDiscountCtrl,
+                                      keyboardType: const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                      decoration: const InputDecoration(
+                                        labelText: 'خصم المبيعات المسموح (اختياري)',
+                                      ),
+                                      onChanged: (_) => setSt(() {}),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    if (cashInvoice)
+                                      Container(
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF0FDF4),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: const Color(0xFF86EFAC)),
+                                        ),
+                                        child: Text(
+                                          'فاتورة بيع نقدية: سيتم تحصيل كامل الإجمالي (${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}) إلى الصندوق الرئيسي فوراً.',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF166534),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      )
+                                    else ...[
+                                      TextField(
+                                        controller: downPayCtrl,
+                                        keyboardType: TextInputType.number,
+                                        decoration: const InputDecoration(
+                                          labelText: 'الدفعة الأولى / المقدمة (إن وجدت)',
+                                          isDense: true,
+                                        ),
+                                        onChanged: (_) => setSt(() {}),
+                                      ),
+                                      if (downPayCtrl.text.isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          'المتبقي على المعتمد: ${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: AppColors.dangerWaste,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                    const SizedBox(height: 16),
+
+                                    // 5. Image Attachment
+                                    AppImageAttachmentPicker(
+                                      initialPath: photoCtrl.text,
+                                      label: 'صورة الفاتورة / إشعار الاستلام',
+                                      onImageChanged: (p) =>
+                                          setSt(() => photoCtrl.text = p),
+                                    ),
+                                    const SizedBox(height: 24),
+
+                                    // Action buttons
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: AppColors.accentPrimary,
+                                              foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(vertical: 14),
+                                            ),
+                                            onPressed: submitInvoice,
+                                            icon: const Icon(Icons.check_circle_outline),
+                                            label: const Text(
+                                              'إصدار وحفظ الفاتورة',
+                                              style: TextStyle(fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        OutlinedButton(
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                                          ),
+                                          onPressed: () => Navigator.pop(ctx),
+                                          child: const Text('إلغاء'),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
                               ),
-                            ],
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 12),
 
-                        // Attach services to warehouse item
-                        _buildServicesAttachmentSection(
-                          setSt: setSt,
-                          erp: erp,
-                          serviceSearch: serviceSearch,
-                          onSearchChanged: (v) => setSt(() => serviceSearch = v),
-                          serviceValue: serviceValue,
-                          servicesFiltered: servicesFiltered,
-                          onServiceChanged: (v) {
-                            setSt(() {
-                              selectedServiceId = v;
-                              autoCalcServicePrice();
-                            });
-                          },
-                          servicePriceCtrl: servicePriceCtrl,
-                          serviceNotesCtrl: serviceNotesCtrl,
-                          selectedServiceId: selectedServiceId,
-                          draftServices: draftServices,
-                          draftServicesTotal: draftServicesTotal,
-                          curLengthM: l > 0 ? (l / 100.0) : 0.0,
-                          curQuantity: q,
-                          onError: (err) => setSt(() => formError = err),
-                        ),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              if (selectedClientId == null) {
-                                setSt(() => formError = 'اختر المعتمد أولاً.');
-                                return;
-                              }
-                              if (area <= 0) {
-                                setSt(
-                                  () => formError = 'أدخل أبعاداً وكمية صحيحة.',
-                                );
-                                return;
-                              }
-                              if (price < 0) {
-                                setSt(() => formError = 'أدخل سعر وحدة صحيح.');
-                                return;
-                              }
-                              final available =
-                                  wh.availableQty - draftedFor(wh.id);
-                              if (area > available + 0.0001) {
-                                setSt(
-                                  () => formError =
-                                      'الكمية تتجاوز المتاح في المستودع (${available.fmt}).',
-                                );
-                                return;
-                              }
-                              setSt(() {
-                                formError = null;
-                                draftItems.add(
-                                  FactoryInvoiceItem(
-                                    itemId: wh.id,
-                                    description:
-                                        '${wh.typeName} ${wh.grade} ${wh.thicknessCm}سم',
-                                    typeName: wh.typeName,
-                                    grade: wh.grade,
-                                    lengthCm: l,
-                                    widthCm: w,
-                                    heightCm: isCube ? h : 0.0,
-                                    quantity: q,
-                                    unitPrice: price,
-                                    unitCost: wh.netCostPerUnit,
-                                    isGranite: wh.isGranite,
-                                    services: List.of(draftServices),
-                                    thicknessCm: wh.thicknessCm,
-                                    meterUnit: isCube ? 'متر مكعب' : 'متر مربع',
+                        const SizedBox(width: 16),
+
+                        // RIGHT SIDE: Added Line Items & Live Invoice Summary
+                        Expanded(
+                          flex: 5,
+                          child: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppColors.panelBorder),
+                              ),
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Header
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: const [
+                                          Icon(Icons.receipt_long_rounded, color: AppColors.accentPrimary),
+                                          SizedBox(width: 8),
+                                          Text(
+                                            'أصناف وبنود الفاتورة',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: draftItems.isNotEmpty
+                                              ? AppColors.chipBgBlue
+                                              : const Color(0xFFF1F5F9),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Text(
+                                          '${draftItems.length} صنف',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: draftItems.isNotEmpty
+                                                ? AppColors.accentPrimary
+                                                : AppColors.brandSecondaryText,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                );
-                                draftServices.clear();
-                                lengthCtrl.clear();
-                                widthCtrl.clear();
-                                heightCtrl.clear();
-                                qtyCtrl.clear();
-                                unitPriceCtrl.clear();
-                                selectedWhId = null;
-                              });
-                            },
-                            icon: const Icon(Icons.add),
-                            label: const Text('إضافة الصنف للفاتورة +'),
+                                  const SizedBox(height: 12),
+
+                                  // Scrollable Added Items List
+                                  Expanded(
+                                    child: draftItems.isEmpty
+                                        ? Center(
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: const [
+                                                Icon(
+                                                  Icons.playlist_add_rounded,
+                                                  size: 48,
+                                                  color: Color(0xFFCBD5E1),
+                                                ),
+                                                SizedBox(height: 10),
+                                                Text(
+                                                  'لم تتم إضافة أي أصناف حتى الآن',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    color: AppColors.brandSecondaryText,
+                                                  ),
+                                                ),
+                                                SizedBox(height: 4),
+                                                Text(
+                                                  'حدد صنف البضاعة والمقاسات من جهة المدخلات (يساراً)\nثم اضغط "إضافة الصنف" لإدراجه في الفاتورة.',
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Color(0xFF94A3B8),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          )
+                                        : ListView.builder(
+                                            itemCount: draftItems.length,
+                                            itemBuilder: (context, idx) {
+                                              final it = draftItems[idx];
+                                              final isCube = it.meterUnit == "متر مكعب" || it.heightCm > 0;
+                                              return Card(
+                                                margin: const EdgeInsets.only(bottom: 8),
+                                                elevation: 0,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  side: BorderSide(
+                                                    color: AppColors.panelBorder,
+                                                  ),
+                                                ),
+                                                child: ExpansionTile(
+                                                  tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                                                  childrenPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                                  title: Text(
+                                                    it.description,
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                  subtitle: Text(
+                                                    '${it.calculatedArea.fmt} ${isCube ? "م³" : "م²"} × ${it.unitPrice.fmt}\$ + خدمات ${it.servicesTotal.fmt}\$ = ${it.grandTotal.fmt}\$',
+                                                    style: const TextStyle(fontSize: 11),
+                                                  ),
+                                                  trailing: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      IconButton(
+                                                        icon: const Icon(
+                                                          Icons.edit_outlined,
+                                                          color: AppColors.accentPrimary,
+                                                          size: 18,
+                                                        ),
+                                                        tooltip: 'تعديل الصنف',
+                                                        onPressed: () {
+                                                          _showEditFactoryDraftItemModal(
+                                                            context: context,
+                                                            item: it,
+                                                            erp: erp,
+                                                            onSave: (updated) => setSt(() {
+                                                              draftItems[idx] = updated;
+                                                            }),
+                                                          );
+                                                        },
+                                                      ),
+                                                      IconButton(
+                                                        icon: const Icon(
+                                                          Icons.delete_outline,
+                                                          color: AppColors.dangerWaste,
+                                                          size: 18,
+                                                        ),
+                                                        tooltip: 'حذف الصنف',
+                                                        onPressed: () => setSt(
+                                                          () => draftItems.removeAt(idx),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  children: [
+                                                    if (it.services.isEmpty)
+                                                      const Padding(
+                                                        padding: EdgeInsets.symmetric(vertical: 4),
+                                                        child: Text(
+                                                          'لا توجد خدمات مرفقة بهذا البند',
+                                                          style: TextStyle(fontSize: 11, color: AppColors.brandSecondaryText),
+                                                        ),
+                                                      )
+                                                    else
+                                                      ...it.services.map(
+                                                        (s) => ListTile(
+                                                          dense: true,
+                                                          contentPadding: EdgeInsets.zero,
+                                                          title: Text(s.serviceName, style: const TextStyle(fontSize: 12)),
+                                                          subtitle: Text(s.notes.isEmpty ? '—' : s.notes, style: const TextStyle(fontSize: 10)),
+                                                          trailing: Text(
+                                                            '${s.price.fmt}\$',
+                                                            style: const TextStyle(
+                                                              fontWeight: FontWeight.bold,
+                                                              fontSize: 11,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                  ],
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                  ),
+
+                                  const SizedBox(height: 12),
+
+                                  // Invoice Live Totals Summary Card
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: AppColors.panelBorder),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text('إجمالي الأمتار المباعة:', style: TextStyle(fontSize: 12)),
+                                            Text(
+                                              '${draftItems.fold(0.0, (s, it) => s + it.calculatedArea).fmt} م',
+                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text('إجمالي قيمة البضاعة:', style: TextStyle(fontSize: 12)),
+                                            Text(
+                                              '${itemsTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                            ),
+                                          ],
+                                        ),
+                                        if (itemsServicesTotal > 0) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('إجمالي الخدمات المرفقة:', style: TextStyle(fontSize: 12)),
+                                              Text(
+                                                '${itemsServicesTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                        if (shipping > 0) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('تكلفة التوصيل:', style: TextStyle(fontSize: 12)),
+                                              Text(
+                                                '${shipping.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: AppColors.accentPrimary,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                        if (salesDiscount > 0) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('خصم المبيعات الممنوح:', style: TextStyle(fontSize: 12, color: AppColors.dangerWaste)),
+                                              Text(
+                                                '-${salesDiscount.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.dangerWaste),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                        const Divider(height: 14),
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text(
+                                              'صافي إجمالي الفاتورة:',
+                                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                            ),
+                                            Row(
+                                              children: [
+                                                Text(
+                                                  '${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                    color: AppColors.accentPrimary,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                CurrencyBadge(currency: posCurrency),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Align(
+                                          alignment: AlignmentDirectional.centerEnd,
+                                          child: TextButton.icon(
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: const Color(0xFF4F46E5),
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 4,
+                                              ),
+                                            ),
+                                            onPressed: () {
+                                              final currentNet = grandTotal;
+                                              final truncated = currentNet.truncateToDouble();
+                                              final diff = currentNet - truncated;
+                                              if (diff > 0.0001) {
+                                                final newDisc = salesDiscount + diff;
+                                                salesDiscountCtrl.text = newDisc.fmt;
+                                                if (cashInvoice) {
+                                                  downPayCtrl.text = truncated.fmt;
+                                                }
+                                                setSt(() {});
+                                              }
+                                            },
+                                            icon: const Icon(Icons.content_cut_rounded, size: 14),
+                                            label: const Text(
+                                              'تجاهل القروش (Ignore Cents)',
+                                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ),
+                                        if (cashInvoice) ...[
+                                          const Divider(height: 10),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('المحصل فوراً في الصندوق:', style: TextStyle(fontSize: 12, color: AppColors.successGreen)),
+                                              Text(
+                                                '${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.successGreen),
+                                              ),
+                                            ],
+                                          ),
+                                        ] else if (downPay > 0) ...[
+                                          const Divider(height: 10),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('الدفعة المستلمة / العربون:', style: TextStyle(fontSize: 12)),
+                                              Text(
+                                                '${downPay.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.accentPrimary),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('المتبقي على المعتمد:', style: TextStyle(fontSize: 12, color: AppColors.dangerWaste)),
+                                              Text(
+                                                '${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.dangerWaste),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ],
-                    if (formError != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        formError!,
-                        style: const TextStyle(
-                          color: AppColors.dangerWaste,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    if (draftItems.isEmpty)
-                      const Text(
-                        'لم تتم إضافة أصناف بعد.',
-                        style: TextStyle(color: AppColors.brandSecondaryText),
-                      ),
-                    ...draftItems.asMap().entries.map(
-                      (e) => Card(
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        child: ExpansionTile(
-                          title: Text(
-                            e.value.description,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                          subtitle: Text(
-                            '${e.value.calculatedArea.fmt} ${e.value.meterUnit == "متر مكعب" || e.value.heightCm > 0 ? "م³" : "م²"} × ${e.value.unitPrice}\$ + خدمات ${e.value.servicesTotal.fmt}\$ = ${e.value.grandTotal.fmt}\$',
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.edit_outlined,
-                                  color: AppColors.accentPrimary,
-                                ),
-                                onPressed: () {
-                                  _showEditFactoryDraftItemModal(
-                                    context: context,
-                                    item: e.value,
-                                    erp: erp,
-                                    onSave: (updated) => setSt(() {
-                                      draftItems[e.key] = updated;
-                                    }),
-                                  );
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  color: AppColors.dangerWaste,
-                                ),
-                                onPressed: () =>
-                                    setSt(() => draftItems.removeAt(e.key)),
-                              ),
-                            ],
-                          ),
-                          children: [
-                            ...e.value.services.map(
-                              (s) => ListTile(
-                                dense: true,
-                                title: Text(s.serviceName),
-                                subtitle: Text(s.notes.isEmpty ? '—' : s.notes),
-                                trailing: Text(
-                                  '${s.price}\$',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     ),
-                    const SizedBox(height: 16),
-
-                    // 4. Totals, down payment, delivery, photo.
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.panelBorder),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          CurrencySelector(
-                            value: posCurrency,
-                            dense: true,
-                            onChanged: (v) => setSt(() => posCurrency = v),
-                          ),
-                          TextField(
-                            controller: salesDiscountCtrl,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            decoration: const InputDecoration(
-                              labelText: 'خصم المبيعات المسموح (اختياري)',
-                            ),
-                            onChanged: (_) => setSt(() {}),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('إجمالي الفاتورة (أصناف + خدمات):'),
-                              Row(
-                                children: [
-                                  Text(
-                                    '${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  CurrencyBadge(currency: posCurrency),
-                                ],
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: AlignmentDirectional.centerEnd,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF4F46E5),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                              ),
-                              onPressed: () {
-                                final currentNet = grandTotal;
-                                final truncated = currentNet.truncateToDouble();
-                                final diff = currentNet - truncated;
-                                if (diff > 0.0001) {
-                                  final newDisc = salesDiscount + diff;
-                                  salesDiscountCtrl.text = newDisc.fmt;
-                                  if (cashInvoice) {
-                                    downPayCtrl.text = truncated.fmt;
-                                  }
-                                  setSt(() {});
-                                }
-                              },
-                              icon: const Icon(
-                                Icons.content_cut_rounded,
-                                size: 16,
-                              ),
-                              label: const Text(
-                                'تجاهل القروش (Ignore Cents)',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          if (cashInvoice)
-                            Text(
-                              'فاتورة بيع نقدية: سيتم تحصيل كامل الإجمالي إلى الصندوق الرئيسي.',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.accentPrimary,
-                              ),
-                            )
-                          else
-                            TextField(
-                              controller: downPayCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'الدفعة الأولى / المقدمة (إن وجدت)',
-                                isDense: true,
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          if (!cashInvoice && downPayCtrl.text.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              'المتبقي: ${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} \$',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.dangerWaste,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          const Text(
-                            'خيار التوصيل:',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: InkWell(
-                                  onTap: () => setSt(() => deliverByUs = false),
-                                  child: Row(
-                                    children: [
-                                      Radio<bool>(
-                                        value: false,
-                                        groupValue: deliverByUs,
-                                        onChanged: (v) =>
-                                            setSt(() => deliverByUs = v),
-                                      ),
-                                      const Text('الزبون يستلم النقل'),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                child: InkWell(
-                                  onTap: () => setSt(() => deliverByUs = true),
-                                  child: Row(
-                                    children: [
-                                      Radio<bool>(
-                                        value: true,
-                                        groupValue: deliverByUs,
-                                        onChanged: (v) =>
-                                            setSt(() => deliverByUs = v),
-                                      ),
-                                      const Text('نوصّل نحن'),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (deliverByUs == true)
-                            TextField(
-                              controller: shippingCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'تكلفة التوصيل / الشحن (\$)',
-                                isDense: true,
-                              ),
-                              onChanged: (_) => setSt(() {}),
-                            ),
-                          const SizedBox(height: 12),
-                          AppImageAttachmentPicker(
-                            initialPath: photoCtrl.text,
-                            label: 'صورة الفاتورة / إشعار الاستلام',
-                            onImageChanged: (p) =>
-                                setSt(() => photoCtrl.text = p),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.accentPrimary,
-                      ),
-                      onPressed: () {
-                        if (selectedClientId == null) {
-                          setSt(() => formError = 'اختر المعتمد.');
-                          return;
-                        }
-                        if (draftItems.isEmpty) {
-                          setSt(
-                            () =>
-                                formError = 'أضف صنفاً واحداً على الأقل بزر +.',
-                          );
-                          return;
-                        }
-                        if (deliverByUs == null) {
-                          setSt(() => formError = 'اختر خيار التوصيل.');
-                          return;
-                        }
-                        if (salesDiscount < 0 ||
-                            salesDiscount >
-                                itemsTotal + itemsServicesTotal + shipping) {
-                          setSt(
-                            () => formError =
-                                'قيمة خصم المبيعات يجب أن تكون بين صفر وإجمالي الفاتورة.',
-                          );
-                          return;
-                        }
-                        double advance = cashInvoice
-                            ? grandTotal
-                            : (double.tryParse(downPayCtrl.text) ?? 0.0);
-                        if (advance < 0) advance = 0.0;
-                        if (advance > grandTotal) {
-                          advance = grandTotal;
-                        }
-                        final client = erp.clients.firstWhere(
-                          (c) => c.id == selectedClientId,
-                          orElse: () => erp.clients.first,
-                        );
-                        final newInvoice = FactoryInvoiceModel(
-                          id: 'fi_pos_${DateTime.now().millisecondsSinceEpoch}',
-                          invoiceNo:
-                              'FAC-POS-${erp.factoryInvoices.length + 101}',
-                          date: DateTime.now(),
-                          partyId: client.id,
-                          partyName: client.name,
-                          invoiceType: 'بيع_معتمد',
-                          items: List.of(draftItems),
-                          isGoodsDelivered: deliverByUs == true,
-                          shippingFee: shipping,
-                          advancePayment: advance,
-                          discountAmount: salesDiscount,
-                          isCashInvoice: cashInvoice,
-                          photoUrl: photoCtrl.text.trim(),
-                          currency: posCurrency,
-                        );
-                        final created = assignedOrder != null
-                            ? erp.assignFactoryOrderToPOSInvoice(
-                                assignedOrder!,
-                                newInvoice,
-                              )
-                            : erp.addFactoryPOSInvoice(newInvoice);
-                        if (!created) {
-                          setSt(
-                            () => formError =
-                                'تعذر اعتماد الفاتورة النقدية؛ تحقق من تسديد كامل الإجمالي.',
-                          );
-                          return;
-                        }
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              assignedOrder != null
-                                  ? 'تم حفظ الفاتورة وإسناد طلبية المصنع (${assignedOrder!.orderNo}) ونقل العربون إلى الصندوق الرئيسي بنجاح.'
-                                  : cashInvoice
-                                      ? 'تم إصدار فاتورة البيع النقدية وتحصيلها بالكامل في الصندوق الرئيسي.'
-                                      : advance >= grandTotal - 0.01
-                                          ? 'تم حفظ الفاتورة مدفوعة بالكامل وتسجيلها في قسم المدفوعة.'
-                                          : 'تم حفظ الفاتورة وتسجيلها في قسم التحصيل المعلق.',
-                            ),
-                            backgroundColor: AppColors.successGreen,
-                          ),
-                        );
-                      },
-                      child: const Text('إصدار وحفظ الفاتورة'),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           );
