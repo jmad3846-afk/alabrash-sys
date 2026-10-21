@@ -19,6 +19,9 @@ class A4InvoiceLineItem {
   final String description;
   final String gradeAndSpecs;
   final String dimensionsText;
+  final double? lengthCm;
+  final double? widthCm;
+  final double? heightCm;
   final String quantityText;
   final double unitPrice;
   final String servicesText;
@@ -29,11 +32,50 @@ class A4InvoiceLineItem {
     required this.description,
     this.gradeAndSpecs = '—',
     this.dimensionsText = '—',
+    this.lengthCm,
+    this.widthCm,
+    this.heightCm,
     required this.quantityText,
     required this.unitPrice,
     this.servicesText = '—',
     required this.lineTotal,
   });
+
+  bool get hasDimensions {
+    if (lengthCm != null && lengthCm! > 0 && widthCm != null && widthCm! > 0) {
+      return true;
+    }
+    if (dimensionsText != '—' && (dimensionsText.contains('×') || dimensionsText.contains('x'))) {
+      return true;
+    }
+    return false;
+  }
+
+  String get lengthDisplay {
+    if (lengthCm != null && lengthCm! > 0) {
+      return '${lengthCm!.fmt} سم';
+    }
+    if (dimensionsText != '—' && (dimensionsText.contains('×') || dimensionsText.contains('x'))) {
+      final parts = dimensionsText.replaceAll('سم', '').split(RegExp(r'[×x]'));
+      if (parts.isNotEmpty && parts[0].trim().isNotEmpty) {
+        return '${parts[0].trim()} سم';
+      }
+    }
+    return '—';
+  }
+
+  String get widthDisplay {
+    if (widthCm != null && widthCm! > 0) {
+      return '${widthCm!.fmt} سم';
+    }
+    if (dimensionsText != '—' && (dimensionsText.contains('×') || dimensionsText.contains('x'))) {
+      final parts = dimensionsText.replaceAll('سم', '').split(RegExp(r'[×x]'));
+      if (parts.length > 1 && parts[1].trim().isNotEmpty) {
+        return '${parts[1].trim()} سم';
+      }
+    }
+    return '—';
+  }
 }
 
 /// Standardized data payload adapted from any invoice type.
@@ -82,6 +124,8 @@ class A4InvoiceData {
     this.fulfillmentTitle = 'أمر تشغيل وتجهيز المصنع / المعمل',
   });
 
+  bool get hasDimensions => items.any((it) => it.hasDimensions);
+
   /// Factory adapter for Factory Invoices (Supplier Purchase & Approved Clients POS).
   factory A4InvoiceData.fromFactoryInvoice(FactoryInvoiceModel inv) {
     final isPurchase = inv.invoiceType == 'شراء_مورد';
@@ -122,6 +166,9 @@ class A4InvoiceData {
         description: it.typeName.isNotEmpty ? it.typeName : it.description,
         gradeAndSpecs: specs,
         dimensionsText: dim,
+        lengthCm: it.lengthCm > 0 ? it.lengthCm : null,
+        widthCm: it.widthCm > 0 ? it.widthCm : null,
+        heightCm: it.heightCm > 0 ? it.heightCm : null,
         quantityText: qtyLabel,
         unitPrice: it.unitPrice,
         servicesText: srvText,
@@ -190,6 +237,9 @@ class A4InvoiceData {
         description: it.typeName.isNotEmpty ? it.typeName : it.description,
         gradeAndSpecs: specs,
         dimensionsText: dim,
+        lengthCm: it.lengthCm > 0 ? it.lengthCm : null,
+        widthCm: it.widthCm > 0 ? it.widthCm : null,
+        heightCm: it.heightCm > 0 ? it.heightCm : null,
         quantityText: qtyLabel,
         unitPrice: it.unitPrice,
         servicesText: srvText,
@@ -249,6 +299,9 @@ class A4InvoiceData {
           description: it.description.isNotEmpty ? it.description : 'بند طلبية معمل',
           gradeAndSpecs: specs,
           dimensionsText: dim,
+          lengthCm: it.lengthCm > 0 ? it.lengthCm : null,
+          widthCm: it.widthCm > 0 ? it.widthCm : null,
+          heightCm: it.heightCm > 0 ? it.heightCm : null,
           quantityText: qtyLabel,
           unitPrice: it.unitPrice > 0 ? it.unitPrice : it.agreedPrice,
           servicesText: srvText,
@@ -311,6 +364,9 @@ class A4InvoiceData {
     if (inv.items.isNotEmpty) {
       int idx = 1;
       for (final item in inv.items) {
+        final dim = (item.lengthCm > 0 && item.widthCm > 0)
+            ? '${item.lengthCm.fmt} × ${item.widthCm.fmt} سم'
+            : '${item.quantity.fmt} ${item.unitCategory}';
         final srvText = item.services.isNotEmpty
             ? item.services
                 .map((s) {
@@ -328,7 +384,10 @@ class A4InvoiceData {
               ? item.description
               : 'صنف ورشة المعمل',
           gradeAndSpecs: item.sourceType,
-          dimensionsText: '${item.quantity.fmt} ${item.unitCategory}',
+          dimensionsText: dim,
+          lengthCm: item.lengthCm > 0 ? item.lengthCm : null,
+          widthCm: item.widthCm > 0 ? item.widthCm : null,
+          heightCm: item.heightCm > 0 ? item.heightCm : null,
           quantityText:
               '${item.quantity.fmt} ${item.unitCategory == "متر مكعب" ? "م³" : item.unitCategory == "متر مربع" ? "م²" : "وحدة"}',
           unitPrice: item.unitPrice > 0 ? item.unitPrice : item.agreedPrice,
@@ -1459,20 +1518,26 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.receipt_long_rounded, size: 16, color: Color(0xFF2563EB)),
-                    const SizedBox(width: 8),
-                    Text(
-                      inv.invoiceTypeTitle,
-                      style: TextStyle(
-                        fontSize: isCompact ? 13 : 14,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF0F172A),
+                Expanded(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.receipt_long_rounded, size: 16, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          inv.invoiceTypeTitle,
+                          style: TextStyle(
+                            fontSize: isCompact ? 13 : 14,
+                            fontWeight: FontWeight.w900,
+                            color: const Color(0xFF0F172A),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
@@ -1558,6 +1623,8 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
   // INVOICE TABLE (LIGHT HEADER, HIGH CONTRAST)
   // ==========================================================================
   Widget _buildItemsTable(A4InvoiceData inv) {
+    final hasDim = inv.hasDimensions;
+
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
@@ -1566,16 +1633,28 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(5),
         child: Table(
-          columnWidths: const {
-            0: FixedColumnWidth(30), // #
-            1: FlexColumnWidth(2.6), // Description
-            2: FlexColumnWidth(1.6), // Specs
-            3: FlexColumnWidth(1.7), // Dimensions
-            4: FlexColumnWidth(1.8), // Qty / Meters
-            5: FlexColumnWidth(1.5), // Unit Price
-            6: FlexColumnWidth(2.8), // Services & formula
-            7: FlexColumnWidth(1.7), // Total
-          },
+          columnWidths: hasDim
+              ? const {
+                  0: FixedColumnWidth(28), // #
+                  1: FlexColumnWidth(2.4), // Description
+                  2: FlexColumnWidth(1.5), // Specs
+                  3: FlexColumnWidth(1.1), // Length
+                  4: FlexColumnWidth(1.1), // Width
+                  5: FlexColumnWidth(1.6), // Qty / Meters
+                  6: FlexColumnWidth(1.4), // Unit Price
+                  7: FlexColumnWidth(2.5), // Services & formula
+                  8: FlexColumnWidth(1.6), // Total
+                }
+              : const {
+                  0: FixedColumnWidth(30), // #
+                  1: FlexColumnWidth(2.6), // Description
+                  2: FlexColumnWidth(1.6), // Specs
+                  3: FlexColumnWidth(1.7), // Dimensions
+                  4: FlexColumnWidth(1.8), // Qty / Meters
+                  5: FlexColumnWidth(1.5), // Unit Price
+                  6: FlexColumnWidth(2.8), // Services & formula
+                  7: FlexColumnWidth(1.7), // Total
+                },
           border: TableBorder.all(
             color: const Color(0xFFCBD5E1),
             width: 1,
@@ -1584,16 +1663,28 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
             // Table Header Row: Light slate background, crisp dark text
             TableRow(
               decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
-              children: const [
-                _TableHeaderCell('#'),
-                _TableHeaderCell('البيان والمادة'),
-                _TableHeaderCell('المواصفات والنوع'),
-                _TableHeaderCell('الأبعاد (سم)'),
-                _TableHeaderCell('الكمية / الأمتار (م²)'),
-                _TableHeaderCell('سعر المتر / الوحدة'),
-                _TableHeaderCell('الخدمات الملحقة وحسابها'),
-                _TableHeaderCell('الإجمالي'),
-              ],
+              children: hasDim
+                  ? const [
+                      _TableHeaderCell('#'),
+                      _TableHeaderCell('البيان والمادة'),
+                      _TableHeaderCell('المواصفات والنوع'),
+                      _TableHeaderCell('الطول (سم)'),
+                      _TableHeaderCell('العرض (سم)'),
+                      _TableHeaderCell('الكمية / الأمتار (م²)'),
+                      _TableHeaderCell('سعر المتر / الوحدة'),
+                      _TableHeaderCell('الخدمات الملحقة وحسابها'),
+                      _TableHeaderCell('الإجمالي'),
+                    ]
+                  : const [
+                      _TableHeaderCell('#'),
+                      _TableHeaderCell('البيان والمادة'),
+                      _TableHeaderCell('المواصفات والنوع'),
+                      _TableHeaderCell('الأبعاد (سم)'),
+                      _TableHeaderCell('الكمية / الأمتار (م²)'),
+                      _TableHeaderCell('سعر المتر / الوحدة'),
+                      _TableHeaderCell('الخدمات الملحقة وحسابها'),
+                      _TableHeaderCell('الإجمالي'),
+                    ],
             ),
 
             // Table Data Rows: Alternating white and soft tint
@@ -1603,21 +1694,38 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
                 decoration: BoxDecoration(
                   color: isEven ? const Color(0xFFF8FAFC) : Colors.white,
                 ),
-                children: [
-                  _TableCell(it.index.toString(), isCenter: true),
-                  _TableCell(it.description, isBold: true),
-                  _TableCell(it.gradeAndSpecs),
-                  _TableCell(it.dimensionsText, isCenter: true),
-                  _TableCell(it.quantityText, isCenter: true, isBold: true),
-                  _TableCell('${it.unitPrice.fmt} ${AppCurrency.symbol(inv.currency)}', isCenter: true),
-                  _TableCell(it.servicesText, isSmall: true),
-                  _TableCell(
-                    '${it.lineTotal.fmt} ${AppCurrency.symbol(inv.currency)}',
-                    isCenter: true,
-                    isBold: true,
-                    color: const Color(0xFF0F172A),
-                  ),
-                ],
+                children: hasDim
+                    ? [
+                        _TableCell(it.index.toString(), isCenter: true),
+                        _TableCell(it.description, isBold: true),
+                        _TableCell(it.gradeAndSpecs),
+                        _TableCell(it.lengthDisplay, isCenter: true),
+                        _TableCell(it.widthDisplay, isCenter: true),
+                        _TableCell(it.quantityText, isCenter: true, isBold: true),
+                        _TableCell('${it.unitPrice.fmt} ${AppCurrency.symbol(inv.currency)}', isCenter: true),
+                        _TableCell(it.servicesText, isSmall: true),
+                        _TableCell(
+                          '${it.lineTotal.fmt} ${AppCurrency.symbol(inv.currency)}',
+                          isCenter: true,
+                          isBold: true,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ]
+                    : [
+                        _TableCell(it.index.toString(), isCenter: true),
+                        _TableCell(it.description, isBold: true),
+                        _TableCell(it.gradeAndSpecs),
+                        _TableCell(it.dimensionsText, isCenter: true),
+                        _TableCell(it.quantityText, isCenter: true, isBold: true),
+                        _TableCell('${it.unitPrice.fmt} ${AppCurrency.symbol(inv.currency)}', isCenter: true),
+                        _TableCell(it.servicesText, isSmall: true),
+                        _TableCell(
+                          '${it.lineTotal.fmt} ${AppCurrency.symbol(inv.currency)}',
+                          isCenter: true,
+                          isBold: true,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ],
               );
             }),
           ],
@@ -1665,12 +1773,14 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'الإجمالي النهائي الصافي:',
-                    style: TextStyle(
-                      color: Color(0xFF78350F),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12.5,
+                  const Expanded(
+                    child: Text(
+                      'الإجمالي النهائي الصافي:',
+                      style: TextStyle(
+                        color: Color(0xFF78350F),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12.5,
+                      ),
                     ),
                   ),
                   Text(
@@ -1715,12 +1825,14 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10.5,
-              color: const Color(0xFF475569),
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                color: const Color(0xFF475569),
+                fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+              ),
             ),
           ),
           Text(
@@ -1762,20 +1874,26 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.handyman_rounded, size: 16, color: Color(0xFF0F766E)),
-                    const SizedBox(width: 8),
-                    Text(
-                      inv.fulfillmentTitle,
-                      style: TextStyle(
-                        fontSize: isCompact ? 13 : 14,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF0F766E),
+                Expanded(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.handyman_rounded, size: 16, color: Color(0xFF0F766E)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          inv.fulfillmentTitle,
+                          style: TextStyle(
+                            fontSize: isCompact ? 13 : 14,
+                            fontWeight: FontWeight.w900,
+                            color: const Color(0xFF0F766E),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
@@ -1832,6 +1950,8 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
 
   /// Factory Fulfillment Table (Repeats line items with physical cutting & execution checklist)
   Widget _buildFulfillmentItemsTable(A4InvoiceData inv) {
+    final hasDim = inv.hasDimensions;
+
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: const Color(0xFF99F6E4), width: 1.2),
@@ -1840,16 +1960,28 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(5),
         child: Table(
-          columnWidths: const {
-            0: FixedColumnWidth(30), // #
-            1: FlexColumnWidth(2.6), // Description
-            2: FlexColumnWidth(1.6), // Specs / Grade
-            3: FlexColumnWidth(1.7), // Dimensions
-            4: FlexColumnWidth(1.8), // Qty / Area
-            5: FlexColumnWidth(2.8), // Operations / Services formula
-            6: FlexColumnWidth(1.8), // Workshop Checklist
-            7: FlexColumnWidth(1.5), // Cutting Notes
-          },
+          columnWidths: hasDim
+              ? const {
+                  0: FixedColumnWidth(28), // #
+                  1: FlexColumnWidth(2.4), // Description
+                  2: FlexColumnWidth(1.5), // Specs / Grade
+                  3: FlexColumnWidth(1.1), // Length
+                  4: FlexColumnWidth(1.1), // Width
+                  5: FlexColumnWidth(1.6), // Qty / Area
+                  6: FlexColumnWidth(2.4), // Operations / Services formula
+                  7: FlexColumnWidth(1.8), // Workshop Checklist
+                  8: FlexColumnWidth(1.4), // Cutting Notes
+                }
+              : const {
+                  0: FixedColumnWidth(30), // #
+                  1: FlexColumnWidth(2.6), // Description
+                  2: FlexColumnWidth(1.6), // Specs / Grade
+                  3: FlexColumnWidth(1.7), // Dimensions
+                  4: FlexColumnWidth(1.8), // Qty / Area
+                  5: FlexColumnWidth(2.8), // Operations / Services formula
+                  6: FlexColumnWidth(1.8), // Workshop Checklist
+                  7: FlexColumnWidth(1.5), // Cutting Notes
+                },
           border: TableBorder.all(
             color: const Color(0xFFCCFBF1),
             width: 1,
@@ -1858,16 +1990,28 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
             // Table Header: Light mint/teal background with crisp dark teal text
             TableRow(
               decoration: const BoxDecoration(color: Color(0xFFCCFBF1)),
-              children: const [
-                _TableHeaderCell('#', textColor: Color(0xFF0F766E)),
-                _TableHeaderCell('البيان والمادة المطلوبة', textColor: Color(0xFF0F766E)),
-                _TableHeaderCell('المواصفات والنوع', textColor: Color(0xFF0F766E)),
-                _TableHeaderCell('الأبعاد والمقاسات (سم)', textColor: Color(0xFF0F766E)),
-                _TableHeaderCell('الكمية / الأمتار (م²)', textColor: Color(0xFF0F766E)),
-                _TableHeaderCell('عمليات التشغيل وحسابها', textColor: Color(0xFF0F766E)),
-                _TableHeaderCell('حالة التجهيز بالمصنع', textColor: Color(0xFF0F766E)),
-                _TableHeaderCell('ملاحظات القص والتنفيذ', textColor: Color(0xFF0F766E)),
-              ],
+              children: hasDim
+                  ? const [
+                      _TableHeaderCell('#', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('البيان والمادة المطلوبة', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('المواصفات والنوع', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('الطول (سم)', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('العرض (سم)', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('الكمية / الأمتار (م²)', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('عمليات التشغيل وحسابها', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('حالة التجهيز بالمصنع', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('ملاحظات القص والتنفيذ', textColor: Color(0xFF0F766E)),
+                    ]
+                  : const [
+                      _TableHeaderCell('#', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('البيان والمادة المطلوبة', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('المواصفات والنوع', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('الأبعاد والمقاسات (سم)', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('الكمية / الأمتار (م²)', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('عمليات التشغيل وحسابها', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('حالة التجهيز بالمصنع', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell('ملاحظات القص والتنفيذ', textColor: Color(0xFF0F766E)),
+                    ],
             ),
 
             // Repeated Data Rows with physical fulfillment checklist
@@ -1877,27 +2021,50 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
                 decoration: BoxDecoration(
                   color: isEven ? const Color(0xFFF0FDFA) : Colors.white,
                 ),
-                children: [
-                  _TableCell(it.index.toString(), isCenter: true),
-                  _TableCell(it.description, isBold: true),
-                  _TableCell(it.gradeAndSpecs),
-                  _TableCell(it.dimensionsText, isCenter: true, isBold: true),
-                  _TableCell(it.quantityText, isCenter: true, isBold: true),
-                  _TableCell(it.servicesText, isSmall: true),
-                  // Physical Checklist Boxes for Factory Craftsmen
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text('☐ تم القص', style: TextStyle(fontSize: 9.5, color: Color(0xFF0F172A), fontWeight: FontWeight.bold)),
-                        Text('☐ تم الفرز والجلي', style: TextStyle(fontSize: 9.5, color: Color(0xFF0F172A), fontWeight: FontWeight.bold)),
-                        Text('☐ جاهز للتسليم', style: TextStyle(fontSize: 9.5, color: Color(0xFF0D9488), fontWeight: FontWeight.w900)),
+                children: hasDim
+                    ? [
+                        _TableCell(it.index.toString(), isCenter: true),
+                        _TableCell(it.description, isBold: true),
+                        _TableCell(it.gradeAndSpecs),
+                        _TableCell(it.lengthDisplay, isCenter: true, isBold: true),
+                        _TableCell(it.widthDisplay, isCenter: true, isBold: true),
+                        _TableCell(it.quantityText, isCenter: true, isBold: true),
+                        _TableCell(it.servicesText, isSmall: true),
+                        // Physical Checklist Boxes for Factory Craftsmen
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Text('☐ تم القص', style: TextStyle(fontSize: 9.5, color: Color(0xFF0F172A), fontWeight: FontWeight.bold)),
+                              Text('☐ تم الفرز والجلي', style: TextStyle(fontSize: 9.5, color: Color(0xFF0F172A), fontWeight: FontWeight.bold)),
+                              Text('☐ جاهز للتسليم', style: TextStyle(fontSize: 9.5, color: Color(0xFF0D9488), fontWeight: FontWeight.w900)),
+                            ],
+                          ),
+                        ),
+                        _TableCell('جاهز للتنفيذ', isSmall: true, isCenter: true, color: const Color(0xFF64748B)),
+                      ]
+                    : [
+                        _TableCell(it.index.toString(), isCenter: true),
+                        _TableCell(it.description, isBold: true),
+                        _TableCell(it.gradeAndSpecs),
+                        _TableCell(it.dimensionsText, isCenter: true, isBold: true),
+                        _TableCell(it.quantityText, isCenter: true, isBold: true),
+                        _TableCell(it.servicesText, isSmall: true),
+                        // Physical Checklist Boxes for Factory Craftsmen
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Text('☐ تم القص', style: TextStyle(fontSize: 9.5, color: Color(0xFF0F172A), fontWeight: FontWeight.bold)),
+                              Text('☐ تم الفرز والجلي', style: TextStyle(fontSize: 9.5, color: Color(0xFF0F172A), fontWeight: FontWeight.bold)),
+                              Text('☐ جاهز للتسليم', style: TextStyle(fontSize: 9.5, color: Color(0xFF0D9488), fontWeight: FontWeight.w900)),
+                            ],
+                          ),
+                        ),
+                        _TableCell('جاهز للتنفيذ', isSmall: true, isCenter: true, color: const Color(0xFF64748B)),
                       ],
-                    ),
-                  ),
-                  _TableCell('جاهز للتنفيذ', isSmall: true, isCenter: true, color: const Color(0xFF64748B)),
-                ],
               );
             }),
           ],
@@ -1920,14 +2087,18 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            customLabel ?? 'برنامج Sh Ab\'ad • هاتف: 0931691900 • مستند معتمد',
-            style: const TextStyle(
-              fontSize: 9.5,
-              color: Color(0xFF64748B),
-              fontWeight: FontWeight.w600,
+          Expanded(
+            child: Text(
+              customLabel ?? 'برنامج Sh Ab\'ad • هاتف: 0931691900 • مستند معتمد',
+              style: const TextStyle(
+                fontSize: 9.5,
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
+          const SizedBox(width: 8),
           Text(
             totalPages > 1
                 ? 'صفحة $pageNumber من $totalPages • تاريخ الطباعة: ${intl.DateFormat("yyyy-MM-dd HH:mm").format(DateTime.now())}'
@@ -1948,12 +2119,12 @@ class _TableHeaderCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 5),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Text(
         text,
         textAlign: TextAlign.center,
         style: TextStyle(
-          fontSize: 10.5,
+          fontSize: 10.0,
           fontWeight: FontWeight.w900,
           color: textColor ?? const Color(0xFF0F172A),
         ),
@@ -1980,12 +2151,12 @@ class _TableCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 5),
+      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
       child: Text(
         text,
         textAlign: isCenter ? TextAlign.center : TextAlign.start,
         style: TextStyle(
-          fontSize: isSmall ? 9.0 : 10.5,
+          fontSize: isSmall ? 9.0 : 10.0,
           fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
           color: color ?? const Color(0xFF0F172A),
         ),
