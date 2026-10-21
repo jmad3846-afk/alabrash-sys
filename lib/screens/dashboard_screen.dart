@@ -253,8 +253,11 @@ class DashboardScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 12,
+                      runSpacing: 6,
                       children: [
                         const Text(
                           'توزيع الأرباح الصافية الحالي حسب نسب الشركاء الحالية:',
@@ -791,6 +794,73 @@ class DashboardScreen extends StatelessWidget {
   }
 
   // -------------------------------------------------------------
+  // TEST DATA POPULATION MODAL
+  // -------------------------------------------------------------
+  Future<void> _showSeedDataDialog(BuildContext context, ERPProvider erp) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.science_rounded, color: Color(0xFF0D9488), size: 26),
+            SizedBox(width: 10),
+            Text(
+              'تعبئة بيانات تجريبية شاملة',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ],
+        ),
+        content: const Text(
+          'هل ترغب في تعبئة بيانات تجريبية شاملة لكافة أقسام وشاشات البرنامج؟\n\n'
+          '• سيتم ملء القيد الافتتاحي كاملاً (الأصول الثابتة، بضاعة أول المدة لكافة الأصناف، الذمم السابقة، ورؤوس أموال الشركاء) واعتماده وترحيله.\n'
+          '• سيتم ملء واجهات المصنع (بلوكات، مستودع، فواتير موردين، فواتير بيع مع طول وعرض، طلبيات).\n'
+          '• سيتم ملء واجهات المعمل (مخزون، تفصيل بسيط ومعقد، سكراب، مشاريع، طلبيات ورشة).\n'
+          '• سيتم ملء الحسابات والصناديق بالدولار والليرة، شؤون العمال والحضور، والتقارير اليومية.\n\n'
+          'هذا يتيح لك فحص وتجربة النسخ الاحتياطي والاستعادة وتأكيد استرجاع 100% من السجلات بدقة متناهية.',
+          style: TextStyle(height: 1.5, fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0D9488),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              'تأكيد التعبئة الآن',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await erp.populateComprehensiveSeedData();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'تمت تعبئة بيانات تجريبية شاملة بنجاح لكافة الأقسام والقيد الافتتاحي! 🎉',
+            ),
+            backgroundColor: Color(0xFF16A34A),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
   // ADD / EDIT CENTER INFORMATION MODAL
   // -------------------------------------------------------------
   void _showCenterInfoDialog(BuildContext context, ERPProvider erp) {
@@ -1173,6 +1243,7 @@ class DashboardScreen extends StatelessWidget {
 
   /// Dedicated Data Protection & Full Backup/Restore card on the main screen (Responsive & Overflow-Free).
   Widget _buildBackupProtectionCard(BuildContext context) {
+    final erp = Provider.of<ERPProvider>(context, listen: false);
     return LayoutBuilder(
       builder: (context, constraints) {
         final isNarrow = constraints.maxWidth < 960;
@@ -1274,6 +1345,25 @@ class DashboardScreen extends StatelessWidget {
                       spacing: 12,
                       runSpacing: 8,
                       children: [
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0F766E),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            elevation: 2,
+                          ),
+                          onPressed: () => _showSeedDataDialog(context, erp),
+                          icon: const Icon(Icons.science_rounded, size: 20),
+                          label: const Text(
+                            'تعبئة بيانات تجريبية شاملة',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                        ),
                         _buildProtectionButton(
                           context,
                           label: 'تصدير نسخة (فلاشة USB)',
@@ -1367,6 +1457,25 @@ class DashboardScreen extends StatelessWidget {
                       spacing: 12,
                       runSpacing: 8,
                       children: [
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0F766E),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 18, vertical: 13),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            elevation: 2,
+                          ),
+                          onPressed: () => _showSeedDataDialog(context, erp),
+                          icon: const Icon(Icons.science_rounded, size: 20),
+                          label: const Text(
+                            'تعبئة بيانات تجريبية شاملة',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 13.5),
+                          ),
+                        ),
                         _buildProtectionButton(
                           context,
                           label: 'تصدير نسخة (فلاشة USB)',
@@ -1518,7 +1627,17 @@ class DashboardScreen extends StatelessWidget {
             onTap: () => _showCenterInfoDialog(context, erp),
           ),
 
-          // 5. Export Backup (تصدير نسخة احتياطية)
+          // 5. Seed Test Data (تعبئة بيانات تجريبية شاملة)
+          _buildNavbarItem(
+            icon: Icons.science_rounded,
+            label: 'تعبئة بيانات تجريبية شاملة',
+            primaryColor: const Color(0xFF0F766E),
+            bgColor: const Color(0xFFCCFBF1),
+            borderColor: const Color(0xFF5EEAD4),
+            onTap: () => _showSeedDataDialog(context, erp),
+          ),
+
+          // 6. Export Backup (تصدير نسخة احتياطية)
           _buildNavbarItem(
             icon: Icons.cloud_upload_rounded,
             label: 'تصدير نسخة احتياطية (فلاشة / خارجي)',

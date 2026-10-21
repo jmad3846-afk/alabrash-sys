@@ -209,6 +209,9 @@ class ERPProvider extends ChangeNotifier {
   // -------------------------------------------------------------
   // SEED DATA INITIALIZATION
   // -------------------------------------------------------------
+  // -------------------------------------------------------------
+  // SEED DATA INITIALIZATION
+  // -------------------------------------------------------------
   void _initDefaultSeedData() {
     openingEntry = OpeningEntryModel(
       landValue: 120000.0,
@@ -746,6 +749,1161 @@ class ERPProvider extends ChangeNotifier {
         quantity: 12.0,
         refundAmount: 1320.0,
         paymentAction: 'تخفيض دين',
+      ),
+    ];
+  }
+
+  /// Populates comprehensive test data across 100% of the software's interfaces
+  /// including the Opening Entry (Fixed Assets, Opening Stock, Legacy Debts, Partners),
+  /// Factory, Workshop, Accounting, Workforce, Operations, and Daily Reports.
+  Future<void> populateComprehensiveSeedData({bool lockOpeningEntry = true}) async {
+    _applyComprehensiveSeedData(lockOpeningEntry: lockOpeningEntry);
+    await saveToDisk();
+    notifyListeners();
+  }
+
+  void _applyComprehensiveSeedData({bool lockOpeningEntry = true}) {
+    // 1. Master Catalogs (Block & Meter Types)
+    blockTypes = [
+      BlockTypeModel(
+        id: 'bt1',
+        typeName: 'رخام كاردينال',
+        grade: 'درجة أولى',
+        isGranite: false,
+      ),
+      BlockTypeModel(
+        id: 'bt2',
+        typeName: 'غرانيت أسود جالكسي',
+        grade: 'ممتاز',
+        isGranite: true,
+      ),
+      BlockTypeModel(
+        id: 'bt3',
+        typeName: 'رخام أبيض ترافنتينو',
+        grade: 'درجة ثانية',
+        isGranite: false,
+      ),
+      BlockTypeModel(
+        id: 'bt4',
+        typeName: 'غرانيت روزا بيتا',
+        grade: 'درجة أولى',
+        isGranite: true,
+      ),
+      BlockTypeModel(
+        id: 'bt5',
+        typeName: 'رخام بيانكو إيطالي',
+        grade: 'نخب أول',
+        isGranite: false,
+      ),
+    ];
+
+    meterTypes = [
+      MeterTypeModel(
+        id: 'mt1',
+        typeName: 'رخام كاردينال',
+        grade: 'درجة أولى',
+        thicknessCm: 2.0,
+        category: 'متر مربع',
+        isGranite: false,
+      ),
+      MeterTypeModel(
+        id: 'mt2',
+        typeName: 'رخام كاردينال',
+        grade: 'درجة أولى',
+        thicknessCm: 3.0,
+        category: 'متر مربع',
+        isGranite: false,
+      ),
+      MeterTypeModel(
+        id: 'mt3',
+        typeName: 'غرانيت أسود جالكسي',
+        grade: 'ممتاز',
+        thicknessCm: 3.0,
+        category: 'متر مربع',
+        isGranite: true,
+      ),
+      MeterTypeModel(
+        id: 'mt4',
+        typeName: 'رخام أبيض ترافنتينو',
+        grade: 'درجة أولى',
+        thicknessCm: 10.0,
+        category: 'متر مكعب',
+        isGranite: false,
+      ),
+      MeterTypeModel(
+        id: 'mt5',
+        typeName: 'رخام بيانكو إيطالي',
+        grade: 'نخب أول',
+        thicknessCm: 2.0,
+        category: 'متر مربع',
+        isGranite: false,
+      ),
+    ];
+
+    // 2. Workshop Tailoring Catalogs (needed for Opening Stock cross-referencing)
+    simpleTailorings = [
+      WorkshopTailoringModel(
+        id: 'st1',
+        name: 'درج كاردينال مع قائم',
+        complexity: 'بسيط',
+        rawMaterialDescription: 'رخام كاردينال 3سم',
+        lengthCm: 120,
+        widthCm: 33,
+        quantity: 5.94,
+        materialNetCost: 124.7,
+        unitCategory: 'متر مربع',
+        measurementCount: 15,
+        laborCostPerMeter: 12.6,
+        attachedServices: [
+          ServiceAttachment(serviceName: 'جلي وتلميع', price: 45.0),
+        ],
+        sellingPrice: 800.0,
+        isGranite: false,
+      ),
+      WorkshopTailoringModel(
+        id: 'st2',
+        name: 'نعلات مشطوفة رخام كاردينال',
+        complexity: 'بسيط',
+        rawMaterialDescription: 'رخام كاردينال 2سم',
+        lengthCm: 100,
+        widthCm: 10,
+        quantity: 12.0,
+        materialNetCost: 48.0,
+        unitCategory: 'متر طولي',
+        measurementCount: 20,
+        laborCostPerMeter: 3.5,
+        attachedServices: [
+          ServiceAttachment(serviceName: 'شطف حواف وتفريز', price: 25.0),
+        ],
+        sellingPrice: 180.0,
+        isGranite: false,
+      ),
+    ];
+
+    complexTailorings = [
+      WorkshopTailoringModel(
+        id: 'ct1',
+        name: 'مغسلة رخام كاردينال محفورة',
+        complexity: 'معقد',
+        rawMaterialDescription: 'كتلة رخام كاردينال 10سم',
+        lengthCm: 100,
+        widthCm: 50,
+        heightCm: 15,
+        quantity: 0.075,
+        materialNetCost: 160.0,
+        unitCategory: 'متر مكعب',
+        measurementCount: 1,
+        laborCostPerMeter: 800.0,
+        attachedServices: [
+          ServiceAttachment(serviceName: 'ثقب وتفريغ مغاسل', price: 30.0),
+        ],
+        sellingPrice: 420.0,
+        isGranite: false,
+      ),
+    ];
+
+    // 3. Opening Entry (القيد الافتتاحي المتكامل)
+    final fixedAssetsList = [
+      FixedAssetModel(
+        id: 'fa_1',
+        category: 'أراضي',
+        name: 'أرض المصنع والمستودع الرئيسي',
+        amount: 120000.0,
+        description: 'مساحة 5000 متر مربع في المنطقة الصناعية',
+        currency: AppCurrency.usd,
+      ),
+      FixedAssetModel(
+        id: 'fa_2',
+        category: 'مباني',
+        name: 'هنغار الإنتاج والمكاتب الإدارية',
+        amount: 85000.0,
+        description: 'هنغار معدني معزول ومبنى إدارة طابقين',
+        currency: AppCurrency.usd,
+      ),
+      FixedAssetModel(
+        id: 'fa_3',
+        category: 'آلات ومعدات',
+        name: 'جلاية إيطالية ماركة سيميوني',
+        amount: 55000.0,
+        description: 'جلاية خط أوتوماتيكية 16 رأس',
+        currency: AppCurrency.usd,
+      ),
+      FixedAssetModel(
+        id: 'fa_4',
+        category: 'آلات ومعدات',
+        name: 'رافعة جسرية علوية 25 طن',
+        amount: 40000.0,
+        description: 'رافعة تفريغ وتحميل كتل الرخام الكبيرة',
+        currency: AppCurrency.usd,
+      ),
+      FixedAssetModel(
+        id: 'fa_5',
+        category: 'سيارات وآليات',
+        name: 'شاحنة كيا فوتون مجهزة بحامل رخام',
+        amount: 35000.0,
+        description: 'شاحنة نقل للألواح والطلبيات',
+        currency: AppCurrency.usd,
+      ),
+      FixedAssetModel(
+        id: 'fa_6',
+        category: 'أثاث ومفروشات',
+        name: 'تجهيزات مكتبية ومكيفات الإدارة',
+        amount: 15000.0,
+        description: 'مكاتب خشبية، حواسب، ومكيفات صالة العرض',
+        currency: AppCurrency.usd,
+      ),
+    ];
+
+    final openingStockList = [
+      OpeningStockItemModel(
+        id: 'os_1',
+        category: 'بلوكات خام المصنع',
+        typeName: 'رخام كاردينال',
+        typeId: 'bt1',
+        grade: 'درجة أولى',
+        isGranite: false,
+        supplierName: 'شركة مقالع الرخام الوطنية',
+        quantity: 24.5,
+        unitPrice: 110.0,
+        sellingPrice: 160.0,
+        currency: AppCurrency.usd,
+        description: 'كتلة رخام كاردينال نخب أول',
+      ),
+      OpeningStockItemModel(
+        id: 'os_2',
+        category: 'بلوكات خام المصنع',
+        typeName: 'غرانيت أسود جالكسي',
+        typeId: 'bt2',
+        grade: 'ممتاز',
+        isGranite: true,
+        supplierName: 'مؤسسة الغرانيت المستورد',
+        quantity: 18.0,
+        unitPrice: 220.0,
+        sellingPrice: 310.0,
+        currency: AppCurrency.usd,
+        description: 'كتلة غرانيت أسود جالكسي هندي',
+      ),
+      OpeningStockItemModel(
+        id: 'os_3',
+        category: 'أمتار المصنع',
+        typeName: 'رخام كاردينال',
+        typeId: 'mt1',
+        grade: 'درجة أولى',
+        thicknessCm: 2.0,
+        isGranite: false,
+        quantity: 450.0,
+        unitPrice: 14.5,
+        sellingPrice: 22.0,
+        currency: AppCurrency.usd,
+        description: 'ألواح رخام كاردينال سماكة 2سم جاهزة',
+      ),
+      OpeningStockItemModel(
+        id: 'os_4',
+        category: 'أمتار المصنع',
+        typeName: 'رخام كاردينال',
+        typeId: 'mt2',
+        grade: 'درجة أولى',
+        thicknessCm: 3.0,
+        isGranite: false,
+        quantity: 320.0,
+        unitPrice: 21.0,
+        sellingPrice: 30.0,
+        currency: AppCurrency.usd,
+        description: 'ألواح رخام كاردينال سماكة 3سم جاهزة',
+      ),
+      OpeningStockItemModel(
+        id: 'os_5',
+        category: 'أمتار المصنع',
+        typeName: 'غرانيت أسود جالكسي',
+        typeId: 'mt3',
+        grade: 'ممتاز',
+        thicknessCm: 3.0,
+        isGranite: true,
+        quantity: 180.0,
+        unitPrice: 35.0,
+        sellingPrice: 55.0,
+        currency: AppCurrency.usd,
+        description: 'ألواح غرانيت أسود جالكسي سماكة 3سم',
+      ),
+      OpeningStockItemModel(
+        id: 'os_6',
+        category: 'أمتار المعمل',
+        typeName: 'رخام كاردينال',
+        typeId: 'mt1',
+        grade: 'درجة أولى',
+        thicknessCm: 2.0,
+        isGranite: false,
+        quantity: 85.0,
+        unitPrice: 14.5,
+        sellingPrice: 24.0,
+        currency: AppCurrency.usd,
+        description: 'ألواح مخصصة لورشة المعمل',
+      ),
+      OpeningStockItemModel(
+        id: 'os_7',
+        category: 'تفصيل بسيط',
+        typeName: 'درج كاردينال مع قائم',
+        typeId: 'st1',
+        quantity: 15.0,
+        unitPrice: 25.0,
+        sellingPrice: 45.0,
+        currency: AppCurrency.usd,
+        description: 'درجات جاهزة للتسليم مع القائم',
+      ),
+      OpeningStockItemModel(
+        id: 'os_8',
+        category: 'تفصيل معقد',
+        typeName: 'مغسلة رخام كاردينال محفورة',
+        typeId: 'ct1',
+        quantity: 2.0,
+        unitPrice: 250.0,
+        sellingPrice: 420.0,
+        currency: AppCurrency.usd,
+        description: 'مغاسل رخامية محفورة يدوي مع عزل',
+      ),
+      OpeningStockItemModel(
+        id: 'os_9',
+        category: 'قطع زائدة وخردة',
+        typeName: 'قصاصات مغاسل كاردينال (25*40سم)',
+        quantity: 20.0,
+        unitPrice: 15.0,
+        sellingPrice: 35.0,
+        currency: AppCurrency.usd,
+        description: 'قصاصات صالحة لأعمال الديكور والعتب',
+      ),
+    ];
+
+    final legacyFinancialsList = [
+      LegacyFinancialRecordModel(
+        id: 'leg_c1',
+        category: 'clients',
+        name: 'شركة العمران للمقاولات',
+        phone: '0911223344',
+        currency: AppCurrency.usd,
+        amount: 18500.0,
+        description: 'رصيد سابق مدور من العام الماضي',
+      ),
+      LegacyFinancialRecordModel(
+        id: 'leg_c2',
+        category: 'clients',
+        name: 'المتعهد أحمد الشيخ',
+        phone: '0922334455',
+        currency: AppCurrency.syp,
+        amount: 12000000.0,
+        description: 'ذمة سابقة لأعمال أبراج الياسمين',
+      ),
+      LegacyFinancialRecordModel(
+        id: 'leg_s1',
+        category: 'suppliers',
+        name: 'شركة مقالع الرخام الوطنية',
+        phone: '0944112233',
+        currency: AppCurrency.usd,
+        amount: 25000.0,
+        description: 'مستحقات توريد كتل سابقة',
+      ),
+      LegacyFinancialRecordModel(
+        id: 'leg_s2',
+        category: 'suppliers',
+        name: 'مؤسسة الغرانيت المستورد',
+        phone: '0933556677',
+        currency: AppCurrency.usd,
+        amount: 17000.0,
+        description: 'دفعات حاويات غرانيت مؤجلة',
+      ),
+      LegacyFinancialRecordModel(
+        id: 'leg_e1',
+        category: 'employees',
+        name: 'مستحقات نهاية خدمة عمال سابقة',
+        phone: '',
+        currency: AppCurrency.usd,
+        amount: 9500.0,
+        description: 'مخصصات عمال مدورة',
+      ),
+    ];
+
+    openingEntry = OpeningEntryModel(
+      landValue: 120000.0,
+      buildingsValue: 85000.0,
+      machineryValue: 95000.0,
+      vehiclesValue: 35000.0,
+      furnitureValue: 15000.0,
+      mainCashValue: 45000.0,
+      scrapCashValue: 8500.0,
+      orderCashValue: 4200.0,
+      mainCashValueSyp: 15000000.0,
+      scrapCashValueSyp: 2500000.0,
+      orderCashValueSyp: 3000000.0,
+      inventoryValue: 110000.0,
+      customerDebtsValue: 28000.0,
+      supplierPayablesValue: 42000.0,
+      workerSalariesValue: 9500.0,
+      fixedAssets: fixedAssetsList,
+      openingStock: openingStockList,
+      legacyFinancials: legacyFinancialsList,
+      hassanRatio: 0.42,
+      adnanRatio: 0.35,
+      abdelMoeenRatio: 0.23,
+      isLocked: lockOpeningEntry,
+      lockedAt: lockOpeningEntry ? DateTime.now() : null,
+      openingStockApplied: lockOpeningEntry,
+    );
+    isOpeningEntryCompleted = lockOpeningEntry;
+
+    // 4. Partner Setup matching Opening Equity
+    final totalEquity = openingEntry.totalEquity;
+    final totalEquitySyp = openingEntry.totalEquitySyp;
+
+    partners = [
+      PartnerModel(
+        id: 'p1',
+        name: 'الشريك حسان',
+        ratio: 0.42,
+        injectedCapital: totalEquity * 0.42,
+        injectedCapitalSyp: totalEquitySyp * 0.42,
+      ),
+      PartnerModel(
+        id: 'p2',
+        name: 'الشريك عدنان',
+        ratio: 0.35,
+        injectedCapital: totalEquity * 0.35,
+        injectedCapitalSyp: totalEquitySyp * 0.35,
+      ),
+      PartnerModel(
+        id: 'p3',
+        name: 'الشريك عبد المعين',
+        ratio: 0.23,
+        injectedCapital: totalEquity * 0.23,
+        injectedCapitalSyp: totalEquitySyp * 0.23,
+      ),
+    ];
+
+    // 5. Dual-Currency Cash Boxes
+    mainCashBox = 45000.0;
+    scrapCashBox = 8500.0;
+    orderCashBox = 4200.0;
+    mainCashBoxSyp = 15000000.0;
+    scrapCashBoxSyp = 2500000.0;
+    orderCashBoxSyp = 3000000.0;
+    graniteAccountantPercentage = 0.05;
+    accountantWithdrawals = [];
+
+    // 6. External Parties (Suppliers & Clients)
+    suppliers = [
+      SupplierModel(
+        id: 'sup1',
+        name: 'شركة مقالع الرخام الوطنية',
+        phone: '0944112233',
+        location: 'اللاذقية',
+        debtBalance: 25000.0,
+      ),
+      SupplierModel(
+        id: 'sup2',
+        name: 'مؤسسة الغرانيت المستورد',
+        phone: '0933556677',
+        location: 'طرطوس',
+        debtBalance: 17000.0,
+      ),
+      SupplierModel(
+        id: 'sup3',
+        name: 'مورد البلوكات التركية',
+        phone: '0955889900',
+        location: 'حلب',
+        debtBalance: 0.0,
+      ),
+    ];
+
+    clients = [
+      ClientModel(
+        id: 'cli1',
+        name: 'شركة العمران للمقاولات',
+        phone: '0911223344',
+        location: 'دمشق',
+        clientType: 'معتمد مصنع',
+        debtBalance: 18500.0,
+        currencyClassification: AppCurrency.usd,
+      ),
+      ClientModel(
+        id: 'cli2',
+        name: 'المتعهد أحمد الشيخ',
+        phone: '0922334455',
+        location: 'حمص',
+        clientType: 'مشروع معمل',
+        debtBalance: 9500.0,
+        currencyClassification: AppCurrency.usd,
+      ),
+      ClientModel(
+        id: 'cli3',
+        name: 'المهندس رامي زريق',
+        phone: '0944887766',
+        location: 'ريف دمشق',
+        clientType: 'مشروع معمل',
+        debtBalance: 0.0,
+        currencyClassification: AppCurrency.usd,
+      ),
+      ClientModel(
+        id: 'cli4',
+        name: 'الزبون سامر المحمود',
+        phone: '0966778899',
+        location: 'دمشق',
+        clientType: 'زبون معمل',
+        debtBalance: 0.0,
+        currencyClassification: AppCurrency.syp,
+      ),
+    ];
+
+    // 7. Factory Physical Inventory
+    factoryBlocks = [
+      FactoryBlockModel(
+        id: 'fb1',
+        blockCode: 'BLK-101',
+        typeName: 'رخام كاردينال',
+        grade: 'درجة أولى',
+        supplierId: 'sup1',
+        supplierName: 'شركة مقالع الرخام الوطنية',
+        weightTons: 24.5,
+        tonCost: 110.0,
+        isGranite: false,
+      ),
+      FactoryBlockModel(
+        id: 'fb2',
+        blockCode: 'BLK-102',
+        typeName: 'غرانيت أسود جالكسي',
+        grade: 'ممتاز',
+        supplierId: 'sup2',
+        supplierName: 'مؤسسة الغرانيت المستورد',
+        weightTons: 18.0,
+        tonCost: 220.0,
+        isGranite: true,
+      ),
+      FactoryBlockModel(
+        id: 'fb3',
+        blockCode: 'BLK-103',
+        typeName: 'رخام أبيض ترافنتينو',
+        grade: 'درجة ثانية',
+        supplierId: 'sup1',
+        supplierName: 'شركة مقالع الرخام الوطنية',
+        weightTons: 30.0,
+        tonCost: 95.0,
+        isGranite: false,
+      ),
+    ];
+
+    factoryWarehouse = [
+      FactoryWarehouseModel(
+        id: 'fw1',
+        typeName: 'رخام كاردينال',
+        grade: 'درجة أولى',
+        thicknessCm: 2.0,
+        category: 'متر مربع',
+        availableQty: 450.0,
+        netCostPerUnit: 14.5,
+        recommendedSalePrice: 22.0,
+        isGranite: false,
+      ),
+      FactoryWarehouseModel(
+        id: 'fw2',
+        typeName: 'رخام كاردينال',
+        grade: 'درجة أولى',
+        thicknessCm: 3.0,
+        category: 'متر مربع',
+        availableQty: 320.0,
+        netCostPerUnit: 21.0,
+        recommendedSalePrice: 30.0,
+        isGranite: false,
+      ),
+      FactoryWarehouseModel(
+        id: 'fw3',
+        typeName: 'غرانيت أسود جالكسي',
+        grade: 'ممتاز',
+        thicknessCm: 3.0,
+        category: 'متر مربع',
+        availableQty: 180.0,
+        netCostPerUnit: 35.0,
+        recommendedSalePrice: 55.0,
+        isGranite: true,
+      ),
+      FactoryWarehouseModel(
+        id: 'fw4',
+        typeName: 'رخام أبيض ترافنتينو',
+        grade: 'درجة أولى',
+        thicknessCm: 8.0,
+        category: 'متر مكعب',
+        availableQty: 45.0,
+        netCostPerUnit: 120.0,
+        recommendedSalePrice: 180.0,
+        isGranite: false,
+      ),
+    ];
+
+    cuttingOperations = [
+      CuttingOperationModel(
+        id: 'cut1',
+        timestamp: DateTime.now().subtract(const Duration(days: 3)),
+        inputTons: 20.0,
+        baseTonCost: 110.0,
+        cuttingFeePercentage: 0.08,
+        targetTypeName: 'رخام كاردينال',
+        targetGrade: 'درجة أولى',
+        thicknessCm: 2.0,
+        category: 'متر مربع',
+        totalOutputArea: 160.0,
+        netCostPerUnit: 14.85,
+        recommendedSalePrice: 22.0,
+        wasteValue: 45.0,
+        isGranite: false,
+      ),
+    ];
+
+    factoryInvoices = [
+      FactoryInvoiceModel(
+        id: 'fi_pur1',
+        invoiceNo: 'PUR-2026-001',
+        date: DateTime.now().subtract(const Duration(days: 6)),
+        partyId: 'sup1',
+        partyName: 'شركة مقالع الرخام الوطنية',
+        invoiceType: 'شراء_مورد',
+        items: [
+          FactoryInvoiceItem(
+            itemId: 'fb1',
+            description: 'كتلة رخام كاردينال 24.5 طن',
+            typeName: 'رخام كاردينال',
+            grade: 'درجة أولى',
+            quantity: 24.5,
+            unitPrice: 110.0,
+            unitCost: 110.0,
+            isGranite: false,
+          ),
+        ],
+        advancePayment: 1500.0,
+        isGoodsDelivered: true,
+        paymentStatus: 'جزئي',
+        currency: AppCurrency.usd,
+      ),
+      FactoryInvoiceModel(
+        id: 'fi1',
+        invoiceNo: 'FAC-2026-001',
+        date: DateTime.now().subtract(const Duration(days: 2)),
+        partyId: 'cli1',
+        partyName: 'شركة العمران للمقاولات',
+        invoiceType: 'بيع_معتمد',
+        items: [
+          FactoryInvoiceItem(
+            itemId: 'fw1',
+            description: 'رخام كاردينال 2سم ألواح مقصوصة',
+            typeName: 'رخام كاردينال',
+            grade: 'درجة أولى',
+            lengthCm: 200,
+            widthCm: 100,
+            quantity: 10,
+            unitPrice: 22.0,
+            unitCost: 14.5,
+            isGranite: false,
+          ),
+          FactoryInvoiceItem(
+            itemId: 'fw3',
+            description: 'غرانيت أسود جالكسي 3سم مع درج',
+            typeName: 'غرانيت أسود جالكسي',
+            grade: 'ممتاز',
+            lengthCm: 150,
+            widthCm: 80,
+            quantity: 5,
+            unitPrice: 55.0,
+            unitCost: 35.0,
+            isGranite: true,
+          ),
+        ],
+        services: [
+          ServiceAttachment(
+            serviceName: 'شطف حواف وتفريز',
+            price: 120.0,
+            notes: 'شطف دبل',
+          ),
+        ],
+        shippingFee: 150.0,
+        isGoodsDelivered: true,
+        advancePayment: 500.0,
+        paymentStatus: 'يجب تحصيل دفعة',
+        currency: AppCurrency.usd,
+      ),
+      FactoryInvoiceModel(
+        id: 'fi_cash1',
+        invoiceNo: 'CSH-2026-001',
+        date: DateTime.now().subtract(const Duration(days: 1)),
+        partyId: 'cli4',
+        partyName: 'الزبون سامر المحمود',
+        invoiceType: 'بيع_معتمد',
+        isCashInvoice: true,
+        items: [
+          FactoryInvoiceItem(
+            itemId: 'fw2',
+            description: 'رخام كاردينال 3سم عتبات شبابيك',
+            typeName: 'رخام كاردينال',
+            grade: 'درجة أولى',
+            lengthCm: 120,
+            widthCm: 25,
+            quantity: 6,
+            unitPrice: 30.0,
+            unitCost: 21.0,
+            isGranite: false,
+          ),
+        ],
+        advancePayment: 54.0,
+        isGoodsDelivered: true,
+        paymentStatus: 'خالصة',
+        currency: AppCurrency.usd,
+      ),
+    ];
+
+    factoryOrders = [
+      FactoryOrderModel(
+        id: 'fo1',
+        orderNo: 'FORD-2026-001',
+        date: DateTime.now().subtract(const Duration(days: 1)),
+        partyId: 'cli1',
+        clientName: 'شركة العمران للمقاولات',
+        clientPhone: '0911223344',
+        items: [
+          FactoryInvoiceItem(
+            itemId: 'fw1',
+            description: 'رخام كاردينال 2سم ألواح مقصوصة',
+            typeName: 'رخام كاردينال',
+            grade: 'درجة أولى',
+            lengthCm: 220,
+            widthCm: 110,
+            quantity: 15,
+            unitPrice: 24.0,
+            unitCost: 14.5,
+            isGranite: false,
+          ),
+        ],
+        services: [
+          ServiceAttachment(serviceName: 'شطف حواف وتفريز', price: 80.0),
+        ],
+        shippingFee: 100.0,
+        depositAmount: 400.0,
+        status: 'قيد التنفيذ',
+        isCompleted: false,
+        currency: AppCurrency.usd,
+      ),
+      FactoryOrderModel(
+        id: 'fo2',
+        orderNo: 'FORD-2026-002',
+        date: DateTime.now().subtract(const Duration(days: 4)),
+        partyId: 'cli2',
+        clientName: 'المتعهد أحمد الشيخ',
+        clientPhone: '0922334455',
+        items: [
+          FactoryInvoiceItem(
+            itemId: 'fw3',
+            description: 'غرانيت أسود جالكسي 3سم مع درج',
+            typeName: 'غرانيت أسود جالكسي',
+            grade: 'ممتاز',
+            lengthCm: 180,
+            widthCm: 90,
+            quantity: 8,
+            unitPrice: 60.0,
+            unitCost: 35.0,
+            isGranite: true,
+          ),
+        ],
+        depositAmount: 500.0,
+        status: 'مكتملة ومرحلة',
+        isCompleted: true,
+        currency: AppCurrency.usd,
+      ),
+    ];
+
+    // 8. Workshop Inventory & Operations
+    workshopStock = [
+      WorkshopStockModel(
+        id: 'ws1',
+        typeName: 'رخام كاردينال',
+        grade: 'درجة أولى',
+        thicknessCm: 2.0,
+        category: 'متر مربع',
+        availableQty: 85.0,
+        netCostPerUnit: 14.5,
+        recommendedSalePrice: 24.0,
+        isGranite: false,
+      ),
+      WorkshopStockModel(
+        id: 'ws2',
+        typeName: 'غرانيت أسود جالكسي',
+        grade: 'ممتاز',
+        thicknessCm: 3.0,
+        category: 'متر مربع',
+        availableQty: 40.0,
+        netCostPerUnit: 35.0,
+        recommendedSalePrice: 60.0,
+        isGranite: true,
+      ),
+    ];
+
+    scrapItems = [
+      ScrapItemModel(
+        id: 'sc1',
+        description: 'قصاصات مغاسل كاردينال (25*40سم)',
+        baseCost: 15.0,
+        sellingPrice: 40.0,
+        isSold: false,
+        currency: AppCurrency.usd,
+      ),
+      ScrapItemModel(
+        id: 'sc2',
+        description: 'قطع غرانيت سوداء لزوايا العتب',
+        baseCost: 20.0,
+        sellingPrice: 55.0,
+        isSold: false,
+        currency: AppCurrency.usd,
+      ),
+    ];
+
+    surplusCosts = [
+      SurplusCostModel(
+        id: 'scost1',
+        surplusItemId: 'sc1',
+        surplusDescription: 'بقايا قص ألواح روزا برتغالي قابلة للتدوير',
+        kind: 'expense',
+        beneficiaryName: 'مشتريات مستلزمات المعالجة',
+        amountDue: 90.0,
+        amountPaid: 90.0,
+        currency: AppCurrency.usd,
+        notes: 'مادة لاصقة إيبوكسي مستوردة لعلاج التشققات الشعرية',
+      ),
+      SurplusCostModel(
+        id: 'scost2',
+        surplusItemId: 'sc2',
+        surplusDescription: 'قطع غرانيت سوداء لزوايا العتب',
+        kind: 'worker',
+        beneficiaryName: 'المعلم كمال صقل',
+        staffId: 'stf3',
+        amountDue: 140.0,
+        amountPaid: 70.0,
+        currency: AppCurrency.usd,
+        notes: 'أقراص جلخ وتلميع إيطالية وأجرة تلميع زوايا',
+      ),
+    ];
+
+    wasteLogs = [
+      WasteLogModel(
+        id: 'wl1',
+        date: DateTime.now().subtract(const Duration(days: 4)),
+        wasteType: 'هدر طبيعي',
+        itemDescription: 'كسور حواف أثناء التقطيع',
+        quantity: 2.5,
+        cost: 35.0,
+      ),
+      WasteLogModel(
+        id: 'wl2',
+        date: DateTime.now().subtract(const Duration(days: 1)),
+        wasteType: 'هدر غير طبيعي',
+        itemDescription: 'سقوط ألواح من الرافعة',
+        quantity: 1.0,
+        cost: 210.0,
+        destructionVoucherNo: 'VOUCH-8821',
+      ),
+    ];
+
+    workshopOrders = [
+      WorkshopOrderModel(
+        id: 'wo1',
+        orderNo: 'ORD-901',
+        date: DateTime.now().subtract(const Duration(days: 1)),
+        clientName: 'الدكتور طارق العلي',
+        clientPhone: '0944887766',
+        customDimensionsText: 'طاولة غرانيت أسود 220*110سم مع حفر بروفايل',
+        agreedPrice: 750.0,
+        depositAmount: 300.0,
+        status: 'قيد التنفيذ',
+      ),
+    ];
+
+    workshopInvoices = [
+      WorkshopInvoiceModel(
+        id: 'wi1',
+        invoiceNo: 'WRK-2026-001',
+        date: DateTime.now().subtract(const Duration(days: 2)),
+        clientName: 'المهندس رامي زريق',
+        sourceType: 'تفصيل بسيط',
+        itemDescription: 'درج كاردينال 120سم (10 درجات)',
+        agreedPrice: 280.0,
+        depositDeducted: 50.0,
+        cashPaidNow: 230.0,
+        netCost: 160.0,
+        isGranite: false,
+      ),
+    ];
+
+    workshopProjects = [
+      WorkshopProjectModel(
+        id: 'wp1',
+        name: 'مشروع فيلا يعفور السكنية',
+        clientName: 'الدكتور طارق العلي',
+        phone: '0944887766',
+        description: 'تفصيل وتوريد درج رخام كاردينال ومغاسل غرانيت أسود مع التركيب',
+        createdAt: DateTime.now().subtract(const Duration(days: 10)),
+      ),
+      WorkshopProjectModel(
+        id: 'wp2',
+        name: 'مجمع النرجس التجاري',
+        clientName: 'المتعهد فهد القاسم',
+        phone: '0933445566',
+        description: 'واجهات رخام ترافنتينو مع شطف وتفريز وسكراب مداخل',
+        createdAt: DateTime.now().subtract(const Duration(days: 20)),
+      ),
+      WorkshopProjectModel(
+        id: 'wp3',
+        name: 'فندق قاسيون السياحي',
+        clientName: 'شركة الإعمار والضيافة',
+        phone: '0955667788',
+        description: 'أرضيات بهو فندقي رخام بيانكو إيطالي ومغاسل معقدة',
+        createdAt: DateTime.now().subtract(const Duration(days: 30)),
+      ),
+    ];
+
+    // 9. Services
+    services = [
+      ServiceItemModel(
+        id: 'srv1',
+        name: 'جلي وتلميع رخام',
+        unitRate: 4.0,
+        description: 'حساب للمتر المربع',
+      ),
+      ServiceItemModel(
+        id: 'srv2',
+        name: 'شطف حواف وتفريز',
+        unitRate: 3.5,
+        description: 'حساب للمتر الطولي',
+      ),
+      ServiceItemModel(
+        id: 'srv3',
+        name: 'نقل وتوصيل بالكرين',
+        unitRate: 75.0,
+        description: 'حساب للرحلة',
+      ),
+      ServiceItemModel(
+        id: 'srv4',
+        name: 'قص وزوايا معقدة',
+        unitRate: 8.0,
+        description: 'حساب للقطعة',
+      ),
+      ServiceItemModel(
+        id: 'srv5',
+        name: 'ثقب وتفريغ مغاسل',
+        unitRate: 15.0,
+        description: 'حساب للفتحة',
+      ),
+    ];
+
+    // 10. Workforce & Workdays
+    staffTypes = [
+      StaffTypeModel(
+        id: 'staff_type_worker_general',
+        category: 'عمال',
+        name: 'عمال عامون',
+        dailyRate: 45,
+      ),
+      StaffTypeModel(
+        id: 'staff_type_admin_general',
+        category: 'إداريين',
+        name: 'إداريون عامون',
+        dailyRate: 50,
+      ),
+      StaffTypeModel(
+        id: 'staff_type_master_cut',
+        category: 'معلمين',
+        name: 'معلمو قص وتفصيل',
+        dailyRate: 70,
+      ),
+    ];
+
+    staffList = [
+      StaffModel(
+        id: 'stf1',
+        name: 'المعلم أبو حيدر (قصاص)',
+        category: 'معلمين',
+        phone: '0933111222',
+        typeId: 'staff_type_master_cut',
+        totalEarned: 1450.0,
+        cashAdvancesDisbursed: 400.0,
+      ),
+      StaffModel(
+        id: 'stf2',
+        name: 'العامل ياسين (تحميل وتنزيل)',
+        category: 'عمال',
+        phone: '0944222333',
+        typeId: 'staff_type_worker_general',
+        totalEarned: 850.0,
+        cashAdvancesDisbursed: 200.0,
+      ),
+      StaffModel(
+        id: 'stf3',
+        name: 'المحاسب نزار (إداري)',
+        category: 'إداريين',
+        phone: '0955333444',
+        typeId: 'staff_type_admin_general',
+        totalEarned: 2100.0,
+        cashAdvancesDisbursed: 500.0,
+      ),
+    ];
+
+    activeWorkweekStart = _startOfWorkweek(DateTime.now());
+
+    staffAttendance = [
+      StaffAttendanceModel(
+        id: 'att1',
+        date: DateTime.now().subtract(const Duration(days: 2)),
+        staffId: 'stf2',
+        dailyRate: 45.0,
+        currency: AppCurrency.usd,
+      ),
+      StaffAttendanceModel(
+        id: 'att2',
+        date: DateTime.now().subtract(const Duration(days: 1)),
+        staffId: 'stf2',
+        dailyRate: 45.0,
+        currency: AppCurrency.usd,
+      ),
+      StaffAttendanceModel(
+        id: 'att3',
+        date: DateTime.now(),
+        staffId: 'stf3',
+        dailyRate: 50.0,
+        currency: AppCurrency.usd,
+      ),
+    ];
+
+    workdayEntries = [
+      WorkdayEntryModel(
+        id: 'wde1',
+        date: DateTime.now().subtract(const Duration(days: 1)),
+        staffNames: ['المعلم أبو حيدر (قصاص)', 'العامل ياسين (تحميل وتنزيل)'],
+        workDescription: 'قص 3 بلوكات كاردينال وتنزيل ألواح المعمل',
+        rateType: 'حساب يومية',
+        agreedAmountPerPerson: 45.0,
+        currency: AppCurrency.usd,
+      ),
+    ];
+
+    advanceRepayments = [
+      AdvanceRepaymentModel(
+        id: 'ar1',
+        staffId: 'stf1',
+        staffName: 'المعلم أبو حيدر (قصاص)',
+        staffCategory: 'معلمين',
+        originalCurrency: AppCurrency.usd,
+        collectedCurrency: AppCurrency.usd,
+        collectedAmount: 100.0,
+        deductedAmount: 100.0,
+        exchangeRate: 1.0,
+        date: DateTime.now().subtract(const Duration(days: 2)),
+        note: 'تسديد سلفة المعلم أبو حيدر عند قبض مستحقاته',
+      ),
+    ];
+
+    // 11. Returns, Expenses & Adjustments
+    returnInvoices = [
+      ReturnInvoiceModel(
+        id: 'ret1',
+        returnNo: 'RET-001',
+        date: DateTime.now().subtract(const Duration(days: 5)),
+        returnType: 'مرتجع مشتريات مورد',
+        partyName: 'شركة مقالع الرخام الوطنية',
+        itemDescription: 'بلوك كاردينال فيه تشققات سرية',
+        quantity: 12.0,
+        refundAmount: 1320.0,
+        paymentAction: 'تخفيض دين',
+      ),
+    ];
+
+    expenseTypes = [
+      ExpenseTypeModel(
+        id: 'et1',
+        name: 'محروقات ومازوت للمولدات',
+        description: 'وقود تشغيل المناشير والرافعات',
+      ),
+      ExpenseTypeModel(
+        id: 'et2',
+        name: 'صيانة وإصلاحات ميكانيكية',
+        description: 'قطع غيار شفرات وزيوت هيدروليك',
+      ),
+      ExpenseTypeModel(
+        id: 'et3',
+        name: 'كهرباء ومياه صناعية',
+        description: 'فواتير الخدمات الشهرية للمنشأة',
+      ),
+      ExpenseTypeModel(
+        id: 'et4',
+        name: 'ضيافة ونثريات إدارية',
+        description: 'مستلزمات الضيافة والمكتب',
+      ),
+    ];
+
+    expenseRecords = [
+      ExpenseRecordModel(
+        id: 'er1',
+        typeId: 'et1',
+        amount: 350.0,
+        currency: AppCurrency.usd,
+        personName: 'السائق أبو خالد',
+        description: 'تعبئة مازوت 500 ليتر لمولد المولدات الكبيرة',
+        date: DateTime.now().subtract(const Duration(days: 2)),
+      ),
+      ExpenseRecordModel(
+        id: 'er2',
+        typeId: 'et2',
+        amount: 180.0,
+        currency: AppCurrency.usd,
+        personName: 'فني الصيانة جهاد',
+        description: 'تبديل زيت هيدروليك وفلاتر لجلاية سيميوني',
+        date: DateTime.now().subtract(const Duration(days: 3)),
+      ),
+      ExpenseRecordModel(
+        id: 'er3',
+        typeId: 'et3',
+        amount: 1500000.0,
+        currency: AppCurrency.syp,
+        personName: 'المحاسب نزار',
+        description: 'تسديد فاتورة الكهرباء الصناعية للمصنع',
+        date: DateTime.now().subtract(const Duration(days: 5)),
+      ),
+    ];
+
+    adjustmentInvoices = [
+      AdjustmentInvoiceModel(
+        id: 'adj1',
+        invoiceNo: 'ADJ-2026-001',
+        module: 'المصنع',
+        kind: 'تسوية_مستودع',
+        targetInvoiceId: 'fw1',
+        targetInvoiceNo: 'FW-001',
+        partyName: 'المستودع الرئيسي',
+        description: 'تسوية زيادة ناتجة عن إعادة فرز ألواح',
+        itemDescription: 'رخام كاردينال 2سم (فروقات جرد دوري)',
+        amount: 72.5,
+        quantity: 5.0,
+        currency: AppCurrency.usd,
+        date: DateTime.now().subtract(const Duration(days: 6)),
+      ),
+    ];
+
+    // 12. Center Information
+    centerInfo = const CenterInfoModel(
+      centerName: 'مجمع أبعاد لتجارة وتصنيع الرخام والغرانيت',
+      ownerName: 'إدارة مجمع أبعاد',
+      phone1: '0944112233',
+      phone2: '0933556677',
+      address: 'سوريا - ريف دمشق - المنطقة الصناعية',
+      commercialRegNo: 'CR-54120',
+      taxId: 'TAX-982134',
+      slogan: 'الجودة والدقة في كافة أعمال الرخام الطبيعي والغرانيت المستورد',
+    );
+
+    // 13. Daily Reports Archive
+    dailyReports = [
+      compileDailyReportForDate(
+        DateTime.now().subtract(const Duration(days: 2)),
+        notes: 'تقرير مبيعات وعمليات المصنع التجريبية التأسيسية',
       ),
     ];
   }
@@ -5655,6 +6813,9 @@ class ERPProvider extends ChangeNotifier {
       'dailyReports': dailyReports.length,
       'totalCashUsd': mainCashBox + scrapCashBox + orderCashBox,
       'totalCashSyp': mainCashBoxSyp + scrapCashBoxSyp + orderCashBoxSyp,
+      'openingEntryStatus': openingEntry.isLocked ? 'معتمد ومرحل' : 'مسودة',
+      'openingFixedAssets': openingEntry.fixedAssets.length,
+      'openingStockItems': openingEntry.openingStock.length,
     };
   }
 

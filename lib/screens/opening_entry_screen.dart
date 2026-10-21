@@ -595,14 +595,34 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                     ],
                   ),
                 ),
-                Chip(
-                  avatar: Icon(
-                    entry.isLocked ? Icons.lock : Icons.edit,
-                    color: entry.isLocked
-                        ? AppColors.successGreen
-                        : AppColors.accentPrimary,
-                  ),
-                  label: Text(entry.isLocked ? 'معتمد ومغلق' : 'قيد الإعداد'),
+                Wrap(
+                  spacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        await erp.populateComprehensiveSeedData(
+                          lockOpeningEntry: false,
+                        );
+                        _cashControllersReady = false;
+                        _initializeCashControllers(erp.openingEntry);
+                        _showMessage(
+                          'تمت تعبئة بيانات تجريبية شاملة للقيد الافتتاحي.',
+                        );
+                      },
+                      icon: const Icon(Icons.science_rounded, size: 18),
+                      label: const Text('تعبئة بيانات تجريبية'),
+                    ),
+                    Chip(
+                      avatar: Icon(
+                        entry.isLocked ? Icons.lock : Icons.edit,
+                        color: entry.isLocked
+                            ? AppColors.successGreen
+                            : AppColors.accentPrimary,
+                      ),
+                      label: Text(entry.isLocked ? 'معتمد ومغلق' : 'قيد الإعداد'),
+                    ),
+                  ],
                 ),
               ],
             ),
