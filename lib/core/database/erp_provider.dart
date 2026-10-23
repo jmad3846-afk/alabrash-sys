@@ -195,6 +195,7 @@ class ERPProvider extends ChangeNotifier {
   List<ReturnInvoiceModel> returnInvoices = [];
   List<ExpenseTypeModel> expenseTypes = [];
   List<ExpenseRecordModel> expenseRecords = [];
+  List<AssetSaleRecordModel> assetSaleRecords = [];
   List<AdjustmentInvoiceModel> adjustmentInvoices = [];
   CenterInfoModel centerInfo = const CenterInfoModel();
 
@@ -1911,8 +1912,22 @@ class ERPProvider extends ChangeNotifier {
   // -------------------------------------------------------------
   // REAL-TIME FINANCIAL METRICS & CALCULATIONS
   // -------------------------------------------------------------
-  double get totalCurrentEquity => openingEntry.totalEquity;
-  double get totalCurrentEquitySyp => openingEntry.totalEquitySyp;
+  double get totalCurrentEquity {
+    final capital = partners.fold<double>(
+      0.0,
+      (sum, p) => sum + p.injectedCapital,
+    );
+    if (capital > 0) return capital;
+    return openingEntry.totalEquity;
+  }
+  double get totalCurrentEquitySyp {
+    final capital = partners.fold<double>(
+      0.0,
+      (sum, p) => sum + p.injectedCapitalSyp,
+    );
+    if (capital > 0) return capital;
+    return openingEntry.totalEquitySyp;
+  }
 
   double get fixedAssetsBookValue => openingEntry.fixedAssets
       .where((asset) => !asset.isSold)
@@ -2615,41 +2630,48 @@ class ERPProvider extends ChangeNotifier {
     required String assetId,
     required double saleAmount,
     required String currency,
-    required Map<String, bool> partnerTransfers,
+    Map<String, bool>? partnerTransfers,
   }) {
-    final asset = openingEntry.fixedAssets.firstWhere(
+    final assetIndex = openingEntry.fixedAssets.indexWhere(
       (item) => item.id == assetId,
-      orElse: () => throw StateError('Fixed asset was not found.'),
     );
-    if (asset.isSold ||
-        saleAmount <= 0 ||
-        asset.currency != AppCurrency.normalize(currency)) {
+    if (assetIndex < 0) return false;
+    final asset = openingEntry.fixedAssets[assetIndex];
+
+    final c = AppCurrency.normalize(currency);
+    if (saleAmount <= 0 || asset.currency != c) {
       return false;
     }
-    if (partners.length != 3) {
-      throw StateError(
-        'Asset sale distribution requires exactly three partners.',
-      );
-    }
-    final share = saleAmount / 3;
-    final c = AppCurrency.normalize(currency);
-    final retained = partners.fold<double>(
-      0,
-      (sum, partner) =>
-          sum + (partnerTransfers[partner.id] == true ? share : 0),
+
+    // 1. The full amount enters the Main Safe
+    addCash('main', c, saleAmount);
+
+    // 2. Subtraction process:
+    // When Selling Price > Initial Registered Price:
+    // (Selling Price - Initial Registered Price) goes to Profits/Gains in Income Summary.
+    // When Selling Price < Initial Registered Price:
+    // (Initial Registered Price - Selling Price) goes to Losses in Income Summary.
+    // When Selling Price == Initial Registered Price:
+    // Gain/Loss is 0.
+    final record = AssetSaleRecordModel(
+      id: 'asset_sale_${DateTime.now().microsecondsSinceEpoch}',
+      assetId: asset.id,
+      assetName: asset.name,
+      category: asset.category,
+      registeredPrice: asset.amount,
+      salePrice: saleAmount,
+      currency: c,
+      saleDate: DateTime.now(),
+      description: asset.description,
     );
-    for (final partner in partners) {
-      if (partnerTransfers[partner.id] != true) {
-        if (c == AppCurrency.syp) {
-          partner.totalWithdrawnSyp += share;
-        } else {
-          partner.totalWithdrawn += share;
-        }
-      }
-    }
-    asset.isSold = true;
-    asset.saleAmount = saleAmount;
-    addCash('main', c, retained);
+    assetSaleRecords.add(record);
+
+    // 3. The fixed asset is completely removed / deleted
+    openingEntry.fixedAssets.removeAt(assetIndex);
+    _syncOpeningAssetTotals();
+
+    // 4. Capital balance remains as originally entered and is not affected.
+
     notifyListeners();
     saveToDisk();
     return true;
@@ -2938,12 +2960,25 @@ class ERPProvider extends ChangeNotifier {
       )
       .fold<double>(0, (sum, invoice) => sum + invoice.discountAmount);
 
-  double assetSaleRevenueOf(String? currency) => openingEntry.fixedAssets
+  double assetSaleGainsOf(String? currency) => assetSaleRecords
       .where(
-        (asset) =>
-            asset.isSold && asset.currency == AppCurrency.normalize(currency),
+        (record) =>
+            record.currency == AppCurrency.normalize(currency),
       )
-      .fold<double>(0, (sum, asset) => sum + asset.saleAmount);
+      .fold<double>(0, (sum, record) => sum + record.gain);
+  double get assetSaleGains => assetSaleGainsOf(AppCurrency.usd);
+  double get assetSaleGainsSyp => assetSaleGainsOf(AppCurrency.syp);
+
+  double assetSaleLossesOf(String? currency) => assetSaleRecords
+      .where(
+        (record) =>
+            record.currency == AppCurrency.normalize(currency),
+      )
+      .fold<double>(0, (sum, record) => sum + record.loss);
+  double get assetSaleLosses => assetSaleLossesOf(AppCurrency.usd);
+  double get assetSaleLossesSyp => assetSaleLossesOf(AppCurrency.syp);
+
+  double assetSaleRevenueOf(String? currency) => assetSaleGainsOf(currency);
 
   double expenseRecordsTotalOf(String? currency) => expenseRecords
       .where((expense) =>
@@ -3120,7 +3155,8 @@ class ERPProvider extends ChangeNotifier {
         accountantGraniteShareOf(c) -
         expenseRecordsTotalOf(c) -
         salesReturnsAndAllowancesOf(c) -
-        salesDiscountsOf(c);
+        salesDiscountsOf(c) -
+        assetSaleLossesOf(c);
   }
 
   double salesReturnsAndAllowancesOf(String? currency) =>
@@ -6132,6 +6168,10 @@ class ERPProvider extends ChangeNotifier {
         jsonEncode(expenseRecords.map((e) => e.toJson()).toList()),
       );
       await prefs.setString(
+        'assetSaleRecords',
+        jsonEncode(assetSaleRecords.map((e) => e.toJson()).toList()),
+      );
+      await prefs.setString(
         'advanceRepayments',
         jsonEncode(advanceRepayments.map((a) => a.toJson()).toList()),
       );
@@ -6335,6 +6375,33 @@ class ERPProvider extends ChangeNotifier {
             .map((item) => ExpenseRecordModel.fromJson(item))
             .toList();
       }
+      final assetSaleRecordsJson = prefs.getString('assetSaleRecords');
+      if (assetSaleRecordsJson != null) {
+        try {
+          assetSaleRecords = (jsonDecode(assetSaleRecordsJson) as List)
+              .map((item) => AssetSaleRecordModel.fromJson(item))
+              .toList();
+        } catch (_) {}
+      }
+      final soldLegacy = openingEntry.fixedAssets.where((a) => a.isSold).toList();
+      for (final a in soldLegacy) {
+        if (!assetSaleRecords.any((r) => r.assetId == a.id)) {
+          assetSaleRecords.add(
+            AssetSaleRecordModel(
+              id: 'legacy_sale_${a.id}',
+              assetId: a.id,
+              assetName: a.name,
+              category: a.category,
+              registeredPrice: a.amount,
+              salePrice: a.saleAmount > 0 ? a.saleAmount : a.amount,
+              currency: a.currency,
+              saleDate: DateTime.now(),
+              description: a.description,
+            ),
+          );
+        }
+      }
+      openingEntry.fixedAssets.removeWhere((a) => a.isSold);
       final advanceRepaymentsJson = prefs.getString('advanceRepayments');
       if (advanceRepaymentsJson != null) {
         advanceRepayments = (jsonDecode(advanceRepaymentsJson) as List)
@@ -6477,6 +6544,7 @@ class ERPProvider extends ChangeNotifier {
             accountantWithdrawals.map((w) => w.toJson()).toList(),
         'partners': partners.map((p) => p.toJson()).toList(),
         'openingEntry': openingEntry.toJson(),
+        'assetSaleRecords': assetSaleRecords.map((w) => w.toJson()).toList(),
       },
       'factory': {
         'suppliers': suppliers.map((s) => s.toJson()).toList(),
@@ -6583,6 +6651,12 @@ class ERPProvider extends ChangeNotifier {
     if (fin['accountantWithdrawals'] is List) {
       accountantWithdrawals = (fin['accountantWithdrawals'] as List)
           .map((item) => AccountantWithdrawalModel.fromJson(
+              Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (fin['assetSaleRecords'] is List) {
+      assetSaleRecords = (fin['assetSaleRecords'] as List)
+          .map((item) => AssetSaleRecordModel.fromJson(
               Map<String, dynamic>.from(item)))
           .toList();
     }

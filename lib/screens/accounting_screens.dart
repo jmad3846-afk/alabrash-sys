@@ -385,10 +385,8 @@ class ChartOfAccountsScreen extends StatelessWidget {
               '${(adjustmentAmount('purchase_return', AppCurrency.usd) + adjustmentAmount('purchase_allowance', AppCurrency.usd)).fmt} \$ • ${(adjustmentAmount('purchase_return', AppCurrency.syp) + adjustmentAmount('purchase_allowance', AppCurrency.syp)).fmt} ل.س',
             ),
             _accountLine(
-              'إيرادات بيع الأصول',
-              allAssets
-                  .fold<double>(0, (sum, asset) => sum + asset.saleAmount)
-                  .fmt,
+              'أرباح بيع الأصول الثابتة',
+              '${erp.assetSaleGains.fmt} \$ • ${erp.assetSaleGainsSyp.fmt} ل.س',
             ),
             _accountLine(
               'الخصومات المكتسبة',
@@ -423,6 +421,10 @@ class ChartOfAccountsScreen extends StatelessWidget {
             _accountLine(
               'المصروفات المباشرة',
               '${expenseUsd.fmt} \$ • ${expenseSyp.fmt} ل.س',
+            ),
+            _accountLine(
+              'خسائر بيع الأصول الثابتة',
+              '${erp.assetSaleLosses.fmt} \$ • ${erp.assetSaleLossesSyp.fmt} ل.س',
             ),
             for (final type in erp.expenseTypes)
               _accountLine(
@@ -895,7 +897,7 @@ class _FixedAssetsManagementScreenState
           ),
           const SizedBox(height: 6),
           const Text(
-            'إضافة أصل تخصم كلفته من الصندوق الرئيسي، وبيع الأصل يوزع سعر البيع بالتساوي على الشركاء الثلاثة.',
+            'إضافة أصل تخصم كلفته من الصندوق الرئيسي. عند بيع أصل يدخل كامل المبلغ إلى الصندوق الرئيسي ويتم حذف الأصل نهائياً، وتنتقل الأرباح (سعر البيع - القيمة المسجلة) أو الخسائر (القيمة المسجلة - سعر البيع) إلى قائمة ملخص الدخل دون التأثير على رأس المال.',
           ),
           const SizedBox(height: 18),
           Card(
@@ -1024,6 +1026,83 @@ class _FixedAssetsManagementScreenState
                 ],
               ),
             ),
+          if (erp.assetSaleRecords.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Card(
+              child: ExpansionTile(
+                initiallyExpanded: false,
+                leading: const Icon(
+                  Icons.history_rounded,
+                  color: AppColors.accentPrimary,
+                ),
+                title: Text(
+                  'سجل الأصول المستبعدة والمباعة (${erp.assetSaleRecords.length})',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text(
+                  'بيان بالأصول المحذوفة ومبالغ البيع المحصلة في الصندوق الرئيسي وأرباح/خسائر ملخص الدخل',
+                ),
+                children: [
+                  for (final record in erp.assetSaleRecords.reversed)
+                    ListTile(
+                      leading: Icon(
+                        record.isGain
+                            ? Icons.trending_up_rounded
+                            : (record.isLoss
+                                ? Icons.trending_down_rounded
+                                : Icons.check_circle_outline),
+                        color: record.isGain
+                            ? AppColors.successGreen
+                            : (record.isLoss
+                                ? AppColors.dangerWaste
+                                : Colors.blueGrey),
+                      ),
+                      title: Text('${record.assetName} • ${record.category}'),
+                      subtitle: Text(
+                        'القيمة المسجلة: ${record.registeredPrice.fmt} ${AppCurrency.symbol(record.currency)} • سعر البيع: ${record.salePrice.fmt} ${AppCurrency.symbol(record.currency)} • أودع في: الصندوق الرئيسي',
+                      ),
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: record.isGain
+                              ? AppColors.chipBgGreen
+                              : (record.isLoss
+                                  ? AppColors.chipBgRed
+                                  : Colors.grey.shade100),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: record.isGain
+                                ? AppColors.successGreen
+                                : (record.isLoss
+                                    ? AppColors.dangerWaste
+                                    : Colors.grey),
+                          ),
+                        ),
+                        child: Text(
+                          record.isGain
+                              ? '+${record.gain.fmt} ${AppCurrency.symbol(record.currency)} (أرباح)'
+                              : (record.isLoss
+                                  ? '-${record.loss.fmt} ${AppCurrency.symbol(record.currency)} (خسائر)'
+                                  : '0.00 (تعادل)'),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: record.isGain
+                                ? AppColors.successGreen
+                                : (record.isLoss
+                                    ? AppColors.dangerWaste
+                                    : Colors.black87),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1031,62 +1110,188 @@ class _FixedAssetsManagementScreenState
 
   Future<void> _sellAsset(ERPProvider erp, FixedAssetModel asset) async {
     final priceController = TextEditingController();
-    final transfers = {for (final p in erp.partners) p.id: true};
+    final sym = AppCurrency.symbol(asset.currency);
     final salePrice = await showDialog<double>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text('بيع الأصل • ${asset.name}'),
-          content: SizedBox(
-            width: 460,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'سعر البيع يوزع بالتساوي: ${priceController.text.isEmpty ? '0' : ((double.tryParse(priceController.text) ?? 0) / 3).fmt} ${AppCurrency.symbol(asset.currency)} لكل شريك.',
-                ),
-                TextField(
-                  controller: priceController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText:
-                        'سعر البيع (${AppCurrency.symbol(asset.currency)})',
-                  ),
-                  onChanged: (_) => setDialogState(() {}),
-                ),
-                const SizedBox(height: 12),
-                for (final partner in erp.partners)
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(partner.name),
-                    subtitle: const Text(
-                      'مفعل: تحويل الحصة إلى الصندوق • متوقف: سحب الحصة',
+        builder: (context, setDialogState) {
+          final entered = double.tryParse(priceController.text) ?? 0.0;
+          final isHigher = entered > asset.amount;
+          final isLower = entered > 0 && entered < asset.amount;
+          final isEqual =
+              entered > 0 && (entered - asset.amount).abs() < 0.0001;
+
+          return AlertDialog(
+            title: Text('بيع واستبعاد الأصل • ${asset.name}'),
+            content: SizedBox(
+              width: 480,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
                     ),
-                    value: transfers[partner.id] ?? true,
-                    onChanged: (value) =>
-                        setDialogState(() => transfers[partner.id] = value),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'التصنيف: ${asset.category}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'القيمة المسجلة في النظام: ${asset.amount.fmt} $sym',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: AppColors.accentPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-              ],
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: priceController,
+                    autofocus: true,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'سعر البيع ($sym)',
+                      hintText: 'أدخل سعر البيع...',
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                  const SizedBox(height: 14),
+                  if (entered > 0)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isHigher
+                            ? AppColors.chipBgGreen
+                            : (isLower
+                                ? AppColors.chipBgRed
+                                : AppColors.chipBgAmber),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isHigher
+                              ? AppColors.successGreen
+                              : (isLower
+                                  ? AppColors.dangerWaste
+                                  : Colors.amber.shade700),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                isHigher
+                                    ? Icons.trending_up_rounded
+                                    : (isLower
+                                        ? Icons.trending_down_rounded
+                                        : Icons.check_circle_outline),
+                                size: 18,
+                                color: isHigher
+                                    ? AppColors.successGreen
+                                    : (isLower
+                                        ? AppColors.dangerWaste
+                                        : Colors.amber.shade900),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                isHigher
+                                    ? 'البيع بسعر أعلى من القيمة المسجلة (+أرباح):'
+                                    : (isLower
+                                        ? 'البيع بسعر أقل من القيمة المسجلة (-خسائر):'
+                                        : 'البيع بنفس القيمة المسجلة تماماً:'),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: isHigher
+                                      ? AppColors.successGreen
+                                      : (isLower
+                                          ? AppColors.dangerWaste
+                                          : Colors.amber.shade900),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '• يدخل كامل المبلغ (${entered.fmt} $sym) إلى الصندوق الرئيسي.',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          if (isHigher)
+                            Text(
+                              '• عملية الطرح: (${entered.fmt} - ${asset.amount.fmt}) = ${(entered - asset.amount).fmt} $sym تذهب إلى الأرباح في ملخص الدخل.',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.successGreen,
+                              ),
+                            )
+                          else if (isLower)
+                            Text(
+                              '• عملية الطرح: (${asset.amount.fmt} - ${entered.fmt}) = ${(asset.amount - entered).fmt} $sym تذهب إلى الخسائر في ملخص الدخل.',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.dangerWaste,
+                              ),
+                            )
+                          else
+                            Text(
+                              '• سعر البيع مساوٍ للقيمة المسجلة (لا توجد أرباح أو خسائر إضافية).',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          const Text(
+                            '• يتم حذف الأصل الثابت تماماً من المواد.',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const Text(
+                            '• رصيد رأس المال يبقى كما هو مدخل أساساً في النظام ولا يتأثر.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final amount = double.tryParse(priceController.text);
-                if (amount != null && amount > 0) {
-                  Navigator.pop(dialogContext, amount);
-                }
-              },
-              child: const Text('تأكيد البيع'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final amount = double.tryParse(priceController.text);
+                  if (amount != null && amount > 0) {
+                    Navigator.pop(dialogContext, amount);
+                  }
+                },
+                child: const Text('تأكيد البيع والحذف'),
+              ),
+            ],
+          );
+        },
       ),
     );
     priceController.dispose();
@@ -1095,18 +1300,26 @@ class _FixedAssetsManagementScreenState
       assetId: asset.id,
       saleAmount: salePrice,
       currency: asset.currency,
-      partnerTransfers: transfers,
     );
     if (!sold) {
       _message('تعذر تسجيل البيع. تحقق من حالة الأصل والسعر.');
       return;
     }
-    final retainedAmount =
-        salePrice / 3 * transfers.values.where((v) => v).length;
-    final withdrawnAmount = salePrice - retainedAmount;
-    _message(
-      'تم البيع. إلى الصندوق: ${retainedAmount.fmt} ${AppCurrency.symbol(asset.currency)} • مسحوبات الشركاء: ${withdrawnAmount.fmt} ${AppCurrency.symbol(asset.currency)}.',
-    );
+    if (salePrice > asset.amount) {
+      final gain = salePrice - asset.amount;
+      _message(
+        'تم بيع الأصل: دخل كامل المبلغ (${salePrice.fmt} $sym) إلى الصندوق الرئيسي • حُذف الأصل • رُحلت أرباح (${gain.fmt} $sym) إلى ملخص الدخل • رأس المال لم يتأثر.',
+      );
+    } else if (salePrice < asset.amount) {
+      final loss = asset.amount - salePrice;
+      _message(
+        'تم بيع الأصل: دخل كامل المبلغ (${salePrice.fmt} $sym) إلى الصندوق الرئيسي • حُذف الأصل • رُحلت خسائر (${loss.fmt} $sym) إلى ملخص الدخل • رأس المال لم يتأثر.',
+      );
+    } else {
+      _message(
+        'تم بيع الأصل: تحول كامل المبلغ (${salePrice.fmt} $sym) إلى الصندوق الرئيسي • حُذف الأصل الثابت • رأس المال لم يتأثر.',
+      );
+    }
   }
 
   void _message(String value) => ScaffoldMessenger.of(

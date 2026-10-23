@@ -4631,7 +4631,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         erp.accountantGraniteShare +
         erp.expenseRecordsTotalOf(AppCurrency.usd) +
         erp.salesReturnsAndAllowancesOf(AppCurrency.usd) +
-        erp.salesDiscountsOf(AppCurrency.usd);
+        erp.salesDiscountsOf(AppCurrency.usd) +
+        erp.assetSaleLossesOf(AppCurrency.usd);
     final expensesSyp =
         erp.totalCOGSSyp +
         erp.totalOperationalExpensesSyp +
@@ -4640,7 +4641,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         erp.accountantGraniteShareSyp +
         erp.expenseRecordsTotalOf(AppCurrency.syp) +
         erp.salesReturnsAndAllowancesOf(AppCurrency.syp) +
-        erp.salesDiscountsOf(AppCurrency.syp);
+        erp.salesDiscountsOf(AppCurrency.syp) +
+        erp.assetSaleLossesOf(AppCurrency.syp);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -4796,9 +4798,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     syp: erp.supplierDiscountsOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
-                    'إيرادات بيع الأصول:',
-                    erp.assetSaleRevenueOf(AppCurrency.usd),
-                    syp: erp.assetSaleRevenueOf(AppCurrency.syp),
+                    'أرباح بيع الأصول الثابتة (فائض سعر البيع):',
+                    erp.assetSaleGainsOf(AppCurrency.usd),
+                    syp: erp.assetSaleGainsOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
                     'إيرادات تحصيل واسترداد سُلف العمالة:',
@@ -4889,6 +4891,11 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     'مستحقات المحاسب عن مبيعات الغرانيت (${erp.graniteAccountantPercentage.fmt}% Share):',
                     erp.accountantGraniteShare,
                     syp: erp.accountantGraniteShareSyp,
+                  ),
+                  _buildPlLine(
+                    'خسائر بيع الأصول الثابتة (عجز سعر البيع):',
+                    erp.assetSaleLossesOf(AppCurrency.usd),
+                    syp: erp.assetSaleLossesOf(AppCurrency.syp),
                   ),
                   const Divider(height: 16),
                   _buildPlLine(

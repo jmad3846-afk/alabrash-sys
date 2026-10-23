@@ -54,40 +54,115 @@ void main() {
     expect(restored.legacyFinancials.single.currency, AppCurrency.syp);
   });
 
-  test('Asset purchase and sale update cash and partner withdrawals', () {
+  test(
+      'Asset purchase and sale: higher, lower, and equal price rules with Income Summary and Capital',
+      () {
     SharedPreferences.setMockInitialValues({});
     final erp = ERPProvider();
-    erp.mainCashBox = 100;
+    final initialCapital = erp.totalCurrentEquity;
+    erp.mainCashBox = 500;
 
-    final purchased = erp.purchaseFixedAsset(
+    // --- Scenario 1: Sale price HIGHER than registered price ---
+    final purchased1 = erp.purchaseFixedAsset(
       category: 'آلات ومعدات',
-      name: 'منشار',
+      name: 'منشار كبير',
       amount: 100,
       currency: AppCurrency.usd,
       description: 'منشار رئيسي',
     );
+    expect(purchased1, isTrue);
+    expect(erp.mainCashBox, 400);
 
-    expect(purchased, isTrue);
-    expect(erp.mainCashBox, 0);
-    final asset = erp.openingEntry.fixedAssets.firstWhere(
-      (item) => item.name == 'منشار',
+    final asset1 = erp.openingEntry.fixedAssets.firstWhere(
+      (item) => item.name == 'منشار كبير',
     );
-    final sold = erp.sellFixedAsset(
-      assetId: asset.id,
-      saleAmount: 120,
+    final soldHigher = erp.sellFixedAsset(
+      assetId: asset1.id,
+      saleAmount: 120, // 120 > 100 -> Gain = 20
       currency: AppCurrency.usd,
-      partnerTransfers: {
-        erp.partners[0].id: true,
-        erp.partners[1].id: true,
-        erp.partners[2].id: false,
-      },
     );
 
-    expect(sold, isTrue);
-    expect(asset.isSold, isTrue);
-    expect(asset.saleAmount, 120);
-    expect(erp.mainCashBox, closeTo(80, 0.001));
-    expect(erp.partners[2].totalWithdrawn, closeTo(40, 0.001));
+    expect(soldHigher, isTrue);
+    // 1. Full amount enters the Main Safe (400 + 120 = 520)
+    expect(erp.mainCashBox, 520);
+    // 2. The fixed asset is completely removed from items
+    expect(
+      erp.openingEntry.fixedAssets.any((item) => item.id == asset1.id),
+      isFalse,
+    );
+    // 3. Subtraction (120 - 100 = 20) goes to Profits/Gains in Income Summary
+    expect(erp.assetSaleGainsOf(AppCurrency.usd), 20);
+    expect(erp.assetSaleLossesOf(AppCurrency.usd), 0);
+    // 4. Capital balance remains unaffected
+    expect(erp.totalCurrentEquity, initialCapital);
+
+    // --- Scenario 2: Sale price LOWER than registered price ---
+    final purchased2 = erp.purchaseFixedAsset(
+      category: 'آليات ونقل',
+      name: 'رافعة شوكية',
+      amount: 200,
+      currency: AppCurrency.usd,
+      description: 'رافعة بضائع',
+    );
+    expect(purchased2, isTrue);
+    expect(erp.mainCashBox, 320); // 520 - 200 = 320
+
+    final asset2 = erp.openingEntry.fixedAssets.firstWhere(
+      (item) => item.name == 'رافعة شوكية',
+    );
+    final soldLower = erp.sellFixedAsset(
+      assetId: asset2.id,
+      saleAmount: 150, // 150 < 200 -> Loss = 50
+      currency: AppCurrency.usd,
+    );
+
+    expect(soldLower, isTrue);
+    // 1. Full amount enters the Safe (320 + 150 = 470)
+    expect(erp.mainCashBox, 470);
+    // 2. The fixed asset is deleted
+    expect(
+      erp.openingEntry.fixedAssets.any((item) => item.id == asset2.id),
+      isFalse,
+    );
+    // 3. Subtraction (200 - 150 = 50) goes to Losses in Income Summary
+    expect(erp.assetSaleLossesOf(AppCurrency.usd), 50);
+    expect(erp.assetSaleGainsOf(AppCurrency.usd), 20); // Still 20 from previous
+    // 4. Capital balance remains unaffected
+    expect(erp.totalCurrentEquity, initialCapital);
+
+    // --- Scenario 3: Sale price EQUAL to registered price ---
+    final purchased3 = erp.purchaseFixedAsset(
+      category: 'أثاث',
+      name: 'طاولة مكتب',
+      amount: 80,
+      currency: AppCurrency.usd,
+      description: 'طاولة خشبية',
+    );
+    expect(purchased3, isTrue);
+    expect(erp.mainCashBox, 390); // 470 - 80 = 390
+
+    final asset3 = erp.openingEntry.fixedAssets.firstWhere(
+      (item) => item.name == 'طاولة مكتب',
+    );
+    final soldEqual = erp.sellFixedAsset(
+      assetId: asset3.id,
+      saleAmount: 80, // 80 == 80 -> Gain = 0, Loss = 0
+      currency: AppCurrency.usd,
+    );
+
+    expect(soldEqual, isTrue);
+    // 1. Full amount is transferred to the Safe (390 + 80 = 470)
+    expect(erp.mainCashBox, 470);
+    // 2. The fixed asset is deleted from the items
+    expect(
+      erp.openingEntry.fixedAssets.any((item) => item.id == asset3.id),
+      isFalse,
+    );
+    // 3. No new gains or losses
+    expect(erp.assetSaleGainsOf(AppCurrency.usd), 20);
+    expect(erp.assetSaleLossesOf(AppCurrency.usd), 50);
+    // 4. Capital balance is not affected
+    expect(erp.totalCurrentEquity, initialCapital);
   });
 
   test('Factory sales return reduces customer debt and restores stock', () {

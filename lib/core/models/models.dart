@@ -293,6 +293,72 @@ class FixedAssetModel {
       );
 }
 
+class AssetSaleRecordModel {
+  final String id;
+  final String assetId;
+  final String assetName;
+  final String category;
+  final double registeredPrice; // Initial registered price in system (book value)
+  final double salePrice;       // Actual sale price collected to safe
+  final String currency;
+  final DateTime saleDate;
+  final String description;
+
+  AssetSaleRecordModel({
+    required this.id,
+    required this.assetId,
+    required this.assetName,
+    required this.category,
+    required this.registeredPrice,
+    required this.salePrice,
+    this.currency = AppCurrency.usd,
+    DateTime? saleDate,
+    this.description = '',
+  }) : saleDate = saleDate ?? DateTime.now();
+
+  /// Subtraction process: (Selling Price - Initial Registered Price)
+  double get profitOrLoss => salePrice - registeredPrice;
+
+  /// If Selling Price > Registered Price -> Profit/Gain
+  double get gain =>
+      salePrice > registeredPrice ? (salePrice - registeredPrice) : 0.0;
+
+  /// If Selling Price < Registered Price -> Loss = (Registered Price - Selling Price)
+  double get loss =>
+      registeredPrice > salePrice ? (registeredPrice - salePrice) : 0.0;
+
+  bool get isGain => salePrice > registeredPrice;
+  bool get isLoss => salePrice < registeredPrice;
+  bool get isBreakEven => (salePrice - registeredPrice).abs() < 0.0001;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'assetId': assetId,
+    'assetName': assetName,
+    'category': category,
+    'registeredPrice': registeredPrice,
+    'salePrice': salePrice,
+    'currency': currency,
+    'saleDate': saleDate.toIso8601String(),
+    'description': description,
+  };
+
+  factory AssetSaleRecordModel.fromJson(Map<String, dynamic> json) =>
+      AssetSaleRecordModel(
+        id: json['id'] ?? '',
+        assetId: json['assetId'] ?? '',
+        assetName: json['assetName'] ?? '',
+        category: json['category'] ?? '',
+        registeredPrice: (json['registeredPrice'] ?? 0.0).toDouble(),
+        salePrice: (json['salePrice'] ?? 0.0).toDouble(),
+        currency: AppCurrency.normalize(json['currency']),
+        saleDate: json['saleDate'] != null
+            ? DateTime.parse(json['saleDate'])
+            : DateTime.now(),
+        description: json['description'] ?? '',
+      );
+}
+
 class OpeningStockItemModel {
   final String id;
   final String category;
