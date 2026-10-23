@@ -30,6 +30,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
   ];
 
   final Map<String, TextEditingController> _cashControllers = {};
+  final Map<String, TextEditingController> _partnerControllers = {};
   bool _cashControllersReady = false;
 
   @override
@@ -37,7 +38,66 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
     for (final controller in _cashControllers.values) {
       controller.dispose();
     }
+    for (final controller in _partnerControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
+  }
+
+  Widget _partnersOwnershipSection(ERPProvider erp, OpeningEntryModel entry) {
+    final total = erp.partnersRatioTotalPercent;
+    final valid = erp.partnersRatiosValid;
+    return _section(
+      title: 'نسب ملكية الشركاء الابتدائية',
+      subtitle:
+          'تُعتمد هذه النسب في كامل البرنامج وتظهر في واجهة الشركاء. يجب أن يكون المجموع 100%.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 16,
+            runSpacing: 12,
+            children: erp.partners.map((p) {
+              final controller = _partnerControllers.putIfAbsent(
+                p.id,
+                () => TextEditingController(
+                  text: (p.ratio * 100).toStringAsFixed(2),
+                ),
+              );
+              return SizedBox(
+                width: 250,
+                child: TextField(
+                  controller: controller,
+                  enabled: !entry.isLocked,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (value) => erp.setOpeningPartnerPercent(
+                    p.id,
+                    double.tryParse(value) ?? 0.0,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: p.name,
+                    suffixText: '%',
+                    prefixIcon: const Icon(Icons.pie_chart_outline),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            valid
+                ? 'المجموع: ${total.toStringAsFixed(2)}% ✓'
+                : 'المجموع: ${total.toStringAsFixed(2)}% — يجب أن يساوي 100%',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: valid ? Colors.green.shade700 : AppColors.dangerWaste,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _initializeCashControllers(OpeningEntryModel entry) {
@@ -875,6 +935,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                 ],
               ),
             ),
+            _partnersOwnershipSection(erp, entry),
             _section(
               title: 'ملخص القيد الافتتاحي',
               subtitle:
@@ -896,7 +957,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: entry.isBalanced
+                  onPressed: (entry.isBalanced && erp.partnersRatiosValid)
                       ? () {
                           try {
                             erp.lockOpeningEntry();

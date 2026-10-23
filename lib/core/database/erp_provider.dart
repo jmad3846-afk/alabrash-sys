@@ -3172,7 +3172,30 @@ class ERPProvider extends ChangeNotifier {
   // -------------------------------------------------------------
 
   // 1. Opening Entry Lock
+  /// Sets the initial ownership percentage (0-100) of a partner during the
+  /// opening entry draft. Only allowed before the entry is approved.
+  void setOpeningPartnerPercent(String partnerId, double percent) {
+    if (openingEntry.isLocked) return;
+    final index = partners.indexWhere((p) => p.id == partnerId);
+    if (index < 0) return;
+    partners[index].ratio = (percent < 0 ? 0 : percent) / 100.0;
+    if (partners.isNotEmpty) openingEntry.hassanRatio = partners[0].ratio;
+    if (partners.length > 1) openingEntry.adnanRatio = partners[1].ratio;
+    if (partners.length > 2) openingEntry.abdelMoeenRatio = partners[2].ratio;
+    notifyListeners();
+    saveToDisk();
+  }
+
+  double get partnersRatioTotalPercent =>
+      partners.fold<double>(0.0, (sum, p) => sum + p.ratio) * 100.0;
+
+  bool get partnersRatiosValid =>
+      partners.isNotEmpty && (partnersRatioTotalPercent - 100.0).abs() < 0.01;
+
   void lockOpeningEntry() {
+    if (!partnersRatiosValid) {
+      throw StateError('يجب أن يكون مجموع نسب الشركاء 100% قبل اعتماد القيد الافتتاحي.');
+    }
     _applyOpeningStockToOperationalInventory();
     openingEntry.isLocked = true;
     openingEntry.lockedAt = DateTime.now();
