@@ -935,4 +935,85 @@ void main() {
     expect(addedStock.netCostPerUnit, 25);
     expect(addedStock.recommendedSalePrice, 40);
   });
+
+  test(
+      'Single-Partner Capital Injection: recalculates capital, partner share, ownership dilution, safe balance and transaction log',
+      () {
+    SharedPreferences.setMockInitialValues({});
+    final erp = ERPProvider();
+
+    // Setup initial test scenario:
+    // Partner A: $50,000 (50%), Partner B: $50,000 (50%). Total = $100,000.
+    erp.partners = [
+      PartnerModel(
+        id: 'p_a',
+        name: 'Partner A',
+        ratio: 0.50,
+        injectedCapital: 50000.0,
+      ),
+      PartnerModel(
+        id: 'p_b',
+        name: 'Partner B',
+        ratio: 0.50,
+        injectedCapital: 50000.0,
+      ),
+    ];
+    erp.mainCashBox = 10000.0;
+
+    // Verify Initial State
+    expect(erp.totalCapitalUsd, 100000.0);
+    expect(erp.partners[0].injectedCapital, 50000.0);
+    expect(erp.partners[1].injectedCapital, 50000.0);
+    expect(erp.partners[0].ratio, 0.50);
+    expect(erp.partners[1].ratio, 0.50);
+
+    // Action: Inject $50,000 for Partner A
+    final success = erp.injectPartnerCapital(
+      partnerId: 'p_a',
+      amount: 50000.0,
+      currency: AppCurrency.usd,
+      destinationSafe: 'main',
+      notes: 'Test Capital Injection',
+    );
+
+    expect(success, isTrue);
+
+    // Expected Output Verification:
+    // 1. Total Capital = $150,000
+    expect(erp.totalCapitalUsd, 150000.0);
+
+    // 2. Partner A Share = $100,000 -> 66.67%
+    final partnerA = erp.partners.firstWhere((p) => p.id == 'p_a');
+    expect(partnerA.injectedCapital, 100000.0);
+    expect((partnerA.ratio * 100).toStringAsFixed(2), '66.67');
+
+    // 3. Partner B Share = $50,000 -> 33.33% (Dilution)
+    final partnerB = erp.partners.firstWhere((p) => p.id == 'p_b');
+    expect(partnerB.injectedCapital, 50000.0);
+    expect((partnerB.ratio * 100).toStringAsFixed(2), '33.33');
+
+    // 4. Exact 100% sum validation rule
+    expect(
+      (double.parse((partnerA.ratio * 100).toStringAsFixed(2)) +
+              double.parse((partnerB.ratio * 100).toStringAsFixed(2)))
+          .toStringAsFixed(2),
+      '100.00',
+    );
+
+    // 5. Main Safe increased by $50,000 (10,000 + 50,000 = 60,000)
+    expect(erp.mainCashBox, 60000.0);
+
+    // 6. Transaction Logging
+    expect(erp.capitalInjections.isNotEmpty, isTrue);
+    final log = erp.capitalInjections.last;
+    expect(log.partnerName, 'Partner A');
+    expect(log.amount, 50000.0);
+    expect(log.currency, AppCurrency.usd);
+    expect(log.destinationSafe, 'main');
+    expect(
+      log.logEntryTitle,
+      'Capital Injection - Partner: Partner A - Amount: 50000 \$',
+    );
+  });
 }
+

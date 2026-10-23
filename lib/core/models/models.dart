@@ -665,6 +665,85 @@ class PartnerModel {
   );
 }
 
+class CapitalInjectionRecordModel {
+  final String id;
+  final String partnerId;
+  final String partnerName;
+  final double amount;
+  final String currency;
+  final String destinationSafe;
+  final DateTime date;
+  final String notes;
+  final double oldTotalCapital;
+  final double newTotalCapital;
+  final double oldPartnerShare;
+  final double newPartnerShare;
+  final double oldRatio;
+  final double newRatio;
+
+  CapitalInjectionRecordModel({
+    required this.id,
+    required this.partnerId,
+    required this.partnerName,
+    required this.amount,
+    this.currency = AppCurrency.usd,
+    this.destinationSafe = 'main',
+    DateTime? date,
+    this.notes = '',
+    this.oldTotalCapital = 0.0,
+    this.newTotalCapital = 0.0,
+    this.oldPartnerShare = 0.0,
+    this.newPartnerShare = 0.0,
+    this.oldRatio = 0.0,
+    this.newRatio = 0.0,
+  }) : date = date ?? DateTime.now();
+
+  /// Standard transaction log entry required by specification:
+  /// Capital Injection - Partner: [Partner Name] - Amount: [A] [Currency]
+  String get logEntryTitle =>
+      'Capital Injection - Partner: $partnerName - Amount: ${amount.fmt} ${AppCurrency.symbol(currency)}';
+
+  String get logEntryTitleAr =>
+      'حقن رأس مال - الشريك: $partnerName - المبلغ: ${amount.fmt} ${AppCurrency.symbol(currency)}';
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'partnerId': partnerId,
+    'partnerName': partnerName,
+    'amount': amount,
+    'currency': currency,
+    'destinationSafe': destinationSafe,
+    'date': date.toIso8601String(),
+    'notes': notes,
+    'oldTotalCapital': oldTotalCapital,
+    'newTotalCapital': newTotalCapital,
+    'oldPartnerShare': oldPartnerShare,
+    'newPartnerShare': newPartnerShare,
+    'oldRatio': oldRatio,
+    'newRatio': newRatio,
+  };
+
+  factory CapitalInjectionRecordModel.fromJson(Map<String, dynamic> json) =>
+      CapitalInjectionRecordModel(
+        id: json['id'] ?? '',
+        partnerId: json['partnerId'] ?? '',
+        partnerName: json['partnerName'] ?? '',
+        amount: (json['amount'] ?? 0.0).toDouble(),
+        currency: AppCurrency.normalize(json['currency']),
+        destinationSafe: json['destinationSafe'] ?? 'main',
+        date: json['date'] != null
+            ? DateTime.parse(json['date'])
+            : DateTime.now(),
+        notes: json['notes'] ?? '',
+        oldTotalCapital: (json['oldTotalCapital'] ?? 0.0).toDouble(),
+        newTotalCapital: (json['newTotalCapital'] ?? 0.0).toDouble(),
+        oldPartnerShare: (json['oldPartnerShare'] ?? 0.0).toDouble(),
+        newPartnerShare: (json['newPartnerShare'] ?? 0.0).toDouble(),
+        oldRatio: (json['oldRatio'] ?? 0.0).toDouble(),
+        newRatio: (json['newRatio'] ?? 0.0).toDouble(),
+      );
+}
+
 // ==========================================
 // 3. SUPPLIER & CLIENT MODELS
 // ==========================================

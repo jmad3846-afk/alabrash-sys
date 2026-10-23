@@ -355,13 +355,19 @@ class ChartOfAccountsScreen extends StatelessWidget {
           _accountGroup('حقوق الملكية', Icons.groups_2_outlined, [
             _accountLine(
               'رأس المال الحالي',
-              '${erp.partners.fold<double>(0, (sum, partner) => sum + partner.injectedCapital).fmt} \$',
+              '${erp.partners.fold<double>(0, (sum, partner) => sum + partner.injectedCapital).fmt} \$ • ${erp.partners.fold<double>(0, (sum, partner) => sum + partner.injectedCapitalSyp).fmt} ل.س',
             ),
             for (final partner in erp.partners)
               _accountLine(
                 partner.name,
-                'الحصة ${partner.ratio * 100}٪ • رأس المال ${partner.injectedCapital.fmt} \$ • مسحوبات ${partner.totalWithdrawn.fmt} \$',
+                'الحصة ${(partner.ratio * 100).fmt}٪ • رأس المال ${AppCurrency.dual(partner.injectedCapital, partner.injectedCapitalSyp)} • مسحوبات ${AppCurrency.dual(partner.totalWithdrawn, partner.totalWithdrawnSyp)}',
               ),
+            if (erp.capitalInjections.isNotEmpty)
+              for (final inj in erp.capitalInjections)
+                _accountLine(
+                  inj.logEntryTitleAr,
+                  '${inj.amount.fmt} ${AppCurrency.symbol(inj.currency)}',
+                ),
             _accountLine(
               'الأرباح والخسائر الحالية',
               '${erp.netOperatingProfit.fmt} \$ • ${erp.netOperatingProfitSyp.fmt} ل.س',
@@ -1118,8 +1124,6 @@ class _FixedAssetsManagementScreenState
           final entered = double.tryParse(priceController.text) ?? 0.0;
           final isHigher = entered > asset.amount;
           final isLower = entered > 0 && entered < asset.amount;
-          final isEqual =
-              entered > 0 && (entered - asset.amount).abs() < 0.0001;
 
           return AlertDialog(
             title: Text('بيع واستبعاد الأصل • ${asset.name}'),

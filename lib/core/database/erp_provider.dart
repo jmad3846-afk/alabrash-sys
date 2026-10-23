@@ -196,6 +196,7 @@ class ERPProvider extends ChangeNotifier {
   List<ExpenseTypeModel> expenseTypes = [];
   List<ExpenseRecordModel> expenseRecords = [];
   List<AssetSaleRecordModel> assetSaleRecords = [];
+  List<CapitalInjectionRecordModel> capitalInjections = [];
   List<AdjustmentInvoiceModel> adjustmentInvoices = [];
   CenterInfoModel centerInfo = const CenterInfoModel();
 
@@ -3396,32 +3397,156 @@ class ERPProvider extends ChangeNotifier {
   }
 
   // 2. Partner Management Actions
+  double get totalCapitalUsd =>
+      partners.fold<double>(0.0, (sum, p) => sum + p.injectedCapital);
+
+  double get totalCapitalSyp =>
+      partners.fold<double>(0.0, (sum, p) => sum + p.injectedCapitalSyp);
+
+  double totalCapitalOf(String? currency) =>
+      AppCurrency.isSyp(currency) ? totalCapitalSyp : totalCapitalUsd;
+
+  /// Injects additional capital for a specific individual partner (حقن رأس مال لشريك منفرد).
+  /// Dynamically updates total company capital, the contributing partner's equity value,
+  /// recalculates ownership ratios (dilution for others), adds cash to destination safe,
+  /// and logs the transaction.
+  bool injectPartnerCapital({
+    required String partnerId,
+    required double amount,
+    String currency = AppCurrency.usd,
+    String destinationSafe = 'main',
+    DateTime? date,
+    String notes = '',
+  }) {
+    if (amount <= 0) return false;
+    final c = AppCurrency.normalize(currency);
+    final partnerIndex = partners.indexWhere((p) => p.id == partnerId);
+    if (partnerIndex == -1) return false;
+    final partner = partners[partnerIndex];
+
+    final isSyp = AppCurrency.isSyp(c);
+    double oldTotalCapital = partners.fold<double>(
+      0.0,
+      (sum, p) => sum + (isSyp ? p.injectedCapitalSyp : p.injectedCapital),
+    );
+
+    // If monetary shares have not been initialized, backfill from opening equity
+    if (oldTotalCapital <= 0) {
+      final equity =
+          isSyp ? openingEntry.totalEquitySyp : openingEntry.totalEquity;
+      if (equity > 0) {
+        for (final p in partners) {
+          if (isSyp) {
+            p.injectedCapitalSyp = equity * p.ratio;
+          } else {
+            p.injectedCapital = equity * p.ratio;
+          }
+        }
+        oldTotalCapital = equity;
+      }
+    }
+
+    final double oldPartnerShare =
+        isSyp ? partner.injectedCapitalSyp : partner.injectedCapital;
+    final double oldRatio = partner.ratio;
+
+    // 1. Calculate New Total Capital: C_new = C_old + A
+    final double newTotalCapital = oldTotalCapital + amount;
+
+    // 2. Update Contributing Partner's Monetary Share: V_k,new = V_k,old + A
+    if (isSyp) {
+      partner.injectedCapitalSyp += amount;
+    } else {
+      partner.injectedCapital += amount;
+    }
+    final double newPartnerShare =
+        isSyp ? partner.injectedCapitalSyp : partner.injectedCapital;
+
+    // 3. Recalculate all partners' ownership percentages (dilution for non-contributing partners)
+    if (newTotalCapital > 0) {
+      for (final p in partners) {
+        final currentVal = isSyp ? p.injectedCapitalSyp : p.injectedCapital;
+        p.ratio = currentVal / newTotalCapital;
+      }
+    }
+
+    // Floating-point validation: ensure sum of ratios is exactly 1.0
+    final double ratioSum =
+        partners.fold<double>(0.0, (sum, p) => sum + p.ratio);
+    if (ratioSum > 0 && (ratioSum - 1.0).abs() > 0.000001) {
+      partner.ratio += (1.0 - ratioSum);
+    }
+
+    // Safely sync legacy openingEntry ratios without assuming exactly 3 partners
+    if (partners.isNotEmpty) openingEntry.hassanRatio = partners[0].ratio;
+    if (partners.length > 1) openingEntry.adnanRatio = partners[1].ratio;
+    if (partners.length > 2) openingEntry.abdelMoeenRatio = partners[2].ratio;
+
+    // 4. Financial & Accounting Routing:
+    // Increase selected safe balance by +A under chosen currency
+    addCash(destinationSafe, c, amount);
+
+    // 5. Transaction Logging: Record entry
+    final injectionRecord = CapitalInjectionRecordModel(
+      id: 'cap_inj_${DateTime.now().millisecondsSinceEpoch}',
+      partnerId: partner.id,
+      partnerName: partner.name,
+      amount: amount,
+      currency: c,
+      destinationSafe: destinationSafe,
+      date: date ?? DateTime.now(),
+      notes: notes,
+      oldTotalCapital: oldTotalCapital,
+      newTotalCapital: newTotalCapital,
+      oldPartnerShare: oldPartnerShare,
+      newPartnerShare: newPartnerShare,
+      oldRatio: oldRatio,
+      newRatio: partner.ratio,
+    );
+    capitalInjections.add(injectionRecord);
+
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
   void injectNewPartnerCapital(double newAmount, [String? currency]) {
     if (newAmount <= 0) return;
     final c = AppCurrency.normalize(currency ?? AppCurrency.usd);
-    if (partners.length != 3) {
-      throw StateError('Capital allocation requires exactly three partners.');
-    }
-    if (c == AppCurrency.syp) {
-      for (final partner in partners) {
+    final isSyp = AppCurrency.isSyp(c);
+    final totalOldCapital = partners.fold<double>(
+      0,
+      (sum, partner) =>
+          sum + (isSyp ? partner.injectedCapitalSyp : partner.injectedCapital),
+    );
+    final totalNewCapital = totalOldCapital + newAmount;
+    for (final partner in partners) {
+      if (isSyp) {
         partner.injectedCapitalSyp += newAmount * partner.ratio;
-      }
-    } else {
-      final totalOldCapital = partners.fold<double>(
-        0,
-        (sum, partner) => sum + partner.injectedCapital,
-      );
-      final totalNewCapital = totalOldCapital + newAmount;
-      for (final partner in partners) {
+      } else {
         partner.injectedCapital += newAmount * partner.ratio;
         partner.ratio = partner.injectedCapital / totalNewCapital;
       }
-      openingEntry.hassanRatio = partners[0].ratio;
-      openingEntry.adnanRatio = partners[1].ratio;
-      openingEntry.abdelMoeenRatio = partners[2].ratio;
     }
+    if (partners.isNotEmpty) openingEntry.hassanRatio = partners[0].ratio;
+    if (partners.length > 1) openingEntry.adnanRatio = partners[1].ratio;
+    if (partners.length > 2) openingEntry.abdelMoeenRatio = partners[2].ratio;
 
     addCash('main', c, newAmount);
+
+    capitalInjections.add(
+      CapitalInjectionRecordModel(
+        id: 'cap_inj_all_${DateTime.now().millisecondsSinceEpoch}',
+        partnerId: 'all',
+        partnerName: 'جميع الشركاء (توزيع نسبي)',
+        amount: newAmount,
+        currency: c,
+        destinationSafe: 'main',
+        oldTotalCapital: totalOldCapital,
+        newTotalCapital: totalNewCapital,
+        notes: 'حقن رأس مال عام موزع حسب النسب السابقة',
+      ),
+    );
 
     notifyListeners();
     saveToDisk();
@@ -6172,6 +6297,10 @@ class ERPProvider extends ChangeNotifier {
         jsonEncode(assetSaleRecords.map((e) => e.toJson()).toList()),
       );
       await prefs.setString(
+        'capitalInjections',
+        jsonEncode(capitalInjections.map((e) => e.toJson()).toList()),
+      );
+      await prefs.setString(
         'advanceRepayments',
         jsonEncode(advanceRepayments.map((a) => a.toJson()).toList()),
       );
@@ -6383,6 +6512,14 @@ class ERPProvider extends ChangeNotifier {
               .toList();
         } catch (_) {}
       }
+      final capitalInjectionsJson = prefs.getString('capitalInjections');
+      if (capitalInjectionsJson != null) {
+        try {
+          capitalInjections = (jsonDecode(capitalInjectionsJson) as List)
+              .map((item) => CapitalInjectionRecordModel.fromJson(item))
+              .toList();
+        } catch (_) {}
+      }
       final soldLegacy = openingEntry.fixedAssets.where((a) => a.isSold).toList();
       for (final a in soldLegacy) {
         if (!assetSaleRecords.any((r) => r.assetId == a.id)) {
@@ -6545,6 +6682,8 @@ class ERPProvider extends ChangeNotifier {
         'partners': partners.map((p) => p.toJson()).toList(),
         'openingEntry': openingEntry.toJson(),
         'assetSaleRecords': assetSaleRecords.map((w) => w.toJson()).toList(),
+        'capitalInjections':
+            capitalInjections.map((w) => w.toJson()).toList(),
       },
       'factory': {
         'suppliers': suppliers.map((s) => s.toJson()).toList(),
@@ -6657,6 +6796,12 @@ class ERPProvider extends ChangeNotifier {
     if (fin['assetSaleRecords'] is List) {
       assetSaleRecords = (fin['assetSaleRecords'] as List)
           .map((item) => AssetSaleRecordModel.fromJson(
+              Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    if (fin['capitalInjections'] is List) {
+      capitalInjections = (fin['capitalInjections'] as List)
+          .map((item) => CapitalInjectionRecordModel.fromJson(
               Map<String, dynamic>.from(item)))
           .toList();
     }
