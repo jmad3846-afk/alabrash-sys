@@ -22,6 +22,7 @@ class A4InvoiceLineItem {
   final double? lengthCm;
   final double? widthCm;
   final double? heightCm;
+  final double? count;
   final String quantityText;
   final double unitPrice;
   final String servicesText;
@@ -35,6 +36,7 @@ class A4InvoiceLineItem {
     this.lengthCm,
     this.widthCm,
     this.heightCm,
+    this.count,
     required this.quantityText,
     required this.unitPrice,
     this.servicesText = '—',
@@ -45,8 +47,16 @@ class A4InvoiceLineItem {
     if (lengthCm != null && lengthCm! > 0 && widthCm != null && widthCm! > 0) {
       return true;
     }
-    if (dimensionsText != '—' && (dimensionsText.contains('×') || dimensionsText.contains('x'))) {
-      return true;
+    if (dimensionsText != '—') {
+      if (dimensionsText.contains('×') ||
+          dimensionsText.contains('x') ||
+          dimensionsText.contains('X') ||
+          dimensionsText.contains('*')) {
+        return true;
+      }
+      final match = RegExp(r'(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)')
+          .firstMatch(dimensionsText);
+      if (match != null) return true;
     }
     return false;
   }
@@ -55,10 +65,17 @@ class A4InvoiceLineItem {
     if (lengthCm != null && lengthCm! > 0) {
       return '${lengthCm!.fmt} سم';
     }
-    if (dimensionsText != '—' && (dimensionsText.contains('×') || dimensionsText.contains('x'))) {
-      final parts = dimensionsText.replaceAll('سم', '').split(RegExp(r'[×x]'));
+    if (dimensionsText != '—') {
+      final match = RegExp(r'(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)')
+          .firstMatch(dimensionsText);
+      if (match != null) {
+        final val = double.tryParse(match.group(1)!);
+        return val != null ? '${val.fmt} سم' : '${match.group(1)} سم';
+      }
+      final parts = dimensionsText.replaceAll('سم', '').split(RegExp(r'[*×xX]'));
       if (parts.isNotEmpty && parts[0].trim().isNotEmpty) {
-        return '${parts[0].trim()} سم';
+        final val = double.tryParse(parts[0].trim());
+        return val != null ? '${val.fmt} سم' : '${parts[0].trim()} سم';
       }
     }
     return '—';
@@ -68,10 +85,17 @@ class A4InvoiceLineItem {
     if (widthCm != null && widthCm! > 0) {
       return '${widthCm!.fmt} سم';
     }
-    if (dimensionsText != '—' && (dimensionsText.contains('×') || dimensionsText.contains('x'))) {
-      final parts = dimensionsText.replaceAll('سم', '').split(RegExp(r'[×x]'));
+    if (dimensionsText != '—') {
+      final match = RegExp(r'(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)')
+          .firstMatch(dimensionsText);
+      if (match != null) {
+        final val = double.tryParse(match.group(2)!);
+        return val != null ? '${val.fmt} سم' : '${match.group(2)} سم';
+      }
+      final parts = dimensionsText.replaceAll('سم', '').split(RegExp(r'[*×xX]'));
       if (parts.length > 1 && parts[1].trim().isNotEmpty) {
-        return '${parts[1].trim()} سم';
+        final val = double.tryParse(parts[1].trim());
+        return val != null ? '${val.fmt} سم' : '${parts[1].trim()} سم';
       }
     }
     return '—';
@@ -100,6 +124,7 @@ class A4InvoiceData {
   final bool isGoodsDelivered;
   final bool hasFulfillmentSection;
   final String fulfillmentTitle;
+  final bool isWorkshopOrder;
 
   const A4InvoiceData({
     required this.invoiceTypeTitle,
@@ -122,9 +147,10 @@ class A4InvoiceData {
     this.isGoodsDelivered = true,
     this.hasFulfillmentSection = false,
     this.fulfillmentTitle = 'أمر تشغيل وتجهيز المصنع / المعمل',
+    this.isWorkshopOrder = false,
   });
 
-  bool get hasDimensions => items.any((it) => it.hasDimensions);
+  bool get hasDimensions => isWorkshopOrder || items.any((it) => it.hasDimensions);
 
   /// Factory adapter for Factory Invoices (Supplier Purchase & Approved Clients POS).
   factory A4InvoiceData.fromFactoryInvoice(FactoryInvoiceModel inv) {
@@ -280,9 +306,24 @@ class A4InvoiceData {
     if (ord.items.isNotEmpty) {
       for (int i = 0; i < ord.items.length; i++) {
         final it = ord.items[i];
-        final dim = (it.lengthCm > 0 && it.widthCm > 0)
-            ? '${it.lengthCm.fmt} × ${it.widthCm.fmt}${it.heightCm > 0 ? " × ${it.heightCm.fmt}" : ""} سم'
-            : '${it.quantity.fmt} ${it.unitCategory}';
+
+        // Determine numerical dimensions
+        double? l = it.lengthCm > 0 ? it.lengthCm : null;
+        double? w = it.widthCm > 0 ? it.widthCm : null;
+        if ((l == null || w == null) && it.description.isNotEmpty) {
+          final m = RegExp(r'(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)').firstMatch(it.description);
+          if (m != null) {
+            l ??= double.tryParse(m.group(1)!);
+            w ??= double.tryParse(m.group(2)!);
+          }
+        }
+
+        final count = it.effectiveCount;
+        final hasDim = (l != null && l > 0 && w != null && w > 0);
+        final dim = hasDim
+            ? '${l.fmt} × ${w.fmt}${it.heightCm > 0 ? " × ${it.heightCm.fmt}" : ""} سم'
+            : (it.description.isNotEmpty ? it.description : '${it.quantity.fmt} ${it.unitCategory}');
+
         final srvText = it.services.isNotEmpty
             ? it.services.map((s) {
                 final note = s.notes.trim();
@@ -291,7 +332,23 @@ class A4InvoiceData {
                     : s.serviceName;
               }).join('\n')
             : '—';
-        final qtyLabel = '${it.quantity.fmt} ${it.unitCategory}';
+
+        // Formatted Quantity (Count) field:
+        // For workshop execution, craftsmen clearly see the count (العدد / القطع)
+        // along with the total quantity/area (م² or م³).
+        final String qtyLabel;
+        if (hasDim && it.quantity > 0 && it.unitCategory == 'متر مربع') {
+          qtyLabel = '${count.fmt} قطعة\n(${it.quantity.fmt} متر مربع)';
+        } else if (hasDim && it.quantity > 0 && it.unitCategory == 'متر مكعب') {
+          qtyLabel = '${count.fmt} قطعة\n(${it.quantity.fmt} متر مكعب)';
+        } else if (it.unitCategory == 'قطعة') {
+          qtyLabel = '${it.quantity.fmt} قطعة';
+        } else {
+          qtyLabel = count > 0 && count != it.quantity
+              ? '${count.fmt} قطعة\n(${it.quantity.fmt} ${it.unitCategory})'
+              : '${it.quantity.fmt} ${it.unitCategory}';
+        }
+
         final specs = '${it.sourceType}${it.isGranite ? " • جرانيت" : " • رخام"}';
 
         items.add(A4InvoiceLineItem(
@@ -299,9 +356,10 @@ class A4InvoiceData {
           description: it.description.isNotEmpty ? it.description : 'بند طلبية معمل',
           gradeAndSpecs: specs,
           dimensionsText: dim,
-          lengthCm: it.lengthCm > 0 ? it.lengthCm : null,
-          widthCm: it.widthCm > 0 ? it.widthCm : null,
+          lengthCm: l,
+          widthCm: w,
           heightCm: it.heightCm > 0 ? it.heightCm : null,
+          count: count > 0 ? count : null,
           quantityText: qtyLabel,
           unitPrice: it.unitPrice > 0 ? it.unitPrice : it.agreedPrice,
           servicesText: srvText,
@@ -309,14 +367,23 @@ class A4InvoiceData {
         ));
       }
     } else {
+      // If ord.items is empty (custom order), extract dimensions from customDimensionsText if present
+      final dimText = ord.customDimensionsText.isNotEmpty ? ord.customDimensionsText : 'حسب المخطط';
+      final m = RegExp(r'(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)').firstMatch(dimText);
+      final lCm = m != null ? double.tryParse(m.group(1)!) : null;
+      final wCm = m != null ? double.tryParse(m.group(2)!) : null;
+
       items.add(A4InvoiceLineItem(
         index: 1,
         description: ord.customDimensionsText.isNotEmpty
             ? ord.customDimensionsText
             : 'طلبية معمل خاصة',
         gradeAndSpecs: 'تفصيل وتجهيز حسب الطلب والمخطط',
-        dimensionsText: ord.customDimensionsText.isNotEmpty ? ord.customDimensionsText : 'حسب المخطط',
-        quantityText: '1 طلبية',
+        dimensionsText: dimText,
+        lengthCm: lCm,
+        widthCm: wCm,
+        count: 1.0,
+        quantityText: '1 طلبية (العدد: 1)',
         unitPrice: ord.agreedPrice,
         servicesText: 'تنفيذ وتجهيز ورشة المعمل',
         lineTotal: ord.agreedPrice,
@@ -351,6 +418,7 @@ class A4InvoiceData {
       isGoodsDelivered: true,
       hasFulfillmentSection: true,
       fulfillmentTitle: 'أمر تجهيز وتفصيل وتصنيع ورشة المعمل',
+      isWorkshopOrder: true,
     );
   }
 
@@ -632,7 +700,7 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       backgroundColor: Colors.transparent,
       child: Container(
-        width: 960,
+        width: (MediaQuery.of(context).size.width * 0.95).clamp(960.0, 1160.0),
         height: MediaQuery.of(context).size.height * 0.95,
         decoration: BoxDecoration(
           color: const Color(0xFFF8FAFC),
@@ -731,202 +799,207 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
 
                   const SizedBox(width: 10),
 
-                  // Middle / Right controls: Toggles & Print (Compact, responsive row)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Toggle to include / exclude factory fulfillment section
-                      if (inv.hasFulfillmentSection) ...[
-                        FilterChip(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          avatar: Icon(
-                            _includeFulfillment ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-                            size: 14,
-                            color: _includeFulfillment ? const Color(0xFF0D9488) : const Color(0xFF64748B),
-                          ),
-                          label: const Text(
-                            'قسيمة المصنع',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                          ),
-                          selected: _includeFulfillment,
-                          selectedColor: const Color(0xFFCCFBF1),
-                          checkmarkColor: Colors.transparent,
-                          onSelected: (val) {
-                            setState(() {
-                              _includeFulfillment = val;
-                              _syncPageKeys();
-                            });
-                          },
-                        ),
-                        const SizedBox(width: 6),
-                      ],
-
-                      // Page splitting toggle if items can fit on 1 page
-                      if (_includeFulfillment && inv.items.length <= 2) ...[
-                        FilterChip(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          avatar: Icon(
-                            _forceTwoPages ? Icons.file_copy_outlined : Icons.description_outlined,
-                            size: 14,
-                            color: const Color(0xFF2563EB),
-                          ),
-                          label: Text(
-                            _forceTwoPages ? 'صفحتان' : 'صفحة واحدة',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                          ),
-                          selected: _forceTwoPages,
-                          selectedColor: const Color(0xFFDBEAFE),
-                          onSelected: (val) {
-                            setState(() {
-                              _forceTwoPages = val;
-                              _syncPageKeys();
-                            });
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-
-                      // Color / B&W Version Toggle
-                      Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFCBD5E1)),
-                        ),
-                        padding: const EdgeInsets.all(2),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            InkWell(
-                              onTap: () => setState(() => _isBlackAndWhite = false),
-                              borderRadius: BorderRadius.circular(6),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 150),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: !_isBlackAndWhite ? Colors.white : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(6),
-                                  boxShadow: !_isBlackAndWhite
-                                      ? const [
-                                          BoxShadow(
-                                            color: Color(0x14000000),
-                                            blurRadius: 4,
-                                            offset: Offset(0, 1),
-                                          ),
-                                        ]
-                                      : null,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.palette_rounded,
-                                      size: 13,
-                                      color: !_isBlackAndWhite ? const Color(0xFF2563EB) : const Color(0xFF64748B),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'ملونة (الأصل)',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: !_isBlackAndWhite ? FontWeight.w900 : FontWeight.w600,
-                                        color: !_isBlackAndWhite ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                  // Middle / Right controls: Toggles & Print (Compact, responsive horizontal scroll to prevent overflow)
+                  Flexible(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Toggle to include / exclude factory fulfillment section
+                          if (inv.hasFulfillmentSection) ...[
+                            FilterChip(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              avatar: Icon(
+                                _includeFulfillment ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                                size: 14,
+                                color: _includeFulfillment ? const Color(0xFF0D9488) : const Color(0xFF64748B),
                               ),
-                            ),
-                            InkWell(
-                              onTap: () => setState(() => _isBlackAndWhite = true),
-                              borderRadius: BorderRadius.circular(6),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 150),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: _isBlackAndWhite ? Colors.white : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(6),
-                                  boxShadow: _isBlackAndWhite
-                                      ? const [
-                                          BoxShadow(
-                                            color: Color(0x14000000),
-                                            blurRadius: 4,
-                                            offset: Offset(0, 1),
-                                          ),
-                                        ]
-                                      : null,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.filter_b_and_w_rounded,
-                                      size: 13,
-                                      color: _isBlackAndWhite ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'أبيض وأسود',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: _isBlackAndWhite ? FontWeight.w900 : FontWeight.w600,
-                                        color: _isBlackAndWhite ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              label: const Text(
+                                'قسيمة المصنع',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                               ),
+                              selected: _includeFulfillment,
+                              selectedColor: const Color(0xFFCCFBF1),
+                              checkmarkColor: Colors.transparent,
+                              onSelected: (val) {
+                                setState(() {
+                                  _includeFulfillment = val;
+                                  _syncPageKeys();
+                                });
+                              },
                             ),
+                            const SizedBox(width: 6),
                           ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
 
-                      // Print button
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _isBlackAndWhite ? const Color(0xFF0F172A) : const Color(0xFF2563EB),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          elevation: 1,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        onPressed: _isPrinting ? null : _handleDirectPrint,
-                        icon: _isPrinting
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Icon(
-                                _isBlackAndWhite ? Icons.print_outlined : Icons.print_rounded,
-                                size: 16,
+                          // Page splitting toggle if items can fit on 1 page
+                          if (_includeFulfillment && inv.items.length <= 2) ...[
+                            FilterChip(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              avatar: Icon(
+                                _forceTwoPages ? Icons.file_copy_outlined : Icons.description_outlined,
+                                size: 14,
+                                color: const Color(0xFF2563EB),
                               ),
-                        label: Text(
-                          _isPrinting
-                              ? 'طباعة...'
-                              : _isBlackAndWhite
-                                  ? 'طباعة أبيض وأسود (${_pageKeys.length})'
-                                  : 'طباعة ملونة (${_pageKeys.length})',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                        ),
+                              label: Text(
+                                _forceTwoPages ? 'صفحتان' : 'صفحة واحدة',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                              selected: _forceTwoPages,
+                              selectedColor: const Color(0xFFDBEAFE),
+                              onSelected: (val) {
+                                setState(() {
+                                  _forceTwoPages = val;
+                                  _syncPageKeys();
+                                });
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+
+                          // Color / B&W Version Toggle
+                          Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                            ),
+                            padding: const EdgeInsets.all(2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                InkWell(
+                                  onTap: () => setState(() => _isBlackAndWhite = false),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 150),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: !_isBlackAndWhite ? Colors.white : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(6),
+                                      boxShadow: !_isBlackAndWhite
+                                          ? const [
+                                              BoxShadow(
+                                                color: Color(0x14000000),
+                                                blurRadius: 4,
+                                                offset: Offset(0, 1),
+                                              ),
+                                            ]
+                                          : null,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.palette_rounded,
+                                          size: 13,
+                                          color: !_isBlackAndWhite ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'ملونة',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: !_isBlackAndWhite ? FontWeight.w900 : FontWeight.w600,
+                                            color: !_isBlackAndWhite ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: () => setState(() => _isBlackAndWhite = true),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 150),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: _isBlackAndWhite ? Colors.white : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(6),
+                                      boxShadow: _isBlackAndWhite
+                                          ? const [
+                                              BoxShadow(
+                                                color: Color(0x14000000),
+                                                blurRadius: 4,
+                                                offset: Offset(0, 1),
+                                              ),
+                                            ]
+                                          : null,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.filter_b_and_w_rounded,
+                                          size: 13,
+                                          color: _isBlackAndWhite ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'أبيض وأسود',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: _isBlackAndWhite ? FontWeight.w900 : FontWeight.w600,
+                                            color: _isBlackAndWhite ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Print button
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _isBlackAndWhite ? const Color(0xFF0F172A) : const Color(0xFF2563EB),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                              elevation: 1,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onPressed: _isPrinting ? null : _handleDirectPrint,
+                            icon: _isPrinting
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Icon(
+                                    _isBlackAndWhite ? Icons.print_outlined : Icons.print_rounded,
+                                    size: 16,
+                                  ),
+                            label: Text(
+                              _isPrinting
+                                  ? 'طباعة...'
+                                  : _isBlackAndWhite
+                                      ? 'طباعة (${_pageKeys.length})'
+                                      : 'طباعة (${_pageKeys.length})',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B), size: 20),
+                            tooltip: 'إغلاق',
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 6),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B), size: 20),
-                        tooltip: 'إغلاق',
-                      ),
-                    ],
+                    ),
                   ),
                 ],
               ),
@@ -1664,26 +1737,26 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
             TableRow(
               decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
               children: hasDim
-                  ? const [
-                      _TableHeaderCell('#'),
-                      _TableHeaderCell('البيان والمادة'),
-                      _TableHeaderCell('المواصفات والنوع'),
-                      _TableHeaderCell('الطول (سم)'),
-                      _TableHeaderCell('العرض (سم)'),
-                      _TableHeaderCell('الكمية / الأمتار (م²)'),
-                      _TableHeaderCell('سعر المتر / الوحدة'),
-                      _TableHeaderCell('الخدمات الملحقة وحسابها'),
-                      _TableHeaderCell('الإجمالي'),
+                  ? [
+                      const _TableHeaderCell('#'),
+                      const _TableHeaderCell('البيان والمادة'),
+                      const _TableHeaderCell('المواصفات والنوع'),
+                      const _TableHeaderCell('الطول (سم)'),
+                      const _TableHeaderCell('العرض (سم)'),
+                      _TableHeaderCell(inv.isWorkshopOrder ? 'الكمية (العدد)' : 'الكمية / الأمتار (م²)'),
+                      const _TableHeaderCell('سعر المتر / الوحدة'),
+                      const _TableHeaderCell('الخدمات الملحقة وحسابها'),
+                      const _TableHeaderCell('الإجمالي'),
                     ]
-                  : const [
-                      _TableHeaderCell('#'),
-                      _TableHeaderCell('البيان والمادة'),
-                      _TableHeaderCell('المواصفات والنوع'),
-                      _TableHeaderCell('الأبعاد (سم)'),
-                      _TableHeaderCell('الكمية / الأمتار (م²)'),
-                      _TableHeaderCell('سعر المتر / الوحدة'),
-                      _TableHeaderCell('الخدمات الملحقة وحسابها'),
-                      _TableHeaderCell('الإجمالي'),
+                  : [
+                      const _TableHeaderCell('#'),
+                      const _TableHeaderCell('البيان والمادة'),
+                      const _TableHeaderCell('المواصفات والنوع'),
+                      const _TableHeaderCell('الأبعاد (سم)'),
+                      _TableHeaderCell(inv.isWorkshopOrder ? 'الكمية (العدد)' : 'الكمية / الأمتار (م²)'),
+                      const _TableHeaderCell('سعر المتر / الوحدة'),
+                      const _TableHeaderCell('الخدمات الملحقة وحسابها'),
+                      const _TableHeaderCell('الإجمالي'),
                     ],
             ),
 
@@ -1991,26 +2064,26 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
             TableRow(
               decoration: const BoxDecoration(color: Color(0xFFCCFBF1)),
               children: hasDim
-                  ? const [
-                      _TableHeaderCell('#', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('البيان والمادة المطلوبة', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('المواصفات والنوع', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('الطول (سم)', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('العرض (سم)', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('الكمية / الأمتار (م²)', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('عمليات التشغيل وحسابها', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('حالة التجهيز بالمصنع', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('ملاحظات القص والتنفيذ', textColor: Color(0xFF0F766E)),
+                  ? [
+                      const _TableHeaderCell('#', textColor: Color(0xFF0F766E)),
+                      const _TableHeaderCell('البيان والمادة المطلوبة', textColor: Color(0xFF0F766E)),
+                      const _TableHeaderCell('المواصفات والنوع', textColor: Color(0xFF0F766E)),
+                      const _TableHeaderCell('الطول (سم)', textColor: Color(0xFF0F766E)),
+                      const _TableHeaderCell('العرض (سم)', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell(inv.isWorkshopOrder ? 'الكمية (العدد)' : 'الكمية / الأمتار (م²)', textColor: const Color(0xFF0F766E)),
+                      const _TableHeaderCell('عمليات التشغيل وحسابها', textColor: Color(0xFF0F766E)),
+                      const _TableHeaderCell('حالة التجهيز بالمصنع', textColor: Color(0xFF0F766E)),
+                      const _TableHeaderCell('ملاحظات القص والتنفيذ', textColor: Color(0xFF0F766E)),
                     ]
-                  : const [
-                      _TableHeaderCell('#', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('البيان والمادة المطلوبة', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('المواصفات والنوع', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('الأبعاد والمقاسات (سم)', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('الكمية / الأمتار (م²)', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('عمليات التشغيل وحسابها', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('حالة التجهيز بالمصنع', textColor: Color(0xFF0F766E)),
-                      _TableHeaderCell('ملاحظات القص والتنفيذ', textColor: Color(0xFF0F766E)),
+                  : [
+                      const _TableHeaderCell('#', textColor: Color(0xFF0F766E)),
+                      const _TableHeaderCell('البيان والمادة المطلوبة', textColor: Color(0xFF0F766E)),
+                      const _TableHeaderCell('المواصفات والنوع', textColor: Color(0xFF0F766E)),
+                      const _TableHeaderCell('الأبعاد والمقاسات (سم)', textColor: Color(0xFF0F766E)),
+                      _TableHeaderCell(inv.isWorkshopOrder ? 'الكمية (العدد)' : 'الكمية / الأمتار (م²)', textColor: const Color(0xFF0F766E)),
+                      const _TableHeaderCell('عمليات التشغيل وحسابها', textColor: Color(0xFF0F766E)),
+                      const _TableHeaderCell('حالة التجهيز بالمصنع', textColor: Color(0xFF0F766E)),
+                      const _TableHeaderCell('ملاحظات القص والتنفيذ', textColor: Color(0xFF0F766E)),
                     ],
             ),
 

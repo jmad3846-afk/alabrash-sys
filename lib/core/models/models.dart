@@ -1914,6 +1914,7 @@ class WorkshopInvoiceItem {
   final double lengthCm;
   final double widthCm;
   final double heightCm;
+  final double count;
 
   WorkshopInvoiceItem({
     required this.id,
@@ -1933,18 +1934,36 @@ class WorkshopInvoiceItem {
     this.lengthCm = 0.0,
     this.widthCm = 0.0,
     this.heightCm = 0.0,
+    this.count = 0.0,
   });
 
   bool get isCubicMeter => unitCategory == 'متر مكعب';
 
   double get thicknessCm => heightCm;
 
+  double get effectiveCount {
+    if (count > 0) return count;
+    if (lengthCm > 0 && widthCm > 0) {
+      final pieceArea = isCubicMeter && heightCm > 0
+          ? (lengthCm / 100.0) * (widthCm / 100.0) * (heightCm / 100.0)
+          : (lengthCm / 100.0) * (widthCm / 100.0);
+      if (pieceArea > 0.000001 && quantity > 0) {
+        final calc = quantity / pieceArea;
+        if ((calc - calc.round()).abs() < 0.01) {
+          return calc.roundToDouble();
+        }
+        return calc;
+      }
+    }
+    return quantity > 0 ? quantity : 1.0;
+  }
+
   double get calculatedVolume {
     if (lengthCm > 0 && widthCm > 0 && heightCm > 0) {
       return (lengthCm / 100.0) *
           (widthCm / 100.0) *
           (heightCm / 100.0) *
-          quantity;
+          effectiveCount;
     }
     return quantity;
   }
@@ -1954,7 +1973,7 @@ class WorkshopInvoiceItem {
       return calculatedVolume;
     }
     if (lengthCm > 0 && widthCm > 0) {
-      return (lengthCm / 100.0) * (widthCm / 100.0) * quantity;
+      return (lengthCm / 100.0) * (widthCm / 100.0) * effectiveCount;
     }
     return quantity;
   }
@@ -1980,6 +1999,7 @@ class WorkshopInvoiceItem {
     double? lengthCm,
     double? widthCm,
     double? heightCm,
+    double? count,
   }) =>
       WorkshopInvoiceItem(
         id: id ?? this.id,
@@ -1999,6 +2019,7 @@ class WorkshopInvoiceItem {
         lengthCm: lengthCm ?? this.lengthCm,
         widthCm: widthCm ?? this.widthCm,
         heightCm: heightCm ?? this.heightCm,
+        count: count ?? this.count,
       );
 
   Map<String, dynamic> toJson() => {
@@ -2019,6 +2040,7 @@ class WorkshopInvoiceItem {
     'lengthCm': lengthCm,
     'widthCm': widthCm,
     'heightCm': heightCm,
+    'count': count,
   };
 
   factory WorkshopInvoiceItem.fromJson(Map<String, dynamic> json) =>
@@ -2044,6 +2066,7 @@ class WorkshopInvoiceItem {
         lengthCm: (json['lengthCm'] as num?)?.toDouble() ?? 0.0,
         widthCm: (json['widthCm'] as num?)?.toDouble() ?? 0.0,
         heightCm: (json['heightCm'] as num?)?.toDouble() ?? 0.0,
+        count: (json['count'] as num?)?.toDouble() ?? 0.0,
       );
 }
 

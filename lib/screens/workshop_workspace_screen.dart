@@ -6564,6 +6564,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               lengthCm: l,
                               widthCm: w,
                               heightCm: isCube ? h : 0.0,
+                              count: cnt > 0 ? cnt : 1.0,
                               quantity: nq > 0 ? nq : item.quantity,
                               unitPrice: nup,
                               agreedPrice: nagreed,
@@ -7583,6 +7584,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                   double itemUnitPrice = 0.0;
                                                   String itemDesc = itemDescCtrl.text.trim();
 
+                                                  double itemLen = 0.0;
+                                                  double itemWid = 0.0;
+                                                  double itemHei = 0.0;
+                                                  double itemCount = 1.0;
+
                                                   if (itemSourceType == 'بيع مواد خام من المعمل') {
                                                     if (selectedRaw == null || rawArea <= 0) {
                                                       setSt(() => itemError = 'يرجى اختيار المادة وتحديد الأبعاد.');
@@ -7593,6 +7599,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                     itemAgreed = rawArea * rp;
                                                     itemNet = rawArea * selectedRaw.netCostPerUnit;
                                                     itemDesc = '${selectedRaw.typeName} ${selectedRaw.grade} ${selectedRaw.thicknessCm}سم';
+                                                    itemLen = rl;
+                                                    itemWid = rw;
+                                                    itemHei = rawCube ? rh : 0.0;
+                                                    itemCount = rq > 0 ? rq : 1.0;
                                                   } else {
                                                     if (selectedRecordId == null) {
                                                       setSt(() => itemError = 'يرجى اختيار السجل أو التفصيل.');
@@ -7601,10 +7611,20 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                     itemQty = double.tryParse(itemQtyCtrl.text) ?? 1.0;
                                                     itemUnitPrice = double.tryParse(itemUnitPriceCtrl.text) ?? 0.0;
                                                     itemAgreed = double.tryParse(itemAgreedCtrl.text) ?? 0.0;
+                                                    itemCount = itemQty;
 
                                                     if (itemSourceType == 'بيع خياطة بسيطة') {
                                                       final t = erp.simpleTailorings.firstWhere((x) => x.id == selectedRecordId);
                                                       itemNet = (t.quantity > 0 ? (t.totalNetCost / t.quantity) : 0) * itemQty;
+                                                      if (selectedLineItemId != null) {
+                                                        final liMatches = t.lineItems.where((x) => x.id == selectedLineItemId).toList();
+                                                        if (liMatches.isNotEmpty) {
+                                                          final li = liMatches.first;
+                                                          itemLen = li.lengthCm;
+                                                          itemWid = li.widthCm;
+                                                          itemHei = li.heightCm;
+                                                        }
+                                                      }
                                                       if (itemDesc.isEmpty) itemDesc = t.name;
                                                     } else if (itemSourceType == 'بيع خياطة معقدة') {
                                                       final t = erp.complexTailorings.firstWhere((x) => x.id == selectedRecordId);
@@ -7634,9 +7654,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                     isGranite: itemIsGranite,
                                                     services: List.of(currentItemServices),
                                                     photoPath: itemPhoto,
-                                                    lengthCm: rl,
-                                                    widthCm: rw,
-                                                    heightCm: rawCube ? rh : 0.0,
+                                                    lengthCm: itemLen,
+                                                    widthCm: itemWid,
+                                                    heightCm: itemHei,
+                                                    count: itemCount,
                                                   );
 
                                                   setSt(() {
@@ -9446,6 +9467,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                     double itemNet = 0.0;
                                                     double itemUnitPrice = 0.0;
                                                     String itemDesc = itemDescCtrl.text.trim();
+                                                    double itemLen = 0.0;
+                                                    double itemWid = 0.0;
+                                                    double itemHei = 0.0;
+                                                    double itemCount = 1.0;
 
                                                     if (itemSourceType == 'بيع مواد خام من المعمل') {
                                                       if (selectedRaw == null || rawArea <= 0) {
@@ -9461,6 +9486,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       itemAgreed = rawArea * rp;
                                                       itemNet = rawArea * selectedRaw.netCostPerUnit;
                                                       itemDesc = '${selectedRaw.typeName} ${selectedRaw.grade} ${selectedRaw.thicknessCm}سم';
+                                                      itemLen = rl;
+                                                      itemWid = rw;
+                                                      itemHei = rawCube ? rh : 0.0;
+                                                      itemCount = rq;
                                                     } else {
                                                       if (selectedRecordId == null) {
                                                         setSt(() => itemError = 'يرجى اختيار السجل أو التفصيل المراد إضافته.');
@@ -9479,6 +9508,17 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                         }
                                                         itemNet = (t.quantity > 0 ? (t.totalNetCost / t.quantity) : 0) * itemQty;
                                                         if (itemDesc.isEmpty) itemDesc = t.name;
+                                                        if (selectedLineItemId != null) {
+                                                          final liMatches = t.lineItems.where((x) => x.id == selectedLineItemId);
+                                                          if (liMatches.isNotEmpty) {
+                                                            final li = liMatches.first;
+                                                            itemLen = li.lengthCm;
+                                                            itemWid = li.widthCm;
+                                                            final pieceArea = (li.lengthCm > 0 && li.widthCm > 0) ? (li.lengthCm / 100.0) * (li.widthCm / 100.0) : 0.0;
+                                                            itemCount = pieceArea > 0 ? (itemQty / pieceArea).roundToDouble() : itemQty;
+                                                            if (itemCount <= 0) itemCount = 1.0;
+                                                          }
+                                                        }
                                                       } else if (itemSourceType == 'بيع خياطة معقدة') {
                                                         final t = erp.complexTailorings.firstWhere((x) => x.id == selectedRecordId);
                                                         final avail = getAvailableForTailoring(t);
@@ -9488,10 +9528,19 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                         }
                                                         itemNet = (t.quantity > 0 ? (t.totalNetCost / t.quantity) : 0) * itemQty;
                                                         if (itemDesc.isEmpty) itemDesc = t.name;
+                                                        itemCount = itemQty;
                                                       } else if (itemSourceType == 'بيع قطع إضافية') {
                                                         final s = erp.scrapItems.firstWhere((x) => x.id == selectedRecordId);
                                                         itemNet = s.baseCost;
                                                         if (itemDesc.isEmpty) itemDesc = s.description;
+                                                        if (s.description.isNotEmpty) {
+                                                          final m = RegExp(r'(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)').firstMatch(s.description);
+                                                          if (m != null) {
+                                                            itemLen = double.tryParse(m.group(1)!) ?? 0.0;
+                                                            itemWid = double.tryParse(m.group(2)!) ?? 0.0;
+                                                          }
+                                                        }
+                                                        itemCount = itemQty;
                                                       }
                                                     }
 
@@ -9512,9 +9561,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       isGranite: itemIsGranite,
                                                       services: List.of(currentItemServices),
                                                       photoPath: itemPhoto,
-                                                      lengthCm: rl,
-                                                      widthCm: rw,
-                                                      heightCm: rawCube ? rh : 0.0,
+                                                      lengthCm: itemLen,
+                                                      widthCm: itemWid,
+                                                      heightCm: itemHei,
+                                                      count: itemCount,
                                                     );
 
                                                     setSt(() {
