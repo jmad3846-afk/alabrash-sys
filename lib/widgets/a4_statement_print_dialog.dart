@@ -12,13 +12,149 @@ import 'package:provider/provider.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../core/theme/app_theme.dart';
+import 'a4_statement_invoice_selection_dialog.dart';
 
 /// Type of the entity for which the statement of account is generated.
-enum AccountStatementType {
-  supplier,
-  accreditedAgent,
-  customer,
-  project,
+enum AccountStatementType { supplier, accreditedAgent, customer, project }
+
+/// One item line belonging to an invoice shown under it in the statement.
+class A4StatementDetailLine {
+  final String description;
+  final String item;
+  final String specifications;
+  final String type;
+  final String length;
+  final String width;
+  final String quantityText;
+  final double? unitPrice;
+  final String servicesText;
+  final double total;
+
+  const A4StatementDetailLine({
+    required this.description,
+    required this.item,
+    required this.specifications,
+    required this.type,
+    required this.length,
+    required this.width,
+    required this.quantityText,
+    required this.unitPrice,
+    required this.servicesText,
+    required this.total,
+  });
+}
+
+String _statementServicesText(
+  List<ServiceAttachment> services,
+  String currency,
+) {
+  if (services.isEmpty) return '—';
+  return services
+      .map((service) {
+        final notes = service.notes.trim();
+        final noteText = notes.isEmpty ? '' : ' ($notes)';
+        return '${service.serviceName}: ${service.price.fmt} ${AppCurrency.symbol(currency)}$noteText';
+      })
+      .join('\n');
+}
+
+List<A4StatementDetailLine> _factoryInvoiceDetails(
+  FactoryInvoiceModel inv, {
+  required bool isSale,
+}) {
+  if (inv.items.isEmpty) {
+    return [
+      A4StatementDetailLine(
+        description: 'تفاصيل المواد غير متاحة',
+        item: '—',
+        specifications: '—',
+        type: inv.invoiceType,
+        length: '—',
+        width: '—',
+        quantityText: '—',
+        unitPrice: null,
+        servicesText: _statementServicesText(inv.services, inv.currency),
+        total: inv.grandTotal,
+      ),
+    ];
+  }
+  return inv.items.asMap().entries.map((entry) {
+    final index = entry.key;
+    final it = entry.value;
+    final itemName = it.typeName.isNotEmpty ? it.typeName : it.description;
+    final materialType = it.isMeterItem
+        ? (it.meterUnit.isNotEmpty ? it.meterUnit : 'متر')
+        : (it.isTailoringItem ? 'تفصيل' : 'بلوك');
+    final specs = <String>[
+      if (it.grade.isNotEmpty) it.grade,
+      it.isGranite ? 'جرانيت' : 'رخام',
+      if (it.thicknessCm > 0) 'السماكة ${it.thicknessCm.fmt} سم',
+      if (it.heightCm > 0) 'الارتفاع ${it.heightCm.fmt} سم',
+    ].join(' • ');
+    final quantityText = it.isMeterItem
+        ? '${it.quantity.fmt} ${it.meterUnit.isNotEmpty ? it.meterUnit : "متر"}'
+        : isSale
+        ? '${it.calculatedArea.fmt} ${it.isCubicMeter || it.heightCm > 5 ? "م³" : "م²"} (${it.quantity.fmt} قطعة)'
+        : '${it.quantity.fmt} طن';
+    return A4StatementDetailLine(
+      description: it.description.isNotEmpty ? it.description : itemName,
+      item: itemName,
+      specifications: specs.isEmpty ? '—' : specs,
+      type: materialType,
+      length: it.lengthCm > 0 ? '${it.lengthCm.fmt} سم' : '—',
+      width: it.widthCm > 0 ? '${it.widthCm.fmt} سم' : '—',
+      quantityText: quantityText,
+      unitPrice: it.unitPrice,
+      servicesText: _statementServicesText([
+        ...it.services,
+        if (index == 0) ...inv.services,
+      ], inv.currency),
+      total: it.grandTotal,
+    );
+  }).toList();
+}
+
+List<A4StatementDetailLine> _workshopInvoiceDetails(WorkshopInvoiceModel inv) {
+  if (inv.items.isEmpty) {
+    return [
+      A4StatementDetailLine(
+        description: inv.itemDescription.isEmpty
+            ? 'تفاصيل الصنف غير متاحة'
+            : inv.itemDescription,
+        item: inv.itemDescription.isEmpty ? 'صنف ورشة' : inv.itemDescription,
+        specifications: inv.isGranite ? 'جرانيت' : 'رخام',
+        type: inv.sourceType,
+        length: '—',
+        width: '—',
+        quantityText: '${inv.sourceQuantity.fmt} ${inv.sourceUnitCategory}',
+        unitPrice: inv.sourceQuantity > 0
+            ? inv.agreedPrice / inv.sourceQuantity
+            : inv.agreedPrice,
+        servicesText: _statementServicesText(inv.services, inv.currency),
+        total: inv.grandTotal,
+      ),
+    ];
+  }
+  return inv.items.map((it) {
+    final specs = <String>[
+      it.isGranite ? 'جرانيت' : 'رخام',
+      if (it.heightCm > 0) 'السماكة ${it.heightCm.fmt} سم',
+    ].join(' • ');
+    return A4StatementDetailLine(
+      description: inv.itemDescription.isNotEmpty
+          ? inv.itemDescription
+          : it.description,
+      item: it.description.isNotEmpty ? it.description : 'صنف ورشة',
+      specifications: specs,
+      type: it.sourceType,
+      length: it.lengthCm > 0 ? '${it.lengthCm.fmt} سم' : '—',
+      width: it.widthCm > 0 ? '${it.widthCm.fmt} سم' : '—',
+      quantityText: '${it.quantity.fmt} ${it.unitCategory}',
+      unitPrice: it.unitPrice > 0 ? it.unitPrice : it.agreedPrice,
+      servicesText: _statementServicesText(it.services, inv.currency),
+      total: it.grandTotal,
+    );
+  }).toList();
 }
 
 /// A single movement/transaction row inside the Statement of Account table.
@@ -35,6 +171,7 @@ class A4StatementLineItem {
   final String status;
   final bool isReturn;
   final String notes;
+  final List<A4StatementDetailLine> details;
 
   const A4StatementLineItem({
     required this.index,
@@ -49,9 +186,124 @@ class A4StatementLineItem {
     required this.status,
     this.isReturn = false,
     this.notes = '',
+    this.details = const [],
   });
 
   String get currencySymbol => AppCurrency.symbol(currency);
+
+  A4StatementLineItem withIndex(int newIndex) => A4StatementLineItem(
+    index: newIndex,
+    date: date,
+    documentNo: documentNo,
+    description: description,
+    category: category,
+    currency: currency,
+    totalAmount: totalAmount,
+    paidAmount: paidAmount,
+    remainingAmount: remainingAmount,
+    status: status,
+    isReturn: isReturn,
+    notes: notes,
+    details: details,
+  );
+}
+
+class A4StatementInvoiceDetails extends StatelessWidget {
+  final A4StatementLineItem lineItem;
+
+  const A4StatementInvoiceDetails({super.key, required this.lineItem});
+
+  Widget _field(String label, String value, {bool isTotal = false}) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 8,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 9,
+                color: isTotal
+                    ? const Color(0xFF0F172A)
+                    : const Color(0xFF334155),
+                fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _fieldRow(List<(String, String)> fields, {int totalIndex = -1}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < fields.length; i++)
+          _field(fields[i].$1, fields[i].$2, isTotal: i == totalIndex),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsetsDirectional.only(start: 38, end: 10, bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        children: [
+          ...lineItem.details.map(
+            (detail) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Column(
+                children: [
+                  _fieldRow([
+                    ('البيان / الوصف', detail.description),
+                    ('الصنف', detail.item),
+                    ('المواصفات', detail.specifications),
+                    ('النوع', detail.type),
+                    ('الطول', detail.length),
+                  ]),
+                  _fieldRow([
+                    ('العرض', detail.width),
+                    ('الكمية / الأمتار', detail.quantityText),
+                    (
+                      'سعر المتر / الوحدة',
+                      detail.unitPrice == null
+                          ? '—'
+                          : '${detail.unitPrice!.fmt} ${lineItem.currencySymbol}',
+                    ),
+                    ('الخدمات', detail.servicesText),
+                    (
+                      'السعر الإجمالي',
+                      '${detail.total.fmt} ${lineItem.currencySymbol}',
+                    ),
+                  ], totalIndex: 4),
+                  if (detail != lineItem.details.last)
+                    const Divider(height: 8, color: Color(0xFFCBD5E1)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Standardized data payload for generating and previewing an A4 Statement of Account.
@@ -89,6 +341,31 @@ class A4StatementData {
     this.openingBalanceUsd = 0.0,
     this.openingBalanceSyp = 0.0,
   });
+
+  /// Returns a copy that only contains the selected rows (re-numbered).
+  A4StatementData copyWithItems(List<A4StatementLineItem> selected) {
+    final renumbered = <A4StatementLineItem>[];
+    for (int i = 0; i < selected.length; i++) {
+      renumbered.add(selected[i].withIndex(i + 1));
+    }
+    return A4StatementData(
+      type: type,
+      statementNo: statementNo,
+      issueDate: issueDate,
+      accountId: accountId,
+      accountName: accountName,
+      accountPhone: accountPhone,
+      accountLocation: accountLocation,
+      accountDescription: accountDescription,
+      clientName: clientName,
+      projectName: projectName,
+      items: renumbered,
+      currentBalanceUsd: currentBalanceUsd,
+      currentBalanceSyp: currentBalanceSyp,
+      openingBalanceUsd: openingBalanceUsd,
+      openingBalanceSyp: openingBalanceSyp,
+    );
+  }
 
   String get roleTitle {
     switch (type) {
@@ -172,9 +449,12 @@ class A4StatementData {
     required ERPProvider erp,
   }) {
     final invs = erp.factoryInvoices
-        .where((i) =>
-            i.invoiceType == 'شراء_مورد' &&
-            (i.partyId == supplier.id || i.partyName.trim() == supplier.name.trim()))
+        .where(
+          (i) =>
+              i.invoiceType == 'شراء_مورد' &&
+              (i.partyId == supplier.id ||
+                  i.partyName.trim() == supplier.name.trim()),
+        )
         .toList();
     invs.sort((a, b) => a.date.compareTo(b.date));
 
@@ -183,7 +463,11 @@ class A4StatementData {
 
     // Check opening legacy financial records
     final legacy = erp.openingEntry.legacyFinancials
-        .where((r) => r.category == 'suppliers' && r.name.trim() == supplier.name.trim())
+        .where(
+          (r) =>
+              r.category == 'suppliers' &&
+              r.name.trim() == supplier.name.trim(),
+        )
         .toList();
     double legacyUsd = 0.0;
     double legacySyp = 0.0;
@@ -193,46 +477,56 @@ class A4StatementData {
       } else {
         legacyUsd += r.amount;
       }
-      items.add(A4StatementLineItem(
-        index: idx++,
-        date: erp.openingEntry.lockedAt ?? DateTime(DateTime.now().year, 1, 1),
-        documentNo: 'قيد افتتاحي',
-        description: r.description.isNotEmpty
-            ? 'رصيد افتتاحي مدور: ${r.description}'
-            : 'رصيد سابق مدور من القيد الافتتاحي',
-        category: 'قيد افتتاحي',
-        currency: r.currency,
-        totalAmount: r.amount,
-        paidAmount: 0.0,
-        remainingAmount: r.amount,
-        status: 'رصيد مدور',
-      ));
+      items.add(
+        A4StatementLineItem(
+          index: idx++,
+          date:
+              erp.openingEntry.lockedAt ?? DateTime(DateTime.now().year, 1, 1),
+          documentNo: 'قيد افتتاحي',
+          description: r.description.isNotEmpty
+              ? 'رصيد افتتاحي مدور: ${r.description}'
+              : 'رصيد سابق مدور من القيد الافتتاحي',
+          category: 'قيد افتتاحي',
+          currency: r.currency,
+          totalAmount: r.amount,
+          paidAmount: 0.0,
+          remainingAmount: r.amount,
+          status: 'رصيد مدور',
+        ),
+      );
     }
 
     for (final inv in invs) {
       final desc = inv.items.isNotEmpty
-          ? inv.items.map((it) {
-              final name = it.typeName.isNotEmpty ? it.typeName : it.description;
-              final qty = it.isMeterItem
-                  ? '${it.quantity.fmt} ${it.meterUnit.isNotEmpty ? it.meterUnit : "متر"}'
-                  : '${it.quantity.fmt} طن';
-              return '$name ($qty)';
-            }).join(' + ')
+          ? inv.items
+                .map((it) {
+                  final name = it.typeName.isNotEmpty
+                      ? it.typeName
+                      : it.description;
+                  final qty = it.isMeterItem
+                      ? '${it.quantity.fmt} ${it.meterUnit.isNotEmpty ? it.meterUnit : "متر"}'
+                      : '${it.quantity.fmt} طن';
+                  return '$name ($qty)';
+                })
+                .join(' + ')
           : 'فاتورة توريد مواد خام ومستلزمات';
 
-      items.add(A4StatementLineItem(
-        index: idx++,
-        date: inv.date,
-        documentNo: inv.invoiceNo,
-        description: desc,
-        category: 'فاتورة شراء',
-        currency: inv.currency,
-        totalAmount: inv.grandTotal,
-        paidAmount: inv.advancePayment,
-        remainingAmount: inv.remainingBalance,
-        status: inv.isDue ? 'مستحق الدفع' : 'مدفوعة بالكامل',
-        notes: inv.isGoodsDelivered ? 'واصلة' : 'غير واصلة (شحن مرسمل)',
-      ));
+      items.add(
+        A4StatementLineItem(
+          index: idx++,
+          date: inv.date,
+          documentNo: inv.invoiceNo,
+          description: desc,
+          category: 'فاتورة شراء',
+          currency: inv.currency,
+          totalAmount: inv.grandTotal,
+          paidAmount: inv.advancePayment,
+          remainingAmount: inv.remainingBalance,
+          status: inv.isDue ? 'مستحق الدفع' : 'مدفوعة بالكامل',
+          notes: inv.isGoodsDelivered ? 'واصلة' : 'غير واصلة (شحن مرسمل)',
+          details: _factoryInvoiceDetails(inv, isSale: false),
+        ),
+      );
     }
 
     // Check return invoices
@@ -240,22 +534,41 @@ class A4StatementData {
         .where((r) => r.partyName.trim() == supplier.name.trim())
         .toList();
     for (final ret in returns) {
-      items.add(A4StatementLineItem(
-        index: idx++,
-        date: ret.date,
-        documentNo: ret.returnNo,
-        description: 'إشعار مرتجع: ${ret.itemDescription}',
-        category: 'مرتجع',
-        currency: ret.currency,
-        totalAmount: ret.refundAmount,
-        paidAmount: ret.refundAmount,
-        remainingAmount: 0.0,
-        status: 'مرتجع مسوى',
-        isReturn: true,
-      ));
+      items.add(
+        A4StatementLineItem(
+          index: idx++,
+          date: ret.date,
+          documentNo: ret.returnNo,
+          description: 'إشعار مرتجع: ${ret.itemDescription}',
+          category: 'مرتجع',
+          currency: ret.currency,
+          totalAmount: ret.refundAmount,
+          paidAmount: ret.refundAmount,
+          remainingAmount: 0.0,
+          status: 'مرتجع مسوى',
+          isReturn: true,
+          details: [
+            A4StatementDetailLine(
+              description: ret.itemDescription,
+              item: ret.itemDescription,
+              specifications: '—',
+              type: ret.returnType,
+              length: '—',
+              width: '—',
+              quantityText: '${ret.quantity.fmt} وحدة',
+              unitPrice: ret.quantity > 0
+                  ? ret.refundAmount / ret.quantity
+                  : ret.refundAmount,
+              servicesText: '—',
+              total: ret.refundAmount,
+            ),
+          ],
+        ),
+      );
     }
 
-    final serial = 'SOA-SUP-${supplier.name.hashCode.abs().toString().padLeft(6, "0").substring(0, 6)}';
+    final serial =
+        'SOA-SUP-${supplier.name.hashCode.abs().toString().padLeft(6, "0").substring(0, 6)}';
 
     return A4StatementData(
       type: AccountStatementType.supplier,
@@ -281,9 +594,12 @@ class A4StatementData {
     required ERPProvider erp,
   }) {
     final invs = erp.factoryInvoices
-        .where((i) =>
-            i.invoiceType == 'بيع_معتمد' &&
-            (i.partyId == client.id || i.partyName.trim() == client.name.trim()))
+        .where(
+          (i) =>
+              i.invoiceType == 'بيع_معتمد' &&
+              (i.partyId == client.id ||
+                  i.partyName.trim() == client.name.trim()),
+        )
         .toList();
     invs.sort((a, b) => a.date.compareTo(b.date));
 
@@ -291,7 +607,9 @@ class A4StatementData {
     int idx = 1;
 
     final legacy = erp.openingEntry.legacyFinancials
-        .where((r) => r.category == 'clients' && r.name.trim() == client.name.trim())
+        .where(
+          (r) => r.category == 'clients' && r.name.trim() == client.name.trim(),
+        )
         .toList();
     double legacyUsd = 0.0;
     double legacySyp = 0.0;
@@ -301,45 +619,56 @@ class A4StatementData {
       } else {
         legacyUsd += r.amount;
       }
-      items.add(A4StatementLineItem(
-        index: idx++,
-        date: erp.openingEntry.lockedAt ?? DateTime(DateTime.now().year, 1, 1),
-        documentNo: 'قيد افتتاحي',
-        description: r.description.isNotEmpty
-            ? 'رصيد افتتاحي سابق: ${r.description}'
-            : 'رصيد ذمة افتتاحية سابقة',
-        category: 'قيد افتتاحي',
-        currency: r.currency,
-        totalAmount: r.amount,
-        paidAmount: 0.0,
-        remainingAmount: r.amount,
-        status: 'رصيد مدور',
-      ));
+      items.add(
+        A4StatementLineItem(
+          index: idx++,
+          date:
+              erp.openingEntry.lockedAt ?? DateTime(DateTime.now().year, 1, 1),
+          documentNo: 'قيد افتتاحي',
+          description: r.description.isNotEmpty
+              ? 'رصيد افتتاحي سابق: ${r.description}'
+              : 'رصيد ذمة افتتاحية سابقة',
+          category: 'قيد افتتاحي',
+          currency: r.currency,
+          totalAmount: r.amount,
+          paidAmount: 0.0,
+          remainingAmount: r.amount,
+          status: 'رصيد مدور',
+        ),
+      );
     }
 
     for (final inv in invs) {
       final desc = inv.items.isNotEmpty
-          ? inv.items.map((it) {
-              final name = it.typeName.isNotEmpty ? it.typeName : it.description;
-              return '$name (${it.quantity.fmt} قطعة)';
-            }).join(' + ')
+          ? inv.items
+                .map((it) {
+                  final name = it.typeName.isNotEmpty
+                      ? it.typeName
+                      : it.description;
+                  return '$name (${it.quantity.fmt} قطعة)';
+                })
+                .join(' + ')
           : 'فاتورة مبيعات مستودع المصنع';
 
-      items.add(A4StatementLineItem(
-        index: idx++,
-        date: inv.date,
-        documentNo: inv.invoiceNo,
-        description: desc,
-        category: 'فاتورة مبيعات',
-        currency: inv.currency,
-        totalAmount: inv.grandTotal,
-        paidAmount: inv.advancePayment,
-        remainingAmount: inv.remainingBalance,
-        status: inv.isDue ? 'مستحق التحصيل' : 'مسددة بالكامل',
-      ));
+      items.add(
+        A4StatementLineItem(
+          index: idx++,
+          date: inv.date,
+          documentNo: inv.invoiceNo,
+          description: desc,
+          category: 'فاتورة مبيعات',
+          currency: inv.currency,
+          totalAmount: inv.grandTotal,
+          paidAmount: inv.advancePayment,
+          remainingAmount: inv.remainingBalance,
+          status: inv.isDue ? 'مستحق التحصيل' : 'مسددة بالكامل',
+          details: _factoryInvoiceDetails(inv, isSale: true),
+        ),
+      );
     }
 
-    final serial = 'SOA-AGT-${client.name.hashCode.abs().toString().padLeft(6, "0").substring(0, 6)}';
+    final serial =
+        'SOA-AGT-${client.name.hashCode.abs().toString().padLeft(6, "0").substring(0, 6)}';
 
     return A4StatementData(
       type: AccountStatementType.accreditedAgent,
@@ -366,7 +695,10 @@ class A4StatementData {
     required ERPProvider erp,
   }) {
     final invs = erp.workshopInvoices
-        .where((i) => i.projectId.isEmpty && i.clientName.trim() == client.name.trim())
+        .where(
+          (i) =>
+              i.projectId.isEmpty && i.clientName.trim() == client.name.trim(),
+        )
         .toList();
     invs.sort((a, b) => a.date.compareTo(b.date));
 
@@ -374,7 +706,9 @@ class A4StatementData {
     int idx = 1;
 
     final legacy = erp.openingEntry.legacyFinancials
-        .where((r) => r.category == 'clients' && r.name.trim() == client.name.trim())
+        .where(
+          (r) => r.category == 'clients' && r.name.trim() == client.name.trim(),
+        )
         .toList();
     double legacyUsd = 0.0;
     double legacySyp = 0.0;
@@ -384,49 +718,60 @@ class A4StatementData {
       } else {
         legacyUsd += r.amount;
       }
-      items.add(A4StatementLineItem(
-        index: idx++,
-        date: erp.openingEntry.lockedAt ?? DateTime(DateTime.now().year, 1, 1),
-        documentNo: 'قيد افتتاحي',
-        description: r.description.isNotEmpty
-            ? 'رصيد افتتاحي سابق: ${r.description}'
-            : 'رصيد ذمة زبون سابقة',
-        category: 'قيد افتتاحي',
-        currency: r.currency,
-        totalAmount: r.amount,
-        paidAmount: 0.0,
-        remainingAmount: r.amount,
-        status: 'رصيد مدور',
-      ));
+      items.add(
+        A4StatementLineItem(
+          index: idx++,
+          date:
+              erp.openingEntry.lockedAt ?? DateTime(DateTime.now().year, 1, 1),
+          documentNo: 'قيد افتتاحي',
+          description: r.description.isNotEmpty
+              ? 'رصيد افتتاحي سابق: ${r.description}'
+              : 'رصيد ذمة زبون سابقة',
+          category: 'قيد افتتاحي',
+          currency: r.currency,
+          totalAmount: r.amount,
+          paidAmount: 0.0,
+          remainingAmount: r.amount,
+          status: 'رصيد مدور',
+        ),
+      );
     }
 
     for (final inv in invs) {
       String desc;
       if (inv.items.isNotEmpty) {
-        desc = inv.items.map((it) {
-          return '${it.description.isNotEmpty ? it.description : "صنف ورشة"} (${it.quantity.fmt} ${it.unitCategory})';
-        }).join(' + ');
+        desc = inv.items
+            .map((it) {
+              return '${it.description.isNotEmpty ? it.description : "صنف ورشة"} (${it.quantity.fmt} ${it.unitCategory})';
+            })
+            .join(' + ');
       } else {
         desc = inv.itemDescription.isNotEmpty
             ? '${inv.itemDescription} (${inv.sourceType})'
             : 'أعمال وتفصيل رخام وجرانيت ورشة المعمل';
       }
 
-      items.add(A4StatementLineItem(
-        index: idx++,
-        date: inv.date,
-        documentNo: inv.invoiceNo,
-        description: desc,
-        category: inv.sourceType,
-        currency: inv.currency,
-        totalAmount: inv.grandTotal,
-        paidAmount: inv.cashPaidNow + inv.depositDeducted,
-        remainingAmount: inv.remainingBalance,
-        status: inv.remainingBalance > 0.01 ? 'مستحق التحصيل' : 'مسددة بالكامل',
-      ));
+      items.add(
+        A4StatementLineItem(
+          index: idx++,
+          date: inv.date,
+          documentNo: inv.invoiceNo,
+          description: desc,
+          category: inv.sourceType,
+          currency: inv.currency,
+          totalAmount: inv.grandTotal,
+          paidAmount: inv.cashPaidNow + inv.depositDeducted,
+          remainingAmount: inv.remainingBalance,
+          status: inv.remainingBalance > 0.01
+              ? 'مستحق التحصيل'
+              : 'مسددة بالكامل',
+          details: _workshopInvoiceDetails(inv),
+        ),
+      );
     }
 
-    final serial = 'SOA-CUST-${client.name.hashCode.abs().toString().padLeft(6, "0").substring(0, 6)}';
+    final serial =
+        'SOA-CUST-${client.name.hashCode.abs().toString().padLeft(6, "0").substring(0, 6)}';
 
     return A4StatementData(
       type: AccountStatementType.customer,
@@ -463,33 +808,39 @@ class A4StatementData {
     for (final inv in invs) {
       String desc;
       if (inv.items.isNotEmpty) {
-        desc = inv.items.map((it) {
-          return '${it.description.isNotEmpty ? it.description : "بند مشروع"} (${it.quantity.fmt} ${it.unitCategory})';
-        }).join(' + ');
+        desc = inv.items
+            .map((it) {
+              return '${it.description.isNotEmpty ? it.description : "بند مشروع"} (${it.quantity.fmt} ${it.unitCategory})';
+            })
+            .join(' + ');
       } else {
         desc = inv.itemDescription.isNotEmpty
             ? '${inv.itemDescription} (${inv.sourceType})'
             : 'تنفيذ أعمال رخام وجرانيت للمشروع';
       }
 
-      items.add(A4StatementLineItem(
-        index: idx++,
-        date: inv.date,
-        documentNo: inv.invoiceNo,
-        description: desc,
-        category: 'فاتورة مشروع',
-        currency: inv.currency,
-        totalAmount: inv.grandTotal,
-        paidAmount: inv.cashPaidNow + inv.depositDeducted,
-        remainingAmount: inv.remainingBalance,
-        status: inv.remainingBalance > 0.01 ? 'متبقي' : 'مسدد بالكامل',
-      ));
+      items.add(
+        A4StatementLineItem(
+          index: idx++,
+          date: inv.date,
+          documentNo: inv.invoiceNo,
+          description: desc,
+          category: 'فاتورة مشروع',
+          currency: inv.currency,
+          totalAmount: inv.grandTotal,
+          paidAmount: inv.cashPaidNow + inv.depositDeducted,
+          remainingAmount: inv.remainingBalance,
+          status: inv.remainingBalance > 0.01 ? 'متبقي' : 'مسدد بالكامل',
+          details: _workshopInvoiceDetails(inv),
+        ),
+      );
     }
 
     final dueUsd = erp.projectDue(project.id);
     final dueSyp = erp.projectDueSyp(project.id);
 
-    final serial = 'SOA-PRJ-${project.name.hashCode.abs().toString().padLeft(6, "0").substring(0, 6)}';
+    final serial =
+        'SOA-PRJ-${project.name.hashCode.abs().toString().padLeft(6, "0").substring(0, 6)}';
 
     return A4StatementData(
       type: AccountStatementType.project,
@@ -513,20 +864,28 @@ class A4StatementData {
 class A4StatementPrintDialog extends StatefulWidget {
   final A4StatementData statementData;
 
-  const A4StatementPrintDialog({
-    super.key,
-    required this.statementData,
-  });
+  const A4StatementPrintDialog({super.key, required this.statementData});
 
-  /// Convenient static helper to launch the preview modal.
+  /// Launches the invoice selection step, then the preview modal.
   static Future<void> show(
     BuildContext context, {
     required A4StatementData statementData,
-  }) {
-    return showDialog(
+  }) async {
+    A4StatementData toPreview = statementData;
+    if (statementData.items.isNotEmpty) {
+      final selected = await showDialog<List<A4StatementLineItem>>(
+        context: context,
+        barrierDismissible: true,
+        builder: (_) => A4StatementInvoiceSelectionDialog(data: statementData),
+      );
+      if (selected == null) return;
+      toPreview = statementData.copyWithItems(selected);
+    }
+    if (!context.mounted) return;
+    await showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (_) => A4StatementPrintDialog(statementData: statementData),
+      builder: (_) => A4StatementPrintDialog(statementData: toPreview),
     );
   }
 
@@ -540,18 +899,31 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
   bool _isBlackAndWhite = false;
 
   static const ColorFilter _blackAndWhiteFilter = ColorFilter.matrix(<double>[
-    0.2126, 0.7152, 0.0722, 0, 0,
-    0.2126, 0.7152, 0.0722, 0, 0,
-    0.2126, 0.7152, 0.0722, 0, 0,
-    0,      0,      0,      1, 0,
+    0.2126,
+    0.7152,
+    0.0722,
+    0,
+    0,
+    0.2126,
+    0.7152,
+    0.0722,
+    0,
+    0,
+    0.2126,
+    0.7152,
+    0.0722,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ]);
 
   Widget _wrapWithPrintMode(Widget child) {
     if (!_isBlackAndWhite) return child;
-    return ColorFiltered(
-      colorFilter: _blackAndWhiteFilter,
-      child: child,
-    );
+    return ColorFiltered(colorFilter: _blackAndWhiteFilter, child: child);
   }
 
   late final List<List<A4StatementLineItem>> _paginatedItems;
@@ -562,6 +934,8 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
     _paginate();
   }
 
+  double _rowWeight(A4StatementLineItem it) => 1.0 + 1.1 * it.details.length;
+
   void _paginate() {
     final allItems = widget.statementData.items;
     if (allItems.isEmpty) {
@@ -570,26 +944,33 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
       return;
     }
 
-    // Up to 11 items fit comfortably on page 1 with header + metadata + summary
-    if (allItems.length <= 11) {
+    // Rows now include their item lines, so pages are filled by weight.
+    final totalWeight = allItems.fold<double>(0.0, (s, i) => s + _rowWeight(i));
+    if (totalWeight <= 11) {
       _paginatedItems = [allItems];
       _pageKeys.add(GlobalKey());
-    } else {
-      _paginatedItems = [];
-      // Page 1: 10 items
-      _paginatedItems.add(allItems.sublist(0, 10));
-      _pageKeys.add(GlobalKey());
+      return;
+    }
 
-      int current = 10;
-      while (current < allItems.length) {
-        // Subsequent pages can hold up to 14 items
-        final nextEnd = (current + 14 < allItems.length)
-            ? current + 14
-            : allItems.length;
-        _paginatedItems.add(allItems.sublist(current, nextEnd));
+    _paginatedItems = [];
+    var page = <A4StatementLineItem>[];
+    var weight = 0.0;
+    var cap = 10.0; // page 1 also holds header + metadata
+    for (final it in allItems) {
+      final w = _rowWeight(it);
+      if (page.isNotEmpty && weight + w > cap) {
+        _paginatedItems.add(page);
         _pageKeys.add(GlobalKey());
-        current = nextEnd;
+        page = <A4StatementLineItem>[];
+        weight = 0.0;
+        cap = 14.0;
       }
+      page.add(it);
+      weight += w;
+    }
+    if (page.isNotEmpty) {
+      _paginatedItems.add(page);
+      _pageKeys.add(GlobalKey());
     }
   }
 
@@ -600,13 +981,14 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
 
       for (int i = 0; i < _pageKeys.length; i++) {
         final key = _pageKeys[i];
-        final boundary = key.currentContext?.findRenderObject()
-            as RenderRepaintBoundary?;
+        final boundary =
+            key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
         if (boundary == null) continue;
 
         final ui.Image image = await boundary.toImage(pixelRatio: 2.5);
-        final ByteData? byteData =
-            await image.toByteData(format: ui.ImageByteFormat.png);
+        final ByteData? byteData = await image.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
         if (byteData == null) continue;
 
         final Uint8List pngBytes = byteData.buffer.asUint8List();
@@ -628,7 +1010,8 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
 
       await Printing.layoutPdf(
         onLayout: (PdfPageFormat format) async => pdfDoc.save(),
-        name: 'كشف_حساب_${widget.statementData.accountName}${_isBlackAndWhite ? "_BW" : ""}.pdf',
+        name:
+            'كشف_حساب_${widget.statementData.accountName}${_isBlackAndWhite ? "_BW" : ""}.pdf',
       );
     } catch (e) {
       if (mounted) {
@@ -737,16 +1120,24 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             InkWell(
-                              onTap: () => setState(() => _isBlackAndWhite = false),
+                              onTap: () =>
+                                  setState(() => _isBlackAndWhite = false),
                               borderRadius: BorderRadius.circular(6),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 150),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: !_isBlackAndWhite ? const Color(0xFF1E293B) : Colors.transparent,
+                                  color: !_isBlackAndWhite
+                                      ? const Color(0xFF1E293B)
+                                      : Colors.transparent,
                                   borderRadius: BorderRadius.circular(6),
                                   border: !_isBlackAndWhite
-                                      ? Border.all(color: const Color(0x8038BDF8))
+                                      ? Border.all(
+                                          color: const Color(0x8038BDF8),
+                                        )
                                       : null,
                                 ),
                                 child: Row(
@@ -755,15 +1146,21 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                                     Icon(
                                       Icons.palette_rounded,
                                       size: 14,
-                                      color: !_isBlackAndWhite ? const Color(0xFF38BDF8) : const Color(0xFF94A3B8),
+                                      color: !_isBlackAndWhite
+                                          ? const Color(0xFF38BDF8)
+                                          : const Color(0xFF94A3B8),
                                     ),
                                     const SizedBox(width: 5),
                                     Text(
                                       'ملونة (الأصل)',
                                       style: TextStyle(
                                         fontSize: 11.5,
-                                        fontWeight: !_isBlackAndWhite ? FontWeight.w900 : FontWeight.w600,
-                                        color: !_isBlackAndWhite ? Colors.white : const Color(0xFF94A3B8),
+                                        fontWeight: !_isBlackAndWhite
+                                            ? FontWeight.w900
+                                            : FontWeight.w600,
+                                        color: !_isBlackAndWhite
+                                            ? Colors.white
+                                            : const Color(0xFF94A3B8),
                                       ),
                                     ),
                                   ],
@@ -771,16 +1168,24 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                               ),
                             ),
                             InkWell(
-                              onTap: () => setState(() => _isBlackAndWhite = true),
+                              onTap: () =>
+                                  setState(() => _isBlackAndWhite = true),
                               borderRadius: BorderRadius.circular(6),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 150),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: _isBlackAndWhite ? const Color(0xFF1E293B) : Colors.transparent,
+                                  color: _isBlackAndWhite
+                                      ? const Color(0xFF1E293B)
+                                      : Colors.transparent,
                                   borderRadius: BorderRadius.circular(6),
                                   border: _isBlackAndWhite
-                                      ? Border.all(color: const Color(0x80E2E8F0))
+                                      ? Border.all(
+                                          color: const Color(0x80E2E8F0),
+                                        )
                                       : null,
                                 ),
                                 child: Row(
@@ -789,15 +1194,21 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                                     Icon(
                                       Icons.filter_b_and_w_rounded,
                                       size: 14,
-                                      color: _isBlackAndWhite ? Colors.white : const Color(0xFF94A3B8),
+                                      color: _isBlackAndWhite
+                                          ? Colors.white
+                                          : const Color(0xFF94A3B8),
                                     ),
                                     const SizedBox(width: 5),
                                     Text(
                                       'أبيض وأسود',
                                       style: TextStyle(
                                         fontSize: 11.5,
-                                        fontWeight: _isBlackAndWhite ? FontWeight.w900 : FontWeight.w600,
-                                        color: _isBlackAndWhite ? Colors.white : const Color(0xFF94A3B8),
+                                        fontWeight: _isBlackAndWhite
+                                            ? FontWeight.w900
+                                            : FontWeight.w600,
+                                        color: _isBlackAndWhite
+                                            ? Colors.white
+                                            : const Color(0xFF94A3B8),
                                       ),
                                     ),
                                   ],
@@ -811,7 +1222,9 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
 
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _isBlackAndWhite ? const Color(0xFF334155) : const Color(0xFF0284C7),
+                          backgroundColor: _isBlackAndWhite
+                              ? const Color(0xFF334155)
+                              : const Color(0xFF0284C7),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 18,
@@ -833,22 +1246,27 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                                 ),
                               )
                             : Icon(
-                                _isBlackAndWhite ? Icons.print_outlined : Icons.print_rounded,
+                                _isBlackAndWhite
+                                    ? Icons.print_outlined
+                                    : Icons.print_rounded,
                                 size: 18,
                               ),
                         label: Text(
                           _isPrinting
                               ? 'جارٍ المعالجة...'
                               : _isBlackAndWhite
-                                  ? 'طباعة أبيض وأسود / PDF'
-                                  : 'طباعة ملونة / PDF',
+                              ? 'طباعة أبيض وأسود / PDF'
+                              : 'طباعة ملونة / PDF',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
                       const SizedBox(width: 10),
                       IconButton(
                         tooltip: 'إغلاق المعاينة',
-                        icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white70,
+                        ),
                         onPressed: () => Navigator.of(context).pop(),
                       ),
                     ],
@@ -862,12 +1280,18 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
               child: Container(
                 color: const Color(0xFF0B132B),
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 24,
+                    horizontal: 16,
+                  ),
                   child: Center(
                     child: Column(
-                      children: List.generate(_paginatedItems.length, (pageIdx) {
+                      children: List.generate(_paginatedItems.length, (
+                        pageIdx,
+                      ) {
                         final isFirstPage = pageIdx == 0;
-                        final isLastPage = pageIdx == _paginatedItems.length - 1;
+                        final isLastPage =
+                            pageIdx == _paginatedItems.length - 1;
                         final pageItems = _paginatedItems[pageIdx];
 
                         return Padding(
@@ -1215,7 +1639,10 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3.5,
+                  ),
                   decoration: BoxDecoration(
                     color: data.roleAccentColor,
                     borderRadius: BorderRadius.circular(5),
@@ -1354,7 +1781,9 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                 flex: 3,
                 child: _buildMetaField(
                   label: 'حالة الحساب المالية:',
-                  value: data.hasOutstandingDue ? 'ذمة مستحقة' : 'خالص ومسدد بالكامل',
+                  value: data.hasOutstandingDue
+                      ? 'ذمة مستحقة'
+                      : 'خالص ومسدد بالكامل',
                   valueColor: data.hasOutstandingDue
                       ? const Color(0xFFDC2626)
                       : const Color(0xFF16A34A),
@@ -1374,7 +1803,9 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                       : 'رقم الهاتف / التواصل:',
                   value: data.type == AccountStatementType.project
                       ? (data.clientName.isNotEmpty ? data.clientName : '—')
-                      : (data.accountPhone.isNotEmpty ? data.accountPhone : '—'),
+                      : (data.accountPhone.isNotEmpty
+                            ? data.accountPhone
+                            : '—'),
                 ),
               ),
               Expanded(
@@ -1385,7 +1816,9 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                       : 'العنوان / الموقع:',
                   value: data.type == AccountStatementType.project
                       ? (data.accountPhone.isNotEmpty ? data.accountPhone : '—')
-                      : (data.accountLocation.isNotEmpty ? data.accountLocation : '—'),
+                      : (data.accountLocation.isNotEmpty
+                            ? data.accountLocation
+                            : '—'),
                 ),
               ),
               Expanded(
@@ -1473,7 +1906,11 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
         alignment: Alignment.center,
         child: Column(
           children: const [
-            Icon(Icons.receipt_long_outlined, size: 36, color: Color(0xFF94A3B8)),
+            Icon(
+              Icons.receipt_long_outlined,
+              size: 36,
+              color: Color(0xFF94A3B8),
+            ),
             SizedBox(height: 8),
             Text(
               'لا توجد حركات أو فواتير مسجلة حالياً على هذا الحساب.',
@@ -1622,7 +2059,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
             final isEven = idx % 2 == 0;
             final isDue = it.remainingAmount > 0.01;
 
-            return Container(
+            final rowWidget = Container(
               color: isEven ? Colors.white : const Color(0xFFF8FAFC),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
               child: Row(
@@ -1769,6 +2206,14 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                 ],
               ),
             );
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                rowWidget,
+                if (it.details.isNotEmpty)
+                  A4StatementInvoiceDetails(lineItem: it),
+              ],
+            );
           }),
         ],
       ),
@@ -1804,7 +2249,11 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                       children: [
                         Row(
                           children: const [
-                            Icon(Icons.attach_money_rounded, size: 14, color: Color(0xFF2563EB)),
+                            Icon(
+                              Icons.attach_money_rounded,
+                              size: 14,
+                              color: Color(0xFF2563EB),
+                            ),
                             SizedBox(width: 4),
                             Text(
                               'حركات الدولار (\$ USD)',
@@ -1854,7 +2303,11 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                       children: [
                         Row(
                           children: const [
-                            Icon(Icons.currency_exchange_rounded, size: 14, color: Color(0xFFD97706)),
+                            Icon(
+                              Icons.currency_exchange_rounded,
+                              size: 14,
+                              color: Color(0xFFD97706),
+                            ),
                             SizedBox(width: 4),
                             Text(
                               'حركات الليرة السورية (ل.س SYP)',
@@ -1906,7 +2359,9 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                       : const Color(0xFF86EFAC),
                 ),
               ),
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(7)),
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(7),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
