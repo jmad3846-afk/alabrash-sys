@@ -4,9 +4,9 @@ import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
-import '../widgets/currency_selector.dart';
 import '../widgets/a4_invoice_print_dialog.dart';
 import '../widgets/factory_order_dialogs.dart';
+import '../widgets/return_allowance_dialog.dart';
 
 class GlobalOrdersScreen extends StatefulWidget {
   const GlobalOrdersScreen({super.key});
@@ -1134,163 +1134,87 @@ class _GlobalOrdersScreenState extends State<GlobalOrdersScreen>
     );
   }
 
-  void _showAddReturnInvoiceDialog(ERPProvider erp) {
-    String returnType = 'مرتجع مشتريات مورد';
-    final partyCtrl = TextEditingController(text: 'شركة مقالع الرخام الوطنية');
-    final descCtrl = TextEditingController(
-      text: 'بلوك كاردينال فيه عيوب تصنيع',
-    );
-    final qtyCtrl = TextEditingController(text: '1');
-    final refundCtrl = TextEditingController(text: '200');
-    String paymentAction = 'تخفيض دين';
-    String retCurrency = AppCurrency.usd;
-
-    showDialog(
+  Future<void> _showAddReturnInvoiceDialog(ERPProvider erp) async {
+    var returnType = 'مرتجع مشتريات مورد';
+    final savedType = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => Dialog(
           child: Container(
-            width: 540,
+            width: 480,
             padding: const EdgeInsets.all(24),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'إصدار فاتورة مرتجع جديدة',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleLarge?.copyWith(fontSize: 18),
-                  ),
-                  const Divider(height: 20),
-                  DropdownButtonFormField<String>(
-                    initialValue: returnType,
-                    decoration: const InputDecoration(labelText: 'نوع المرتجع'),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'مرتجع مشتريات مورد',
-                        child: Text(
-                          '1. مرتجع مشتريات مورد (Supplier Purchase Return)',
-                        ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'إصدار فاتورة مرتجع جديدة',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontSize: 18),
+                ),
+                const Divider(height: 20),
+                DropdownButtonFormField<String>(
+                  initialValue: returnType,
+                  decoration: const InputDecoration(labelText: 'نوع المرتجع'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'مرتجع مشتريات مورد',
+                      child: Text(
+                        '1. مرتجع مشتريات مورد (Supplier Purchase Return)',
                       ),
-                      DropdownMenuItem(
-                        value: 'مرتجع مبيعات مصنع',
-                        child: Text(
-                          '2. مرتجع مبيعات مصنع (Factory Sales Return)',
-                        ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'مرتجع مبيعات معمل',
-                        child: Text(
-                          '3. مرتجع مبيعات معمل (Workshop Sales Return)',
-                        ),
-                      ),
-                    ],
-                    onChanged: (v) => setSt(() => returnType = v!),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: partyCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'اسم المورد / الزبون',
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: descCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'تفاصيل الصنف المرتجع',
+                    DropdownMenuItem(
+                      value: 'مرتجع مبيعات مصنع',
+                      child: Text(
+                        '2. مرتجع مبيعات مصنع (Factory Sales Return)',
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: qtyCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'الكمية المرتجعة',
-                          ),
-                        ),
+                    DropdownMenuItem(
+                      value: 'مرتجع مبيعات معمل',
+                      child: Text(
+                        '3. مرتجع مبيعات معمل (Workshop Sales Return)',
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: refundCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'مبلغ الاسترداد / المرتجع (\$)',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  CurrencySelector(
-                    value: retCurrency,
-                    dense: true,
-                    onChanged: (v) => setSt(() => retCurrency = v),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: paymentAction,
-                    decoration: const InputDecoration(
-                      labelText: 'طريقة المعالجة المالية',
                     ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'تخفيض دين',
-                        child: Text('تخفيض الدين / الذمة المالية'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'استرداد نقدي للصندوق الرئيسي',
-                        child: Text('استرداد نقدي مباشر من الصندوق الرئيسي'),
-                      ),
-                    ],
-                    onChanged: (v) => setSt(() => paymentAction = v!),
+                  ],
+                  onChanged: (v) => setSt(() => returnType = v!),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.dangerWaste,
                   ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.dangerWaste,
-                    ),
-                    onPressed: () {
-                      final saved = erp.processReturnInvoice(
-                        ReturnInvoiceModel(
-                          id: 'ret_${DateTime.now().millisecondsSinceEpoch}',
-                          returnNo: 'RET-${erp.returnInvoices.length + 101}',
-                          date: DateTime.now(),
-                          returnType: returnType,
-                          partyName: partyCtrl.text,
-                          itemDescription: descCtrl.text,
-                          quantity: double.tryParse(qtyCtrl.text) ?? 1.0,
-                          refundAmount: double.tryParse(refundCtrl.text) ?? 0.0,
-                          paymentAction: paymentAction,
-                          currency: retCurrency,
-                        ),
-                      );
-                      if (!saved) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'تعذر حفظ المرتجع: تحقق من المبلغ والرصيد وطريقة التسوية.',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      Navigator.pop(ctx);
-                    },
-                    child: const Text('تأكيد وحفظ فاتورة المرتجع'),
-                  ),
-                ],
-              ),
+                  onPressed: () => Navigator.pop(ctx, returnType),
+                  child: const Text('متابعة'),
+                ),
+              ],
             ),
           ),
         ),
       ),
     );
+    if (savedType == null || !mounted) return;
+    final (module, kind) = switch (savedType) {
+      'مرتجع مبيعات معمل' => ('workshop', 'sales_return'),
+      'مرتجع مبيعات مصنع' => ('factory', 'sales_return'),
+      _ => ('factory', 'purchase_return'),
+    };
+    final result = await ReturnAllowanceDialog.show(
+      context,
+      erp: erp,
+      module: module,
+      kind: kind,
+      title: savedType,
+    );
+    if (result == null || !mounted) return;
+    if (!erp.addAdjustmentInvoice(result)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تعذر حفظ المرتجع: تحقق من المبلغ والرصيد وطريقة التسوية.',
+          ),
+        ),
+      );
+    }
   }
 }

@@ -2149,6 +2149,593 @@ class ERPProvider extends ChangeNotifier {
     refresh();
   }
 
+  // -------------------------------------------------------------
+  // RETURNS & ALLOWANCES ENGINE (مرتجعات ومسموحات الفواتير)
+  // -------------------------------------------------------------
+  /// Rounds money to exactly 2 decimals so USD / SYP totals never drift.
+  static double _money(num value) => AppCurrency.money(value);
+
+  /// Candidate identities of one line inside a master invoice. Several keys
+  /// are produced so records written by older versions still match.
+  static Set<String> _lineKeys({
+    required int index,
+    required String itemId,
+    required String description,
+  }) {
+    final keys = <String>{};
+    if (index >= 0) keys.add('idx:$index');
+    if (itemId.trim().isNotEmpty) keys.add('id:${itemId.trim()}');
+    if (description.trim().isNotEmpty) {
+      keys.add('desc:${description.trim()}');
+    }
+    return keys;
+  }
+
+  /// Quantity of a master-invoice line already returned by earlier documents.
+  double _alreadyReturnedQty({
+    required String module,
+    required String targetInvoiceId,
+    required Set<String> keys,
+  }) {
+    var total = 0.0;
+    for (final doc in adjustmentInvoices) {
+      if (doc.module != module ||
+          doc.targetInvoiceId != targetInvoiceId ||
+          !doc.isReturn) {
+        continue;
+      }
+      final source = doc.lines.isNotEmpty
+          ? doc.lines
+          : [
+              AdjustmentLineModel(
+                itemId: doc.itemId,
+                itemIndex: doc.itemIndex,
+                description: doc.itemDescription,
+                quantity: doc.quantity,
+                unitPrice: 0,
+                amount: doc.amount,
+              ),
+            ];
+      for (final line in source) {
+        final lineKeys = _lineKeys(
+          index: line.itemIndex,
+          itemId: line.itemId,
+          description: line.description,
+        );
+        if (lineKeys.any(keys.contains)) total += line.quantity;
+      }
+    }
+    return total;
+  }
+
+  /// Materialized lines of a workshop invoice. Legacy invoices keep their
+  /// data in the scalar fields instead of an items list.
+  List<WorkshopInvoiceItem> _workshopInvoiceLines(WorkshopInvoiceModel inv) {
+    if (inv.items.isNotEmpty) return List.of(inv.items);
+    final quantity = inv.sourceQuantity > 0 ? inv.sourceQuantity : 1.0;
+    return [
+      WorkshopInvoiceItem(
+        id: 'legacy_line',
+        sourceType: inv.sourceType,
+        sourceId: inv.sourceId,
+        description: inv.itemDescription,
+        quantity: quantity,
+        unitCategory: inv.sourceUnitCategory,
+        agreedPrice: inv.agreedPrice,
+        netCost: inv.netCost,
+      ),
+    ];
+  }
+
+  static String _factoryLineUnit(FactoryInvoiceItem item) {
+    if (item.isMeterItem) {
+      return item.meterUnit.isNotEmpty ? item.meterUnit : 'متر مربع';
+    }
+    if (item.itemCategory == 'tailoring' ||
+        item.itemId.startsWith('tailoring_')) {
+      return 'قطعة';
+    }
+    return 'طن';
+  }
+
+  /// Builds the stored record for one master-invoice line.
+  /// `unitPrice` is always derived from the parent invoice (never trusted
+  /// from the caller) so `amount == quantity * original unit price`.
+  _ResolvedReturnLine _describeFactoryLine(
+    FactoryInvoiceModel parent,
+    int index,
+    double quantity,
+  ) {
+    final item = parent.items[index];
+    final unitQty = item.quantity > 0
+        ? item.calculatedArea / item.quantity
+        : 1.0;
+    final unitPrice = _money(item.unitPrice * unitQty);
+    return _ResolvedReturnLine(
+      line: AdjustmentLineModel(
+        itemId: item.itemId,
+        itemIndex: index,
+        description: item.description,
+        unit: _factoryLineUnit(item),
+        quantity: quantity,
+        unitPrice: unitPrice,
+        amount: _money(quantity * unitPrice),
+      ),
+      factoryItem: item,
+      unitQty: unitQty,
+    );
+  }
+
+  _ResolvedReturnLine _describeWorkshopLine(
+    List<WorkshopInvoiceItem> lines,
+    int index,
+    double quantity,
+  ) {
+    final item = lines[index];
+    final unitPrice = _money(
+      item.quantity > 0 ? item.agreedPrice / item.quantity : item.agreedPrice,
+    );
+    return _ResolvedReturnLine(
+      line: AdjustmentLineModel(
+        itemId: item.sourceId,
+        itemIndex: index,
+        description: item.description,
+        unit: item.unitCategory,
+        quantity: quantity,
+        unitPrice: unitPrice,
+        amount: _money(quantity * unitPrice),
+        sourceType: item.sourceType,
+        sourceLineItemId: item.sourceLineItemId,
+      ),
+      workshopItem: item,
+      unitQty: 1.0,
+    );
+  }
+
+  // --- Inventory routing: matchers -----------------------------------
+  FactoryWarehouseModel? _matchFactoryWarehouse(FactoryInvoiceItem item) {
+    if (item.itemId.isNotEmpty) {
+      final byId = factoryWarehouse
+          .where((w) => w.id == item.itemId)
+          .toList();
+      if (byId.isNotEmpty) return byId.first;
+    }
+    final typeName = item.typeName.isNotEmpty ? item.typeName : item.description;
+    if (typeName.trim().isEmpty) return null;
+    final grade = item.grade.isNotEmpty ? item.grade : 'درجة أولى';
+    final thickness = item.thicknessCm > 0 ? item.thicknessCm : 2.0;
+    final category = item.meterUnit.isNotEmpty
+        ? item.meterUnit
+        : (item.thicknessCm > 5 ? 'متر مكعب' : 'متر مربع');
+    final exact = factoryWarehouse
+        .where(
+          (w) =>
+              w.typeName == typeName &&
+              w.grade == grade &&
+              (w.thicknessCm - thickness).abs() < 0.01 &&
+              w.category == category,
+        )
+        .toList();
+    if (exact.isNotEmpty) return exact.first;
+    final loose = factoryWarehouse
+        .where((w) => w.typeName == typeName)
+        .toList();
+    return loose.isNotEmpty ? loose.first : null;
+  }
+
+  List<FactoryBlockModel> _matchFactoryBlocks(
+    FactoryInvoiceModel parent,
+    FactoryInvoiceItem item, {
+    required bool strictSupplier,
+  }) {
+    final typeName = item.typeName.isNotEmpty ? item.typeName : item.description;
+    final grade = item.grade.isNotEmpty ? item.grade : 'درجة أولى';
+    if (strictSupplier) {
+      return factoryBlocks
+          .where(
+            (b) =>
+                b.supplierId == parent.partyId &&
+                b.typeName == typeName &&
+                b.grade == grade,
+          )
+          .toList();
+    }
+    final bySupplier = factoryBlocks
+        .where(
+          (b) =>
+              b.supplierId.isNotEmpty &&
+              b.supplierId == parent.partyId &&
+              b.typeName == typeName &&
+              b.grade == grade,
+        )
+        .toList();
+    if (bySupplier.isNotEmpty) return bySupplier;
+    return factoryBlocks
+        .where((b) => b.typeName == typeName && b.grade == grade)
+        .toList();
+  }
+
+  WorkshopTailoringModel? _matchFactoryTailoring(FactoryInvoiceItem item) {
+    final all = [...simpleTailorings, ...complexTailorings];
+    for (final candidate in all) {
+      for (final lineItem in candidate.lineItems) {
+        if (item.itemId == 'tailoring_${candidate.id}_${lineItem.id}' ||
+            item.itemId == lineItem.id) {
+          return candidate;
+        }
+      }
+      if (item.itemId == candidate.id) return candidate;
+    }
+    if (item.description.trim().isEmpty) return null;
+    final byName = all
+        .where(
+          (t) =>
+              t.name == item.description ||
+              t.rawMaterialDescription == item.description,
+        )
+        .toList();
+    return byName.isNotEmpty ? byName.first : null;
+  }
+
+  WorkshopStockModel? _matchWorkshopStock(WorkshopInvoiceItem item) {
+    if (item.sourceId.isNotEmpty) {
+      final byId = workshopStock.where((w) => w.id == item.sourceId).toList();
+      if (byId.isNotEmpty) return byId.first;
+    }
+    if (item.description.trim().isEmpty) return null;
+    final byName = workshopStock
+        .where(
+          (w) =>
+              w.typeName == item.description ||
+              item.description.contains(w.typeName),
+        )
+        .toList();
+    return byName.isNotEmpty ? byName.first : null;
+  }
+
+  // --- Inventory routing: feasibility --------------------------------
+  bool _canRouteReturn({
+    required String module,
+    required bool purchase,
+    required List<_ResolvedReturnLine> lines,
+    required FactoryInvoiceModel? original,
+    required WorkshopInvoiceModel? workshopOriginal,
+  }) {
+    for (final resolved in lines) {
+      if (module == 'factory') {
+        final item = resolved.factoryItem!;
+        if (item.isMeterItem) {
+          final warehouse = _matchFactoryWarehouse(item);
+          if (warehouse == null) {
+            final label = item.typeName.isNotEmpty
+                ? item.typeName
+                : item.description;
+            if (purchase || label.trim().isEmpty) return false;
+          } else if (purchase &&
+              warehouse.availableQty + 0.0001 < resolved.line.quantity) {
+            return false;
+          }
+        } else if (item.itemCategory == 'tailoring' ||
+            item.itemId.startsWith('tailoring_')) {
+          if (_matchFactoryTailoring(item) == null && purchase) return false;
+        } else {
+          final blocks = _matchFactoryBlocks(
+            original!,
+            item,
+            strictSupplier: purchase,
+          );
+          if (blocks.isEmpty) {
+            final label = item.typeName.isNotEmpty
+                ? item.typeName
+                : item.description;
+            if (purchase || label.trim().isEmpty) return false;
+          } else if (purchase) {
+            final available = blocks.fold<double>(
+              0.0,
+              (sum, block) => sum + block.weightTons,
+            );
+            if (available + 0.0001 < resolved.line.quantity) return false;
+          }
+        }
+      } else {
+        final item = resolved.workshopItem!;
+        final st = item.sourceType;
+        if (st == 'بيع مواد خام من المعمل' || st == 'مواد خام') {
+          if (_matchWorkshopStock(item) == null) return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  // --- Inventory routing: application --------------------------------
+  /// Routes a returned line to its stock page.
+  /// Factory meters → مستودع المصنع, blocks → مخزون مصنع,
+  /// workshop simple/complex detail, raw materials (مواد معمل) and surplus
+  /// (الزيادة) each go to their own page.
+  void _applyReturnRouting({
+    required String module,
+    required bool purchase,
+    required List<_ResolvedReturnLine> lines,
+    required FactoryInvoiceModel? original,
+    required WorkshopInvoiceModel? workshopOriginal,
+  }) {
+    for (final resolved in lines) {
+      if (module == 'factory') {
+        _applyFactoryReturnRouting(
+          resolved: resolved,
+          purchase: purchase,
+          parent: original!,
+        );
+      } else {
+        _applyWorkshopReturnRouting(resolved: resolved);
+      }
+    }
+  }
+
+  void _applyFactoryReturnRouting({
+    required _ResolvedReturnLine resolved,
+    required bool purchase,
+    required FactoryInvoiceModel parent,
+  }) {
+    final item = resolved.factoryItem!;
+    final line = resolved.line;
+    final returnedArea = line.quantity * resolved.unitQty;
+
+    if (item.isMeterItem) {
+      // مستودع المصنع (Factory Warehouse — slabs & cubes)
+      final warehouse = _matchFactoryWarehouse(item);
+      if (warehouse != null) {
+        warehouse.availableQty = purchase
+            ? (warehouse.availableQty - line.quantity).clamp(
+                0.0,
+                double.infinity,
+              )
+            : warehouse.availableQty + returnedArea;
+        return;
+      }
+      if (purchase) return;
+      final typeName = item.typeName.isNotEmpty
+          ? item.typeName
+          : item.description;
+      if (typeName.trim().isEmpty) return;
+      factoryWarehouse.add(
+        FactoryWarehouseModel(
+          id:
+              'fw_${DateTime.now().microsecondsSinceEpoch}_${factoryWarehouse.length}',
+          typeName: typeName,
+          grade: item.grade.isNotEmpty ? item.grade : 'درجة أولى',
+          thicknessCm: item.thicknessCm > 0 ? item.thicknessCm : 2.0,
+          category: item.meterUnit.isNotEmpty
+              ? item.meterUnit
+              : (item.thicknessCm > 5 ? 'متر مكعب' : 'متر مربع'),
+          availableQty: returnedArea,
+          netCostPerUnit: item.unitCost,
+          recommendedSalePrice: item.unitPrice,
+          isGranite: item.isGranite,
+        ),
+      );
+      return;
+    }
+
+    if (item.itemCategory == 'tailoring' ||
+        item.itemId.startsWith('tailoring_')) {
+      // Detail products sold through the factory POS.
+      final tailoring = _matchFactoryTailoring(item);
+      if (tailoring != null) {
+        tailoring.quantity = (tailoring.quantity + (purchase
+            ? -line.quantity
+            : returnedArea)).clamp(0.0, double.infinity);
+        return;
+      }
+      if (purchase) return;
+      final isComplex = complexTailorings.any(
+        (t) => t.id == item.itemId || t.name == item.description,
+      );
+      final target = isComplex ? complexTailorings : simpleTailorings;
+      target.add(
+        WorkshopTailoringModel(
+          id: item.itemId.isNotEmpty
+              ? item.itemId
+              : 'rt_${DateTime.now().microsecondsSinceEpoch}',
+          name: item.description.isNotEmpty
+              ? item.description
+              : 'مرتجع فاتورة ${parent.invoiceNo}',
+          complexity: isComplex ? 'معقد' : 'بسيط',
+          rawMaterialDescription: item.description,
+          quantity: returnedArea,
+          materialNetCost: item.unitCost,
+          unitCategory: item.isCubicMeter ? 'متر مكعب' : 'متر مربع',
+          sellingPrice: item.unitPrice,
+          isGranite: item.isGranite,
+        ),
+      );
+      return;
+    }
+
+    // مخزون مصنع (Block / Factory Stock)
+    final blocks = _matchFactoryBlocks(parent, item, strictSupplier: purchase);
+    if (purchase) {
+      var remaining = line.quantity;
+      for (final block in blocks) {
+        if (remaining <= 0) break;
+        final taken = remaining < block.weightTons
+            ? remaining
+            : block.weightTons;
+        block.weightTons = (block.weightTons - taken).clamp(
+          0.0,
+          double.infinity,
+        );
+        remaining -= taken;
+      }
+      return;
+    }
+    if (blocks.isNotEmpty) {
+      blocks.first.weightTons += line.quantity;
+      return;
+    }
+    final typeName = item.typeName.isNotEmpty ? item.typeName : item.description;
+    if (typeName.trim().isEmpty) return;
+    factoryBlocks.add(
+      FactoryBlockModel(
+        id:
+            'fb_${DateTime.now().microsecondsSinceEpoch}_${factoryBlocks.length}',
+        blockCode: 'BLK-${factoryBlocks.length + 101}',
+        typeName: typeName,
+        grade: item.grade.isNotEmpty ? item.grade : 'درجة أولى',
+        supplierId: parent.partyId,
+        supplierName: parent.partyName,
+        weightTons: line.quantity,
+        tonCost: item.unitCost,
+        tonSellingPrice: item.unitPrice,
+        isGranite: item.isGranite,
+      ),
+    );
+  }
+
+  void _applyWorkshopReturnRouting({required _ResolvedReturnLine resolved}) {
+    final item = resolved.workshopItem!;
+    final quantity = resolved.line.quantity;
+    final sourceType = item.sourceType;
+
+    if (sourceType == 'بيع خياطة بسيطة' || sourceType == 'تفصيل بسيط') {
+      // تفصيل بسيط → Simple Detail Inventory Page
+      final matches = item.sourceId.isNotEmpty
+          ? simpleTailorings.where((t) => t.id == item.sourceId).toList()
+          : <WorkshopTailoringModel>[];
+      if (matches.isEmpty) {
+        if (item.sourceId.isEmpty) return;
+        simpleTailorings.add(
+          WorkshopTailoringModel(
+            id: item.sourceId,
+            name: item.description,
+            complexity: 'بسيط',
+            rawMaterialDescription: item.description,
+            quantity: quantity,
+            materialNetCost: item.netCost,
+            unitCategory: item.unitCategory,
+            sellingPrice: item.agreedPrice,
+            isGranite: item.isGranite,
+            photoPath: item.photoPath,
+          ),
+        );
+        return;
+      }
+      final product = matches.first;
+      product.quantity = (product.quantity + quantity).clamp(
+        0.0,
+        double.infinity,
+      );
+      if (item.sourceLineItemId.isNotEmpty) {
+        final lineItem = product.lineItems
+            .where((li) => li.id == item.sourceLineItemId)
+            .firstOrNull;
+        if (lineItem != null) {
+          final pieceArea = (lineItem.lengthCm > 0 && lineItem.widthCm > 0)
+              ? (lineItem.lengthCm / 100.0) *
+                    (lineItem.widthCm / 100.0) *
+                    (lineItem.category == 'متر مكعب' &&
+                            lineItem.heightCm > 0
+                        ? lineItem.heightCm / 100.0
+                        : 1.0)
+              : 0.0;
+          lineItem.quantity = (lineItem.quantity +
+                  (pieceArea > 0 ? quantity / pieceArea : quantity))
+              .clamp(0.0, double.infinity);
+        }
+      }
+      return;
+    }
+
+    if (sourceType == 'بيع خياطة معقدة' || sourceType == 'تفصيل معقد') {
+      // تفصيل معقد → Complex Detail Inventory Page
+      final matches = item.sourceId.isNotEmpty
+          ? complexTailorings.where((t) => t.id == item.sourceId).toList()
+          : <WorkshopTailoringModel>[];
+      if (matches.isEmpty) {
+        if (item.sourceId.isEmpty) return;
+        complexTailorings.add(
+          WorkshopTailoringModel(
+            id: item.sourceId,
+            name: item.description,
+            complexity: 'معقد',
+            rawMaterialDescription: item.description,
+            quantity: quantity,
+            materialNetCost: item.netCost,
+            unitCategory: item.unitCategory,
+            sellingPrice: item.agreedPrice,
+            isGranite: item.isGranite,
+            photoPath: item.photoPath,
+          ),
+        );
+        return;
+      }
+      matches.first.quantity = (matches.first.quantity + quantity).clamp(
+        0.0,
+        double.infinity,
+      );
+      return;
+    }
+
+    if (sourceType == 'بيع مواد خام من المعمل' || sourceType == 'مواد خام') {
+      // مواد خام → Workshop Materials Page (مواد معمل)
+      final stock = _matchWorkshopStock(item);
+      if (stock == null) return;
+      stock.availableQty = (stock.availableQty + quantity).clamp(
+        0.0,
+        double.infinity,
+      );
+      return;
+    }
+
+    if (sourceType == 'بيع قطع إضافية' || sourceType == 'قطع زائدة') {
+      // قطع زائدة → Surplus Page (الزيادة)
+      final matches = item.sourceId.isNotEmpty
+          ? scrapItems.where((s) => s.id == item.sourceId).toList()
+          : <ScrapItemModel>[];
+      if (matches.isNotEmpty) {
+        matches.first.isSold = false;
+        return;
+      }
+      scrapItems.add(
+        ScrapItemModel(
+          id: item.sourceId.isNotEmpty
+              ? item.sourceId
+              : 'sc_${DateTime.now().microsecondsSinceEpoch}',
+          description: item.description,
+          baseCost: item.netCost,
+          sellingPrice: item.agreedPrice,
+          isSold: false,
+          photoPath: item.photoPath,
+          currency: AppCurrency.usd,
+        ),
+      );
+      return;
+    }
+
+    // Orders (طلبية معمل) carry no stock page — financial settlement only.
+  }
+
+  /// Next sequential return document number (RET-001, RET-102 …).
+  String _nextReturnNo() {
+    var max = 100;
+    for (final ret in returnInvoices) {
+      final match = RegExp(r'(\d+)$').firstMatch(ret.returnNo.trim());
+      final value = match != null ? int.tryParse(match.group(1)!) : null;
+      if (value != null && value > max) max = value;
+    }
+    return 'RET-${(max + 1).toString().padLeft(3, '0')}';
+  }
+
+  /// Creates a return / allowance document against a master invoice.
+  ///
+  /// * Returns are built from per-line `lines` (quantity × original unit
+  ///   price, auto calculated) and are validated so a line can never be
+  ///   returned more often than it was invoiced.
+  /// * Allowances never touch inventory — only the financial ledger.
+  /// * Settlement is either account adjustment (تسوية حساب) or cash through
+  ///   the main safe (إلى / من الصندوق); cash only covers the part that is
+  ///   not already offset by the party's outstanding balance.
   bool addAdjustmentInvoice(AdjustmentInvoiceModel invoice) {
     const kinds = {
       'purchase_return',
@@ -2158,298 +2745,372 @@ class ERPProvider extends ChangeNotifier {
     };
     if (!kinds.contains(invoice.kind) ||
         (invoice.module != 'factory' && invoice.module != 'workshop') ||
+        invoice.invoiceNo.trim().isEmpty ||
         !invoice.amount.isFinite ||
-        invoice.amount <= 0 ||
         !invoice.quantity.isFinite ||
-        invoice.quantity < 0 ||
-        (invoice.kind.endsWith('return') && invoice.quantity <= 0) ||
-        invoice.invoiceNo.trim().isEmpty) {
+        invoice.quantity < 0) {
       return false;
     }
 
     final isFactory = invoice.module == 'factory';
-    final factoryInvoice = isFactory
-        ? factoryInvoices.where((item) => item.id == invoice.targetInvoiceId)
-        : <FactoryInvoiceModel>[];
-    final workshopInvoice = isFactory
-        ? <WorkshopInvoiceModel>[]
-        : workshopInvoices.where((item) => item.id == invoice.targetInvoiceId);
-    if ((isFactory && factoryInvoice.isEmpty) ||
-        (!isFactory && workshopInvoice.isEmpty)) {
-      return false;
-    }
-
-    final original = isFactory ? factoryInvoice.first : null;
-    final workshopOriginal = isFactory ? null : workshopInvoice.first;
     final purchase = invoice.kind.startsWith('purchase');
-    if (invoice.targetInvoiceNo !=
-            (original?.invoiceNo ?? workshopOriginal!.invoiceNo) ||
-        invoice.partyName !=
-            (original?.partyName ?? workshopOriginal!.clientName) ||
-        (isFactory && (original!.invoiceType == 'شراء_مورد') != purchase)) {
-      return false;
-    }
-    if (!isFactory && purchase) return false;
-    if (!isFactory &&
-        invoice.kind == 'sales_return' &&
-        (workshopOriginal!.sourceType == 'تفصيل بسيط' ||
-            workshopOriginal.sourceType == 'تفصيل معقد')) {
-      final priorTailoringReturns = adjustmentInvoices
-          .where(
-            (item) =>
-                item.module == 'workshop' &&
-                item.targetInvoiceId == invoice.targetInvoiceId &&
-                item.kind == 'sales_return',
-          )
-          .fold<double>(0, (sum, item) => sum + item.quantity);
-      if (invoice.quantity >
-          workshopOriginal.sourceQuantity - priorTailoringReturns + 0.0001) {
+    final isReturn = invoice.kind.endsWith('return');
+
+    // 1. Resolve and validate the master invoice.
+    FactoryInvoiceModel? original;
+    WorkshopInvoiceModel? workshopOriginal;
+    if (isFactory) {
+      final matches = factoryInvoices
+          .where((item) => item.id == invoice.targetInvoiceId)
+          .toList();
+      if (matches.isEmpty) return false;
+      original = matches.first;
+      if (original.invoiceNo != invoice.targetInvoiceNo ||
+          original.partyName != invoice.partyName ||
+          (original.invoiceType == 'شراء_مورد') != purchase) {
         return false;
-      }
-    }
-
-    final originalTotal = original?.grandTotal ?? workshopOriginal!.grandTotal;
-    final priorAmount = adjustmentInvoices
-        .where(
-          (item) =>
-              item.module == invoice.module &&
-              item.targetInvoiceId == invoice.targetInvoiceId,
-        )
-        .fold<double>(0, (sum, item) => sum + item.amount);
-    if (invoice.currency !=
-            (original?.currency ?? workshopOriginal!.currency) ||
-        invoice.amount > originalTotal - priorAmount + 0.0001) {
-      return false;
-    }
-
-    FactoryInvoiceItem? factoryItem;
-    if (invoice.kind.endsWith('return')) {
-      if (isFactory) {
-        if (invoice.itemIndex >= 0) {
-          if (invoice.itemIndex >= original!.items.length) return false;
-          factoryItem = original.items[invoice.itemIndex];
-          if (factoryItem.description != invoice.itemDescription) return false;
-        } else {
-          final matches = original!.items.where(
-            (item) => invoice.itemId.isNotEmpty
-                ? item.itemId == invoice.itemId
-                : item.description == invoice.itemDescription,
-          );
-          if (matches.isEmpty) return false;
-          factoryItem = matches.first;
-        }
-        final alreadyReturned = adjustmentInvoices
-            .where(
-              (item) =>
-                  item.module == invoice.module &&
-                  item.targetInvoiceId == invoice.targetInvoiceId &&
-                  item.kind.endsWith('return') &&
-                  (invoice.itemIndex >= 0 && item.itemIndex >= 0
-                      ? item.itemIndex == invoice.itemIndex
-                      : item.itemId.isNotEmpty
-                      ? item.itemId == invoice.itemId
-                      : item.itemDescription == invoice.itemDescription),
-            )
-            .fold<double>(0, (sum, item) => sum + item.quantity);
-        if (factoryItem.quantity - alreadyReturned + 0.0001 <
-            invoice.quantity) {
-          return false;
-        }
-      } else if (invoice.itemDescription != workshopOriginal!.itemDescription) {
-        return false;
-      }
-
-      if (invoice.kind == 'purchase_return') {
-        final line = factoryItem!;
-        if (line.isMeterItem) {
-          final typeName = line.typeName.isNotEmpty
-              ? line.typeName
-              : line.description;
-          final grade = line.grade.isNotEmpty ? line.grade : 'درجة أولى';
-          final available = factoryWarehouse
-              .where(
-                (item) =>
-                    (line.itemId.isNotEmpty ? item.id == line.itemId : true) &&
-                    item.typeName == typeName &&
-                    (line.grade.isEmpty || item.grade == grade),
-              )
-              .fold<double>(0, (sum, item) => sum + item.availableQty);
-          if (available + 0.0001 < invoice.quantity) return false;
-        } else {
-          final typeName = line.typeName.isNotEmpty
-              ? line.typeName
-              : line.description;
-          final grade = line.grade.isNotEmpty ? line.grade : 'درجة أولى';
-          final available = factoryBlocks
-              .where(
-                (block) =>
-                    block.supplierId == original!.partyId &&
-                    block.typeName == typeName &&
-                    block.grade == grade,
-              )
-              .fold<double>(0, (sum, block) => sum + block.weightTons);
-          if (available + 0.0001 < invoice.quantity) return false;
-        }
-      } else if (invoice.module == 'factory') {
-        final line = factoryItem!;
-        if (!factoryWarehouse.any(
-          (item) => line.itemId.isNotEmpty
-              ? item.id == line.itemId
-              : item.typeName == line.typeName ||
-                    item.typeName == line.description,
-        )) {
-          return false;
-        }
-      } else if (workshopOriginal!.sourceType == 'مواد خام') {
-        final sourceId = workshopOriginal.sourceId;
-        if (!workshopStock.any(
-          (item) =>
-              (sourceId.isNotEmpty && item.id == sourceId) ||
-              item.typeName == invoice.itemDescription,
-        )) {
-          return false;
-        }
-      }
-    }
-
-    final supplierAdjustment = purchase;
-    if (invoice.paymentAction == 'استرداد نقدي للصندوق الرئيسي') {
-      if (!supplierAdjustment &&
-          cashOf('main', invoice.currency) + 0.0001 < invoice.amount) {
-        return false;
-      }
-    } else if (invoice.paymentAction != 'تخفيض دين' ||
-        !_canReduceAdjustmentDebt(
-          supplier: supplierAdjustment,
-          partyName: original?.partyName ?? workshopOriginal!.clientName,
-          partyId: original?.partyId ?? '',
-          currency: invoice.currency,
-          amount: invoice.amount,
-        )) {
-      return false;
-    }
-
-    if (invoice.paymentAction == 'استرداد نقدي للصندوق الرئيسي') {
-      if (supplierAdjustment) {
-        addCash('main', invoice.currency, invoice.amount);
-      } else if (!takeCash('main', invoice.currency, invoice.amount)) {
-        return false;
-      }
-      final availableDebt = _adjustmentDebtBalance(
-        supplier: supplierAdjustment,
-        partyName: original?.partyName ?? workshopOriginal!.clientName,
-        partyId: original?.partyId ?? '',
-        currency: invoice.currency,
-      );
-      if (availableDebt > 0) {
-        _reduceAdjustmentDebt(
-          supplier: supplierAdjustment,
-          partyName: original?.partyName ?? workshopOriginal!.clientName,
-          partyId: original?.partyId ?? '',
-          currency: invoice.currency,
-          amount: invoice.amount < availableDebt
-              ? invoice.amount
-              : availableDebt,
-        );
       }
     } else {
-      _reduceAdjustmentDebt(
-        supplier: supplierAdjustment,
-        partyName: original?.partyName ?? workshopOriginal!.clientName,
-        partyId: original?.partyId ?? '',
-        currency: invoice.currency,
-        amount: invoice.amount,
-      );
-    }
-
-    if (invoice.kind.endsWith('return')) {
-      if (invoice.kind == 'purchase_return') {
-        final line = factoryItem!;
-        if (line.isMeterItem) {
-          final typeName = line.typeName.isNotEmpty
-              ? line.typeName
-              : line.description;
-          final grade = line.grade.isNotEmpty ? line.grade : 'درجة أولى';
-          final warehouseMatches = factoryWarehouse.where(
-            (item) =>
-                (line.itemId.isNotEmpty ? item.id == line.itemId : false) ||
-                (item.typeName == typeName &&
-                    (line.grade.isEmpty || item.grade == grade)),
-          );
-          if (warehouseMatches.isNotEmpty) {
-            final whItem = warehouseMatches.first;
-            whItem.availableQty = (whItem.availableQty - invoice.quantity).clamp(
-              0.0,
-              double.infinity,
-            );
-          }
-        } else {
-          var remaining = invoice.quantity;
-          final blocks = factoryBlocks
-              .where(
-                (block) =>
-                    block.supplierId == original!.partyId &&
-                    block.typeName ==
-                        (line.typeName.isNotEmpty
-                            ? line.typeName
-                            : line.description) &&
-                    block.grade ==
-                        (line.grade.isNotEmpty ? line.grade : 'درجة أولى'),
-              )
-              .toList();
-          for (final block in blocks) {
-            if (remaining <= 0) break;
-            final returned = remaining < block.weightTons
-                ? remaining
-                : block.weightTons;
-            block.weightTons -= returned;
-            remaining -= returned;
-          }
-        }
-      } else if (invoice.module == 'factory') {
-        final line = factoryItem!;
-        final warehouseItem = factoryWarehouse.firstWhere(
-          (item) => line.itemId.isNotEmpty
-              ? item.id == line.itemId
-              : item.typeName == line.typeName ||
-                    item.typeName == line.description,
-        );
-        final unitQuantity = line.quantity > 0
-            ? line.calculatedArea / line.quantity
-            : 1.0;
-        warehouseItem.availableQty += invoice.quantity * unitQuantity;
-      } else if (workshopOriginal!.sourceType == 'مواد خام') {
-        final sourceId = workshopOriginal.sourceId;
-        final stock = workshopStock.firstWhere(
-          (item) =>
-              (sourceId.isNotEmpty && item.id == sourceId) ||
-              item.typeName == invoice.itemDescription,
-        );
-        stock.availableQty += invoice.quantity;
-      } else if (workshopOriginal.sourceType == 'تفصيل بسيط' ||
-          workshopOriginal.sourceType == 'تفصيل معقد') {
-        final products = workshopOriginal.sourceType == 'تفصيل بسيط'
-            ? simpleTailorings
-            : complexTailorings;
-        final product = _firstOrNull(
-          products.where((item) => item.id == workshopOriginal.sourceId),
-        );
-        if (product != null) product.quantity += invoice.quantity;
+      if (purchase) return false;
+      final matches = workshopInvoices
+          .where((item) => item.id == invoice.targetInvoiceId)
+          .toList();
+      if (matches.isEmpty) return false;
+      workshopOriginal = matches.first;
+      if (workshopOriginal.invoiceNo != invoice.targetInvoiceNo ||
+          workshopOriginal.clientName != invoice.partyName) {
+        return false;
       }
     }
 
+    final partyName = original?.partyName ?? workshopOriginal!.clientName;
+    final partyId = original?.partyId ?? '';
+    final parentCurrency = AppCurrency.normalize(
+      original?.currency ?? workshopOriginal!.currency,
+    );
+    if (invoice.currency != parentCurrency) return false;
+
+    final originalTotal =
+        original?.grandTotal ?? workshopOriginal!.grandTotal;
+    final priorAmount = adjustmentInvoices
+        .where(
+          (doc) =>
+              doc.module == invoice.module &&
+              doc.targetInvoiceId == invoice.targetInvoiceId,
+        )
+        .fold<double>(0, (sum, doc) => sum + doc.amount);
+    final capacity = originalTotal - priorAmount;
+
+    // 2. Build the document lines.
+    final resolved = <_ResolvedReturnLine>[];
+    var totalAmount = 0.0;
+    var totalQuantity = 0.0;
+
+    if (isReturn) {
+      final List<AdjustmentLineModel> rawLines;
+      if (invoice.lines.isNotEmpty) {
+        rawLines = invoice.lines;
+      } else {
+        rawLines = [
+          AdjustmentLineModel(
+            itemId: invoice.itemId,
+            itemIndex: invoice.itemIndex,
+            description: invoice.itemDescription,
+            quantity: invoice.quantity,
+            unitPrice: 0,
+            amount: 0,
+          ),
+        ];
+      }
+      if (rawLines.isEmpty) return false;
+
+      final workshopLines = isFactory
+          ? const <WorkshopInvoiceItem>[]
+          : _workshopInvoiceLines(workshopOriginal!);
+
+      for (final raw in rawLines) {
+        if (!raw.quantity.isFinite || raw.quantity <= 0) return false;
+
+        if (isFactory) {
+          final items = original!.items;
+          var index = raw.itemIndex;
+          if (index < 0 || index >= items.length) {
+            index = -1;
+            for (var i = 0; i < items.length; i++) {
+              final item = items[i];
+              final idHit = raw.itemId.isNotEmpty &&
+                  item.itemId == raw.itemId;
+              final descHit = raw.description.isNotEmpty &&
+                  item.description.trim() == raw.description.trim();
+              if (idHit || descHit) {
+                index = i;
+                break;
+              }
+            }
+            if (index < 0) return false;
+          }
+          if (raw.description.isNotEmpty &&
+              items[index].description.trim() != raw.description.trim()) {
+            return false;
+          }
+          resolved.add(_describeFactoryLine(original, index, raw.quantity));
+        } else {
+          var index = raw.itemIndex;
+          if (index < 0 || index >= workshopLines.length) {
+            index = -1;
+            for (var i = 0; i < workshopLines.length; i++) {
+              final item = workshopLines[i];
+              final idHit = raw.itemId.isNotEmpty &&
+                  item.sourceId == raw.itemId;
+              final descHit = raw.description.isNotEmpty &&
+                  item.description.trim() == raw.description.trim();
+              if (idHit || descHit) {
+                index = i;
+                break;
+              }
+            }
+            if (index < 0) return false;
+          }
+          if (raw.description.isNotEmpty &&
+              workshopLines[index].description.trim() !=
+                  raw.description.trim()) {
+            return false;
+          }
+          resolved.add(_describeWorkshopLine(workshopLines, index, raw.quantity));
+        }
+      }
+
+      // 3. Validate every line against the invoiced quantity.
+      for (final entry in resolved) {
+        final keys = _lineKeys(
+          index: entry.line.itemIndex,
+          itemId: entry.line.itemId,
+          description: entry.line.description,
+        );
+        final alreadyReturned = _alreadyReturnedQty(
+          module: invoice.module,
+          targetInvoiceId: invoice.targetInvoiceId,
+          keys: keys,
+        );
+        final invoicedQuantity = isFactory
+            ? entry.factoryItem!.quantity
+            : entry.workshopItem!.quantity;
+        if (invoicedQuantity - alreadyReturned + 0.0001 <
+            entry.line.quantity) {
+          return false;
+        }
+        if (entry.line.amount < 0) return false;
+        totalAmount = _money(totalAmount + entry.line.amount);
+        totalQuantity = _money(totalQuantity + entry.line.quantity);
+      }
+      if (resolved.isEmpty || totalAmount <= 0) return false;
+    } else {
+      // Allowance: read-only snapshot of the master invoice lines.
+      totalAmount = _money(invoice.amount);
+      if (totalAmount <= 0) return false;
+      if (isFactory) {
+        final parent = original!;
+        for (var i = 0; i < parent.items.length; i++) {
+          resolved.add(_describeFactoryLine(parent, i, 0));
+        }
+      } else {
+        final lines = _workshopInvoiceLines(workshopOriginal!);
+        for (var i = 0; i < lines.length; i++) {
+          resolved.add(_describeWorkshopLine(lines, i, 0));
+        }
+      }
+    }
+
+    if (totalAmount > capacity + 0.0001) return false;
+
+    // 4. Inventory routing feasibility (returns only).
+    if (isReturn &&
+        !_canRouteReturn(
+          module: invoice.module,
+          purchase: purchase,
+          lines: resolved,
+          original: original,
+          workshopOriginal: workshopOriginal,
+        )) {
+      return false;
+    }
+
+    // 5. Financial settlement.
+    const cashAction = 'استرداد نقدي للصندوق الرئيسي';
+    const debtAction = 'تخفيض دين';
+    final action = invoice.paymentAction;
+    if (action != cashAction && action != debtAction) return false;
+
+    var debtPortion = 0.0;
+    var cashPortion = 0.0;
+    if (action == debtAction) {
+      if (!_canReduceAdjustmentDebt(
+        supplier: purchase,
+        partyName: partyName,
+        partyId: partyId,
+        currency: invoice.currency,
+        amount: totalAmount,
+      )) {
+        return false;
+      }
+      debtPortion = totalAmount;
+    } else {
+      final debtBalance = _adjustmentDebtBalance(
+        supplier: purchase,
+        partyName: partyName,
+        partyId: partyId,
+        currency: invoice.currency,
+      );
+      debtPortion = totalAmount < debtBalance ? totalAmount : debtBalance;
+      cashPortion = _money(totalAmount - debtPortion);
+      if (cashPortion > 0 &&
+          !purchase &&
+          cashOf('main', invoice.currency) + 0.0001 < cashPortion) {
+        return false;
+      }
+    }
+
+    if (cashPortion > 0) {
+      if (purchase) {
+        addCash('main', invoice.currency, cashPortion);
+      } else if (!takeCash('main', invoice.currency, cashPortion)) {
+        return false;
+      }
+    }
+    if (debtPortion > 0) {
+      _reduceAdjustmentDebt(
+        supplier: purchase,
+        partyName: partyName,
+        partyId: partyId,
+        currency: invoice.currency,
+        amount: debtPortion,
+      );
+    }
+
+    // 6. Route the goods back into their stock pages (returns only).
+    if (isReturn) {
+      _applyReturnRouting(
+        module: invoice.module,
+        purchase: purchase,
+        lines: resolved,
+        original: original,
+        workshopOriginal: workshopOriginal,
+      );
+    }
+
+    // 7. Reduce the master invoice balance by the returned / allowed amount.
     if (original != null) {
-      original.adjustmentsAmount += invoice.amount;
+      original.adjustmentsAmount = _money(
+        original.adjustmentsAmount + totalAmount,
+      );
       original.paymentStatus = original.remainingBalance > 0.01
           ? 'مستحق الدفع'
           : 'مدفوعة';
     } else {
-      workshopOriginal!.adjustmentsAmount += invoice.amount;
+      workshopOriginal!.adjustmentsAmount = _money(
+        workshopOriginal.adjustmentsAmount + totalAmount,
+      );
     }
-    adjustmentInvoices.add(invoice);
+
+    // 8. Persist the document (clean link back to the master invoice).
+    final stored = AdjustmentInvoiceModel(
+      id: invoice.id,
+      invoiceNo: invoice.invoiceNo,
+      module: invoice.module,
+      kind: invoice.kind,
+      targetInvoiceId: invoice.targetInvoiceId,
+      targetInvoiceNo: invoice.targetInvoiceNo,
+      itemId: resolved.isNotEmpty ? resolved.first.line.itemId : invoice.itemId,
+      itemDescription: resolved.isNotEmpty
+          ? resolved
+                .map((entry) => entry.line.description)
+                .where((text) => text.trim().isNotEmpty)
+                .join(' + ')
+            : invoice.itemDescription,
+      itemIndex: resolved.isNotEmpty ? resolved.first.line.itemIndex : -1,
+      partyName: partyName,
+      description: invoice.description,
+      amount: totalAmount,
+      quantity: totalQuantity,
+      paymentAction: action,
+      currency: invoice.currency,
+      date: invoice.date,
+      lines: [for (final entry in resolved) entry.line],
+    );
+    adjustmentInvoices.add(stored);
+
+    // 9. Mirror returns into the printable / reportable return register.
+    if (isReturn) {
+      final returnType = purchase
+          ? 'مرتجع مشتريات مورد'
+          : isFactory
+          ? 'مرتجع مبيعات مصنع'
+          : 'مرتجع مبيعات معمل';
+      final units = resolved
+          .map((entry) => entry.line.unit)
+          .where((unit) => unit.trim().isNotEmpty)
+          .toSet()
+          .join(' / ');
+      returnInvoices.add(
+        ReturnInvoiceModel(
+          id: 'ret_${DateTime.now().microsecondsSinceEpoch}',
+          returnNo: _nextReturnNo(),
+          date: stored.date,
+          returnType: returnType,
+          partyName: partyName,
+          itemDescription: stored.itemDescription,
+          quantity: totalQuantity,
+          refundAmount: totalAmount,
+          paymentAction: action,
+          currency: invoice.currency,
+          parentInvoiceId: invoice.targetInvoiceId,
+          parentInvoiceNo: invoice.targetInvoiceNo,
+          unit: units,
+          cashAmount: cashPortion,
+        ),
+      );
+    }
+
     refresh();
     return true;
   }
+
+  /// Quantity of one master-invoice line that has already been returned.
+  /// Used by the UI to cap the "returned quantity" input per line.
+  double returnedQuantityOf({
+    required String module,
+    required String targetInvoiceId,
+    required int lineIndex,
+    required String itemId,
+    required String description,
+  }) => _alreadyReturnedQty(
+    module: module,
+    targetInvoiceId: targetInvoiceId,
+    keys: _lineKeys(
+      index: lineIndex,
+      itemId: itemId,
+      description: description,
+    ),
+  );
+
+  /// Outstanding balance of a party (supplier or client) used by the returns
+  /// engine to split a settlement between the safe and the account.
+  double partyAdjustmentBalanceOf({
+    required bool supplier,
+    required String partyName,
+    required String partyId,
+    required String currency,
+  }) => _adjustmentDebtBalance(
+    supplier: supplier,
+    partyName: partyName,
+    partyId: partyId,
+    currency: currency,
+  );
+
+  /// Materialized line items of a workshop invoice (legacy invoices keep
+  /// their data in the scalar fields instead of an items list).
+  List<WorkshopInvoiceItem> workshopInvoiceLines(WorkshopInvoiceModel inv) =>
+      _workshopInvoiceLines(inv);
 
   bool _canReduceAdjustmentDebt({
     required bool supplier,
@@ -7223,17 +7884,33 @@ class ERPProvider extends ChangeNotifier {
         time: ret.date,
       );
       returns.add(entry);
-      if (isSyp) {
-        totalCashOutSyp += ret.refundAmount;
-      } else {
-        totalCashOutUsd += ret.refundAmount;
-      }
-      if (ret.refundAmount > 0) {
+      // Only cash-settled returns move money. A supplier purchase return
+      // brings cash IN to the main safe, a sales return pays cash OUT.
+      // Account settlements (تسوية حساب) never touch the cash boxes.
+      final cashSettled =
+          ret.paymentAction == 'استرداد نقدي للصندوق الرئيسي';
+      final cashMoved =
+          ret.cashAmount ?? (cashSettled ? ret.refundAmount : 0.0);
+      if (cashMoved > 0) {
+        final purchaseReturn = ret.returnType == 'مرتجع مشتريات مورد';
+        if (purchaseReturn) {
+          if (isSyp) {
+            totalCashInSyp += cashMoved;
+          } else {
+            totalCashInUsd += cashMoved;
+          }
+        } else if (isSyp) {
+          totalCashOutSyp += cashMoved;
+        } else {
+          totalCashOutUsd += cashMoved;
+        }
         movements.add(DailyReportCashMovementSummary(
-          type: 'استرداد مرتجع مبيعات',
+          type: purchaseReturn
+              ? 'استرداد مرتجع مشتريات'
+              : 'استرداد مرتجع مبيعات',
           description: 'مرتجع #${ret.returnNo} - ${ret.partyName}',
           cashBox: 'main',
-          amount: ret.refundAmount,
+          amount: cashMoved,
           currency: ret.currency,
           time: ret.date,
         ));
@@ -7381,4 +8058,20 @@ class ERPProvider extends ChangeNotifier {
 class MutableWrapper<T> {
   T value;
   MutableWrapper(this.value);
+}
+
+/// One resolved master-invoice line inside a return / allowance document:
+/// the record that gets stored plus the metadata needed to route the goods.
+class _ResolvedReturnLine {
+  final AdjustmentLineModel line;
+  final FactoryInvoiceItem? factoryItem;
+  final WorkshopInvoiceItem? workshopItem;
+  final double unitQty;
+
+  const _ResolvedReturnLine({
+    required this.line,
+    this.factoryItem,
+    this.workshopItem,
+    this.unitQty = 1.0,
+  });
 }

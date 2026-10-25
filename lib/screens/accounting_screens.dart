@@ -4,6 +4,7 @@ import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../core/theme/app_theme.dart';
 import '../widgets/currency_selector.dart';
+import '../widgets/return_allowance_dialog.dart';
 
 const _fixedAssetCategories = [
   'أراضي',
@@ -1766,17 +1767,43 @@ class _ReturnsAllowancesScreenState extends State<ReturnsAllowancesScreen> {
                     itemCount: matching.length,
                     itemBuilder: (context, index) {
                       final invoice = matching[index];
+                      final isReturn = invoice.kind.endsWith('return');
+                      final isCash =
+                          invoice.paymentAction ==
+                          'استرداد نقدي للصندوق الرئيسي';
                       return Card(
                         child: ListTile(
-                          leading: const Icon(Icons.assignment_return_outlined),
+                          leading: Icon(
+                            isReturn
+                                ? Icons.assignment_return_outlined
+                                : Icons.discount_outlined,
+                            color: isReturn
+                                ? AppColors.dangerWaste
+                                : AppColors.partnersEquityAccent,
+                          ),
                           title: Text(
-                            '${invoice.invoiceNo} • ${invoice.targetInvoiceNo}',
+                            '${invoice.invoiceNo} • فاتورة: ${invoice.targetInvoiceNo}',
                           ),
                           subtitle: Text(
-                            '${invoice.partyName} • ${invoice.description}',
+                            [
+                              invoice.partyName,
+                              if (invoice.description.trim().isNotEmpty)
+                                invoice.description,
+                              if (invoice.quantity > 0)
+                                'الكمية: ${invoice.quantity.fmt}',
+                              if (invoice.lines.length > 1)
+                                'عدد البنود: ${invoice.lines.length}',
+                              isCash ? 'تسوية نقدية' : 'تخفيض دين',
+                            ].join(' • '),
                           ),
                           trailing: Text(
                             '${invoice.amount.fmt} ${AppCurrency.symbol(invoice.currency)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: isReturn
+                                  ? AppColors.dangerWaste
+                                  : AppColors.partnersEquityAccent,
+                            ),
                           ),
                         ),
                       );
@@ -1789,310 +1816,23 @@ class _ReturnsAllowancesScreenState extends State<ReturnsAllowancesScreen> {
   }
 
   Future<void> _addInvoice(ERPProvider erp) async {
-    final List<_InvoiceOption> candidates;
-    if (_module == 'factory') {
-      candidates = erp.factoryInvoices
-          .where((invoice) {
-            final purchase = invoice.invoiceType == 'شراء_مورد';
-            return _kind.startsWith('purchase') ? purchase : !purchase;
-          })
-          .map(
-            (invoice) => _InvoiceOption(
-              id: invoice.id,
-              invoiceNo: invoice.invoiceNo,
-              partyName: invoice.partyName,
-              currency: invoice.currency,
-              totalAmount: invoice.grandTotal,
-              items: [
-                for (var index = 0; index < invoice.items.length; index++)
-                  _AdjustmentItemOption(
-                    key: '$index',
-                    id: invoice.items[index].itemId,
-                    index: index,
-                    description: invoice.items[index].description,
-                    quantity: invoice.items[index].quantity,
-                  ),
-              ],
-            ),
-          )
-          .toList();
-    } else {
-      candidates = erp.workshopInvoices
-          .map(
-            (invoice) => _InvoiceOption(
-              id: invoice.id,
-              invoiceNo: invoice.invoiceNo,
-              partyName: invoice.clientName,
-              currency: invoice.currency,
-              totalAmount: invoice.grandTotal,
-              items: [
-                _AdjustmentItemOption(
-                  key: 'workshop',
-                  id: invoice.sourceId,
-                  index: -1,
-                  description: invoice.itemDescription,
-                  quantity: 0,
-                ),
-              ],
-            ),
-          )
-          .toList();
-    }
-    if (candidates.isEmpty) {
-      _message('أضف الفاتورة الأصلية أولاً حتى يمكن ربط الحركة بها.');
-      return;
-    }
-    var target = candidates.first;
-    var targetItem = target.items.first;
-    var paymentAction = 'تخفيض دين';
-    final numberController = TextEditingController(
-      text: 'ADJ-${DateTime.now().millisecondsSinceEpoch}',
+    final result = await ReturnAllowanceDialog.show(
+      context,
+      erp: erp,
+      module: _module,
+      kind: _kind,
+      title: _tabs[_selectedTab],
     );
-    final amountController = TextEditingController();
-    final quantityController = TextEditingController();
-    final descriptionController = TextEditingController();
-    final result = await showDialog<AdjustmentInvoiceModel>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(_tabs[_selectedTab]),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: target.id,
-                    decoration: const InputDecoration(
-                      labelText: 'الفاتورة الأصلية',
-                    ),
-                    items: [
-                      for (final invoice in candidates)
-                        DropdownMenuItem(
-                          value: invoice.id,
-                          child: Text(
-                            '${invoice.invoiceNo} • ${invoice.partyName}',
-                          ),
-                        ),
-                    ],
-                    onChanged: (id) {
-                      if (id == null) return;
-                      setDialogState(() {
-                        target = candidates.firstWhere(
-                          (invoice) => invoice.id == id,
-                        );
-                        targetItem = target.items.first;
-                      });
-                    },
-                  ),
-                  if (_kind.endsWith('return'))
-                    DropdownButtonFormField<String>(
-                      initialValue: targetItem.key,
-                      decoration: const InputDecoration(
-                        labelText: 'الصنف المرتجع',
-                      ),
-                      items: [
-                        for (final item in target.items)
-                          DropdownMenuItem(
-                            value: item.key,
-                            child: Text(
-                              item.quantity > 0
-                                  ? '${item.description} • المتاح: ${item.quantity.fmt}'
-                                  : item.description,
-                            ),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setDialogState(
-                          () => targetItem = target.items.firstWhere(
-                            (item) => item.key == value,
-                          ),
-                        );
-                      },
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Text(
-                      'إجمالي الفاتورة: ${target.totalAmount.fmt} ${AppCurrency.symbol(target.currency)} • التعديلات السابقة: ${_adjustmentsFor(erp, target.id).fmt}',
-                    ),
-                  ),
-                  TextField(
-                    controller: numberController,
-                    decoration: const InputDecoration(
-                      labelText: 'رقم فاتورة الحركة',
-                    ),
-                  ),
-                  TextField(
-                    controller: amountController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: InputDecoration(
-                      labelText:
-                          'المبلغ (${AppCurrency.symbol(target.currency)})',
-                    ),
-                  ),
-                  if (_kind.endsWith('return'))
-                    TextField(
-                      controller: quantityController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'الكمية المرتجعة',
-                      ),
-                    ),
-                  DropdownButtonFormField<String>(
-                    initialValue: paymentAction,
-                    decoration: const InputDecoration(
-                      labelText: 'طريقة التسوية',
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'تخفيض دين',
-                        child: Text('تخفيض الدين'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'استرداد نقدي للصندوق الرئيسي',
-                        child: Text('تسوية نقدية من/إلى الصندوق الرئيسي'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setDialogState(() => paymentAction = value);
-                      }
-                    },
-                  ),
-                  TextField(
-                    controller: descriptionController,
-                    decoration: const InputDecoration(labelText: 'التفاصيل'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final amount = double.tryParse(amountController.text);
-                final quantity = _kind.endsWith('return')
-                    ? double.tryParse(quantityController.text)
-                    : 0.0;
-                if (quantity != null &&
-                    targetItem.quantity > 0 &&
-                    quantity > targetItem.quantity) {
-                  _message('الكمية المرتجعة تتجاوز كمية الصنف في الفاتورة.');
-                  return;
-                }
-                if (amount == null ||
-                    amount <= 0 ||
-                    quantity == null ||
-                    (_kind.endsWith('return') && quantity <= 0) ||
-                    numberController.text.trim().isEmpty) {
-                  _message('أدخل مبلغاً صحيحاً ورقم فاتورة، وكمية للمرتجع.');
-                  return;
-                }
-                final remaining =
-                    (target.totalAmount - _adjustmentsFor(erp, target.id))
-                        .clamp(0.0, double.infinity);
-                if (amount > remaining) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'المبلغ يتجاوز المتبقي المتاح للفاتورة الأصلية (${remaining.fmt} ${AppCurrency.symbol(target.currency)}).',
-                      ),
-                    ),
-                  );
-                  return;
-                }
-                Navigator.pop(
-                  dialogContext,
-                  AdjustmentInvoiceModel(
-                    id: 'adjustment_${DateTime.now().microsecondsSinceEpoch}',
-                    invoiceNo: numberController.text.trim(),
-                    module: _module,
-                    kind: _kind,
-                    targetInvoiceId: target.id,
-                    targetInvoiceNo: target.invoiceNo,
-                    itemId: targetItem.id,
-                    itemDescription: targetItem.description,
-                    itemIndex: targetItem.index,
-                    partyName: target.partyName,
-                    description: descriptionController.text.trim(),
-                    amount: amount,
-                    quantity: quantity,
-                    paymentAction: paymentAction,
-                    currency: target.currency,
-                  ),
-                );
-              },
-              child: const Text('حفظ الفاتورة'),
-            ),
-          ],
-        ),
-      ),
-    );
-    numberController.dispose();
-    amountController.dispose();
-    quantityController.dispose();
-    descriptionController.dispose();
-    if (result != null && !erp.addAdjustmentInvoice(result)) {
+    if (result == null) return;
+    if (!erp.addAdjustmentInvoice(result)) {
       _message(
         'تعذر حفظ الحركة: تحقق من الرصيد، والكمية المتاحة، وطريقة التسوية.',
       );
     }
   }
 
-  double _adjustmentsFor(ERPProvider erp, String targetId) => erp
-      .adjustmentInvoices
-      .where(
-        (invoice) =>
-            invoice.module == _module && invoice.targetInvoiceId == targetId,
-      )
-      .fold<double>(0, (sum, invoice) => sum + invoice.amount);
-
   void _message(String text) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-}
-
-class _InvoiceOption {
-  final String id;
-  final String invoiceNo;
-  final String partyName;
-  final String currency;
-  final double totalAmount;
-  final List<_AdjustmentItemOption> items;
-
-  const _InvoiceOption({
-    required this.id,
-    required this.invoiceNo,
-    required this.partyName,
-    required this.currency,
-    required this.totalAmount,
-    required this.items,
-  });
-}
-
-class _AdjustmentItemOption {
-  final String key;
-  final String id;
-  final int index;
-  final String description;
-  final double quantity;
-
-  const _AdjustmentItemOption({
-    required this.key,
-    required this.id,
-    required this.index,
-    required this.description,
-    required this.quantity,
-  });
 }
 
 class HistoricalFinancialsScreen extends StatefulWidget {

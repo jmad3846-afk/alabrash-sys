@@ -28,6 +28,14 @@ class AppCurrency {
     return s;
   }
 
+  /// Rounds a monetary value to exactly 2 decimal places so USD / SYP
+  /// totals never drift because of binary floating point accumulation.
+  static double money(num value) {
+    final d = value.toDouble();
+    if (!d.isFinite) return 0.0;
+    return (d * 100).roundToDouble() / 100;
+  }
+
   /// "12.5 $ • 30000 ل.س" — used for every dual statistic.
   static String dual(double usdValue, double sypValue) {
     return '${fmt(usdValue)} \$ • ${fmt(sypValue)} ل.س';
@@ -545,6 +553,59 @@ class ExpenseRecordModel {
       );
 }
 
+/// One returned line inside a return invoice.
+/// `unitPrice` is the ORIGINAL unit price taken from the parent invoice,
+/// expressed per the line's own counting unit (m², m³, tons, pieces…).
+/// `amount` is always `round2(quantity * unitPrice)`.
+class AdjustmentLineModel {
+  final String itemId; // parent invoice line id (warehouse / block / source id)
+  final int itemIndex; // index inside the parent invoice items list
+  final String description;
+  final String unit; // measurement unit label (متر مربع، متر مكعب، طن، قطعة…)
+  final double quantity; // returned quantity in the line's own unit
+  final double unitPrice; // original unit price from the parent invoice
+  final double amount; // quantity * unitPrice (rounded to 2 decimals)
+  final String sourceType; // workshop source classification when applicable
+  final String sourceLineItemId; // tailoring line item when applicable
+
+  AdjustmentLineModel({
+    required this.itemId,
+    this.itemIndex = -1,
+    required this.description,
+    this.unit = '',
+    required this.quantity,
+    required this.unitPrice,
+    required this.amount,
+    this.sourceType = '',
+    this.sourceLineItemId = '',
+  });
+
+  Map<String, dynamic> toJson() => {
+    'itemId': itemId,
+    'itemIndex': itemIndex,
+    'description': description,
+    'unit': unit,
+    'quantity': quantity,
+    'unitPrice': unitPrice,
+    'amount': amount,
+    'sourceType': sourceType,
+    'sourceLineItemId': sourceLineItemId,
+  };
+
+  factory AdjustmentLineModel.fromJson(Map<String, dynamic> json) =>
+      AdjustmentLineModel(
+        itemId: json['itemId'] ?? '',
+        itemIndex: json['itemIndex'] ?? -1,
+        description: json['description'] ?? '',
+        unit: json['unit'] ?? '',
+        quantity: (json['quantity'] as num).toDouble(),
+        unitPrice: (json['unitPrice'] as num?)?.toDouble() ?? 0.0,
+        amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+        sourceType: json['sourceType'] ?? '',
+        sourceLineItemId: json['sourceLineItemId'] ?? '',
+      );
+}
+
 class AdjustmentInvoiceModel {
   final String id;
   final String invoiceNo;
@@ -562,6 +623,9 @@ class AdjustmentInvoiceModel {
   final String paymentAction;
   final String currency;
   final DateTime date;
+  /// Every line of this document (multi-line returns). Legacy single-item
+  /// records simply carry an empty list and use the scalar fields above.
+  final List<AdjustmentLineModel> lines;
 
   AdjustmentInvoiceModel({
     required this.id,
@@ -580,7 +644,11 @@ class AdjustmentInvoiceModel {
     this.paymentAction = 'تخفيض دين',
     required this.currency,
     DateTime? date,
+    this.lines = const [],
   }) : date = date ?? DateTime.now();
+
+  bool get isReturn => kind.endsWith('return');
+  bool get isPurchase => kind.startsWith('purchase');
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -599,6 +667,7 @@ class AdjustmentInvoiceModel {
     'paymentAction': paymentAction,
     'currency': currency,
     'date': date.toIso8601String(),
+    'lines': lines.map((line) => line.toJson()).toList(),
   };
 
   factory AdjustmentInvoiceModel.fromJson(Map<String, dynamic> json) =>
@@ -619,6 +688,11 @@ class AdjustmentInvoiceModel {
         paymentAction: json['paymentAction'] ?? 'تخفيض دين',
         currency: AppCurrency.normalize(json['currency']),
         date: DateTime.parse(json['date']),
+        lines: json['lines'] != null
+            ? (json['lines'] as List)
+                  .map((line) => AdjustmentLineModel.fromJson(line))
+                  .toList()
+            : const [],
       );
 }
 
@@ -2920,6 +2994,13 @@ class ReturnInvoiceModel {
   final double refundAmount;
   final String paymentAction; // 'تخفيض دين' | 'استرداد نقدي للصندوق الرئيسي'
   final String currency; // AppCurrency.usd | AppCurrency.syp
+  /// Clean link back to the master invoice this return was issued against.
+  final String parentInvoiceId;
+  final String parentInvoiceNo;
+  final String unit; // measurement unit of [quantity]
+  /// Cash actually moved through the main safe for this document.
+  /// `null` = legacy record (cash = full amount when settled in cash).
+  final double? cashAmount;
 
   ReturnInvoiceModel({
     required this.id,
@@ -2932,6 +3013,10 @@ class ReturnInvoiceModel {
     required this.refundAmount,
     required this.paymentAction,
     this.currency = AppCurrency.usd,
+    this.parentInvoiceId = '',
+    this.parentInvoiceNo = '',
+    this.unit = '',
+    this.cashAmount,
   });
 
   Map<String, dynamic> toJson() => {
@@ -2945,6 +3030,10 @@ class ReturnInvoiceModel {
     'refundAmount': refundAmount,
     'paymentAction': paymentAction,
     'currency': currency,
+    'parentInvoiceId': parentInvoiceId,
+    'parentInvoiceNo': parentInvoiceNo,
+    'unit': unit,
+    'cashAmount': cashAmount,
   };
 
   factory ReturnInvoiceModel.fromJson(Map<String, dynamic> json) =>
@@ -2959,6 +3048,10 @@ class ReturnInvoiceModel {
         refundAmount: (json['refundAmount'] as num).toDouble(),
         paymentAction: json['paymentAction'],
         currency: AppCurrency.normalize(json['currency']),
+        parentInvoiceId: json['parentInvoiceId'] ?? '',
+        parentInvoiceNo: json['parentInvoiceNo'] ?? '',
+        unit: json['unit'] ?? '',
+        cashAmount: (json['cashAmount'] as num?)?.toDouble(),
       );
 }
 
