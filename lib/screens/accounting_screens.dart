@@ -404,14 +404,14 @@ class ChartOfAccountsScreen extends StatelessWidget {
               '${erp.totalAdvanceRepaymentsRevenueOf(AppCurrency.usd).fmt} \$ • ${erp.totalAdvanceRepaymentsRevenueOf(AppCurrency.syp).fmt} ل.س',
             ),
           ]),
-          _accountGroup('المصروفات', Icons.trending_down, [
+          _accountGroup('المصروفات المباشرة والتشغيلية', Icons.trending_down, [
             _accountLine(
-              'المشتريات',
-              '${factoryPurchaseAmount(AppCurrency.usd).fmt} \$ • ${factoryPurchaseAmount(AppCurrency.syp).fmt} ل.س',
+              'مشتريات ودفوعات البلوكات المباشرة',
+              '${erp.totalBlockPurchaseExpensesOf(AppCurrency.usd).fmt} \$ • ${erp.totalBlockPurchaseExpensesOf(AppCurrency.syp).fmt} ل.س',
             ),
             _accountLine(
-              'تكلفة البضائع المباعة',
-              '${erp.totalCOGS.fmt} \$ • ${erp.totalCOGSSyp.fmt} ل.س',
+              'مصاريف القص والتصنيع المباشرة',
+              '${erp.totalCuttingExpensesOf(AppCurrency.usd).fmt} \$ • ${erp.totalCuttingExpensesOf(AppCurrency.syp).fmt} ل.س',
             ),
             _accountLine(
               'مرتجعات ومسموحات المبيعات',
@@ -422,7 +422,7 @@ class ChartOfAccountsScreen extends StatelessWidget {
               '${salesDiscount(AppCurrency.usd).fmt} \$ • ${salesDiscount(AppCurrency.syp).fmt} ل.س',
             ),
             _accountLine(
-              'الرواتب والأجور',
+              'الرواتب والأجور وأيام العمل',
               '${erp.totalOperationalExpenses.fmt} \$ • ${erp.totalOperationalExpensesSyp.fmt} ل.س',
             ),
             _accountLine(
@@ -433,7 +433,13 @@ class ChartOfAccountsScreen extends StatelessWidget {
               'خسائر بيع الأصول الثابتة',
               '${erp.assetSaleLosses.fmt} \$ • ${erp.assetSaleLossesSyp.fmt} ل.س',
             ),
-            for (final type in erp.expenseTypes)
+            for (final type in erp.expenseTypes.where((t) =>
+                t.id != ERPProvider.blockPurchaseExpenseTypeId &&
+                t.id != ERPProvider.cuttingExpenseTypeId &&
+                !t.name.contains('Block Purchase') &&
+                !t.name.contains('مشتريات البلوكات') &&
+                !t.name.contains('Cutting Expenses') &&
+                !t.name.contains('مصاريف القص والتصنيع')))
               _accountLine(
                 type.name,
                 erp.expenseRecords

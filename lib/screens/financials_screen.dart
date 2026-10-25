@@ -4623,26 +4623,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   // TAB 8: INCOME STATEMENT (ملخص الدخل P&L)
   // -------------------------------------------------------------
   Widget _buildIncomeStatementTab(ERPProvider erp) {
-    final expensesUsd =
-        erp.totalCOGS +
-        erp.totalOperationalExpenses +
-        erp.totalUnnaturalWasteLosses +
-        erp.totalSurplusInitialCost +
-        erp.accountantGraniteShare +
-        erp.expenseRecordsTotalOf(AppCurrency.usd) +
-        erp.salesReturnsAndAllowancesOf(AppCurrency.usd) +
-        erp.salesDiscountsOf(AppCurrency.usd) +
-        erp.assetSaleLossesOf(AppCurrency.usd);
-    final expensesSyp =
-        erp.totalCOGSSyp +
-        erp.totalOperationalExpensesSyp +
-        erp.totalUnnaturalWasteLossesSyp +
-        erp.totalSurplusInitialCostSyp +
-        erp.accountantGraniteShareSyp +
-        erp.expenseRecordsTotalOf(AppCurrency.syp) +
-        erp.salesReturnsAndAllowancesOf(AppCurrency.syp) +
-        erp.salesDiscountsOf(AppCurrency.syp) +
-        erp.assetSaleLossesOf(AppCurrency.syp);
+    final expensesUsd = erp.totalDirectExpensesOf(AppCurrency.usd);
+    final expensesSyp = erp.totalDirectExpensesOf(AppCurrency.syp);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -4664,7 +4646,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'المعادلة المحاسبية المعيارية: صافي الأرباح التشغيلية = إجمالي الإيرادات - تكلفة المبيعات - المصاريف - خسائر الهدر - تكاليف الزيادات - حصة المحاسب',
+                      'المعادلة المحاسبية المباشرة: صافي الأرباح التشغيلية = إجمالي الإيرادات - إجمالي المصروفات المباشرة (دفعات البلوكات + مصاريف القص + المصاريف التشغيلية)',
                       style: TextStyle(color: AppColors.brandSecondaryText),
                     ),
                   ],
@@ -4818,9 +4800,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
 
                   const SizedBox(height: 24),
 
-                  // COGS & EXPENSES SECTION
+                  // DIRECT & OPERATIONAL EXPENSES SECTION
                   const Text(
-                    'ثانياً: تكلفة المبيعات والمصاريف التشغيلية (COGS & Operational Expenses)',
+                    'ثانياً: المصروفات المباشرة والتشغيلية (Direct & Operational Expenses)',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -4829,26 +4811,33 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ),
                   const Divider(height: 20),
                   _buildPlLine(
-                    'تكلفة مبيعات المصنع (Factory COGS):',
-                    erp.totalFactoryCOGS,
-                    syp: erp.totalFactoryCOGSSyp,
+                    'مشتريات ودفوعات البلوكات المباشرة:',
+                    erp.totalBlockPurchaseExpensesOf(AppCurrency.usd),
+                    syp: erp.totalBlockPurchaseExpensesOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
-                    'تكلفة مبيعات المعمل (Workshop COGS):',
-                    erp.totalWorkshopCOGS,
-                    syp: erp.totalWorkshopCOGSSyp,
+                    'مصاريف القص والتصنيع المباشرة:',
+                    erp.totalCuttingExpensesOf(AppCurrency.usd),
+                    syp: erp.totalCuttingExpensesOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
                     'مصاريف أجرة العمالة وإنجاز أيام العمل:',
                     erp.totalOperationalExpenses,
                     syp: erp.totalOperationalExpensesSyp,
                   ),
-                  for (final type in erp.expenseTypes)
+                  for (final type in erp.expenseTypes.where((t) =>
+                      t.id != ERPProvider.blockPurchaseExpenseTypeId &&
+                      t.id != ERPProvider.cuttingExpenseTypeId &&
+                      !t.name.contains('Block Purchase') &&
+                      !t.name.contains('مشتريات البلوكات') &&
+                      !t.name.contains('Cutting Expenses') &&
+                      !t.name.contains('مصاريف القص والتصنيع')))
                     _buildPlLine(
                       'مصروفات ${type.name}:',
                       erp.expenseRecords
                           .where(
                             (expense) =>
+                                !expense.isInformational &&
                                 expense.typeId == type.id &&
                                 expense.currency == AppCurrency.usd,
                           )
@@ -4859,6 +4848,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       syp: erp.expenseRecords
                           .where(
                             (expense) =>
+                                !expense.isInformational &&
                                 expense.typeId == type.id &&
                                 expense.currency == AppCurrency.syp,
                           )

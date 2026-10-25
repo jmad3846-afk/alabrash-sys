@@ -755,7 +755,7 @@ void main() {
         erp.factorySalesDiscountOf(AppCurrency.usd) - startingDiscount,
         10,
       );
-      expect(erp.netOperatingProfit - startingProfit, 60);
+      expect(erp.netOperatingProfit - startingProfit, 90);
     },
   );
 

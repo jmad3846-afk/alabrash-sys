@@ -203,6 +203,9 @@ class ERPProvider extends ChangeNotifier {
   // Daily Reports Archive
   List<DailyReportModel> dailyReports = [];
 
+  static const String blockPurchaseExpenseTypeId = 'block_purchases_expense';
+  static const String cuttingExpenseTypeId = 'cutting_processing_expense';
+
   ERPProvider() {
     _initDefaultSeedData();
     loadFromDisk();
@@ -1820,6 +1823,16 @@ class ERPProvider extends ChangeNotifier {
 
     expenseTypes = [
       ExpenseTypeModel(
+        id: blockPurchaseExpenseTypeId,
+        name: 'مشتريات البلوكات (Block Purchases)',
+        description: 'دفعات ومشتريات كتل الرخام والغرانيت من الموردين',
+      ),
+      ExpenseTypeModel(
+        id: cuttingExpenseTypeId,
+        name: 'مصاريف القص والتصنيع (Cutting Expenses)',
+        description: 'أجور ونسب قص وتصنيع كتل الرخام والغرانيت',
+      ),
+      ExpenseTypeModel(
         id: 'et1',
         name: 'محروقات ومازوت للمولدات',
         description: 'وقود تشغيل المناشير والرافعات',
@@ -1842,6 +1855,24 @@ class ERPProvider extends ChangeNotifier {
     ];
 
     expenseRecords = [
+      ExpenseRecordModel(
+        id: 'er_seed_pur1',
+        typeId: blockPurchaseExpenseTypeId,
+        amount: 1500.0,
+        currency: AppCurrency.usd,
+        personName: 'شركة مقالع الرخام الوطنية',
+        description: 'دفعة شراء بلوكات - فاتورة رقم PUR-2026-001',
+        date: DateTime.now().subtract(const Duration(days: 6)),
+      ),
+      ExpenseRecordModel(
+        id: 'er_seed_cut1',
+        typeId: cuttingExpenseTypeId,
+        amount: 176.0,
+        currency: AppCurrency.usd,
+        personName: 'قسم القص والتصنيع',
+        description: 'أجرة قص وتصنيع: رخام كاردينال (درجة أولى) - نسبة 8%',
+        date: DateTime.now().subtract(const Duration(days: 3)),
+      ),
       ExpenseRecordModel(
         id: 'er1',
         typeId: 'et1',
@@ -3807,18 +3838,149 @@ class ERPProvider extends ChangeNotifier {
   double surplusItemRemaining(String surplusItemId) =>
       surplusCostsForItem(surplusItemId).fold(0.0, (s, c) => s + c.remaining);
 
+  ExpenseTypeModel ensureBlockPurchaseExpenseType() {
+    final matching = expenseTypes
+        .where(
+          (t) =>
+              t.id == blockPurchaseExpenseTypeId ||
+              t.name.trim() == 'مشتريات البلوكات' ||
+              t.name.contains('Block Purchase') ||
+              t.name.contains('مشتريات البلوكات'),
+        )
+        .toList();
+    if (matching.isNotEmpty) return matching.first;
+    final newType = ExpenseTypeModel(
+      id: blockPurchaseExpenseTypeId,
+      name: 'مشتريات البلوكات (Block Purchases)',
+      description: 'دفعات ومشتريات كتل الرخام والغرانيت من الموردين',
+    );
+    expenseTypes.add(newType);
+    return newType;
+  }
+
+  ExpenseTypeModel ensureCuttingExpenseType() {
+    final matching = expenseTypes
+        .where(
+          (t) =>
+              t.id == cuttingExpenseTypeId ||
+              t.name.trim() == 'مصاريف القص والتصنيع' ||
+              t.name.contains('Cutting Expenses') ||
+              t.name.contains('مصاريف القص والتصنيع') ||
+              t.name.contains('أجور القص'),
+        )
+        .toList();
+    if (matching.isNotEmpty) return matching.first;
+    final newType = ExpenseTypeModel(
+      id: cuttingExpenseTypeId,
+      name: 'مصاريف القص والتصنيع (Cutting Expenses)',
+      description: 'أجور ونسب قص وتصنيع كتل الرخام والغرانيت',
+    );
+    expenseTypes.add(newType);
+    return newType;
+  }
+
+  void recordBlockPurchaseExpense({
+    required double amount,
+    required String currency,
+    required String supplierName,
+    required String note,
+    DateTime? date,
+  }) {
+    if (amount <= 0.0001) return;
+    final type = ensureBlockPurchaseExpenseType();
+    expenseRecords.add(
+      ExpenseRecordModel(
+        id: 'exp_blk_${DateTime.now().microsecondsSinceEpoch}',
+        typeId: type.id,
+        amount: amount,
+        currency: AppCurrency.normalize(currency),
+        personName: supplierName,
+        description: note,
+        date: date ?? DateTime.now(),
+      ),
+    );
+  }
+
+  void recordCuttingExpense({
+    required double amount,
+    required String currency,
+    required String typeName,
+    required String grade,
+    required double feePercent,
+    DateTime? date,
+  }) {
+    if (amount <= 0.0001) return;
+    final type = ensureCuttingExpenseType();
+    expenseRecords.add(
+      ExpenseRecordModel(
+        id: 'exp_cut_${DateTime.now().microsecondsSinceEpoch}',
+        typeId: type.id,
+        amount: amount,
+        currency: AppCurrency.normalize(currency),
+        personName: 'قسم القص والتصنيع',
+        description:
+            'أجرة قص وتصنيع: $typeName ($grade) - نسبة ${(feePercent * 100).fmt}%',
+        date: date ?? DateTime.now(),
+      ),
+    );
+  }
+
+  double totalBlockPurchaseExpensesOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return expenseRecords
+        .where(
+          (e) =>
+              !e.isInformational &&
+              (e.typeId == blockPurchaseExpenseTypeId ||
+                  e.typeId == 'block_purchase_expense' ||
+                  e.description.contains('شراء بلوكات') ||
+                  e.description.contains('مشتريات بلوكات')) &&
+              e.currency == c,
+        )
+        .fold(0.0, (s, e) => s + e.amount);
+  }
+
+  double get totalBlockPurchaseExpenses =>
+      totalBlockPurchaseExpensesOf(AppCurrency.usd);
+  double get totalBlockPurchaseExpensesSyp =>
+      totalBlockPurchaseExpensesOf(AppCurrency.syp);
+
+  double totalCuttingExpensesOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return expenseRecords
+        .where(
+          (e) =>
+              !e.isInformational &&
+              (e.typeId == cuttingExpenseTypeId ||
+                  e.typeId == 'cutting_expenses' ||
+                  e.description.contains('قص وتصنيع') ||
+                  e.description.contains('أجرة قص')) &&
+              e.currency == c,
+        )
+        .fold(0.0, (s, e) => s + e.amount);
+  }
+
+  double get totalCuttingExpenses => totalCuttingExpensesOf(AppCurrency.usd);
+  double get totalCuttingExpensesSyp => totalCuttingExpensesOf(AppCurrency.syp);
+
+  double totalDirectExpensesOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return expenseRecordsTotalOf(c) +
+        totalOperationalExpensesOf(c) +
+        totalUnnaturalWasteLossesOf(c) +
+        totalSurplusInitialCostOf(c) +
+        accountantGraniteShareOf(c) +
+        salesReturnsAndAllowancesOf(c) +
+        salesDiscountsOf(c) +
+        assetSaleLossesOf(c);
+  }
+
+  double get totalDirectExpenses => totalDirectExpensesOf(AppCurrency.usd);
+  double get totalDirectExpensesSyp => totalDirectExpensesOf(AppCurrency.syp);
+
   double netOperatingProfitOf(String? currency) {
     final c = AppCurrency.normalize(currency);
-    return totalRevenuesOf(c) -
-        totalCOGSOf(c) -
-        totalOperationalExpensesOf(c) -
-        totalUnnaturalWasteLossesOf(c) -
-        totalSurplusInitialCostOf(c) -
-        accountantGraniteShareOf(c) -
-        expenseRecordsTotalOf(c) -
-        salesReturnsAndAllowancesOf(c) -
-        salesDiscountsOf(c) -
-        assetSaleLossesOf(c);
+    return totalRevenuesOf(c) - totalDirectExpensesOf(c);
   }
 
   double salesReturnsAndAllowancesOf(String? currency) =>
@@ -4285,6 +4447,14 @@ class ERPProvider extends ChangeNotifier {
     factoryInvoices.add(inv);
     if (inv.advancePayment > 0) {
       takeCash('main', inv.currency, inv.advancePayment);
+      recordBlockPurchaseExpense(
+        amount: inv.advancePayment,
+        currency: inv.currency,
+        supplierName: inv.partyName,
+        note:
+            'دفعة شراء بلوكات - فاتورة رقم ${inv.invoiceNo} للمورد ${inv.partyName}',
+        date: inv.date,
+      );
     }
     // Update supplier debt if remaining (same currency as the invoice)
     if (inv.remainingBalance > 0.01 && suppliers.isNotEmpty) {
@@ -4526,6 +4696,20 @@ class ERPProvider extends ChangeNotifier {
       }
 
       final double inputTons = list.fold(0.0, (s, c) => s + c.inputTons);
+      final double batchCuttingFee = list.fold(
+        0.0,
+        (s, c) => s + (c.inputTons * c.avgTonCost * c.feePercent),
+      );
+      if (batchCuttingFee > 0) {
+        recordCuttingExpense(
+          amount: batchCuttingFee,
+          currency: AppCurrency.usd,
+          typeName: first.typeName,
+          grade: first.grade,
+          feePercent: list.first.feePercent,
+          date: now,
+        );
+      }
       cuttingOperations.add(
         CuttingOperationModel(
           id: 'cut_${now.millisecondsSinceEpoch}_${cuttingOperations.length}',
@@ -4608,6 +4792,18 @@ class ERPProvider extends ChangeNotifier {
 
     existingWh.availableQty += totalOutputArea;
     existingWh.netCostPerUnit = netCostPerUnit;
+
+    final double cuttingFeeAmount = totalTonCostSum * cuttingFeePercent;
+    if (cuttingFeeAmount > 0) {
+      recordCuttingExpense(
+        amount: cuttingFeeAmount,
+        currency: AppCurrency.usd,
+        typeName: targetTypeName,
+        grade: targetGrade,
+        feePercent: cuttingFeePercent,
+        date: DateTime.now(),
+      );
+    }
 
     // Log cutting operation
     cuttingOperations.add(
@@ -6022,6 +6218,13 @@ class ERPProvider extends ChangeNotifier {
       remainingToSettle -= settlePart;
     }
 
+    recordBlockPurchaseExpense(
+      amount: pay,
+      currency: c,
+      supplierName: supplier.name,
+      note: 'تسديد دفعة للمورد ${supplier.name} عن مشتريات بلوكات',
+    );
+
     notifyListeners();
     saveToDisk();
     return true;
@@ -6040,6 +6243,13 @@ class ERPProvider extends ChangeNotifier {
     if (matches.isNotEmpty) {
       matches.first.reduceDebt(inv.currency, pay);
     }
+    recordBlockPurchaseExpense(
+      amount: pay,
+      currency: inv.currency,
+      supplierName: inv.partyName,
+      note:
+          'تسديد دفعة فاتورة شراء بلوكات رقم ${inv.invoiceNo} للمورد ${inv.partyName}',
+    );
     notifyListeners();
     saveToDisk();
     return true;
