@@ -19,7 +19,6 @@ void main() {
 
       final supplier = erp.suppliers.first;
       const paymentAmount = 2000.0;
-      const totalAmount = 5000.0;
 
       // Add cash/advance purchase invoice
       final invoice = FactoryInvoiceModel(

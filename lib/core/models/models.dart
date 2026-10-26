@@ -1260,25 +1260,44 @@ class FactoryInvoiceItem {
     this.meterUnit = 'متر مربع',
   });
 
-  bool get isMeterItem => itemCategory == 'meter' || itemCategory == 'متر';
-  bool get isTailoringItem => itemCategory == 'tailoring' || itemCategory == 'تفصيل';
-  bool get isCubicMeter => meterUnit == 'متر مكعب';
+  bool get isCubicMeter =>
+      meterUnit == 'متر مكعب' ||
+      itemCategory == 'متر مكعب' ||
+      (heightCm > 5.0 && meterUnit != 'متر مربع' && meterUnit != 'متر طولي');
+
+  bool get isMeterItem =>
+      itemCategory == 'meter' ||
+      itemCategory == 'متر' ||
+      itemCategory == 'متر مربع' ||
+      itemCategory == 'متر مكعب' ||
+      itemId.startsWith('fw') ||
+      (itemCategory != 'block' &&
+          itemCategory != 'tailoring' &&
+          (meterUnit == 'متر مكعب' ||
+              meterUnit == 'متر طولي' ||
+              thicknessCm > 0 ||
+              (lengthCm > 0 && widthCm > 0 && !itemId.startsWith('fb'))));
+
+  bool get isTailoringItem =>
+      itemCategory == 'tailoring' ||
+      itemCategory == 'تفصيل' ||
+      itemId.startsWith('tailoring_');
 
   double get calculatedArea {
-    if (isMeterItem) {
-      return quantity;
-    }
     if (isCubicMeter || (heightCm > 0 && meterUnit != 'متر مربع' && meterUnit != 'متر طولي' && heightCm > 5.0)) {
       // Volume m³: Length(m) * Width(m) * Height(m) * Quantity
-      return (lengthCm / 100.0) *
-          (widthCm / 100.0) *
-          (heightCm / 100.0) *
-          quantity;
+      if (lengthCm > 0 && widthCm > 0 && heightCm > 0) {
+        return (lengthCm / 100.0) *
+            (widthCm / 100.0) *
+            (heightCm / 100.0) *
+            quantity;
+      }
+      return quantity;
     } else if (lengthCm > 0 && widthCm > 0) {
       // Area m²: Length(m) * Width(m) * Quantity
       return (lengthCm / 100.0) * (widthCm / 100.0) * quantity;
     }
-    return quantity; // Default unit quantity (e.g. Tons or pcs)
+    return quantity; // Default unit quantity (e.g. Tons, meters, or pcs)
   }
 
   double get totalPrice => calculatedArea * unitPrice;

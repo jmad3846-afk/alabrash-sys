@@ -2527,8 +2527,6 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         final bool isInProgress = ord.status == 'قيد التنفيذ';
                         final bool isOrdCompleted =
                             ord.status == 'مكتملة ومرحلة';
-                        final bool isOrdCancelled =
-                            ord.status.startsWith('ملغاة');
 
                         return Container(
                           decoration: BoxDecoration(
@@ -3000,16 +2998,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     );
   }
 
-  void _showAddFactoryOrderDialog(ERPProvider erp) {
-    showAddFactoryOrderDialog(context, erp);
-  }
-
   void _showAssignFactoryOrderDialog(ERPProvider erp, FactoryOrderModel ord) {
     _showAddPOSInvoiceDialog(erp, initialOrder: ord);
-  }
-
-  void _showCancelFactoryOrderDialog(ERPProvider erp, FactoryOrderModel ord) {
-    showCancelFactoryOrderDialog(context, erp, ord);
   }
 
   // DIALOGS & POPUPS HELPERS
@@ -5949,6 +5939,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   services: List.of(draftServices),
                                                   thicknessCm: wh.thicknessCm,
                                                   meterUnit: isCube ? 'متر مكعب' : 'متر مربع',
+                                                  itemCategory: isCube ? 'متر مكعب' : 'meter',
                                                 ),
                                               );
                                               draftServices.clear();

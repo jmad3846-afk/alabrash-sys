@@ -2264,15 +2264,69 @@ class ERPProvider extends ChangeNotifier {
     ];
   }
 
-  static String _factoryLineUnit(FactoryInvoiceItem item) {
-    if (item.isMeterItem) {
-      return item.meterUnit.isNotEmpty ? item.meterUnit : 'متر مربع';
-    }
+  static String _factoryLineUnit(
+    FactoryInvoiceItem item, {
+    FactoryInvoiceModel? parent,
+  }) {
     if (item.itemCategory == 'tailoring' ||
-        item.itemId.startsWith('tailoring_')) {
+        item.itemId.startsWith('tailoring_') ||
+        item.isTailoringItem) {
       return 'قطعة';
     }
+    final isDealerSales = parent?.invoiceType == 'بيع_معتمد';
+    final isCube = item.isCubicMeter ||
+        item.meterUnit == 'متر مكعب' ||
+        item.itemCategory == 'متر مكعب' ||
+        item.thicknessCm > 5.0 ||
+        item.heightCm > 5.0 ||
+        item.description.contains('مكعب') ||
+        item.description.contains('م³') ||
+        item.typeName.contains('مكعب') ||
+        item.typeName.contains('م³');
+
+    if (isDealerSales || item.isMeterItem) {
+      return isCube ? 'متر مكعب' : 'متر مربع';
+    }
     return 'طن';
+  }
+
+  String factoryLineUnit(
+    FactoryInvoiceItem item, {
+    FactoryInvoiceModel? parent,
+  }) =>
+      _factoryLineUnit(item, parent: parent);
+
+  static String _workshopLineUnit(WorkshopInvoiceItem item) {
+    final st = item.sourceType;
+    if (st == 'بيع خياطة معقدة' ||
+        st == 'تفصيل معقد' ||
+        st == 'complex_tailoring') {
+      return 'قطعة';
+    }
+    if (st == 'بيع خياطة بسيطة' ||
+        st == 'تفصيل بسيط' ||
+        st == 'simple_tailoring') {
+      return (item.unitCategory == 'متر مكعب' || item.isCubicMeter)
+          ? 'متر مكعب'
+          : 'متر مربع';
+    }
+    if (st == 'بيع مواد خام من المعمل' ||
+        st == 'مواد خام' ||
+        st == 'raw_materials') {
+      return (item.unitCategory == 'متر مكعب' || item.isCubicMeter)
+          ? 'متر مكعب'
+          : 'متر مربع';
+    }
+    if (st == 'بيع قطع إضافية' ||
+        st == 'قطع زائدة' ||
+        st == 'scrap' ||
+        st == 'surplus') {
+      if (item.unitCategory == 'متر مكعب' || item.isCubicMeter) return 'متر مكعب';
+      if (item.unitCategory == 'قطعة') return 'قطعة';
+      return 'متر مربع';
+    }
+    if (item.unitCategory.isNotEmpty) return item.unitCategory;
+    return 'متر مربع';
   }
 
   /// Builds the stored record for one master-invoice line.
@@ -2293,7 +2347,7 @@ class ERPProvider extends ChangeNotifier {
         itemId: item.itemId,
         itemIndex: index,
         description: item.description,
-        unit: _factoryLineUnit(item),
+        unit: _factoryLineUnit(item, parent: parent),
         quantity: quantity,
         unitPrice: unitPrice,
         amount: _money(quantity * unitPrice),
@@ -2317,7 +2371,7 @@ class ERPProvider extends ChangeNotifier {
         itemId: item.sourceId,
         itemIndex: index,
         description: item.description,
-        unit: item.unitCategory,
+        unit: _workshopLineUnit(item),
         quantity: quantity,
         unitPrice: unitPrice,
         amount: _money(quantity * unitPrice),
@@ -2331,19 +2385,28 @@ class ERPProvider extends ChangeNotifier {
 
   // --- Inventory routing: matchers -----------------------------------
   FactoryWarehouseModel? _matchFactoryWarehouse(FactoryInvoiceItem item) {
+    final isCube = item.isCubicMeter ||
+        item.meterUnit == 'متر مكعب' ||
+        item.itemCategory == 'متر مكعب' ||
+        item.thicknessCm > 5.0 ||
+        item.heightCm > 5.0 ||
+        item.description.contains('مكعب') ||
+        item.description.contains('م³') ||
+        item.typeName.contains('مكعب') ||
+        item.typeName.contains('م³');
+    final category = isCube ? 'متر مكعب' : 'متر مربع';
     if (item.itemId.isNotEmpty) {
       final byId = factoryWarehouse
-          .where((w) => w.id == item.itemId)
+          .where((w) => w.id == item.itemId && w.category == category)
           .toList();
       if (byId.isNotEmpty) return byId.first;
+      final anyById = factoryWarehouse.where((w) => w.id == item.itemId).toList();
+      if (anyById.isNotEmpty) return anyById.first;
     }
     final typeName = item.typeName.isNotEmpty ? item.typeName : item.description;
     if (typeName.trim().isEmpty) return null;
     final grade = item.grade.isNotEmpty ? item.grade : 'درجة أولى';
-    final thickness = item.thicknessCm > 0 ? item.thicknessCm : 2.0;
-    final category = item.meterUnit.isNotEmpty
-        ? item.meterUnit
-        : (item.thicknessCm > 5 ? 'متر مكعب' : 'متر مربع');
+    final thickness = item.thicknessCm > 0 ? item.thicknessCm : (isCube ? 10.0 : 2.0);
     final exact = factoryWarehouse
         .where(
           (w) =>
@@ -2354,10 +2417,11 @@ class ERPProvider extends ChangeNotifier {
         )
         .toList();
     if (exact.isNotEmpty) return exact.first;
-    final loose = factoryWarehouse
-        .where((w) => w.typeName == typeName)
+    final byNameAndCategory = factoryWarehouse
+        .where((w) => w.typeName == typeName && w.category == category)
         .toList();
-    return loose.isNotEmpty ? loose.first : null;
+    if (byNameAndCategory.isNotEmpty) return byNameAndCategory.first;
+    return null;
   }
 
   List<FactoryBlockModel> _matchFactoryBlocks(
@@ -2415,16 +2479,34 @@ class ERPProvider extends ChangeNotifier {
   }
 
   WorkshopStockModel? _matchWorkshopStock(WorkshopInvoiceItem item) {
+    final category = (item.unitCategory == 'متر مكعب' || item.isCubicMeter)
+        ? 'متر مكعب'
+        : 'متر مربع';
     if (item.sourceId.isNotEmpty) {
-      final byId = workshopStock.where((w) => w.id == item.sourceId).toList();
+      final byId = workshopStock
+          .where((w) => w.id == item.sourceId && w.category == category)
+          .toList();
       if (byId.isNotEmpty) return byId.first;
+      final anyById = workshopStock.where((w) => w.id == item.sourceId).toList();
+      if (anyById.isNotEmpty) return anyById.first;
     }
     if (item.description.trim().isEmpty) return null;
+    final exact = workshopStock
+        .where(
+          (w) =>
+              (w.typeName == item.description ||
+                  item.description.contains(w.typeName) ||
+                  w.typeName.contains(item.description)) &&
+              w.category == category,
+        )
+        .toList();
+    if (exact.isNotEmpty) return exact.first;
     final byName = workshopStock
         .where(
           (w) =>
               w.typeName == item.description ||
-              item.description.contains(w.typeName),
+              item.description.contains(w.typeName) ||
+              w.typeName.contains(item.description),
         )
         .toList();
     return byName.isNotEmpty ? byName.first : null;
@@ -2441,7 +2523,9 @@ class ERPProvider extends ChangeNotifier {
     for (final resolved in lines) {
       if (module == 'factory') {
         final item = resolved.factoryItem!;
-        if (item.isMeterItem) {
+        final isDealerSales = original?.invoiceType == 'بيع_معتمد';
+        final isMeter = item.isMeterItem || isDealerSales;
+        if (isMeter) {
           final warehouse = _matchFactoryWarehouse(item);
           if (warehouse == null) {
             final label = item.typeName.isNotEmpty
@@ -2453,7 +2537,8 @@ class ERPProvider extends ChangeNotifier {
             return false;
           }
         } else if (item.itemCategory == 'tailoring' ||
-            item.itemId.startsWith('tailoring_')) {
+            item.itemId.startsWith('tailoring_') ||
+            item.isTailoringItem) {
           if (_matchFactoryTailoring(item) == null && purchase) return false;
         } else {
           final blocks = _matchFactoryBlocks(
@@ -2477,8 +2562,10 @@ class ERPProvider extends ChangeNotifier {
       } else {
         final item = resolved.workshopItem!;
         final st = item.sourceType;
-        if (st == 'بيع مواد خام من المعمل' || st == 'مواد خام') {
-          if (_matchWorkshopStock(item) == null) return false;
+        if (st == 'بيع مواد خام من المعمل' ||
+            st == 'مواد خام' ||
+            st == 'raw_materials') {
+          if (purchase && _matchWorkshopStock(item) == null) return false;
         }
       }
     }
@@ -2519,7 +2606,10 @@ class ERPProvider extends ChangeNotifier {
     final line = resolved.line;
     final returnedArea = line.quantity * resolved.unitQty;
 
-    if (item.isMeterItem) {
+    final isDealerSales = parent.invoiceType == 'بيع_معتمد';
+    final isMeter = item.isMeterItem || isDealerSales;
+
+    if (isMeter) {
       // مستودع المصنع (Factory Warehouse — slabs & cubes)
       final warehouse = _matchFactoryWarehouse(item);
       if (warehouse != null) {
@@ -2536,16 +2626,25 @@ class ERPProvider extends ChangeNotifier {
           ? item.typeName
           : item.description;
       if (typeName.trim().isEmpty) return;
+      final isCube = item.isCubicMeter ||
+          item.meterUnit == 'متر مكعب' ||
+          item.itemCategory == 'متر مكعب' ||
+          item.thicknessCm > 5.0 ||
+          item.heightCm > 5.0 ||
+          item.description.contains('مكعب') ||
+          item.description.contains('م³') ||
+          item.typeName.contains('مكعب') ||
+          item.typeName.contains('م³');
       factoryWarehouse.add(
         FactoryWarehouseModel(
           id:
               'fw_${DateTime.now().microsecondsSinceEpoch}_${factoryWarehouse.length}',
           typeName: typeName,
           grade: item.grade.isNotEmpty ? item.grade : 'درجة أولى',
-          thicknessCm: item.thicknessCm > 0 ? item.thicknessCm : 2.0,
-          category: item.meterUnit.isNotEmpty
-              ? item.meterUnit
-              : (item.thicknessCm > 5 ? 'متر مكعب' : 'متر مربع'),
+          thicknessCm: item.thicknessCm > 0
+              ? item.thicknessCm
+              : (isCube ? 10.0 : 2.0),
+          category: isCube ? 'متر مكعب' : 'متر مربع',
           availableQty: returnedArea,
           netCostPerUnit: item.unitCost,
           recommendedSalePrice: item.unitPrice,
@@ -2635,22 +2734,35 @@ class ERPProvider extends ChangeNotifier {
     final quantity = resolved.line.quantity;
     final sourceType = item.sourceType;
 
-    if (sourceType == 'بيع خياطة بسيطة' || sourceType == 'تفصيل بسيط') {
-      // تفصيل بسيط → Simple Detail Inventory Page
+    if (sourceType == 'بيع خياطة بسيطة' ||
+        sourceType == 'تفصيل بسيط' ||
+        sourceType == 'simple_tailoring') {
+      // تفصيل بسيط → Simple Detail Inventory Page (m² or m³)
+      final category = (item.unitCategory == 'متر مكعب' || item.isCubicMeter)
+          ? 'متر مكعب'
+          : 'متر مربع';
       final matches = item.sourceId.isNotEmpty
           ? simpleTailorings.where((t) => t.id == item.sourceId).toList()
-          : <WorkshopTailoringModel>[];
+          : simpleTailorings
+              .where((t) =>
+                  (t.name == item.description ||
+                      item.description.contains(t.name)) &&
+                  t.unitCategory == category)
+              .toList();
       if (matches.isEmpty) {
-        if (item.sourceId.isEmpty) return;
         simpleTailorings.add(
           WorkshopTailoringModel(
-            id: item.sourceId,
-            name: item.description,
+            id: item.sourceId.isNotEmpty
+                ? item.sourceId
+                : 'tailoring_s_${DateTime.now().microsecondsSinceEpoch}_${simpleTailorings.length}',
+            name: item.description.isNotEmpty
+                ? item.description
+                : 'تفصيل بسيط مرتجع',
             complexity: 'بسيط',
             rawMaterialDescription: item.description,
             quantity: quantity,
             materialNetCost: item.netCost,
-            unitCategory: item.unitCategory,
+            unitCategory: category,
             sellingPrice: item.agreedPrice,
             isGranite: item.isGranite,
             photoPath: item.photoPath,
@@ -2684,22 +2796,31 @@ class ERPProvider extends ChangeNotifier {
       return;
     }
 
-    if (sourceType == 'بيع خياطة معقدة' || sourceType == 'تفصيل معقد') {
-      // تفصيل معقد → Complex Detail Inventory Page
+    if (sourceType == 'بيع خياطة معقدة' ||
+        sourceType == 'تفصيل معقد' ||
+        sourceType == 'complex_tailoring') {
+      // تفصيل معقد → Complex Detail Inventory Page (Strictly Pieces)
       final matches = item.sourceId.isNotEmpty
           ? complexTailorings.where((t) => t.id == item.sourceId).toList()
-          : <WorkshopTailoringModel>[];
+          : complexTailorings
+              .where((t) =>
+                  t.name == item.description ||
+                  item.description.contains(t.name))
+              .toList();
       if (matches.isEmpty) {
-        if (item.sourceId.isEmpty) return;
         complexTailorings.add(
           WorkshopTailoringModel(
-            id: item.sourceId,
-            name: item.description,
+            id: item.sourceId.isNotEmpty
+                ? item.sourceId
+                : 'tailoring_c_${DateTime.now().microsecondsSinceEpoch}_${complexTailorings.length}',
+            name: item.description.isNotEmpty
+                ? item.description
+                : 'تفصيل معقد مرتجع',
             complexity: 'معقد',
             rawMaterialDescription: item.description,
             quantity: quantity,
             materialNetCost: item.netCost,
-            unitCategory: item.unitCategory,
+            unitCategory: 'قطعة',
             sellingPrice: item.agreedPrice,
             isGranite: item.isGranite,
             photoPath: item.photoPath,
@@ -2714,22 +2835,55 @@ class ERPProvider extends ChangeNotifier {
       return;
     }
 
-    if (sourceType == 'بيع مواد خام من المعمل' || sourceType == 'مواد خام') {
-      // مواد خام → Workshop Materials Page (مواد معمل)
+    if (sourceType == 'بيع مواد خام من المعمل' ||
+        sourceType == 'مواد خام' ||
+        sourceType == 'raw_materials') {
+      // مواد خام → Workshop Materials Page (مواد معمل) (m² or m³)
       final stock = _matchWorkshopStock(item);
-      if (stock == null) return;
-      stock.availableQty = (stock.availableQty + quantity).clamp(
-        0.0,
-        double.infinity,
+      if (stock != null) {
+        stock.availableQty = (stock.availableQty + quantity).clamp(
+          0.0,
+          double.infinity,
+        );
+        return;
+      }
+      final category = (item.unitCategory == 'متر مكعب' || item.isCubicMeter)
+          ? 'متر مكعب'
+          : 'متر مربع';
+      workshopStock.add(
+        WorkshopStockModel(
+          id: item.sourceId.isNotEmpty
+              ? item.sourceId
+              : 'ws_${DateTime.now().microsecondsSinceEpoch}_${workshopStock.length}',
+          typeName: item.description.isNotEmpty
+              ? item.description
+              : 'مادة خام معمل',
+          grade: 'درجة أولى',
+          thicknessCm: item.thicknessCm > 0
+              ? item.thicknessCm
+              : (category == 'متر مكعب' ? 10.0 : 2.0),
+          category: category,
+          availableQty: quantity,
+          netCostPerUnit: item.netCost,
+          recommendedSalePrice:
+              item.unitPrice > 0 ? item.unitPrice : item.agreedPrice,
+          isGranite: item.isGranite,
+        ),
       );
       return;
     }
 
-    if (sourceType == 'بيع قطع إضافية' || sourceType == 'قطع زائدة') {
+    if (sourceType == 'بيع قطع إضافية' ||
+        sourceType == 'قطع زائدة' ||
+        sourceType == 'scrap' ||
+        sourceType == 'surplus') {
       // قطع زائدة → Surplus Page (الزيادة)
       final matches = item.sourceId.isNotEmpty
           ? scrapItems.where((s) => s.id == item.sourceId).toList()
-          : <ScrapItemModel>[];
+          : scrapItems
+              .where((s) =>
+                  s.description == item.description && s.isSold)
+              .toList();
       if (matches.isNotEmpty) {
         matches.first.isSold = false;
         return;
@@ -2738,8 +2892,10 @@ class ERPProvider extends ChangeNotifier {
         ScrapItemModel(
           id: item.sourceId.isNotEmpty
               ? item.sourceId
-              : 'sc_${DateTime.now().microsecondsSinceEpoch}',
-          description: item.description,
+              : 'sc_${DateTime.now().microsecondsSinceEpoch}_${scrapItems.length}',
+          description: item.description.isNotEmpty
+              ? item.description
+              : 'قطعة زائدة مرتجعة',
           baseCost: item.netCost,
           sellingPrice: item.agreedPrice,
           isSold: false,
@@ -2917,6 +3073,29 @@ class ERPProvider extends ChangeNotifier {
         }
       }
 
+      if (invoice.lines.isEmpty && invoice.amount > 0 && resolved.length == 1) {
+        final single = resolved.first;
+        final explicitPrice = single.line.quantity > 0
+            ? _money(invoice.amount / single.line.quantity)
+            : invoice.amount;
+        resolved[0] = _ResolvedReturnLine(
+          line: AdjustmentLineModel(
+            itemId: single.line.itemId,
+            itemIndex: single.line.itemIndex,
+            description: single.line.description,
+            unit: single.line.unit,
+            quantity: single.line.quantity,
+            unitPrice: explicitPrice,
+            amount: invoice.amount,
+            sourceType: single.line.sourceType,
+            sourceLineItemId: single.line.sourceLineItemId,
+          ),
+          factoryItem: single.factoryItem,
+          workshopItem: single.workshopItem,
+          unitQty: single.unitQty,
+        );
+      }
+
       // 3. Validate every line against the invoiced quantity.
       for (final entry in resolved) {
         final keys = _lineKeys(
@@ -2992,14 +3171,7 @@ class ERPProvider extends ChangeNotifier {
       }
       debtPortion = totalAmount;
     } else {
-      final debtBalance = _adjustmentDebtBalance(
-        supplier: purchase,
-        partyName: partyName,
-        partyId: partyId,
-        currency: invoice.currency,
-      );
-      debtPortion = totalAmount < debtBalance ? totalAmount : debtBalance;
-      cashPortion = _money(totalAmount - debtPortion);
+      cashPortion = totalAmount;
       if (cashPortion > 0 &&
           !purchase &&
           cashOf('main', invoice.currency) + 0.0001 < cashPortion) {

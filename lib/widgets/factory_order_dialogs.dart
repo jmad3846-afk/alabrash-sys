@@ -812,6 +812,7 @@ void showAddFactoryOrderDialog(
                                 services: List.of(draftServices),
                                 thicknessCm: wh.thicknessCm,
                                 meterUnit: isCube ? 'متر مكعب' : 'متر مربع',
+                                itemCategory: isCube ? 'متر مكعب' : 'meter',
                               ),
                             );
                             draftServices.clear();

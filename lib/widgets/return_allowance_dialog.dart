@@ -233,12 +233,7 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
             index: index,
             itemId: item.itemId,
             description: item.description,
-            unit: item.isMeterItem
-                ? (item.meterUnit.isNotEmpty ? item.meterUnit : 'متر مربع')
-                : (item.itemCategory == 'tailoring' ||
-                          item.itemId.startsWith('tailoring_')
-                      ? 'قطعة'
-                      : 'طن'),
+            unit: widget.erp.factoryLineUnit(item, parent: invoice),
             originalQty: item.quantity,
             alreadyReturned: alreadyReturned,
             unitPrice: unitPrice,
@@ -265,12 +260,41 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
         itemId: item.sourceId,
         description: item.description,
       );
+      final st = item.sourceType;
+      final String unit;
+      if (st == 'بيع خياطة معقدة' ||
+          st == 'تفصيل معقد' ||
+          st == 'complex_tailoring') {
+        unit = 'قطعة';
+      } else if (st == 'بيع خياطة بسيطة' ||
+          st == 'تفصيل بسيط' ||
+          st == 'simple_tailoring' ||
+          st == 'بيع مواد خام من المعمل' ||
+          st == 'مواد خام' ||
+          st == 'raw_materials') {
+        unit = (item.unitCategory == 'متر مكعب' || item.isCubicMeter)
+            ? 'متر مكعب'
+            : 'متر مربع';
+      } else if (st == 'بيع قطع إضافية' ||
+          st == 'قطع زائدة' ||
+          st == 'scrap' ||
+          st == 'surplus') {
+        if (item.unitCategory == 'متر مكعب' || item.isCubicMeter) {
+          unit = 'متر مكعب';
+        } else if (item.unitCategory == 'قطعة') {
+          unit = 'قطعة';
+        } else {
+          unit = 'متر مربع';
+        }
+      } else {
+        unit = item.unitCategory.isNotEmpty ? item.unitCategory : 'متر مربع';
+      }
       rows.add(
         _LineRow(
           index: index,
           itemId: item.sourceId,
           description: item.description,
-          unit: item.unitCategory,
+          unit: unit,
           originalQty: item.quantity,
           alreadyReturned: alreadyReturned,
           unitPrice: unitPrice,
