@@ -6782,6 +6782,62 @@ class ERPProvider extends ChangeNotifier {
     return true;
   }
 
+  /// Collects cash back from a supplier who holds a credit/surplus balance
+  /// (account flipped to debtor after purchase return + previous deposit).
+  /// Puts the cash into the Main Cash Box and adjusts the supplier's balance back towards zero.
+  bool collectFromSupplierCredit({
+    required SupplierModel supplier,
+    required double amount,
+    required String currency,
+    String? notes,
+  }) {
+    if (amount <= 0) return false;
+    final c = AppCurrency.normalize(currency);
+    final creditDue = supplier.creditOf(c);
+    if (creditDue <= 0.001) return false;
+    if (amount > creditDue + 0.001) return false;
+    final take = amount.clamp(0.0, creditDue).toDouble();
+    if (take <= 0) return false;
+
+    // Deposit the cash into the Main Safe
+    addCash('main', c, take);
+
+    // Reduce the credit balance towards zero (debtBalance was negative, so addDebt increases it towards zero)
+    supplier.addDebt(c, take);
+
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  /// Pays out cash to a customer / accredited agent who holds a credit balance
+  /// (account flipped to creditor after sales return + previous deposit).
+  /// Takes the cash from the Main Cash Box and adjusts the customer's balance back towards zero.
+  bool payCustomerCredit({
+    required ClientModel client,
+    required double amount,
+    required String currency,
+    String? notes,
+  }) {
+    if (amount <= 0) return false;
+    final c = AppCurrency.normalize(currency);
+    final creditDue = client.creditOf(c);
+    if (creditDue <= 0.001) return false;
+    if (amount > creditDue + 0.001) return false;
+    final pay = amount.clamp(0.0, creditDue).toDouble();
+    if (pay <= 0) return false;
+
+    // Withdraw the cash from the Main Safe (allow overdraft if needed)
+    if (!takeCash('main', c, pay, allowNegative: true)) return false;
+
+    // Reduce the customer's credit balance towards zero (debtBalance was negative, so addDebt increases it towards zero)
+    client.addDebt(c, pay);
+
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
   /// Pays a supplier purchase invoice (we pay them): advances the invoice,
   /// reduces the supplier debt and the Main Cash Box (invoice currency).
   bool paySupplierInvoice(FactoryInvoiceModel inv, double amount) {

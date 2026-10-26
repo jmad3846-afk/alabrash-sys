@@ -9,6 +9,8 @@ import '../widgets/a4_invoice_print_dialog.dart';
 import '../widgets/a4_statement_print_dialog.dart';
 import '../widgets/app_image_attachment.dart';
 import '../widgets/customer_collection_dialog.dart';
+import '../widgets/supplier_credit_collection_dialog.dart';
+import '../widgets/customer_credit_payout_dialog.dart';
 import 'accounting_screens.dart';
 
 class FinancialsScreen extends StatefulWidget {
@@ -1447,8 +1449,30 @@ class _FinancialsScreenState extends State<FinancialsScreen>
     );
   }
 
-  /// Pay button dedicated to Supplier Accounts in Factory Suppliers Financials.
+  /// Pay / Collect button dedicated to Supplier Accounts in Factory Suppliers Financials.
+  /// Dynamically flips between "دفع للمورد" when we owe the supplier,
+  /// and "تحصيل من هذا المورد" when the supplier's balance flips to debtor.
   Widget _buildSupplierPayButton(ERPProvider erp, SupplierModel supplier) {
+    if (supplier.hasCredit) {
+      return ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.successGreen,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        icon: const Icon(Icons.download_rounded, size: 16),
+        label: const Text(
+          'تحصيل من هذا المورد',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        onPressed: () => SupplierCreditCollectionDialog.show(
+          context,
+          supplier: supplier,
+          erp: erp,
+        ),
+      );
+    }
     final hasDebt =
         supplier.debtBalance > 0.01 || supplier.debtBalanceSyp > 0.01;
     if (!hasDebt) return const Chip(label: Text('خالص'));
@@ -2034,10 +2058,31 @@ class _FinancialsScreenState extends State<FinancialsScreen>
     );
   }
 
-  /// Collect button dedicated to Customer Accounts.
-  /// Launches the Multi-Currency Customer Collection Dialog with automatic
-  /// currency classification display, direct payment, and real-time cross-currency conversion.
+  /// Collect / Pay button dedicated to Customer / Dealer Accounts.
+  /// Dynamically flips between "تحصيل" when the customer owes the company,
+  /// and "دفع للمعتمد" / "دفع للزبون" when the customer's balance flips to creditor.
   Widget _buildCustomerCollectButton(ERPProvider erp, ClientModel client) {
+    if (client.hasCredit) {
+      final isAgent = client.clientType == 'معتمد مصنع';
+      return ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.dangerWaste,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        icon: const Icon(Icons.outbox_rounded, size: 16),
+        label: Text(
+          isAgent ? 'دفع للمعتمد' : 'دفع للزبون',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        onPressed: () => CustomerCreditPayoutDialog.show(
+          context,
+          client: client,
+          erp: erp,
+        ),
+      );
+    }
     final hasDebt = client.debtBalance > 0.01 || client.debtBalanceSyp > 0.01;
     if (!hasDebt) return const Chip(label: Text('خالص'));
     return ElevatedButton(
@@ -2054,92 +2099,6 @@ class _FinancialsScreenState extends State<FinancialsScreen>
     );
   }
 
-  /// Collect/settle button that lets the user pick the fund currency
-  /// when the account holds BOTH Dollar and Syrian balances.
-  Widget _buildDualCollectButton(
-    ERPProvider erp,
-    String name,
-    double usdDue,
-    double sypDue,
-    bool Function(String currency, double amount) onPay,
-  ) {
-    final hasUsd = usdDue > 0.01;
-    final hasSyp = sypDue > 0.01;
-    if (!hasUsd && !hasSyp) return const Chip(label: Text('خالص'));
-    if (hasUsd && !hasSyp) {
-      return ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.successGreen,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-        ),
-        onPressed: () => _showMoneyDialog(
-          title: 'تحصيل دفعة من $name',
-          actionLabel: 'تأكيد التحصيل',
-          max: usdDue,
-          currency: AppCurrency.usd,
-          onConfirm: (a) => onPay(AppCurrency.usd, a),
-        ),
-        child: const Text('تحصيل'),
-      );
-    }
-    // Both (or SYP only): open a currency picker first.
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.successGreen,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-      ),
-      onPressed: () {
-        String picked = hasUsd ? AppCurrency.usd : AppCurrency.syp;
-        showDialog(
-          context: context,
-          builder: (ctx) => StatefulBuilder(
-            builder: (ctx, setSt) => AlertDialog(
-              title: Text('تحصيل دفعة من $name — اختر العملة'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (hasUsd)
-                    RadioListTile<String>(
-                      value: AppCurrency.usd,
-                      groupValue: picked,
-                      title: Text('دولار: ${usdDue.fmt} \$'),
-                      onChanged: (v) => setSt(() => picked = v!),
-                    ),
-                  if (hasSyp)
-                    RadioListTile<String>(
-                      value: AppCurrency.syp,
-                      groupValue: picked,
-                      title: Text('ليرة: ${sypDue.fmt} ل.س'),
-                      onChanged: (v) => setSt(() => picked = v!),
-                    ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('إلغاء'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _showMoneyDialog(
-                      title: 'تحصيل دفعة من $name',
-                      actionLabel: 'تأكيد التحصيل',
-                      max: picked == AppCurrency.syp ? sypDue : usdDue,
-                      currency: picked,
-                      onConfirm: (a) => onPay(picked, a),
-                    );
-                  },
-                  child: const Text('متابعة'),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-      child: const Text('تحصيل'),
-    );
-  }
 
   // -------------------------------------------------------------
   // TAB 3: FACTORY SUPPLIERS FINANCIALS (outstanding only)
@@ -2147,32 +2106,36 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   // -------------------------------------------------------------
   Widget _buildFactorySuppliersTab(ERPProvider erp) {
     final debtors = erp.suppliers
-        .where((s) => s.debtBalance > 0.01 || s.debtBalanceSyp > 0.01)
+        .where((s) => s.hasDebt || s.hasCredit)
         .toList();
-    final totalDue = debtors.fold<double>(0.0, (s, x) => s + x.debtBalance);
-    final totalDueSyp = debtors.fold<double>(
-      0.0,
-      (s, x) => s + x.debtBalanceSyp,
-    );
+    final totalDue = erp.suppliers
+        .where((s) => s.debtBalance > 0.01)
+        .fold<double>(0.0, (s, x) => s + x.debtBalance);
+    final totalDueSyp = erp.suppliers
+        .where((s) => s.debtBalanceSyp > 0.01)
+        .fold<double>(
+          0.0,
+          (s, x) => s + x.debtBalanceSyp,
+        );
 
     final q = _supplierQuery.trim();
     final allSuppliers = erp.suppliers;
     final filteredSuppliers = allSuppliers.where((s) {
       if (_supplierCurrency != 'ALL') {
-        if (_supplierCurrency == AppCurrency.usd && s.debtBalance <= 0.01 && s.debtBalanceSyp > 0.01) {
+        if (_supplierCurrency == AppCurrency.usd && s.debtBalance.abs() <= 0.01 && s.debtBalanceSyp.abs() > 0.01) {
           return false;
         }
-        if (_supplierCurrency == AppCurrency.syp && s.debtBalanceSyp <= 0.01 && s.debtBalance > 0.01) {
+        if (_supplierCurrency == AppCurrency.syp && s.debtBalanceSyp.abs() <= 0.01 && s.debtBalance.abs() > 0.01) {
           return false;
         }
       }
       if (_supplierFilter == 0) {
-        final hasDebt = _supplierCurrency == AppCurrency.usd
-            ? s.debtBalance > 0.01
+        final hasBalance = _supplierCurrency == AppCurrency.usd
+            ? s.debtBalance.abs() > 0.01
             : _supplierCurrency == AppCurrency.syp
-                ? s.debtBalanceSyp > 0.01
-                : (s.debtBalance > 0.01 || s.debtBalanceSyp > 0.01);
-        if (!hasDebt) return false;
+                ? s.debtBalanceSyp.abs() > 0.01
+                : (s.hasDebt || s.hasCredit);
+        if (!hasBalance) return false;
       }
       if (q.isEmpty) return true;
       final text = '${s.name} ${s.phone} ${s.location}';
@@ -2375,7 +2338,13 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ],
                 ),
                 subtitle: Text(
-                  'المتبقي علينا: ${s.dualDebt} • الفواتير: ${invs.length}',
+                  s.hasCredit
+                      ? 'رصيد دائن مستحق لنا: ${s.dualCredit} • الفواتير: ${invs.length}'
+                      : 'المتبقي علينا: ${s.dualDebt} • الفواتير: ${invs.length}',
+                  style: TextStyle(
+                    color: s.hasCredit ? AppColors.successGreen : null,
+                    fontWeight: s.hasCredit ? FontWeight.bold : FontWeight.normal,
+                  ),
                 ),
                 trailing: _buildSupplierPayButton(erp, s),
                 children: [
@@ -2480,14 +2449,18 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         .where(
           (c) =>
               c.clientType == 'معتمد مصنع' &&
-              (c.debtBalance > 0.01 || c.debtBalanceSyp > 0.01),
+              (c.hasDebt || c.hasCredit),
         )
         .toList();
-    final totalDue = debtors.fold<double>(0.0, (s, x) => s + x.debtBalance);
-    final totalDueSyp = debtors.fold<double>(
-      0.0,
-      (s, x) => s + x.debtBalanceSyp,
-    );
+    final totalDue = erp.clients
+        .where((c) => c.clientType == 'معتمد مصنع' && c.debtBalance > 0.01)
+        .fold<double>(0.0, (s, x) => s + x.debtBalance);
+    final totalDueSyp = erp.clients
+        .where((c) => c.clientType == 'معتمد مصنع' && c.debtBalanceSyp > 0.01)
+        .fold<double>(
+          0.0,
+          (s, x) => s + x.debtBalanceSyp,
+        );
 
     final q = _agentQuery.trim();
     final allAgents = erp.clients
@@ -2495,20 +2468,20 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         .toList();
     final filteredAgents = allAgents.where((c) {
       if (_agentCurrency != 'ALL') {
-        if (_agentCurrency == AppCurrency.usd && c.isSypCustomer && c.debtBalance <= 0.01) {
+        if (_agentCurrency == AppCurrency.usd && c.isSypCustomer && c.debtBalance.abs() <= 0.01) {
           return false;
         }
-        if (_agentCurrency == AppCurrency.syp && c.isUsdCustomer && c.debtBalanceSyp <= 0.01) {
+        if (_agentCurrency == AppCurrency.syp && c.isUsdCustomer && c.debtBalanceSyp.abs() <= 0.01) {
           return false;
         }
       }
       if (_agentFilter == 0) {
-        final hasDebt = _agentCurrency == AppCurrency.usd
-            ? c.debtBalance > 0.01
+        final hasBalance = _agentCurrency == AppCurrency.usd
+            ? c.debtBalance.abs() > 0.01
             : _agentCurrency == AppCurrency.syp
-                ? c.debtBalanceSyp > 0.01
-                : (c.debtBalance > 0.01 || c.debtBalanceSyp > 0.01);
-        if (!hasDebt) return false;
+                ? c.debtBalanceSyp.abs() > 0.01
+                : (c.hasDebt || c.hasCredit);
+        if (!hasBalance) return false;
       }
       if (q.isEmpty) return true;
       final text = '${c.name} ${c.phone} ${c.location}';
@@ -2717,7 +2690,13 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ],
                 ),
                 subtitle: Text(
-                  'المتبقي عليه: ${c.dualDebt} • الفواتير: ${invs.length}',
+                  c.hasCredit
+                      ? 'رصيد دائن للمعتمد (أمانة بذمتنا): ${c.dualCredit} • الفواتير: ${invs.length}'
+                      : 'المتبقي عليه: ${c.dualDebt} • الفواتير: ${invs.length}',
+                  style: TextStyle(
+                    color: c.hasCredit ? AppColors.dangerWaste : null,
+                    fontWeight: c.hasCredit ? FontWeight.bold : FontWeight.normal,
+                  ),
                 ),
                 trailing: _buildCustomerCollectButton(erp, c),
                 children: [
@@ -3124,7 +3103,13 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                                 ],
                               ),
                               subtitle: Text(
-                                'الرصيد المتبقي عليه: ${c.dualDebt} • الفواتير: ${clientInvs.length}${c.phone.isNotEmpty ? " • الهاتف: ${c.phone}" : ""}',
+                                c.hasCredit
+                                    ? 'رصيد دائن للزبون (أمانة بذمتنا): ${c.dualCredit} • الفواتير: ${clientInvs.length}${c.phone.isNotEmpty ? " • الهاتف: ${c.phone}" : ""}'
+                                    : 'الرصيد المتبقي عليه: ${c.dualDebt} • الفواتير: ${clientInvs.length}${c.phone.isNotEmpty ? " • الهاتف: ${c.phone}" : ""}',
+                                style: TextStyle(
+                                  color: c.hasCredit ? AppColors.dangerWaste : null,
+                                  fontWeight: c.hasCredit ? FontWeight.bold : FontWeight.normal,
+                                ),
                               ),
                               trailing: _buildCustomerCollectButton(erp, c),
                               children: [

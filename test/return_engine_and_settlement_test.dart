@@ -1527,6 +1527,210 @@ void main() {
       expect(invRow.remainingAmount, 400.0);
       expect(invRow.status, 'مستحق الدفع');
     });
+
+    test('Supplier Balance Flip: purchase return with prior deposit flips supplier to debtor and enables "Collect from Supplier"', () {
+      final erp = ERPProvider();
+      erp.mainCashBox = 1000.0;
+      final initialSafe = erp.mainCashBox;
+
+      final supplier = SupplierModel(
+        id: 'sup-flip-1',
+        name: 'مورد انقلاب الرصيد',
+        phone: '0911223344',
+        location: 'دمشق',
+        debtBalance: 0.0,
+      );
+      erp.suppliers.add(supplier);
+
+      erp.factoryBlocks.add(
+        FactoryBlockModel(
+          id: 'blk-flip-1',
+          blockCode: 'BLK-FLIP-1',
+          typeName: 'رخام كاردينال',
+          grade: 'درجة أولى',
+          supplierId: supplier.id,
+          supplierName: supplier.name,
+          weightTons: 10.0,
+          tonCost: 100.0,
+          tonSellingPrice: 150.0,
+        ),
+      );
+
+      // 1. Purchase invoice: $1,000 total, $600 advance paid, $400 unpaid debt
+      final inv = FactoryInvoiceModel(
+        id: 'inv-sup-flip-1',
+        invoiceNo: 'PINV-FLIP-001',
+        invoiceType: 'شراء_مورد',
+        partyId: supplier.id,
+        partyName: supplier.name,
+        date: DateTime(2026, 10, 1),
+        advancePayment: 600.0,
+        currency: AppCurrency.usd,
+        items: [
+          FactoryInvoiceItem(
+            itemId: 'blk-flip-1',
+            typeName: 'رخام كاردينال',
+            quantity: 10.0,
+            unitPrice: 100.0,
+            unitCost: 100.0,
+            description: 'بلوك كاردينال',
+          ),
+        ],
+      );
+      erp.factoryInvoices.add(inv);
+      supplier.debtBalance += (inv.grandTotal - inv.advancePayment);
+      expect(supplier.debtBalance, 400.0);
+      expect(supplier.hasDebt, isTrue);
+      expect(supplier.hasCredit, isFalse); // Under normal debt: Collect button strictly hidden
+
+      // 2. Return 7 tons ($700 value) settled via debt reduction / credit balance
+      // Unpaid debt was $400, so $400 clears the debt and $300 flips the supplier balance to -$300!
+      final returnDoc = AdjustmentInvoiceModel(
+        id: 'ret-sup-flip-1',
+        invoiceNo: 'PRET-FLIP-001',
+        module: 'factory',
+        kind: 'purchase_return',
+        partyName: supplier.name,
+        targetInvoiceId: inv.id,
+        targetInvoiceNo: inv.invoiceNo,
+        description: 'إرجاع 7 أطنان مع رصيد دائن',
+        amount: 700.0,
+        quantity: 7.0,
+        paymentAction: 'تخفيض دين',
+        currency: AppCurrency.usd,
+        date: DateTime(2026, 10, 2),
+        lines: [
+          AdjustmentLineModel(
+            itemId: 'blk-flip-1',
+            itemIndex: 0,
+            description: 'بلوك كاردينال',
+            unit: 'طن',
+            quantity: 7.0,
+            unitPrice: 100.0,
+            amount: 700.0,
+          ),
+        ],
+      );
+
+      final ok = erp.addAdjustmentInvoice(returnDoc);
+      expect(ok, isTrue);
+
+      // 3. Verify Supplier Account Balance Flipped to Debtor (مدين - لنا عنده رصيد دائن)
+      expect(supplier.debtBalance, -300.0);
+      expect(supplier.hasCredit, isTrue); // "تحصيل من هذا المورد" button is now ACTIVE!
+      expect(supplier.hasDebt, isFalse);  // "دفع للمورد" is STRICTLY HIDDEN!
+      expect(supplier.creditOf(AppCurrency.usd), 300.0);
+
+      // 4. Execute cash collection from supplier credit
+      final collectOk = erp.collectFromSupplierCredit(
+        supplier: supplier,
+        amount: 300.0,
+        currency: AppCurrency.usd,
+      );
+      expect(collectOk, isTrue);
+
+      // 5. Verify Safe gained the cash and supplier balance is neutralized to 0
+      expect(erp.mainCashBox, initialSafe + 300.0);
+      expect(supplier.debtBalance, 0.0);
+      expect(supplier.hasCredit, isFalse); // Button disappears
+      expect(supplier.hasDebt, isFalse);   // Settled ("خالص")
+    });
+
+    test('Customer / Dealer Balance Flip: sales full return with prior deposit flips customer to creditor and enables "Pay to Customer"', () {
+      final erp = ERPProvider();
+      erp.mainCashBox = 1000.0;
+      final initialSafe = erp.mainCashBox;
+
+      final client = ClientModel(
+        id: 'cli-flip-1',
+        name: 'معتمد انقلاب الرصيد',
+        phone: '0988112233',
+        location: 'حلب',
+        clientType: 'معتمد مصنع',
+        debtBalance: 0.0,
+      );
+      erp.clients.add(client);
+
+      // 1. Sales invoice: $1,000 total, $400 cash paid deposit, $600 unpaid debt
+      final inv = FactoryInvoiceModel(
+        id: 'inv-cli-flip-1',
+        invoiceNo: 'SINV-FLIP-001',
+        invoiceType: 'بيع_معتمد',
+        partyId: client.id,
+        partyName: client.name,
+        date: DateTime(2026, 10, 1),
+        advancePayment: 400.0,
+        currency: AppCurrency.usd,
+        items: [
+          FactoryInvoiceItem(
+            itemId: 'item-flip-1',
+            typeName: 'رخام موغلا',
+            quantity: 10.0,
+            unitPrice: 100.0,
+            unitCost: 70.0,
+            description: 'ألواح موغلا',
+          ),
+        ],
+      );
+      erp.factoryInvoices.add(inv);
+      client.debtBalance += (inv.grandTotal - inv.advancePayment);
+      expect(client.debtBalance, 600.0);
+      expect(client.hasDebt, isTrue);
+      expect(client.hasCredit, isFalse); // Under normal debt: Pay to Customer is strictly hidden
+
+      // 2. Full return ($1,000) with account settlement (debt reduction / permanent credit balance)
+      // Unpaid debt was $600, so $600 clears customer debt and $400 surplus flips account to -$400 (Creditor)
+      final returnDoc = AdjustmentInvoiceModel(
+        id: 'ret-cli-flip-1',
+        invoiceNo: 'SRET-FLIP-001',
+        module: 'factory',
+        kind: 'sales_return',
+        partyName: client.name,
+        targetInvoiceId: inv.id,
+        targetInvoiceNo: inv.invoiceNo,
+        description: 'إرجاع كامل مع رصيد دائن للمعتمد',
+        amount: 1000.0,
+        quantity: 10.0,
+        paymentAction: 'تخفيض دين',
+        currency: AppCurrency.usd,
+        date: DateTime(2026, 10, 2),
+        lines: [
+          AdjustmentLineModel(
+            itemId: 'item-flip-1',
+            itemIndex: 0,
+            description: 'ألواح موغلا',
+            unit: 'متر',
+            quantity: 10.0,
+            unitPrice: 100.0,
+            amount: 1000.0,
+          ),
+        ],
+      );
+
+      final ok = erp.addAdjustmentInvoice(returnDoc);
+      expect(ok, isTrue);
+
+      // 3. Verify Customer Account Balance Flipped to Creditor (دائن - الشركة مدينة له)
+      expect(client.debtBalance, -400.0);
+      expect(client.hasCredit, isTrue); // "دفع للمعتمد" button is now ACTIVE!
+      expect(client.hasDebt, isFalse);  // "تحصيل" button is STRICTLY HIDDEN!
+      expect(client.creditOf(AppCurrency.usd), 400.0);
+
+      // 4. Execute cash payout to customer from Main Safe
+      final payOk = erp.payCustomerCredit(
+        client: client,
+        amount: 400.0,
+        currency: AppCurrency.usd,
+      );
+      expect(payOk, isTrue);
+
+      // 5. Verify Safe decreased by $400 and customer balance is neutralized to 0
+      expect(erp.mainCashBox, initialSafe - 400.0);
+      expect(client.debtBalance, 0.0);
+      expect(client.hasCredit, isFalse); // Button disappears
+      expect(client.hasDebt, isFalse);   // Settled ("خالص")
+    });
   });
 }
+
 

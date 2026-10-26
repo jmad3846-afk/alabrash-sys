@@ -876,6 +876,19 @@ class SupplierModel {
 
   String get dualDebt => AppCurrency.dual(debtBalance, debtBalanceSyp);
 
+  bool get hasDebt => debtBalance > 0.01 || debtBalanceSyp > 0.01;
+  bool get hasCredit => debtBalance < -0.01 || debtBalanceSyp < -0.01;
+
+  double creditOf(String? currency) =>
+      AppCurrency.isSyp(currency)
+          ? (-debtBalanceSyp).clamp(0.0, double.infinity)
+          : (-debtBalance).clamp(0.0, double.infinity);
+
+  String get dualCredit => AppCurrency.dual(
+        (-debtBalance).clamp(0.0, double.infinity),
+        (-debtBalanceSyp).clamp(0.0, double.infinity),
+      );
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
@@ -966,6 +979,19 @@ class ClientModel {
   }
 
   String get dualDebt => AppCurrency.dual(debtBalance, debtBalanceSyp);
+
+  bool get hasDebt => debtBalance > 0.01 || debtBalanceSyp > 0.01;
+  bool get hasCredit => debtBalance < -0.01 || debtBalanceSyp < -0.01;
+
+  double creditOf(String? currency) =>
+      AppCurrency.isSyp(currency)
+          ? (-debtBalanceSyp).clamp(0.0, double.infinity)
+          : (-debtBalance).clamp(0.0, double.infinity);
+
+  String get dualCredit => AppCurrency.dual(
+        (-debtBalance).clamp(0.0, double.infinity),
+        (-debtBalanceSyp).clamp(0.0, double.infinity),
+      );
 
   Map<String, dynamic> toJson() => {
     'id': id,

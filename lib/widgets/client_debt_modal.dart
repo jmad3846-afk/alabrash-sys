@@ -4,6 +4,7 @@ import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import 'customer_collection_dialog.dart';
+import 'customer_credit_payout_dialog.dart';
 
 class ClientDebtModal extends StatelessWidget {
   final String titleFilter; // 'الكل' | 'معتمد مصنع' | 'زبون معمل' | 'مشروع معمل'
@@ -89,10 +90,35 @@ class ClientDebtModal extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          client.dualDebt,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.dangerWaste),
+                          client.hasCredit ? client.dualCredit : client.dualDebt,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: client.hasCredit
+                                ? AppColors.brandPrimaryText
+                                : AppColors.dangerWaste,
+                          ),
                         ),
-                        if (client.debtBalance > 0.01 || client.debtBalanceSyp > 0.01) ...[
+                        if (client.hasCredit) ...[
+                          const SizedBox(width: 10),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.dangerWaste,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              minimumSize: const Size(50, 30),
+                            ),
+                            onPressed: () => CustomerCreditPayoutDialog.show(
+                              context,
+                              client: client,
+                              erp: erp,
+                            ),
+                            child: Text(
+                              client.clientType == 'معتمد مصنع' ? 'دفع للمعتمد' : 'دفع للزبون',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ] else if (client.hasDebt) ...[
                           const SizedBox(width: 10),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
