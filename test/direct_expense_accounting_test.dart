@@ -200,6 +200,7 @@ void main() {
               unitCost: unitCost,
             ),
           ],
+          advancePayment: 900.0,
         ),
       );
 

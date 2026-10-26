@@ -747,6 +747,7 @@ void main() {
             ),
           ],
           discountAmount: 10,
+          advancePayment: 90,
         ),
       );
 

@@ -206,6 +206,12 @@ class ERPProvider extends ChangeNotifier {
   static const String blockPurchaseExpenseTypeId = 'block_purchases_expense';
   static const String cuttingExpenseTypeId = 'cutting_processing_expense';
 
+  // Realized Cash-Collected Revenue: unallocated debt settlements (opening / historical customer balances)
+  double unallocatedFactoryCollectionsUsd = 0.0;
+  double unallocatedFactoryCollectionsSyp = 0.0;
+  double unallocatedWorkshopCollectionsUsd = 0.0;
+  double unallocatedWorkshopCollectionsSyp = 0.0;
+
   ERPProvider() {
     _initDefaultSeedData();
     loadFromDisk();
@@ -3553,17 +3559,38 @@ class ERPProvider extends ChangeNotifier {
     return true;
   }
 
-  // Income Statement (P&L) Calculations — per currency
-  double totalFactoryRevenueOf(String? currency) => factoryInvoices
-      .where(
-        (i) =>
-            i.invoiceType == 'بيع_معتمد' &&
-            i.currency == AppCurrency.normalize(currency),
-      )
-      .fold(0.0, (s, i) => s + i.grandTotal);
-  double totalWorkshopRevenueOf(String? currency) => workshopInvoices
-      .where((i) => i.currency == AppCurrency.normalize(currency))
-      .fold(0.0, (s, i) => s + i.grandTotal);
+  // Income Statement (P&L) Calculations — Cash-Collected Revenue Model (per currency)
+  double totalFactoryRevenueOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    final invoiceCollections = factoryInvoices
+        .where(
+          (i) =>
+              i.invoiceType == 'بيع_معتمد' &&
+              i.currency == c,
+        )
+        .fold(0.0, (s, i) => s + i.advancePayment.clamp(0.0, i.grandTotal));
+    final unallocated = c == AppCurrency.usd
+        ? unallocatedFactoryCollectionsUsd
+        : unallocatedFactoryCollectionsSyp;
+    return invoiceCollections + unallocated;
+  }
+
+  double totalWorkshopRevenueOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    final invoiceCollections = workshopInvoices
+        .where((i) => i.currency == c)
+        .fold(
+          0.0,
+          (s, i) =>
+              s +
+              (i.depositDeducted + i.cashPaidNow).clamp(0.0, i.grandTotal),
+        );
+    final unallocated = c == AppCurrency.usd
+        ? unallocatedWorkshopCollectionsUsd
+        : unallocatedWorkshopCollectionsSyp;
+    return invoiceCollections + unallocated;
+  }
+
   double totalScrapRevenueOf(String? currency) => scrapItems
       .where((i) => i.isSold && i.currency == AppCurrency.normalize(currency))
       .fold(0.0, (s, i) => s + i.sellingPrice);
@@ -3592,33 +3619,90 @@ class ERPProvider extends ChangeNotifier {
         workshopServiceRevenueOf(currency);
   }
 
-  double factoryServiceRevenueOf(String? currency) => factoryInvoices
-      .where(
-        (invoice) =>
-            invoice.invoiceType == 'بيع_معتمد' &&
-            invoice.currency == AppCurrency.normalize(currency),
-      )
-      .fold<double>(
-        0,
-        (sum, invoice) =>
-            sum + invoice.servicesTotal + invoice.itemsServicesTotal,
-      );
+  double factoryServiceRevenueOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return factoryInvoices
+        .where(
+          (invoice) =>
+              invoice.invoiceType == 'بيع_معتمد' &&
+              invoice.currency == c,
+        )
+        .fold<double>(
+          0.0,
+          (sum, invoice) {
+            final services =
+                invoice.servicesTotal + invoice.itemsServicesTotal;
+            if (services <= 0) return sum;
+            final ratio = invoice.grandTotal > 0.0001
+                ? (invoice.advancePayment.clamp(0.0, invoice.grandTotal) /
+                        invoice.grandTotal)
+                    .clamp(0.0, 1.0)
+                : 0.0;
+            return sum + (services * ratio);
+          },
+        );
+  }
 
-  double workshopServiceRevenueOf(String? currency) => workshopInvoices
-      .where((invoice) => invoice.currency == AppCurrency.normalize(currency))
-      .fold<double>(0, (sum, invoice) => sum + invoice.servicesTotal);
+  double workshopServiceRevenueOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return workshopInvoices
+        .where((invoice) => invoice.currency == c)
+        .fold<double>(
+          0.0,
+          (sum, invoice) {
+            final services = invoice.servicesTotal;
+            if (services <= 0) return sum;
+            final paid = (invoice.depositDeducted + invoice.cashPaidNow)
+                .clamp(0.0, invoice.grandTotal);
+            final ratio = invoice.grandTotal > 0.0001
+                ? (paid / invoice.grandTotal).clamp(0.0, 1.0)
+                : 0.0;
+            return sum + (services * ratio);
+          },
+        );
+  }
 
-  double factorySalesDiscountOf(String? currency) => factoryInvoices
-      .where(
-        (invoice) =>
-            invoice.invoiceType == 'بيع_معتمد' &&
-            invoice.currency == AppCurrency.normalize(currency),
-      )
-      .fold<double>(0, (sum, invoice) => sum + invoice.discountAmount);
+  double factorySalesDiscountOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return factoryInvoices
+        .where(
+          (invoice) =>
+              invoice.invoiceType == 'بيع_معتمد' &&
+              invoice.currency == c,
+        )
+        .fold<double>(
+          0.0,
+          (sum, invoice) {
+            final discount = invoice.discountAmount;
+            if (discount <= 0) return sum;
+            final ratio = invoice.grandTotal > 0.0001
+                ? (invoice.advancePayment.clamp(0.0, invoice.grandTotal) /
+                        invoice.grandTotal)
+                    .clamp(0.0, 1.0)
+                : 0.0;
+            return sum + (discount * ratio);
+          },
+        );
+  }
 
-  double workshopSalesDiscountOf(String? currency) => workshopInvoices
-      .where((invoice) => invoice.currency == AppCurrency.normalize(currency))
-      .fold<double>(0, (sum, invoice) => sum + invoice.salesDiscount);
+  double workshopSalesDiscountOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return workshopInvoices
+        .where((invoice) => invoice.currency == c)
+        .fold<double>(
+          0.0,
+          (sum, invoice) {
+            final discount = invoice.salesDiscount;
+            if (discount <= 0) return sum;
+            final paid = (invoice.depositDeducted + invoice.cashPaidNow)
+                .clamp(0.0, invoice.grandTotal);
+            final ratio = invoice.grandTotal > 0.0001
+                ? (paid / invoice.grandTotal).clamp(0.0, 1.0)
+                : 0.0;
+            return sum + (discount * ratio);
+          },
+        );
+  }
 
   double get salesDiscounts => salesDiscountsOf(AppCurrency.usd);
   double get salesDiscountsSyp => salesDiscountsOf(AppCurrency.syp);
@@ -4437,6 +4521,9 @@ class ERPProvider extends ChangeNotifier {
   // combined with the invoice capital cost and distributed over the stone
   // items proportionally to each item's capital cost.
   bool addSupplierPurchaseInvoice(FactoryInvoiceModel inv) {
+    if (inv.advancePayment < 0 || inv.advancePayment > inv.grandTotal + 0.001) {
+      return false;
+    }
     if (inv.isCashInvoice &&
         (inv.invoiceType != 'شراء_مورد' ||
             inv.remainingBalance > 0.01 ||
@@ -4912,6 +4999,9 @@ class ERPProvider extends ChangeNotifier {
 
   // 6. POS Factory Invoice Sale (multi-item, Pending/Paid split)
   bool addFactoryPOSInvoice(FactoryInvoiceModel inv) {
+    if (inv.advancePayment < 0 || inv.advancePayment > inv.grandTotal + 0.001) {
+      return false;
+    }
     if (inv.isCashInvoice &&
         (inv.invoiceType != 'بيع_معتمد' || inv.remainingBalance > 0.01)) {
       return false;
@@ -5134,7 +5224,11 @@ class ERPProvider extends ChangeNotifier {
     saveToDisk();
   }
 
-  void assignOrderToInvoice(WorkshopOrderModel order, double cashPaidNow) {
+  bool assignOrderToInvoice(WorkshopOrderModel order, double cashPaidNow) {
+    if (cashPaidNow < 0 ||
+        (order.depositAmount + cashPaidNow) > order.agreedPrice + 0.001) {
+      return false;
+    }
     order.status = 'مكتملة ومرحلة';
     order.isCompleted = true;
 
@@ -5194,6 +5288,7 @@ class ERPProvider extends ChangeNotifier {
 
     notifyListeners();
     saveToDisk();
+    return true;
   }
 
   /// Comprehensive Workshop Order Cancellation Workflow:
@@ -5369,6 +5464,11 @@ class ERPProvider extends ChangeNotifier {
     String deductStockId = '',
     double deductQty = 0.0,
   }) {
+    if (inv.depositDeducted < 0 ||
+        inv.cashPaidNow < 0 ||
+        (inv.depositDeducted + inv.cashPaidNow) > inv.grandTotal + 0.001) {
+      return false;
+    }
     if (inv.isCashInvoice && inv.remainingBalance > 0.01) return false;
 
     // Multi-item path
@@ -5755,6 +5855,11 @@ class ERPProvider extends ChangeNotifier {
     FactoryOrderModel order,
     FactoryInvoiceModel invoice,
   ) {
+    if (invoice.advancePayment < order.depositAmount - 0.001 ||
+        invoice.advancePayment > invoice.grandTotal + 0.001) {
+      return false;
+    }
+
     // 1. Reconcile stock: restore original order reserved stock so addFactoryPOSInvoice deducts final edited items
     for (final it in order.items) {
       _restoreFactoryOrderItemStock(it);
@@ -6233,9 +6338,8 @@ class ERPProvider extends ChangeNotifier {
   /// Pays a supplier purchase invoice (we pay them): advances the invoice,
   /// reduces the supplier debt and the Main Cash Box (invoice currency).
   bool paySupplierInvoice(FactoryInvoiceModel inv, double amount) {
-    if (amount <= 0) return false;
-    final pay = amount.clamp(0.0, inv.remainingBalance).toDouble();
-    if (pay <= 0) return false;
+    if (amount <= 0 || amount > inv.remainingBalance + 0.001) return false;
+    final pay = amount;
     if (!takeCash('main', inv.currency, pay)) return false;
     inv.advancePayment += pay;
     inv.paymentStatus = inv.remainingBalance > 0.01 ? 'مستحق الدفع' : 'مدفوعة';
@@ -6257,9 +6361,8 @@ class ERPProvider extends ChangeNotifier {
 
   /// Collects a factory sale invoice (they pay us) — invoice currency.
   bool collectFactoryInvoice(FactoryInvoiceModel inv, double amount) {
-    if (amount <= 0) return false;
-    final take = amount.clamp(0.0, inv.remainingBalance).toDouble();
-    if (take <= 0) return false;
+    if (amount <= 0 || amount > inv.remainingBalance + 0.001) return false;
+    final take = amount;
     inv.advancePayment += take;
     inv.paymentStatus = inv.remainingBalance > 0.01 ? 'مستحق الدفع' : 'مدفوعة';
     addCash('main', inv.currency, take);
@@ -6275,9 +6378,8 @@ class ERPProvider extends ChangeNotifier {
   /// Collects a workshop invoice. Scrap-sourced invoices route to the
   /// Scrap Cash Box, everything else to the Main Cash Box.
   bool collectWorkshopInvoice(WorkshopInvoiceModel inv, double amount) {
-    if (amount <= 0) return false;
-    final take = amount.clamp(0.0, inv.remainingBalance).toDouble();
-    if (take <= 0) return false;
+    if (amount <= 0 || amount > inv.remainingBalance + 0.001) return false;
+    final take = amount;
     // Route the cash, then record the collection by raising cashPaidNow
     // (invoice fields are immutable, so the entry is replaced).
     final hasOnlyScrap = inv.items.isNotEmpty
@@ -6404,6 +6506,13 @@ class ERPProvider extends ChangeNotifier {
             inv.remainingBalance > 0.01 ? 'مستحق الدفع' : 'مدفوعة';
         remainingToSettle -= settlePart;
       }
+      if (remainingToSettle > 0.001) {
+        if (acctCurr == AppCurrency.usd) {
+          unallocatedFactoryCollectionsUsd += remainingToSettle;
+        } else {
+          unallocatedFactoryCollectionsSyp += remainingToSettle;
+        }
+      }
     }
 
     // 2. Workshop Retail Invoices (if Retail Customer)
@@ -6452,6 +6561,13 @@ class ERPProvider extends ChangeNotifier {
           );
         }
         remainingToSettle -= settlePart;
+      }
+      if (remainingToSettle > 0.001) {
+        if (acctCurr == AppCurrency.usd) {
+          unallocatedWorkshopCollectionsUsd += remainingToSettle;
+        } else {
+          unallocatedWorkshopCollectionsSyp += remainingToSettle;
+        }
       }
     }
 
@@ -6530,6 +6646,13 @@ class ERPProvider extends ChangeNotifier {
         );
       }
       remainingToSettle -= settlePart;
+    }
+    if (remainingToSettle > 0.001) {
+      if (c == AppCurrency.usd) {
+        unallocatedWorkshopCollectionsUsd += remainingToSettle;
+      } else {
+        unallocatedWorkshopCollectionsSyp += remainingToSettle;
+      }
     }
 
     // Also reduce client debt if matching client exists
@@ -6983,6 +7106,10 @@ class ERPProvider extends ChangeNotifier {
     mainCashBoxSyp = 0.0;
     scrapCashBoxSyp = 0.0;
     orderCashBoxSyp = 0.0;
+    unallocatedFactoryCollectionsUsd = 0.0;
+    unallocatedFactoryCollectionsSyp = 0.0;
+    unallocatedWorkshopCollectionsUsd = 0.0;
+    unallocatedWorkshopCollectionsSyp = 0.0;
 
     // 3. Reset partner capital & withdrawals (keep identities/ratios so the
     //    equity engine stays stable and the user can rebuild the balance sheet).
@@ -7225,6 +7352,22 @@ class ERPProvider extends ChangeNotifier {
       await prefs.setString(
         'dailyReports',
         jsonEncode(dailyReports.map((r) => r.toJson()).toList()),
+      );
+      await prefs.setDouble(
+        'unallocatedFactoryCollectionsUsd',
+        unallocatedFactoryCollectionsUsd,
+      );
+      await prefs.setDouble(
+        'unallocatedFactoryCollectionsSyp',
+        unallocatedFactoryCollectionsSyp,
+      );
+      await prefs.setDouble(
+        'unallocatedWorkshopCollectionsUsd',
+        unallocatedWorkshopCollectionsUsd,
+      );
+      await prefs.setDouble(
+        'unallocatedWorkshopCollectionsSyp',
+        unallocatedWorkshopCollectionsSyp,
       );
     } catch (_) {}
   }
@@ -7498,6 +7641,15 @@ class ERPProvider extends ChangeNotifier {
       if (scrapCashSyp != null) scrapCashBoxSyp = scrapCashSyp;
       final orderCashSyp = prefs.getDouble('orderCashBoxSyp');
       if (orderCashSyp != null) orderCashBoxSyp = orderCashSyp;
+
+      final uFacUsd = prefs.getDouble('unallocatedFactoryCollectionsUsd');
+      if (uFacUsd != null) unallocatedFactoryCollectionsUsd = uFacUsd;
+      final uFacSyp = prefs.getDouble('unallocatedFactoryCollectionsSyp');
+      if (uFacSyp != null) unallocatedFactoryCollectionsSyp = uFacSyp;
+      final uWrkUsd = prefs.getDouble('unallocatedWorkshopCollectionsUsd');
+      if (uWrkUsd != null) unallocatedWorkshopCollectionsUsd = uWrkUsd;
+      final uWrkSyp = prefs.getDouble('unallocatedWorkshopCollectionsSyp');
+      if (uWrkSyp != null) unallocatedWorkshopCollectionsSyp = uWrkSyp;
 
       final surplusStr = prefs.getString('surplusCosts');
       if (surplusStr != null) {

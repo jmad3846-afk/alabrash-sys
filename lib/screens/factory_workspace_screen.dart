@@ -1938,6 +1938,143 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     );
   }
 
+  void _showCollectFactoryInvoiceDialog(ERPProvider erp, FactoryInvoiceModel inv) {
+    final amountCtrl = TextEditingController(text: inv.remainingBalance.fmt);
+    String? errorMsg;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dctx) => StatefulBuilder(
+        builder: (dctx, setSt) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                const Icon(Icons.payments_rounded, color: AppColors.successGreen),
+                const SizedBox(width: 8),
+                Expanded(child: Text('تحصيل دفعة من فاتورة ${inv.invoiceNo}')),
+              ],
+            ),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('المعتمد: ${inv.partyName}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.panelBorder),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('إجمالي الفاتورة:', style: TextStyle(fontSize: 12)),
+                            Text('${inv.grandTotal.fmt} ${inv.currencySymbol}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('المحصل سابقاً:', style: TextStyle(fontSize: 12)),
+                            Text('${inv.advancePayment.fmt} ${inv.currencySymbol}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.successGreen)),
+                          ],
+                        ),
+                        const Divider(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('الرصيد المتبقي للتحصيل:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            Text(
+                              '${inv.remainingBalance.fmt} ${inv.currencySymbol}',
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.dangerWaste),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: 'المبلغ المحصل الآن (${inv.currencySymbol})',
+                      helperText: 'الحد الأقصى المسموح: ${inv.remainingBalance.fmt} ${inv.currencySymbol}',
+                      errorText: errorMsg,
+                      suffixIcon: TextButton(
+                        onPressed: () {
+                          setSt(() {
+                            amountCtrl.text = inv.remainingBalance.fmt;
+                            errorMsg = null;
+                          });
+                        },
+                        child: const Text('كامل المتبقي', style: TextStyle(fontSize: 11)),
+                      ),
+                    ),
+                    onChanged: (val) {
+                      final parsed = double.tryParse(val.trim()) ?? 0.0;
+                      setSt(() {
+                        if (parsed > inv.remainingBalance + 0.001) {
+                          errorMsg = 'خطأ: المبلغ المدخل يتجاوز الرصيد المتبقي (${inv.remainingBalance.fmt} ${inv.currencySymbol})!';
+                        } else if (parsed <= 0 && val.trim().isNotEmpty) {
+                          errorMsg = 'المبلغ يجب أن يكون أكبر من الصفر';
+                        } else {
+                          errorMsg = null;
+                        }
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('إلغاء')),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.successGreen,
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.check_circle_rounded, size: 16),
+                label: const Text('تأكيد التحصيل'),
+                onPressed: () {
+                  final payAmt = double.tryParse(amountCtrl.text.trim()) ?? 0.0;
+                  if (payAmt <= 0) {
+                    setSt(() => errorMsg = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.');
+                    return;
+                  }
+                  if (payAmt > inv.remainingBalance + 0.001) {
+                    setSt(() => errorMsg = 'خطأ: المبلغ المدخل (${payAmt.fmt}) يتجاوز الرصيد المتبقي (${inv.remainingBalance.fmt} ${inv.currencySymbol})!');
+                    return;
+                  }
+                  final ok = erp.collectFactoryInvoice(inv, payAmt);
+                  if (!ok) {
+                    setSt(() => errorMsg = 'تعذر تنفيذ عملية التحصيل.');
+                    return;
+                  }
+                  Navigator.pop(dctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('تم تحصيل ${payAmt.fmt} ${inv.currencySymbol} وإيداعها بالصندوق الرئيسي بنجاح.'),
+                      backgroundColor: AppColors.successGreen,
+                    ),
+                  );
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildPosInvoiceList(
     List<FactoryInvoiceModel> invoices, {
     required String emptyHint,
@@ -1984,6 +2121,19 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     ),
                   ),
                 ),
+                if (inv.isDue) ...[
+                  const SizedBox(width: 6),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.successGreen,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      minimumSize: const Size(60, 32),
+                    ),
+                    onPressed: () => _showCollectFactoryInvoiceDialog(context.read<ERPProvider>(), inv),
+                    child: const Text('تحصيل', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ],
                 IconButton(
                   tooltip: 'معاينة طباعة A4 (Print Preview)',
                   icon: const Icon(
@@ -3214,13 +3364,20 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 : wantsPay == true
                 ? (double.tryParse(downPayCtrl.text) ?? 0.0)
                 : 0.0;
-            if (advance < 0) advance = 0.0;
-            if (advance > grandTotal) advance = grandTotal;
-            if (cashInvoice &&
-                erp.cashOf('main', invCurrency) + 0.0001 < grandTotal) {
+            if (advance < 0) {
+              setSt(() => formError = 'خطأ: لا يمكن إدخال دفعة مقدمة سالبة.');
+              return;
+            }
+            if (advance > grandTotal + 0.01) {
+              setSt(() => formError =
+                  'خطأ: المبلغ المدفوع (${advance.fmt}) يتجاوز إجمالي قيمة الفاتورة (${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}).');
+              return;
+            }
+            if (advance > 0 &&
+                erp.cashOf('main', invCurrency) + 0.0001 < advance) {
               setSt(
                 () => formError =
-                    'رصيد الصندوق الرئيسي غير كافٍ لتسديد الفاتورة النقدية بهذه العملة.',
+                    'رصيد الصندوق الرئيسي غير كافٍ لسداد المبلغ المدفوع (${advance.fmt} ${AppCurrency.symbol(invCurrency)}).',
               );
               return;
             }
@@ -4101,13 +4258,28 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         ],
                                       ),
                                       if (wantsPay == true) ...[
-                                        TextField(
-                                          controller: downPayCtrl,
-                                          keyboardType: TextInputType.number,
-                                          decoration: const InputDecoration(
-                                            labelText: 'الدفعة المقدمة (تُخصم من الإجمالي)',
-                                          ),
-                                          onChanged: (_) => setSt(() {}),
+                                        Builder(
+                                          builder: (context) {
+                                            final adv = double.tryParse(downPayCtrl.text) ?? 0.0;
+                                            String? error;
+                                            if (downPayCtrl.text.isNotEmpty) {
+                                              if (adv < 0) {
+                                                error = 'لا يمكن إدخال دفعة سالبة';
+                                              } else if (adv > grandTotal + 0.01) {
+                                                error = 'المبلغ (${adv.fmt}) يتجاوز إجمالي الفاتورة (${grandTotal.fmt})';
+                                              }
+                                            }
+                                            return TextField(
+                                              controller: downPayCtrl,
+                                              keyboardType: TextInputType.number,
+                                              decoration: InputDecoration(
+                                                labelText: 'الدفعة المقدمة (تُخصم من الإجمالي)',
+                                                errorText: error,
+                                                helperText: 'الحد الأقصى المسموح: ${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
+                                              ),
+                                              onChanged: (_) => setSt(() {}),
+                                            );
+                                          },
                                         ),
                                       ],
                                     ],
@@ -5023,9 +5195,29 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             double advance = cashInvoice
                 ? grandTotal
                 : (double.tryParse(downPayCtrl.text) ?? 0.0);
-            if (advance < 0) advance = 0.0;
-            if (advance > grandTotal) {
-              advance = grandTotal;
+            if (advance < 0) {
+              setSt(() => formError = 'خطأ: لا يمكن إدخال دفعة سالبة.');
+              return;
+            }
+            if (assignedOrder != null) {
+              final dep = assignedOrder!.depositAmount;
+              if (advance < dep - 0.01) {
+                setSt(() => formError =
+                    'خطأ: إجمالي الدفعة المحصلة (${advance.fmt}) لا يمكن أن يقل عن العربون المحجوز مسبقاً (${dep.fmt} ${AppCurrency.symbol(posCurrency)}).');
+                return;
+              }
+              if (advance > grandTotal + 0.01) {
+                final maxAdd = (grandTotal - dep).clamp(0.0, double.infinity);
+                setSt(() => formError =
+                    'خطأ: إجمالي الدفعات (العربون ${dep.fmt} + الدفعة الجديدة) يتجاوز إجمالي الفاتورة (${grandTotal.fmt}). الحد الأقصى للدفعة الإضافية: ${maxAdd.fmt} ${AppCurrency.symbol(posCurrency)}.');
+                return;
+              }
+            } else {
+              if (advance > grandTotal + 0.01) {
+                setSt(() => formError =
+                    'خطأ: المبلغ المدخل (${advance.fmt}) يتجاوز إجمالي قيمة الفاتورة (${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}).');
+                return;
+              }
             }
             final client = erp.clients.firstWhere(
               (c) => c.id == selectedClientId,
@@ -5896,25 +6088,75 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         ),
                                       )
                                     else ...[
-                                      TextField(
-                                        controller: downPayCtrl,
-                                        keyboardType: TextInputType.number,
-                                        decoration: const InputDecoration(
-                                          labelText: 'الدفعة الأولى / المقدمة (إن وجدت)',
-                                          isDense: true,
-                                        ),
-                                        onChanged: (_) => setSt(() {}),
+                                      Builder(
+                                        builder: (context) {
+                                          String? errorText;
+                                          if (downPayCtrl.text.isNotEmpty) {
+                                            if (downPay < 0) {
+                                              errorText = 'لا يمكن إدخال دفعة سالبة';
+                                            } else if (assignedOrder != null) {
+                                              final dep = assignedOrder!.depositAmount;
+                                              if (downPay < dep - 0.01) {
+                                                errorText = 'أقل من العربون المسبق (${dep.fmt})';
+                                              } else if (downPay > grandTotal + 0.01) {
+                                                errorText = 'المجموع (${downPay.fmt}) يتجاوز إجمالي الفاتورة (${grandTotal.fmt})';
+                                              }
+                                            } else {
+                                              if (downPay > grandTotal + 0.01) {
+                                                errorText = 'الدفعة (${downPay.fmt}) تتجاوز إجمالي الفاتورة (${grandTotal.fmt})';
+                                              }
+                                            }
+                                          }
+                                          return Column(
+                                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                                            children: [
+                                              TextField(
+                                                controller: downPayCtrl,
+                                                keyboardType: TextInputType.number,
+                                                decoration: InputDecoration(
+                                                  labelText: assignedOrder != null
+                                                      ? 'إجمالي الدفعات (العربون المحجوز + دفعة جديدة)'
+                                                      : 'الدفعة الأولى / المقدمة (إن وجدت)',
+                                                  isDense: true,
+                                                  errorText: errorText,
+                                                  helperText: assignedOrder != null
+                                                      ? 'العربون: ${assignedOrder!.depositAmount.fmt} • الحد الأقصى المسموح: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}'
+                                                      : 'الحد الأقصى المسموح: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                ),
+                                                onChanged: (_) => setSt(() {}),
+                                              ),
+                                              if (downPayCtrl.text.isNotEmpty) ...[
+                                                const SizedBox(height: 6),
+                                                Row(
+                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                  children: [
+                                                    Text(
+                                                      'المتبقي على المعتمد: ${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                      style: TextStyle(
+                                                        fontWeight: FontWeight.bold,
+                                                        color: downPay > grandTotal + 0.01
+                                                            ? AppColors.dangerWaste
+                                                            : (grandTotal - downPay <= 0.01
+                                                                ? AppColors.successGreen
+                                                                : AppColors.dangerWaste),
+                                                      ),
+                                                    ),
+                                                    if (assignedOrder != null && downPay >= assignedOrder!.depositAmount)
+                                                      Text(
+                                                        'دفعة إضافية الآن: ${(downPay - assignedOrder!.depositAmount).fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                        style: const TextStyle(
+                                                          fontSize: 11,
+                                                          color: AppColors.accentPrimary,
+                                                          fontWeight: FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ],
+                                          );
+                                        },
                                       ),
-                                      if (downPayCtrl.text.isNotEmpty) ...[
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          'المتبقي على المعتمد: ${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: AppColors.dangerWaste,
-                                          ),
-                                        ),
-                                      ],
                                     ],
                                     const SizedBox(height: 16),
 

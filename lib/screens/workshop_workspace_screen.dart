@@ -2414,54 +2414,137 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
 
   void _showCollectProjectInvoiceDialog(ERPProvider erp, WorkshopInvoiceModel inv) {
     final amountCtrl = TextEditingController(text: inv.remainingBalance.fmt);
+    String? errorMsg;
     showDialog(
       context: context,
-      builder: (dctx) => AlertDialog(
-        title: Text('تحصيل دفعة من فاتورة ${inv.invoiceNo}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('العميل: ${inv.clientName}', style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text('إجمالي الفاتورة: ${inv.grandTotal.fmt} ${inv.currencySymbol}'),
-            Text('المسدد سابقاً: ${(inv.cashPaidNow + inv.depositDeducted).fmt} ${inv.currencySymbol}'),
-            Text('المتبقي للتحصيل: ${inv.remainingBalance.fmt} ${inv.currencySymbol}', style: const TextStyle(color: AppColors.dangerWaste, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: amountCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'المبلغ المحصل (${inv.currencySymbol})',
-                suffixText: inv.currencySymbol,
+      barrierDismissible: false,
+      builder: (dctx) => StatefulBuilder(
+        builder: (dctx, setSt) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                const Icon(Icons.payments_rounded, color: AppColors.successGreen),
+                const SizedBox(width: 8),
+                Expanded(child: Text('تحصيل دفعة من فاتورة ${inv.invoiceNo}')),
+              ],
+            ),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('العميل: ${inv.clientName}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.panelBorder),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('إجمالي الفاتورة:', style: TextStyle(fontSize: 12)),
+                            Text('${inv.grandTotal.fmt} ${inv.currencySymbol}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('المسدد سابقاً:', style: TextStyle(fontSize: 12)),
+                            Text('${(inv.cashPaidNow + inv.depositDeducted).fmt} ${inv.currencySymbol}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.successGreen)),
+                          ],
+                        ),
+                        const Divider(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('الرصيد المتبقي للتحصيل:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            Text(
+                              '${inv.remainingBalance.fmt} ${inv.currencySymbol}',
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.dangerWaste),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: 'المبلغ المحصل الآن (${inv.currencySymbol})',
+                      helperText: 'الحد الأقصى المسموح: ${inv.remainingBalance.fmt} ${inv.currencySymbol}',
+                      errorText: errorMsg,
+                      suffixIcon: TextButton(
+                        onPressed: () {
+                          setSt(() {
+                            amountCtrl.text = inv.remainingBalance.fmt;
+                            errorMsg = null;
+                          });
+                        },
+                        child: const Text('كامل المتبقي', style: TextStyle(fontSize: 11)),
+                      ),
+                    ),
+                    onChanged: (val) {
+                      final parsed = double.tryParse(val.trim()) ?? 0.0;
+                      setSt(() {
+                        if (parsed > inv.remainingBalance + 0.001) {
+                          errorMsg = 'خطأ: المبلغ المدخل يتجاوز الرصيد المتبقي (${inv.remainingBalance.fmt} ${inv.currencySymbol})!';
+                        } else if (parsed <= 0 && val.trim().isNotEmpty) {
+                          errorMsg = 'المبلغ يجب أن يكون أكبر من الصفر';
+                        } else {
+                          errorMsg = null;
+                        }
+                      });
+                    },
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('إلغاء')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.successGreen),
-            onPressed: () {
-              final amt = double.tryParse(amountCtrl.text) ?? 0.0;
-              if (amt <= 0 || amt > inv.remainingBalance + 0.01) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('يرجى إدخال مبلغ صحيح.')),
-                );
-                return;
-              }
-              erp.collectWorkshopInvoice(inv, amt);
-              Navigator.pop(dctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('تم تحصيل ${amt.fmt} ${inv.currencySymbol} بنجاح وترحيلها للصندوق.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('إلغاء')),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.successGreen,
+                  foregroundColor: Colors.white,
                 ),
-              );
-            },
-            child: const Text('تأكيد التحصيل'),
-          ),
-        ],
+                icon: const Icon(Icons.check_circle_rounded, size: 16),
+                label: const Text('تأكيد التحصيل'),
+                onPressed: () {
+                  final amt = double.tryParse(amountCtrl.text.trim()) ?? 0.0;
+                  if (amt <= 0) {
+                    setSt(() => errorMsg = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.');
+                    return;
+                  }
+                  if (amt > inv.remainingBalance + 0.001) {
+                    setSt(() => errorMsg = 'خطأ: المبلغ المدخل (${amt.fmt}) يتجاوز الرصيد المتبقي للتحصيل (${inv.remainingBalance.fmt} ${inv.currencySymbol})!');
+                    return;
+                  }
+                  final ok = erp.collectWorkshopInvoice(inv, amt);
+                  if (!ok) {
+                    setSt(() => errorMsg = 'تعذر تنفيذ عملية التحصيل.');
+                    return;
+                  }
+                  Navigator.pop(dctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('تم تحصيل ${amt.fmt} ${inv.currencySymbol} بنجاح وترحيلها للصندوق.'),
+                      backgroundColor: AppColors.successGreen,
+                    ),
+                  );
+                },
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -9680,33 +9763,58 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                 ),
                                               ),
                                             ] else ...[
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: TextField(
-                                                      controller: depositCtrl,
-                                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                                      decoration: const InputDecoration(
-                                                        labelText: 'العربون المخصوم (\$)',
-                                                        isDense: true,
-                                                        helperText: 'عربون الطلبية المحولة',
+                                              Builder(
+                                                builder: (context) {
+                                                  final curDep = double.tryParse(depositCtrl.text) ?? 0.0;
+                                                  final curCash = double.tryParse(cashCtrl.text) ?? 0.0;
+                                                  String? depError;
+                                                  String? cashError;
+                                                  if (depositCtrl.text.isNotEmpty) {
+                                                    if (curDep < 0) {
+                                                      depError = 'لا يمكن أن يكون سالباً';
+                                                    } else if (curDep > grandTotal + 0.01) {
+                                                      depError = 'العربون يتجاوز إجمالي الفاتورة';
+                                                    }
+                                                  }
+                                                  if (cashCtrl.text.isNotEmpty) {
+                                                    if (curCash < 0) {
+                                                      cashError = 'لا يمكن أن يكون سالباً';
+                                                    } else if (curDep + curCash > grandTotal + 0.01) {
+                                                      cashError = 'المجموع يتجاوز الفاتورة (${grandTotal.fmt})';
+                                                    }
+                                                  }
+                                                  return Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: TextField(
+                                                          controller: depositCtrl,
+                                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                          decoration: InputDecoration(
+                                                            labelText: 'العربون المخصوم (\$)',
+                                                            isDense: true,
+                                                            errorText: depError,
+                                                            helperText: 'الحد الأقصى: ${grandTotal.fmt}',
+                                                          ),
+                                                          onChanged: (_) => setSt(() => recomputeInvoiceFinancials()),
+                                                        ),
                                                       ),
-                                                      onChanged: (_) => setSt(() => recomputeInvoiceFinancials()),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: TextField(
-                                                      controller: cashCtrl,
-                                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                                      decoration: const InputDecoration(
-                                                        labelText: 'النقد المدفوع الآن (\$)',
-                                                        isDense: true,
+                                                      const SizedBox(width: 8),
+                                                      Expanded(
+                                                        child: TextField(
+                                                          controller: cashCtrl,
+                                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                          decoration: InputDecoration(
+                                                            labelText: 'النقد المدفوع الآن (\$)',
+                                                            isDense: true,
+                                                            errorText: cashError,
+                                                            helperText: 'أقصى نقد إضافي: ${(grandTotal - curDep).clamp(0.0, double.infinity).fmt}',
+                                                          ),
+                                                          onChanged: (_) => setSt(() {}),
+                                                        ),
                                                       ),
-                                                      onChanged: (_) => setSt(() {}),
-                                                    ),
-                                                  ),
-                                                ],
+                                                    ],
+                                                  );
+                                                },
                                               ),
                                             ],
                                             const SizedBox(height: 12),
@@ -10123,19 +10231,25 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                         decoration: BoxDecoration(
-                                                          color: remaining <= 0.01
-                                                              ? const Color(0xFFDCFCE7)
-                                                              : const Color(0xFFFEE2E8),
+                                                          color: remaining < -0.01
+                                                              ? const Color(0xFFFEE2E2)
+                                                              : (remaining <= 0.01
+                                                                  ? const Color(0xFFDCFCE7)
+                                                                  : const Color(0xFFFEE2E8)),
                                                           borderRadius: BorderRadius.circular(4),
                                                         ),
                                                         child: Text(
-                                                          remaining <= 0.01 ? 'مسددة بالكامل' : 'متبقي ذمة',
+                                                          remaining < -0.01
+                                                              ? 'تجاوز (${(-remaining).fmt})!'
+                                                              : (remaining <= 0.01 ? 'مسددة بالكامل' : 'متبقي ذمة'),
                                                           style: TextStyle(
                                                             fontSize: 10,
                                                             fontWeight: FontWeight.bold,
-                                                            color: remaining <= 0.01
-                                                                ? const Color(0xFF15803D)
-                                                                : const Color(0xFFB91C1C),
+                                                            color: remaining < -0.01
+                                                                ? const Color(0xFFB91C1C)
+                                                                : (remaining <= 0.01
+                                                                    ? const Color(0xFF15803D)
+                                                                    : const Color(0xFFB91C1C)),
                                                           ),
                                                         ),
                                                       ),
@@ -10192,10 +10306,18 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                     ? (grandTotal - deposit).clamp(0.0, double.infinity)
                                                     : (double.tryParse(cashCtrl.text) ?? 0.0);
 
-                                                if (deposit < 0 ||
-                                                    cash < 0 ||
-                                                    deposit + cash > grandTotal + 0.01) {
-                                                  setSt(() => formError = 'إجمالي العربون والنقد لا يمكن أن يتجاوز قيمة الفاتورة.');
+                                                if (deposit < 0) {
+                                                  setSt(() => formError = 'خطأ: قيمة العربون لا يمكن أن تكون سالبة.');
+                                                  return;
+                                                }
+                                                if (cash < 0) {
+                                                  setSt(() => formError = 'خطأ: قيمة النقد المدفوع لا يمكن أن تكون سالبة.');
+                                                  return;
+                                                }
+                                                if (deposit + cash > grandTotal + 0.01) {
+                                                  final maxCash = (grandTotal - deposit).clamp(0.0, double.infinity);
+                                                  setSt(() => formError =
+                                                      'خطأ: إجمالي الدفعات (العربون ${deposit.fmt} + النقد ${cash.fmt}) يتجاوز إجمالي قيمة الفاتورة (${grandTotal.fmt}). الحد الأقصى للنقد الإضافي المسموح به: ${maxCash.fmt} ${AppCurrency.symbol(invCurrency)}.');
                                                   return;
                                                 }
 

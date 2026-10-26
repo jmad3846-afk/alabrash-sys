@@ -4730,7 +4730,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ),
                   const Divider(height: 20),
                   _buildPlLine(
-                    'إجمالي مبيعات المصنع قبل الخصومات:',
+                    'إجمالي مبيعات المصنع المحصلة (قبل الخصم):',
                     erp.totalFactoryRevenue -
                         erp.factoryServiceRevenueOf(AppCurrency.usd) +
                         erp.factorySalesDiscountOf(AppCurrency.usd),
@@ -4740,12 +4740,12 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         erp.factorySalesDiscountOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
-                    'خدمات المصنع:',
+                    'خدمات المصنع المحصلة:',
                     erp.factoryServiceRevenueOf(AppCurrency.usd),
                     syp: erp.factoryServiceRevenueOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
-                    'إجمالي مبيعات وتفصيل المعمل قبل الخصومات:',
+                    'إجمالي مبيعات وتفصيل المعمل المحصلة (قبل الخصم):',
                     erp.totalWorkshopRevenue -
                         erp.workshopServiceRevenueOf(AppCurrency.usd) +
                         erp.workshopSalesDiscountOf(AppCurrency.usd),
@@ -4755,7 +4755,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         erp.workshopSalesDiscountOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
-                    'خدمات المعمل:',
+                    'خدمات المعمل المحصلة:',
                     erp.workshopServiceRevenueOf(AppCurrency.usd),
                     syp: erp.workshopServiceRevenueOf(AppCurrency.syp),
                   ),
