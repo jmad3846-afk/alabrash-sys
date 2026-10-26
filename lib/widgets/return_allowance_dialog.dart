@@ -39,6 +39,7 @@ class _LineRow {
   final double unitPrice;
   final bool readOnly;
   final TextEditingController controller;
+  bool isDamaged;
 
   _LineRow({
     required this.index,
@@ -49,6 +50,7 @@ class _LineRow {
     required this.alreadyReturned,
     required this.unitPrice,
     this.readOnly = false,
+    this.isDamaged = false,
   }) : controller = TextEditingController(
          text: readOnly ? AppCurrency.fmt(originalQty, 4) : '',
        );
@@ -409,18 +411,6 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
         }
       }
     }
-    final split = _settlementSplit;
-    if (_paymentAction == _debtAction && split.account > _partyBalance + 0.0000001) {
-      return 'رصيد الذمة الحالي ${_partyBalance.fmt} '
-          '${AppCurrency.symbol(_target!.currency)} لا يغطي المبلغ الكامل — '
-          'اختر التسوية النقدية من الصندوق.';
-    }
-    if (split.cash > 0 &&
-        !_isPurchase &&
-        widget.erp.cashOf('main', _target!.currency) + 0.0001 < split.cash) {
-      return 'رصيد الصندوق الرئيسي غير كافٍ لصرف ${split.cash.fmt} '
-          '${AppCurrency.symbol(_target!.currency)}.';
-    }
     return null;
   }
 
@@ -462,6 +452,7 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
                 quantity: row.qty,
                 unitPrice: row.unitPrice,
                 amount: row.amount,
+                isDamaged: row.isDamaged,
               ),
         ],
       ),
@@ -685,6 +676,7 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
     DataColumn(label: Text('سعر الوحدة', style: _headerStyle)),
     DataColumn(label: Text('الكمية المرتجعة', style: _headerStyle)),
     DataColumn(label: Text('المبلغ', style: _headerStyle)),
+    DataColumn(label: Text('تالف / هدر', style: _headerStyle)),
     DataColumn(label: Text('', style: _headerStyle)),
   ];
 
@@ -813,6 +805,34 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
                             color: row.amount > 0
                                 ? AppColors.dangerWaste
                                 : AppColors.brandSecondaryText,
+                          ),
+                        ),
+                      ),
+                      DataCell(
+                        Tooltip(
+                          message: 'تحديد كمرتجع تالف: يُحوّل مباشرة إلى خسائر الهدر غير الطبيعي ولا يدخل المخزون القابل للبيع',
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Checkbox(
+                                value: row.isDamaged,
+                                activeColor: AppColors.dangerWaste,
+                                onChanged: (val) {
+                                  setState(() {
+                                    row.isDamaged = val ?? false;
+                                  });
+                                },
+                              ),
+                              if (row.isDamaged)
+                                const Text(
+                                  'تالف',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.dangerWaste,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ),
@@ -976,8 +996,8 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
     final target = _target;
     final currency = target?.currency ?? AppCurrency.usd;
     final cashLabel = _isPurchase
-        ? 'من الصندوق — استرداد نقدي من الطرف'
-        : 'إلى الصندوق — صرف نقدي للطرف';
+        ? 'استرداد نقدي إلى الصندوق الرئيسي (مع إمكانية السحب على المكشوف)'
+        : 'صرف نقدي من الصندوق الرئيسي للطرف (مع إمكانية السحب على المكشوف)';
     final split = _settlementSplit;
     final showSplit = target != null && _paymentAction == _cashAction && _totalAmount > 0;
     return Column(
@@ -989,7 +1009,7 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
           items: [
             DropdownMenuItem(
               value: _debtAction,
-              child: Text('تسوية حساب (تخفيض الذمة المالية)'),
+              child: Text('تسوية حساب (تخفيض الذمة / رصيد دائن للطرف)'),
             ),
             DropdownMenuItem(value: _cashAction, child: Text(cashLabel)),
           ],

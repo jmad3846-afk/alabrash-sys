@@ -2339,8 +2339,9 @@ class ERPProvider extends ChangeNotifier {
   _ResolvedReturnLine _describeFactoryLine(
     FactoryInvoiceModel parent,
     int index,
-    double quantity,
-  ) {
+    double quantity, {
+    bool isDamaged = false,
+  }) {
     final item = parent.items[index];
     final unitQty = item.quantity > 0
         ? item.calculatedArea / item.quantity
@@ -2355,6 +2356,7 @@ class ERPProvider extends ChangeNotifier {
         quantity: quantity,
         unitPrice: unitPrice,
         amount: _money(quantity * unitPrice),
+        isDamaged: isDamaged,
       ),
       factoryItem: item,
       unitQty: unitQty,
@@ -2364,8 +2366,9 @@ class ERPProvider extends ChangeNotifier {
   _ResolvedReturnLine _describeWorkshopLine(
     List<WorkshopInvoiceItem> lines,
     int index,
-    double quantity,
-  ) {
+    double quantity, {
+    bool isDamaged = false,
+  }) {
     final item = lines[index];
     final unitPrice = _money(
       item.quantity > 0 ? item.agreedPrice / item.quantity : item.agreedPrice,
@@ -2381,6 +2384,7 @@ class ERPProvider extends ChangeNotifier {
         amount: _money(quantity * unitPrice),
         sourceType: item.sourceType,
         sourceLineItemId: item.sourceLineItemId,
+        isDamaged: isDamaged,
       ),
       workshopItem: item,
       unitQty: 1.0,
@@ -2525,6 +2529,10 @@ class ERPProvider extends ChangeNotifier {
     required WorkshopInvoiceModel? workshopOriginal,
   }) {
     for (final resolved in lines) {
+      if (resolved.line.isDamaged) {
+        // Damaged goods bypass stock feasibility since they route to Abnormal Waste Losses
+        continue;
+      }
       if (module == 'factory') {
         final item = resolved.factoryItem!;
         final isDealerSales = original?.invoiceType == 'بيع_معتمد';
@@ -2581,6 +2589,7 @@ class ERPProvider extends ChangeNotifier {
   /// Factory meters → مستودع المصنع, blocks → مخزون مصنع,
   /// workshop simple/complex detail, raw materials (مواد معمل) and surplus
   /// (الزيادة) each go to their own page.
+  /// Damaged goods bypass sellable stock and route directly to "Abnormal Waste/Losses" (خسائر الهدر غير الطبيعي).
   void _applyReturnRouting({
     required String module,
     required bool purchase,
@@ -2589,6 +2598,33 @@ class ERPProvider extends ChangeNotifier {
     required WorkshopInvoiceModel? workshopOriginal,
   }) {
     for (final resolved in lines) {
+      if (resolved.line.isDamaged) {
+        // Damaged goods bypass sellable inventory and route directly to Abnormal Waste/Losses (خسائر الهدر غير الطبيعي)
+        final invNo = original?.invoiceNo ?? workshopOriginal?.invoiceNo ?? 'مستند';
+        final voucherNo = 'إتلاف-مرتجع-$invNo';
+        final section = module == 'factory'
+            ? 'مستودع المصنع'
+            : (resolved.workshopItem?.sourceType ?? 'ورشة المعمل');
+        final currency = AppCurrency.normalize(
+          original?.currency ?? workshopOriginal?.currency ?? AppCurrency.usd,
+        );
+        wasteLogs.add(
+          WasteLogModel(
+            id: 'wl_ret_${DateTime.now().microsecondsSinceEpoch}_${wasteLogs.length}',
+            date: DateTime.now(),
+            wasteType: 'هدر غير طبيعي',
+            itemDescription: 'بند مرتجع تالف: ${resolved.line.description} (فاتورة $invNo)',
+            quantity: resolved.line.quantity,
+            cost: resolved.line.amount,
+            destructionVoucherNo: voucherNo,
+            currency: currency,
+            sourceSection: section,
+            sourceItemId: resolved.line.itemId,
+            unit: resolved.line.unit,
+          ),
+        );
+        continue;
+      }
       if (module == 'factory') {
         _applyFactoryReturnRouting(
           resolved: resolved,
@@ -3050,7 +3086,7 @@ class ERPProvider extends ChangeNotifier {
               items[index].description.trim() != raw.description.trim()) {
             return false;
           }
-          resolved.add(_describeFactoryLine(original, index, raw.quantity));
+          resolved.add(_describeFactoryLine(original, index, raw.quantity, isDamaged: raw.isDamaged));
         } else {
           var index = raw.itemIndex;
           if (index < 0 || index >= workshopLines.length) {
@@ -3073,7 +3109,7 @@ class ERPProvider extends ChangeNotifier {
                   raw.description.trim()) {
             return false;
           }
-          resolved.add(_describeWorkshopLine(workshopLines, index, raw.quantity));
+          resolved.add(_describeWorkshopLine(workshopLines, index, raw.quantity, isDamaged: raw.isDamaged));
         }
       }
 
@@ -3093,6 +3129,7 @@ class ERPProvider extends ChangeNotifier {
             amount: invoice.amount,
             sourceType: single.line.sourceType,
             sourceLineItemId: single.line.sourceLineItemId,
+            isDamaged: single.line.isDamaged,
           ),
           factoryItem: single.factoryItem,
           workshopItem: single.workshopItem,
@@ -3159,35 +3196,24 @@ class ERPProvider extends ChangeNotifier {
     const cashAction = 'استرداد نقدي للصندوق الرئيسي';
     const debtAction = 'تخفيض دين';
     final action = invoice.paymentAction;
-    if (action != cashAction && action != debtAction) return false;
+    final isCash = action == cashAction || action.contains('نقدي') || action.contains('صندوق');
+    final isDebt = action == debtAction || action.contains('دين') || action.contains('ذمة') || action.contains('دائن');
+    if (!isCash && !isDebt) return false;
 
     var debtPortion = 0.0;
     var cashPortion = 0.0;
-    if (action == debtAction) {
-      if (!_canReduceAdjustmentDebt(
-        supplier: purchase,
-        partyName: partyName,
-        partyId: partyId,
-        currency: invoice.currency,
-        amount: totalAmount,
-      )) {
-        return false;
-      }
+    if (isDebt) {
       debtPortion = totalAmount;
     } else {
       cashPortion = totalAmount;
-      if (cashPortion > 0 &&
-          !purchase &&
-          cashOf('main', invoice.currency) + 0.0001 < cashPortion) {
-        return false;
-      }
     }
 
     if (cashPortion > 0) {
       if (purchase) {
         addCash('main', invoice.currency, cashPortion);
-      } else if (!takeCash('main', invoice.currency, cashPortion)) {
-        return false;
+      } else {
+        // Cash refund allows safe overdraft if triggered
+        takeCash('main', invoice.currency, cashPortion, allowNegative: true);
       }
     }
     if (debtPortion > 0) {
@@ -3267,7 +3293,9 @@ class ERPProvider extends ChangeNotifier {
       returnInvoices.add(
         ReturnInvoiceModel(
           id: 'ret_${DateTime.now().microsecondsSinceEpoch}',
-          returnNo: _nextReturnNo(),
+          returnNo: invoice.invoiceNo.trim().isNotEmpty
+              ? invoice.invoiceNo
+              : _nextReturnNo(),
           date: stored.date,
           returnType: returnType,
           partyName: partyName,
@@ -3331,15 +3359,11 @@ class ERPProvider extends ChangeNotifier {
     required String partyId,
     required String currency,
     required double amount,
-  }) =>
-      _adjustmentDebtBalance(
-            supplier: supplier,
-            partyName: partyName,
-            partyId: partyId,
-            currency: currency,
-          ) +
-          0.0001 >=
-      amount;
+  }) {
+    // Automated financial settlement allows surplus return amounts to convert into
+    // permanent Credit Balance / Advance for future use across all states.
+    return true;
+  }
 
   double _adjustmentDebtBalance({
     required bool supplier,
@@ -3383,43 +3407,75 @@ class ERPProvider extends ChangeNotifier {
   }) {
     var remaining = amount;
     if (supplier) {
-      for (final account in suppliers.where(
+      final accounts = suppliers.where(
         (item) =>
             (partyId.isNotEmpty && item.id == partyId) ||
             item.name == partyName,
-      )) {
+      ).toList();
+      for (final account in accounts) {
         if (remaining <= 0) break;
-        final take = account.debtOf(currency).clamp(0.0, remaining).toDouble();
-        account.reduceDebt(currency, take);
+        final curDebt = account.debtOf(currency);
+        if (curDebt > 0) {
+          final take = curDebt.clamp(0.0, remaining).toDouble();
+          account.reduceDebt(currency, take);
+          remaining -= take;
+        }
+      }
+      final category = 'suppliers';
+      final historicalAccounts = openingEntry.legacyFinancials
+          .where(
+            (item) =>
+                item.category == category &&
+                item.name == partyName &&
+                item.currency == AppCurrency.normalize(currency),
+          )
+          .toList();
+      for (final account in historicalAccounts) {
+        if (remaining <= 0) break;
+        final take = account.amount.clamp(0.0, remaining).toDouble();
+        account.amount -= take;
         remaining -= take;
+      }
+      // Any remaining surplus converts to a Credit Balance / Advance for future use
+      if (remaining > 0.0001 && accounts.isNotEmpty) {
+        accounts.first.reduceDebt(currency, remaining, allowNegative: true);
+        remaining = 0;
       }
     } else {
-      for (final account in clients.where(
+      final accounts = clients.where(
         (item) =>
             (partyId.isNotEmpty && item.id == partyId) ||
             item.name == partyName,
-      )) {
+      ).toList();
+      for (final account in accounts) {
         if (remaining <= 0) break;
-        final take = account.debtOf(currency).clamp(0.0, remaining).toDouble();
-        account.reduceDebt(currency, take);
+        final curDebt = account.debtOf(currency);
+        if (curDebt > 0) {
+          final take = curDebt.clamp(0.0, remaining).toDouble();
+          account.reduceDebt(currency, take);
+          remaining -= take;
+        }
+      }
+      final category = 'clients';
+      final historicalAccounts = openingEntry.legacyFinancials
+          .where(
+            (item) =>
+                item.category == category &&
+                item.name == partyName &&
+                item.currency == AppCurrency.normalize(currency),
+          )
+          .toList();
+      for (final account in historicalAccounts) {
+        if (remaining <= 0) break;
+        final take = account.amount.clamp(0.0, remaining).toDouble();
+        account.amount -= take;
         remaining -= take;
       }
-    }
-
-    final category = supplier ? 'suppliers' : 'clients';
-    final historicalAccounts = openingEntry.legacyFinancials
-        .where(
-          (item) =>
-              item.category == category &&
-              item.name == partyName &&
-              item.currency == AppCurrency.normalize(currency),
-        )
-        .toList();
-    for (final account in historicalAccounts) {
-      if (remaining <= 0) break;
-      final take = account.amount.clamp(0.0, remaining).toDouble();
-      account.amount -= take;
-      remaining -= take;
+      // Any remaining surplus converts to a Credit Balance / Advance for future use
+      if (remaining > 0.0001 && accounts.isNotEmpty) {
+        accounts.first.reduceDebt(currency, remaining, allowNegative: true);
+        remaining = 0;
+      }
     }
     _syncOpeningFinancialTotals();
   }

@@ -571,6 +571,7 @@ class AdjustmentLineModel {
   final double amount; // quantity * unitPrice (rounded to 2 decimals)
   final String sourceType; // workshop source classification when applicable
   final String sourceLineItemId; // tailoring line item when applicable
+  final bool isDamaged; // Damaged return flag -> routes directly to Abnormal Waste Losses
 
   AdjustmentLineModel({
     required this.itemId,
@@ -582,6 +583,7 @@ class AdjustmentLineModel {
     required this.amount,
     this.sourceType = '',
     this.sourceLineItemId = '',
+    this.isDamaged = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -594,6 +596,7 @@ class AdjustmentLineModel {
     'amount': amount,
     'sourceType': sourceType,
     'sourceLineItemId': sourceLineItemId,
+    'isDamaged': isDamaged,
   };
 
   factory AdjustmentLineModel.fromJson(Map<String, dynamic> json) =>
@@ -607,6 +610,7 @@ class AdjustmentLineModel {
         amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
         sourceType: json['sourceType'] ?? '',
         sourceLineItemId: json['sourceLineItemId'] ?? '',
+        isDamaged: json['isDamaged'] ?? false,
       );
 }
 
@@ -853,11 +857,15 @@ class SupplierModel {
     }
   }
 
-  void reduceDebt(String? currency, double amount) {
+  void reduceDebt(String? currency, double amount, {bool allowNegative = true}) {
     if (AppCurrency.isSyp(currency)) {
-      debtBalanceSyp = (debtBalanceSyp - amount).clamp(0.0, double.infinity);
+      debtBalanceSyp = allowNegative
+          ? debtBalanceSyp - amount
+          : (debtBalanceSyp - amount).clamp(0.0, double.infinity);
     } else {
-      debtBalance = (debtBalance - amount).clamp(0.0, double.infinity);
+      debtBalance = allowNegative
+          ? debtBalance - amount
+          : (debtBalance - amount).clamp(0.0, double.infinity);
     }
   }
 
@@ -940,11 +948,15 @@ class ClientModel {
     }
   }
 
-  void reduceDebt(String? currency, double amount) {
+  void reduceDebt(String? currency, double amount, {bool allowNegative = true}) {
     if (AppCurrency.isSyp(currency)) {
-      debtBalanceSyp = (debtBalanceSyp - amount).clamp(0.0, double.infinity);
+      debtBalanceSyp = allowNegative
+          ? debtBalanceSyp - amount
+          : (debtBalanceSyp - amount).clamp(0.0, double.infinity);
     } else {
-      debtBalance = (debtBalance - amount).clamp(0.0, double.infinity);
+      debtBalance = allowNegative
+          ? debtBalance - amount
+          : (debtBalance - amount).clamp(0.0, double.infinity);
     }
   }
 
@@ -1474,7 +1486,7 @@ class FactoryInvoiceModel {
         .clamp(0.0, double.infinity);
   }
   double get remainingBalance =>
-      grandTotal - advancePayment - adjustmentsAmount;
+      (grandTotal - advancePayment - adjustmentsAmount).clamp(0.0, double.infinity);
 
   /// Due (مستحق الدفع) when any balance remains, otherwise Paid (مدفوعة).
   bool get isDue => remainingBalance > 0.01;
@@ -2395,7 +2407,7 @@ class WorkshopInvoiceModel {
       (itemsSubtotal + servicesTotal - salesDiscount).clamp(0.0, double.infinity);
 
   double get remainingBalance =>
-      grandTotal - depositDeducted - cashPaidNow - adjustmentsAmount;
+      (grandTotal - depositDeducted - cashPaidNow - adjustmentsAmount).clamp(0.0, double.infinity);
 
   Map<String, dynamic> toJson() => {
     'id': id,

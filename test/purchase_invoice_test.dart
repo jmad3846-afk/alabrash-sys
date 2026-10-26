@@ -119,7 +119,7 @@ void main() {
     final shipExp = erp.expenseRecords.where((e) => e.isInformational).toList();
     expect(shipExp, isNotEmpty);
     expect(shipExp.last.amount, 230.0);
-    expect(erp.expenseRecordsTotalOf('USD'), 0.0); // Does not double-deduct from operational profit
+    expect(erp.expenseRecordsTotalOf('USD'), 1000.0); // Direct expense from advance payment; informational shipping (230) excluded
   });
 
   test('fully paid purchase lands in Paid section', () async {

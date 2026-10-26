@@ -420,26 +420,148 @@ class A4StatementData {
   }
 
   double get totalInvoicedUsd => items
-      .where((i) => i.currency == AppCurrency.usd)
+      .where((i) => !i.isReturn && i.currency == AppCurrency.usd)
       .fold(0.0, (s, i) => s + i.totalAmount);
 
   double get totalInvoicedSyp => items
-      .where((i) => i.currency == AppCurrency.syp)
+      .where((i) => !i.isReturn && i.currency == AppCurrency.syp)
       .fold(0.0, (s, i) => s + i.totalAmount);
 
   double get totalPaidUsd => items
-      .where((i) => i.currency == AppCurrency.usd)
+      .where((i) => !i.isReturn && i.currency == AppCurrency.usd)
       .fold(0.0, (s, i) => s + i.paidAmount);
 
   double get totalPaidSyp => items
-      .where((i) => i.currency == AppCurrency.syp)
+      .where((i) => !i.isReturn && i.currency == AppCurrency.syp)
       .fold(0.0, (s, i) => s + i.paidAmount);
+
+  double get totalReturnsUsd => items
+      .where((i) => i.isReturn && i.currency == AppCurrency.usd)
+      .fold(0.0, (s, i) => s + i.totalAmount.abs());
+
+  double get totalReturnsSyp => items
+      .where((i) => i.isReturn && i.currency == AppCurrency.syp)
+      .fold(0.0, (s, i) => s + i.totalAmount.abs());
+
+  bool get isClearedViaReturns =>
+      !hasOutstandingDue &&
+      (totalReturnsUsd + totalReturnsSyp > 0.001) &&
+      (totalPaidUsd < totalInvoicedUsd || totalPaidUsd <= 0.001);
 
   bool get hasOutstandingDue =>
       currentBalanceUsd > 0.01 || currentBalanceSyp > 0.01;
 
   String get dualCurrentBalance =>
       AppCurrency.dual(currentBalanceUsd, currentBalanceSyp);
+
+  static List<A4StatementDetailLine> _adjustmentDetails(AdjustmentInvoiceModel ret) {
+    if (ret.lines.isNotEmpty) {
+      return ret.lines
+          .map((l) => A4StatementDetailLine(
+                description: l.description.isNotEmpty
+                    ? l.description
+                    : 'صنف مرتجع',
+                item: l.description.isNotEmpty ? l.description : 'صنف مرتجع',
+                specifications: l.isDamaged ? 'تالف / هدر غير طبيعي' : 'سليم',
+                type: l.sourceType.isNotEmpty
+                    ? l.sourceType
+                    : (l.unit.isNotEmpty ? l.unit : 'مرتجع'),
+                length: '—',
+                width: '—',
+                quantityText:
+                    '${l.quantity.fmt} ${l.unit.isNotEmpty ? l.unit : "وحدة"}',
+                unitPrice: l.unitPrice > 0
+                    ? l.unitPrice
+                    : (l.quantity > 0 ? l.amount / l.quantity : null),
+                servicesText: '—',
+                total: l.amount,
+              ))
+          .toList();
+    }
+    return [
+      A4StatementDetailLine(
+        description: ret.itemDescription.isNotEmpty
+            ? ret.itemDescription
+            : (ret.description.isNotEmpty ? ret.description : 'إشعار مرتجع'),
+        item: ret.itemDescription.isNotEmpty
+            ? ret.itemDescription
+            : 'صنف مرتجع',
+        specifications: '—',
+        type: 'مرتجع',
+        length: '—',
+        width: '—',
+        quantityText: ret.quantity > 0 ? '${ret.quantity.fmt} وحدة' : '—',
+        unitPrice: ret.quantity > 0 ? ret.amount / ret.quantity : ret.amount,
+        servicesText: '—',
+        total: ret.amount,
+      ),
+    ];
+  }
+
+  static A4StatementLineItem _fromAdjustment({
+    required int index,
+    required AdjustmentInvoiceModel ret,
+    required String category,
+  }) {
+    final isCashRefund = ret.paymentAction.contains('نقدي') ||
+        ret.paymentAction == 'cash_refund';
+    return A4StatementLineItem(
+      index: index,
+      date: ret.date,
+      documentNo: ret.invoiceNo,
+      description: ret.description.isNotEmpty
+          ? 'إشعار مرتجع: ${ret.description}'
+          : (ret.itemDescription.isNotEmpty
+              ? 'إشعار مرتجع: ${ret.itemDescription}'
+              : 'إشعار $category'),
+      category: category,
+      currency: ret.currency,
+      totalAmount: ret.amount,
+      paidAmount: isCashRefund ? ret.amount : 0.0,
+      remainingAmount: 0.0,
+      status: isCashRefund ? 'مرتجع نقدي' : 'مرتجع مسوى',
+      isReturn: true,
+      details: _adjustmentDetails(ret),
+    );
+  }
+
+  static A4StatementLineItem _fromLegacyReturn({
+    required int index,
+    required ReturnInvoiceModel ret,
+    required String category,
+  }) {
+    final isCashRefund = ret.paymentAction.contains('نقدي');
+    return A4StatementLineItem(
+      index: index,
+      date: ret.date,
+      documentNo: ret.returnNo,
+      description: 'إشعار مرتجع: ${ret.itemDescription}',
+      category: category,
+      currency: ret.currency,
+      totalAmount: ret.refundAmount,
+      paidAmount: isCashRefund ? ret.refundAmount : 0.0,
+      remainingAmount: 0.0,
+      status: isCashRefund ? 'مرتجع نقدي' : 'مرتجع مسوى',
+      isReturn: true,
+      details: [
+        A4StatementDetailLine(
+          description: ret.itemDescription,
+          item: ret.itemDescription,
+          specifications: '—',
+          type: ret.returnType,
+          length: '—',
+          width: '—',
+          quantityText:
+              '${ret.quantity.fmt} ${ret.unit.isNotEmpty ? ret.unit : "وحدة"}',
+          unitPrice: ret.quantity > 0
+              ? ret.refundAmount / ret.quantity
+              : ret.refundAmount,
+          servicesText: '—',
+          total: ret.refundAmount,
+        ),
+      ],
+    );
+  }
 
   // --------------------------------------------------------------------------
   // Factory constructor for Factory Suppliers
@@ -511,6 +633,11 @@ class A4StatementData {
                 .join(' + ')
           : 'فاتورة توريد مواد خام ومستلزمات';
 
+      final originalRemaining = (inv.grandTotal - inv.advancePayment).clamp(0.0, double.infinity);
+      final status = originalRemaining <= 0.01
+          ? 'مدفوعة بالكامل'
+          : (inv.remainingBalance <= 0.01 ? 'مصفى بالمرتجعات' : 'مستحق الدفع');
+
       items.add(
         A4StatementLineItem(
           index: idx++,
@@ -521,8 +648,8 @@ class A4StatementData {
           currency: inv.currency,
           totalAmount: inv.grandTotal,
           paidAmount: inv.advancePayment,
-          remainingAmount: inv.remainingBalance,
-          status: inv.isDue ? 'مستحق الدفع' : 'مدفوعة بالكامل',
+          remainingAmount: originalRemaining,
+          status: status,
           notes: inv.isGoodsDelivered ? 'واصلة' : 'غير واصلة (شحن مرسمل)',
           details: _factoryInvoiceDetails(inv, isSale: false),
         ),
@@ -530,41 +657,44 @@ class A4StatementData {
     }
 
     // Check return invoices
-    final returns = erp.returnInvoices
-        .where((r) => r.partyName.trim() == supplier.name.trim())
+    final adjReturns = erp.adjustmentInvoices
+        .where((r) =>
+            r.isReturn &&
+            (r.partyName.trim() == supplier.name.trim() ||
+                invs.any((i) => i.id == r.targetInvoiceId)))
         .toList();
-    for (final ret in returns) {
+    for (final ret in adjReturns) {
       items.add(
-        A4StatementLineItem(
+        _fromAdjustment(
           index: idx++,
-          date: ret.date,
-          documentNo: ret.returnNo,
-          description: 'إشعار مرتجع: ${ret.itemDescription}',
-          category: 'مرتجع',
-          currency: ret.currency,
-          totalAmount: ret.refundAmount,
-          paidAmount: ret.refundAmount,
-          remainingAmount: 0.0,
-          status: 'مرتجع مسوى',
-          isReturn: true,
-          details: [
-            A4StatementDetailLine(
-              description: ret.itemDescription,
-              item: ret.itemDescription,
-              specifications: '—',
-              type: ret.returnType,
-              length: '—',
-              width: '—',
-              quantityText: '${ret.quantity.fmt} وحدة',
-              unitPrice: ret.quantity > 0
-                  ? ret.refundAmount / ret.quantity
-                  : ret.refundAmount,
-              servicesText: '—',
-              total: ret.refundAmount,
-            ),
-          ],
+          ret: ret,
+          category: 'مرتجع مشتريات',
         ),
       );
+    }
+
+    final legacyReturns = erp.returnInvoices
+        .where((r) =>
+            r.partyName.trim() == supplier.name.trim() &&
+            !adjReturns.any((a) =>
+                a.invoiceNo == r.returnNo ||
+                (a.targetInvoiceId.isNotEmpty &&
+                    a.targetInvoiceId == r.parentInvoiceId &&
+                    (a.amount - r.refundAmount).abs() < 0.01)))
+        .toList();
+    for (final ret in legacyReturns) {
+      items.add(
+        _fromLegacyReturn(
+          index: idx++,
+          ret: ret,
+          category: 'مرتجع مشتريات',
+        ),
+      );
+    }
+
+    items.sort((a, b) => a.date.compareTo(b.date));
+    for (int i = 0; i < items.length; i++) {
+      items[i] = items[i].withIndex(i + 1);
     }
 
     final serial =
@@ -650,6 +780,11 @@ class A4StatementData {
                 .join(' + ')
           : 'فاتورة مبيعات مستودع المصنع';
 
+      final originalRemaining = (inv.grandTotal - inv.advancePayment).clamp(0.0, double.infinity);
+      final status = originalRemaining <= 0.01
+          ? 'مسددة بالكامل'
+          : (inv.remainingBalance <= 0.01 ? 'مصفى بالمرتجعات' : 'مستحق التحصيل');
+
       items.add(
         A4StatementLineItem(
           index: idx++,
@@ -660,11 +795,52 @@ class A4StatementData {
           currency: inv.currency,
           totalAmount: inv.grandTotal,
           paidAmount: inv.advancePayment,
-          remainingAmount: inv.remainingBalance,
-          status: inv.isDue ? 'مستحق التحصيل' : 'مسددة بالكامل',
+          remainingAmount: originalRemaining,
+          status: status,
           details: _factoryInvoiceDetails(inv, isSale: true),
         ),
       );
+    }
+
+    // Check return invoices
+    final adjReturns = erp.adjustmentInvoices
+        .where((r) =>
+            r.isReturn &&
+            (r.partyName.trim() == client.name.trim() ||
+                invs.any((i) => i.id == r.targetInvoiceId)))
+        .toList();
+    for (final ret in adjReturns) {
+      items.add(
+        _fromAdjustment(
+          index: idx++,
+          ret: ret,
+          category: 'مرتجع مبيعات',
+        ),
+      );
+    }
+
+    final legacyReturns = erp.returnInvoices
+        .where((r) =>
+            r.partyName.trim() == client.name.trim() &&
+            !adjReturns.any((a) =>
+                a.invoiceNo == r.returnNo ||
+                (a.targetInvoiceId.isNotEmpty &&
+                    a.targetInvoiceId == r.parentInvoiceId &&
+                    (a.amount - r.refundAmount).abs() < 0.01)))
+        .toList();
+    for (final ret in legacyReturns) {
+      items.add(
+        _fromLegacyReturn(
+          index: idx++,
+          ret: ret,
+          category: 'مرتجع مبيعات',
+        ),
+      );
+    }
+
+    items.sort((a, b) => a.date.compareTo(b.date));
+    for (int i = 0; i < items.length; i++) {
+      items[i] = items[i].withIndex(i + 1);
     }
 
     final serial =
@@ -751,6 +927,11 @@ class A4StatementData {
             : 'أعمال وتفصيل رخام وجرانيت ورشة المعمل';
       }
 
+      final originalRemaining = (inv.grandTotal - (inv.cashPaidNow + inv.depositDeducted)).clamp(0.0, double.infinity);
+      final status = originalRemaining <= 0.01
+          ? 'مسددة بالكامل'
+          : (inv.remainingBalance <= 0.01 ? 'مصفى بالمرتجعات' : 'مستحق التحصيل');
+
       items.add(
         A4StatementLineItem(
           index: idx++,
@@ -761,13 +942,52 @@ class A4StatementData {
           currency: inv.currency,
           totalAmount: inv.grandTotal,
           paidAmount: inv.cashPaidNow + inv.depositDeducted,
-          remainingAmount: inv.remainingBalance,
-          status: inv.remainingBalance > 0.01
-              ? 'مستحق التحصيل'
-              : 'مسددة بالكامل',
+          remainingAmount: originalRemaining,
+          status: status,
           details: _workshopInvoiceDetails(inv),
         ),
       );
+    }
+
+    // Check return invoices
+    final adjReturns = erp.adjustmentInvoices
+        .where((r) =>
+            r.isReturn &&
+            (r.partyName.trim() == client.name.trim() ||
+                invs.any((i) => i.id == r.targetInvoiceId)))
+        .toList();
+    for (final ret in adjReturns) {
+      items.add(
+        _fromAdjustment(
+          index: idx++,
+          ret: ret,
+          category: 'مرتجع مبيعات معمل',
+        ),
+      );
+    }
+
+    final legacyReturns = erp.returnInvoices
+        .where((r) =>
+            r.partyName.trim() == client.name.trim() &&
+            !adjReturns.any((a) =>
+                a.invoiceNo == r.returnNo ||
+                (a.targetInvoiceId.isNotEmpty &&
+                    a.targetInvoiceId == r.parentInvoiceId &&
+                    (a.amount - r.refundAmount).abs() < 0.01)))
+        .toList();
+    for (final ret in legacyReturns) {
+      items.add(
+        _fromLegacyReturn(
+          index: idx++,
+          ret: ret,
+          category: 'مرتجع مبيعات معمل',
+        ),
+      );
+    }
+
+    items.sort((a, b) => a.date.compareTo(b.date));
+    for (int i = 0; i < items.length; i++) {
+      items[i] = items[i].withIndex(i + 1);
     }
 
     final serial =
@@ -819,6 +1039,11 @@ class A4StatementData {
             : 'تنفيذ أعمال رخام وجرانيت للمشروع';
       }
 
+      final originalRemaining = (inv.grandTotal - (inv.cashPaidNow + inv.depositDeducted)).clamp(0.0, double.infinity);
+      final status = originalRemaining <= 0.01
+          ? 'مسدد بالكامل'
+          : (inv.remainingBalance <= 0.01 ? 'مصفى بالمرتجعات' : 'متبقي');
+
       items.add(
         A4StatementLineItem(
           index: idx++,
@@ -829,11 +1054,32 @@ class A4StatementData {
           currency: inv.currency,
           totalAmount: inv.grandTotal,
           paidAmount: inv.cashPaidNow + inv.depositDeducted,
-          remainingAmount: inv.remainingBalance,
-          status: inv.remainingBalance > 0.01 ? 'متبقي' : 'مسدد بالكامل',
+          remainingAmount: originalRemaining,
+          status: status,
           details: _workshopInvoiceDetails(inv),
         ),
       );
+    }
+
+    // Check return invoices for this project
+    final adjReturns = erp.adjustmentInvoices
+        .where((r) =>
+            r.isReturn &&
+            invs.any((i) => i.id == r.targetInvoiceId))
+        .toList();
+    for (final ret in adjReturns) {
+      items.add(
+        _fromAdjustment(
+          index: idx++,
+          ret: ret,
+          category: 'مرتجع مشروع',
+        ),
+      );
+    }
+
+    items.sort((a, b) => a.date.compareTo(b.date));
+    for (int i = 0; i < items.length; i++) {
+      items[i] = items[i].withIndex(i + 1);
     }
 
     final dueUsd = erp.projectDue(project.id);
@@ -1783,10 +2029,14 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   label: 'حالة الحساب المالية:',
                   value: data.hasOutstandingDue
                       ? 'ذمة مستحقة'
-                      : 'خالص ومسدد بالكامل',
+                      : (data.isClearedViaReturns
+                          ? 'مصفى بالمرتجعات'
+                          : 'خالص ومسدد بالكامل'),
                   valueColor: data.hasOutstandingDue
                       ? const Color(0xFFDC2626)
-                      : const Color(0xFF16A34A),
+                      : (data.isClearedViaReturns
+                          ? const Color(0xFF7C3AED)
+                          : const Color(0xFF16A34A)),
                   isBold: true,
                 ),
               ),
@@ -2058,9 +2308,22 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
             final it = pageItems[idx];
             final isEven = idx % 2 == 0;
             final isDue = it.remainingAmount > 0.01;
+            final isClearedReturn = it.status == 'مصفى بالمرتجعات';
+            final statusBg = it.isReturn
+                ? const Color(0xFFF3E8FF)
+                : (isClearedReturn
+                    ? const Color(0xFFF3E8FF)
+                    : (isDue ? const Color(0xFFFEE2E2) : const Color(0xFFDCFCE7)));
+            final statusTextColor = it.isReturn
+                ? const Color(0xFF6B21A8)
+                : (isClearedReturn
+                    ? const Color(0xFF6B21A8)
+                    : (isDue ? const Color(0xFF991B1B) : const Color(0xFF166534)));
 
             final rowWidget = Container(
-              color: isEven ? Colors.white : const Color(0xFFF8FAFC),
+              color: it.isReturn
+                  ? const Color(0xFFFAF5FF)
+                  : (isEven ? Colors.white : const Color(0xFFF8FAFC)),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
               child: Row(
                 children: [
@@ -2090,10 +2353,12 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     width: 80,
                     child: Text(
                       it.documentNo,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF0F172A),
+                        color: it.isReturn
+                            ? const Color(0xFF7C3AED)
+                            : const Color(0xFF0F172A),
                       ),
                     ),
                   ),
@@ -2140,11 +2405,15 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   SizedBox(
                     width: 82,
                     child: Text(
-                      '${it.totalAmount.fmt} ${it.currencySymbol}',
-                      style: const TextStyle(
+                      it.isReturn
+                          ? '-${it.totalAmount.fmt} ${it.currencySymbol}'
+                          : '${it.totalAmount.fmt} ${it.currencySymbol}',
+                      style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF0F172A),
+                        color: it.isReturn
+                            ? const Color(0xFF7C3AED)
+                            : const Color(0xFF0F172A),
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -2184,9 +2453,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: isDue
-                              ? const Color(0xFFFEE2E2)
-                              : const Color(0xFFDCFCE7),
+                          color: statusBg,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -2194,9 +2461,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                           style: TextStyle(
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
-                            color: isDue
-                                ? const Color(0xFF991B1B)
-                                : const Color(0xFF166534),
+                            color: statusTextColor,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -2270,6 +2535,13 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                           'إجمالي الفواتير / المطالبات:',
                           '${data.totalInvoicedUsd.fmt} \$',
                         ),
+                        if (data.totalReturnsUsd > 0.001)
+                          _buildSummaryLine(
+                            'إجمالي المرتجعات:',
+                            '-${data.totalReturnsUsd.fmt} \$',
+                            color: const Color(0xFF7C3AED),
+                            isBold: true,
+                          ),
                         _buildSummaryLine(
                           'إجمالي المدفوع / المسدد:',
                           '${data.totalPaidUsd.fmt} \$',
@@ -2324,6 +2596,13 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                           'إجمالي الفواتير / المطالبات:',
                           '${data.totalInvoicedSyp.fmt} ل.س',
                         ),
+                        if (data.totalReturnsSyp > 0.001)
+                          _buildSummaryLine(
+                            'إجمالي المرتجعات:',
+                            '-${data.totalReturnsSyp.fmt} ل.س',
+                            color: const Color(0xFF7C3AED),
+                            isBold: true,
+                          ),
                         _buildSummaryLine(
                           'إجمالي المدفوع / المسدد:',
                           '${data.totalPaidSyp.fmt} ل.س',
@@ -2425,10 +2704,14 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
+          const SizedBox(width: 4),
           Text(
             value,
             style: TextStyle(
