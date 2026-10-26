@@ -225,12 +225,18 @@ class DashboardScreen extends StatelessWidget {
                 ),
 
                 // Metric 4: Main Cash Box
-                MetricCard(
-                  title: 'الصندوق الرئيسي',
-                  value: erp.dualMainCash,
-                  icon: Icons.payments_rounded,
-                  iconColor: AppColors.accentPrimary,
-                  bgColor: AppColors.chipBgBlue,
+                Builder(
+                  builder: (context) {
+                    final hasDeficit = erp.mainCashBox < -0.001 || erp.mainCashBoxSyp < -0.001;
+                    return MetricCard(
+                      title: 'الصندوق الرئيسي',
+                      value: erp.dualMainCash,
+                      subtitle: hasDeficit ? 'تنبيه: يوجد عجز في رصيد الصندوق' : '',
+                      icon: Icons.payments_rounded,
+                      iconColor: hasDeficit ? AppColors.dangerWaste : AppColors.accentPrimary,
+                      bgColor: hasDeficit ? const Color(0xFFFEE2E2) : AppColors.chipBgBlue,
+                    );
+                  },
                 ),
 
                 // Metric 5: Scrap Cash Box

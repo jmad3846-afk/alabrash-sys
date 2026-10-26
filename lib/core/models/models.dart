@@ -511,6 +511,7 @@ class ExpenseRecordModel {
   final String description;
   final DateTime date;
   final bool isInformational;
+  final String cashBox;
 
   ExpenseRecordModel({
     required this.id,
@@ -523,6 +524,7 @@ class ExpenseRecordModel {
     this.description = '',
     DateTime? date,
     this.isInformational = false,
+    this.cashBox = 'main',
   }) : date = date ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
@@ -536,6 +538,7 @@ class ExpenseRecordModel {
     'description': description,
     'date': date.toIso8601String(),
     'isInformational': isInformational,
+    'cashBox': cashBox,
   };
 
   factory ExpenseRecordModel.fromJson(Map<String, dynamic> json) =>
@@ -548,8 +551,9 @@ class ExpenseRecordModel {
         staffId: json['staffId'],
         personShare: (json['personShare'] ?? 0).toDouble(),
         description: json['description'] ?? '',
-        date: DateTime.parse(json['date']),
+        date: json['date'] != null ? DateTime.parse(json['date']) : null,
         isInformational: json['isInformational'] ?? false,
+        cashBox: json['cashBox'] ?? 'main',
       );
 }
 

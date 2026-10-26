@@ -120,29 +120,55 @@ class AppHeader extends StatelessWidget {
     required Color accentColor,
     required IconData icon,
   }) {
+    final isDeficit = usd < -0.001 || syp < -0.001;
+    final effectiveBg = isDeficit ? const Color(0xFFFEE2E2) : bgColor;
+    final effectiveAccent = isDeficit ? AppColors.dangerWaste : accentColor;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: bgColor,
+        color: effectiveBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: accentColor.withValues(alpha: 0.3), width: 1.0),
+        border: Border.all(
+          color: isDeficit ? AppColors.dangerWaste : accentColor.withValues(alpha: 0.3),
+          width: isDeficit ? 1.5 : 1.0,
+        ),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: accentColor),
+          Icon(icon, size: 16, color: effectiveAccent),
           const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                title,
-                style: TextStyle(fontSize: 10, color: accentColor, fontWeight: FontWeight.w600),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(fontSize: 10, color: effectiveAccent, fontWeight: FontWeight.w600),
+                  ),
+                  if (isDeficit) ...[
+                    const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: AppColors.dangerWaste,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: const Text(
+                        'عجز',
+                        style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               Text(
                 '${usd.fmt}\$ • ${syp.fmt}ل.س',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: accentColor),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: effectiveAccent),
               ),
             ],
           ),

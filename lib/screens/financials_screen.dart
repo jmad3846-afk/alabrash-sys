@@ -1633,6 +1633,24 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                               ),
                             ],
                           ),
+                          if (boxCash < currentDue) ...[
+                            const SizedBox(height: 6),
+                            const Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('حالة السحب:',
+                                    style: TextStyle(fontSize: 11, color: AppColors.brandSecondaryText)),
+                                Text(
+                                  'مسموح بالسالب (سحب على المكشوف)',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11,
+                                    color: AppColors.dangerWaste,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1709,11 +1727,6 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   if (amount > currentDue + 0.001) {
                     setSt(() => errorMsg =
                         'لا يمكن دفع مبلغ أكبر من المستحق المطلوب للمورد (${currentDue.fmt} $sym)!');
-                    return;
-                  }
-                  if (amount > boxCash + 0.001) {
-                    setSt(() => errorMsg =
-                        'رصيد الصندوق الرئيسي غير كافٍ لإتمام الدفع (المتوفر: ${boxCash.fmt} $sym).');
                     return;
                   }
 
@@ -5062,16 +5075,38 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         children: [
           Row(
             children: [
-              Icon(icon, color: accentColor, size: 24),
+              Icon(icon, color: (balance < -0.001 || balanceSyp < -0.001) ? AppColors.dangerWaste : accentColor, size: 24),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: accentColor,
-                  ),
+                child: Row(
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: (balance < -0.001 || balanceSyp < -0.001) ? AppColors.dangerWaste : accentColor,
+                      ),
+                    ),
+                    if (balance < -0.001 || balanceSyp < -0.001) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.dangerWaste,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'عجز / مكشوف',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
@@ -5101,7 +5136,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: accentColor,
+                        color: balance < -0.001 ? AppColors.dangerWaste : accentColor,
                       ),
                     ),
                   if (currencyFilter != AppCurrency.usd)
@@ -5110,7 +5145,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       style: TextStyle(
                         fontSize: currencyFilter == AppCurrency.syp ? 20 : 15,
                         fontWeight: FontWeight.bold,
-                        color: accentColor,
+                        color: balanceSyp < -0.001 ? AppColors.dangerWaste : accentColor,
                       ),
                     ),
                 ],

@@ -1403,6 +1403,7 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
     final descriptionController = TextEditingController();
     final personController = TextEditingController();
     var currency = AppCurrency.usd;
+    var selectedBox = 'main';
     String? staffId;
     final shouldAdd = await showDialog<bool>(
       context: context,
@@ -1422,17 +1423,74 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                     ),
                     decoration: const InputDecoration(
                       labelText: 'مبلغ المصروف',
+                      prefixIcon: Icon(Icons.money_rounded),
                     ),
                   ),
+                  const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     initialValue: currency,
                     decoration: const InputDecoration(labelText: 'العملة'),
                     items: const [
-                      DropdownMenuItem(value: 'USD', child: Text('USD')),
-                      DropdownMenuItem(value: 'SYP', child: Text('SYP')),
+                      DropdownMenuItem(value: 'USD', child: Text('دولار (USD)')),
+                      DropdownMenuItem(value: 'SYP', child: Text('ليرة سورية (SYP)')),
                     ],
                     onChanged: (value) =>
                         setDialogState(() => currency = value ?? 'USD'),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedBox,
+                    decoration: const InputDecoration(labelText: 'الصندوق / الخزينة المخصوم منها'),
+                    items: [
+                      DropdownMenuItem(
+                        value: 'main',
+                        child: Text('الصندوق الرئيسي (الخزينة) • المتوفر: ${erp.cashOf('main', currency).fmt} ${AppCurrency.symbol(currency)}'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'scrap',
+                        child: Text('صندوق الزيادات والسكراب • المتوفر: ${erp.cashOf('scrap', currency).fmt} ${AppCurrency.symbol(currency)}'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'order',
+                        child: Text('صندوق الطلبيات • المتوفر: ${erp.cashOf('order', currency).fmt} ${AppCurrency.symbol(currency)}'),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => selectedBox = value ?? 'main'),
+                  ),
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: erp.cashOf(selectedBox, currency) < 0
+                          ? const Color(0xFFFEE2E2)
+                          : const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: erp.cashOf(selectedBox, currency) < 0
+                            ? const Color(0xFFFCA5A5)
+                            : const Color(0xFFBBF7D0),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'رصيد الخزينة المحدد:',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        Text(
+                          '${erp.cashOf(selectedBox, currency).fmt} ${AppCurrency.symbol(currency)} (يخصم منه فوراً ومسموح بالسالب)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: erp.cashOf(selectedBox, currency) < 0
+                                ? AppColors.dangerWaste
+                                : AppColors.successGreen,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   DropdownButtonFormField<String?>(
                     initialValue: staffId,
@@ -1486,17 +1544,20 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('إلغاء'),
             ),
-            FilledButton(
+            FilledButton.icon(
+              icon: const Icon(Icons.check_circle_outline, size: 18),
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('إضافة مصروف'),
+              label: const Text('إضافة المصروف وخصم قيمته'),
             ),
           ],
         ),
       ),
     );
     if (shouldAdd == true) {
-      final amount = double.tryParse(amountController.text) ?? 0;
-      final share = double.tryParse(shareController.text) ?? 0;
+      final cleanAmountText = amountController.text.trim().replaceAll(',', '.');
+      final amount = double.tryParse(cleanAmountText) ?? 0;
+      final cleanShareText = shareController.text.trim().replaceAll(',', '.');
+      final share = double.tryParse(cleanShareText) ?? 0;
       if (amount <= 0 ||
           share < 0 ||
           share > amount ||
@@ -1512,14 +1573,16 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
           staffId: staffId,
           personShare: share,
           description: descriptionController.text.trim(),
+          cashBox: selectedBox,
         );
-        erp.addExpenseRecord(expense);
+        erp.addExpenseRecord(expense, box: selectedBox);
         if (staffId != null && share > 0) {
           erp.staffList
               .firstWhere((staff) => staff.id == staffId)
               .addEarning(currency, share);
           erp.refresh();
         }
+        _message('تمت إضافة المصروف وخصم ${amount.fmt} ${AppCurrency.symbol(currency)} من الخزينة بنجاح.');
       }
     }
     amountController.dispose();
@@ -1650,7 +1713,7 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                         ],
                       ),
                       subtitle: Text(
-                        '${expense.description} • ${expense.personName.isEmpty ? 'دون مستفيد' : expense.personName}${expense.personShare > 0 ? ' • الحصة ${expense.personShare.fmt}' : ''}${expense.staffId != null ? ' • مسجل في القوى العاملة' : ''}',
+                        '${expense.description} • ${expense.personName.isEmpty ? 'دون مستفيد' : expense.personName}${expense.personShare > 0 ? ' • الحصة ${expense.personShare.fmt}' : ''}${expense.staffId != null ? ' • مسجل في القوى العاملة' : ''} • مخصوم من: ${expense.cashBox == 'scrap' ? 'صندوق الزيادات' : expense.cashBox == 'order' ? 'صندوق الطلبيات' : 'الخزينة الرئيسية'}',
                       ),
                     ),
                 ],

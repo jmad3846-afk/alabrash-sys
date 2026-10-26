@@ -72,35 +72,36 @@ class ERPProvider extends ChangeNotifier {
     }
   }
 
-  /// Takes cash from a box fund when the balance covers it.
-  bool takeCash(String box, String? currency, double amount) {
+  /// Takes cash from a box fund when the balance covers it, or when [allowNegative]
+  /// is true (strictly for Sidebar Expenses and Supplier Payments overdraft).
+  bool takeCash(String box, String? currency, double amount, {bool allowNegative = false}) {
     if (amount <= 0) return false;
     final syp = AppCurrency.isSyp(currency);
     switch (box) {
       case 'scrap':
         if (syp) {
-          if (scrapCashBoxSyp + 0.0001 < amount) return false;
+          if (!allowNegative && scrapCashBoxSyp + 0.0001 < amount) return false;
           scrapCashBoxSyp -= amount;
         } else {
-          if (scrapCashBox + 0.0001 < amount) return false;
+          if (!allowNegative && scrapCashBox + 0.0001 < amount) return false;
           scrapCashBox -= amount;
         }
         return true;
       case 'order':
         if (syp) {
-          if (orderCashBoxSyp + 0.0001 < amount) return false;
+          if (!allowNegative && orderCashBoxSyp + 0.0001 < amount) return false;
           orderCashBoxSyp -= amount;
         } else {
-          if (orderCashBox + 0.0001 < amount) return false;
+          if (!allowNegative && orderCashBox + 0.0001 < amount) return false;
           orderCashBox -= amount;
         }
         return true;
       default:
         if (syp) {
-          if (mainCashBoxSyp + 0.0001 < amount) return false;
+          if (!allowNegative && mainCashBoxSyp + 0.0001 < amount) return false;
           mainCashBoxSyp -= amount;
         } else {
-          if (mainCashBox + 0.0001 < amount) return false;
+          if (!allowNegative && mainCashBox + 0.0001 < amount) return false;
           mainCashBox -= amount;
         }
         return true;
@@ -2176,12 +2177,15 @@ class ERPProvider extends ChangeNotifier {
     refresh();
   }
 
-  void addExpenseRecord(ExpenseRecordModel expense) {
+  void addExpenseRecord(ExpenseRecordModel expense, {String? box}) {
     if (expense.amount <= 0 ||
         expense.personShare < 0 ||
         expense.personShare > expense.amount) {
       throw ArgumentError('Expense and share amounts are invalid.');
     }
+    final targetBox = box ?? expense.cashBox;
+    // Deduct cash from safe, permitting negative overdraft
+    takeCash(targetBox, expense.currency, expense.amount, allowNegative: true);
     expenseRecords.add(expense);
     refresh();
   }
@@ -6469,7 +6473,7 @@ class ERPProvider extends ChangeNotifier {
     if (amount > due + 0.001) return false;
     final pay = amount.clamp(0.0, due).toDouble();
     if (pay <= 0) return false;
-    if (!takeCash('main', c, pay)) return false;
+    if (!takeCash('main', c, pay, allowNegative: true)) return false;
 
     supplier.reduceDebt(c, pay);
 
@@ -6512,7 +6516,7 @@ class ERPProvider extends ChangeNotifier {
   bool paySupplierInvoice(FactoryInvoiceModel inv, double amount) {
     if (amount <= 0 || amount > inv.remainingBalance + 0.001) return false;
     final pay = amount;
-    if (!takeCash('main', inv.currency, pay)) return false;
+    if (!takeCash('main', inv.currency, pay, allowNegative: true)) return false;
     inv.advancePayment += pay;
     inv.paymentStatus = inv.remainingBalance > 0.01 ? 'مستحق الدفع' : 'مدفوعة';
     final matches = suppliers.where((s) => s.id == inv.partyId).toList();
