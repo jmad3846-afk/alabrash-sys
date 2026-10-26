@@ -6241,6 +6241,161 @@ class ERPProvider extends ChangeNotifier {
     saveToDisk();
   }
 
+  /// Records waste linked to a specific workshop section/inventory item,
+  /// deducts the wasted quantity from the selected inventory source,
+  /// and logs an abnormal waste entry so that its financial cost is routed
+  /// to the Income Summary under "Abnormal Waste Losses" (خسائر الهدر غير الطبيعي).
+  bool recordWorkshopWaste({
+    required String sourceSection, // 'مواد المعمل' | 'قسم التفصيل البسيط' | 'قسم التفصيل المعقد' | 'قسم الزيادات' | 'يدوي'
+    required String sourceItemId,
+    required double quantity,
+    required double cost,
+    String wasteType = 'هدر غير طبيعي',
+    String destructionVoucherNo = '',
+    String currency = AppCurrency.usd,
+    String? customDescription,
+  }) {
+    if (quantity <= 0) {
+      throw ArgumentError('يجب أن تكون الكمية المهدرة أكبر من الصفر');
+    }
+
+    String itemDesc = customDescription?.trim() ?? '';
+    String unit = '';
+
+    final sec = sourceSection.trim();
+    if (sec == 'مواد المعمل' || sec == 'workshop_material') {
+      final matches = workshopStock.where((w) => w.id == sourceItemId).toList();
+      if (matches.isEmpty) {
+        throw ArgumentError('المادة المحددة غير موجودة في مواد المعمل');
+      }
+      final stock = matches.first;
+      if (quantity > stock.availableQty) {
+        throw ArgumentError('الكمية المهدرة ($quantity) تتجاوز الرصيد المتاح (${stock.availableQty}) في مواد المعمل');
+      }
+      stock.availableQty = (stock.availableQty - quantity).clamp(0.0, double.infinity);
+      unit = stock.category;
+      if (itemDesc.isEmpty) {
+        itemDesc = '${stock.typeName} (${stock.grade}) - مواد المعمل';
+      }
+    } else if (sec == 'قسم التفصيل البسيط' || sec == 'simple_tailoring' || sec == 'تفصيل بسيط') {
+      final matches = simpleTailorings.where((t) => t.id == sourceItemId).toList();
+      if (matches.isEmpty) {
+        throw ArgumentError('البند المحدد غير موجود في قسم التفصيل البسيط');
+      }
+      final tailoring = matches.first;
+      if (quantity > tailoring.quantity) {
+        throw ArgumentError('الكمية المهدرة ($quantity) تتجاوز الرصيد المتاح (${tailoring.quantity}) في التفصيل البسيط');
+      }
+      tailoring.quantity = (tailoring.quantity - quantity).clamp(0.0, double.infinity);
+      unit = tailoring.unitSymbol;
+      if (itemDesc.isEmpty) {
+        itemDesc = '${tailoring.name} - قسم التفصيل البسيط';
+      }
+    } else if (sec == 'قسم التفصيل المعقد' || sec == 'complex_tailoring' || sec == 'تفصيل معقد') {
+      final matches = complexTailorings.where((t) => t.id == sourceItemId).toList();
+      if (matches.isEmpty) {
+        throw ArgumentError('البند المحدد غير موجود في قسم التفصيل المعقد');
+      }
+      final tailoring = matches.first;
+      if (quantity > tailoring.quantity) {
+        throw ArgumentError('الكمية المهدرة ($quantity) تتجاوز عدد القطع المتاحة (${tailoring.quantity.toInt()}) في التفصيل المعقد');
+      }
+      tailoring.quantity = (tailoring.quantity - quantity).clamp(0.0, double.infinity);
+      unit = 'قطعة';
+      if (itemDesc.isEmpty) {
+        itemDesc = '${tailoring.name} - قسم التفصيل المعقد';
+      }
+    } else if (sec == 'قسم الزيادات' || sec == 'scrap_item' || sec == 'الزيادات') {
+      final matches = scrapItems.where((s) => s.id == sourceItemId).toList();
+      if (matches.isEmpty) {
+        throw ArgumentError('القطعة الزائدة غير موجودة في قسم الزيادات');
+      }
+      final scrap = matches.first;
+      if (scrap.isSold || quantity > scrap.quantity) {
+        throw ArgumentError('الكمية المهدرة ($quantity) تتجاوز الرصيد المتاح (${scrap.quantity}) في قسم الزيادات');
+      }
+      scrap.quantity = (scrap.quantity - quantity).clamp(0.0, double.infinity);
+      if (scrap.quantity <= 0.0001) {
+        scrap.quantity = 0.0;
+        scrap.isSold = true;
+      }
+      unit = 'قطعة';
+      if (itemDesc.isEmpty) {
+        itemDesc = '${scrap.description} - قسم الزيادات';
+      }
+    } else {
+      // Direct / Manual
+      if (itemDesc.isEmpty) {
+        itemDesc = 'هدر ورشة مباشر';
+      }
+      unit = 'وحدة';
+    }
+
+    final voucher = destructionVoucherNo.trim().isNotEmpty
+        ? destructionVoucherNo.trim()
+        : 'إتلاف-${DateTime.now().millisecondsSinceEpoch}';
+
+    final log = WasteLogModel(
+      id: 'wl_${DateTime.now().millisecondsSinceEpoch}',
+      date: DateTime.now(),
+      wasteType: wasteType,
+      itemDescription: itemDesc,
+      quantity: quantity,
+      cost: cost,
+      destructionVoucherNo: voucher,
+      currency: AppCurrency.normalize(currency),
+      sourceSection: sec,
+      sourceItemId: sourceItemId,
+      unit: unit,
+    );
+
+    wasteLogs.add(log);
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  void deleteWasteLog(String id) {
+    final idx = wasteLogs.indexWhere((w) => w.id == id);
+    if (idx != -1) {
+      final log = wasteLogs[idx];
+      _restoreWasteStock(log);
+      wasteLogs.removeAt(idx);
+      notifyListeners();
+      saveToDisk();
+    }
+  }
+
+  void _restoreWasteStock(WasteLogModel log) {
+    if (log.sourceSection.isEmpty || log.sourceItemId.isEmpty) return;
+    final sec = log.sourceSection.trim();
+    if (sec == 'مواد المعمل' || sec == 'workshop_material') {
+      final matches = workshopStock.where((w) => w.id == log.sourceItemId).toList();
+      if (matches.isNotEmpty) {
+        matches.first.availableQty += log.quantity;
+      }
+    } else if (sec == 'قسم التفصيل البسيط' || sec == 'simple_tailoring' || sec == 'تفصيل بسيط') {
+      final matches = simpleTailorings.where((t) => t.id == log.sourceItemId).toList();
+      if (matches.isNotEmpty) {
+        matches.first.quantity += log.quantity;
+      }
+    } else if (sec == 'قسم التفصيل المعقد' || sec == 'complex_tailoring' || sec == 'تفصيل معقد') {
+      final matches = complexTailorings.where((t) => t.id == log.sourceItemId).toList();
+      if (matches.isNotEmpty) {
+        matches.first.quantity += log.quantity;
+      }
+    } else if (sec == 'قسم الزيادات' || sec == 'scrap_item' || sec == 'الزيادات') {
+      final matches = scrapItems.where((s) => s.id == log.sourceItemId).toList();
+      if (matches.isNotEmpty) {
+        final sc = matches.first;
+        sc.quantity += log.quantity;
+        if (sc.quantity > 0) {
+          sc.isSold = false;
+        }
+      }
+    }
+  }
+
   // 10. Staff Workday Execution & Advances (per currency)
   void recordWorkdayExecution(WorkdayEntryModel entry) {
     workdayEntries.add(entry);

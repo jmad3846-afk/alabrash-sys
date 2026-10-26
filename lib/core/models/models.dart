@@ -1875,6 +1875,7 @@ class ScrapItemModel {
   final String photoPath;
   bool isSold;
   final String currency; // AppCurrency.usd | AppCurrency.syp
+  double quantity;
 
   ScrapItemModel({
     required this.id,
@@ -1884,6 +1885,7 @@ class ScrapItemModel {
     this.photoPath = '',
     this.isSold = false,
     this.currency = AppCurrency.usd,
+    this.quantity = 1.0,
   });
 
   /// Profit if sold: selling price minus initial cost.
@@ -1902,6 +1904,7 @@ class ScrapItemModel {
     'photoPath': photoPath,
     'isSold': isSold,
     'currency': currency,
+    'quantity': quantity,
   };
 
   factory ScrapItemModel.fromJson(Map<String, dynamic> json) => ScrapItemModel(
@@ -1912,6 +1915,7 @@ class ScrapItemModel {
     photoPath: json['photoPath'] ?? '',
     isSold: json['isSold'] ?? false,
     currency: AppCurrency.normalize(json['currency']),
+    quantity: (json['quantity'] as num?)?.toDouble() ?? 1.0,
   );
 }
 
@@ -1994,6 +1998,9 @@ class WasteLogModel {
   final double cost;
   final String destructionVoucherNo; // سند إتلاف for unnatural waste
   final String currency; // AppCurrency.usd | AppCurrency.syp
+  final String sourceSection; // 'مواد المعمل' | 'قسم التفصيل البسيط' | 'قسم التفصيل المعقد' | 'قسم الزيادات'
+  final String sourceItemId;
+  final String unit; // 'متر مربع' | 'متر مكعب' | 'قطعة'
 
   WasteLogModel({
     required this.id,
@@ -2004,6 +2011,9 @@ class WasteLogModel {
     required this.cost,
     this.destructionVoucherNo = '',
     this.currency = AppCurrency.usd,
+    this.sourceSection = '',
+    this.sourceItemId = '',
+    this.unit = '',
   });
 
   Map<String, dynamic> toJson() => {
@@ -2015,6 +2025,9 @@ class WasteLogModel {
     'cost': cost,
     'destructionVoucherNo': destructionVoucherNo,
     'currency': currency,
+    'sourceSection': sourceSection,
+    'sourceItemId': sourceItemId,
+    'unit': unit,
   };
 
   factory WasteLogModel.fromJson(Map<String, dynamic> json) => WasteLogModel(
@@ -2026,6 +2039,9 @@ class WasteLogModel {
     cost: (json['cost'] as num).toDouble(),
     destructionVoucherNo: json['destructionVoucherNo'] ?? '',
     currency: AppCurrency.normalize(json['currency']),
+    sourceSection: json['sourceSection'] ?? '',
+    sourceItemId: json['sourceItemId'] ?? '',
+    unit: json['unit'] ?? '',
   );
 }
 

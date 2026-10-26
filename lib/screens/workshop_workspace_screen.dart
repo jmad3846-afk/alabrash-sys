@@ -1268,17 +1268,65 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             subtitle: Text(
-              'الكمية: ${w.quantity} • التاريخ: ${intl.DateFormat("yyyy-MM-dd").format(w.date)}${isUnnatural ? " • سند الإتلاف: ${w.destructionVoucherNo}" : ""}',
+              'الكمية: ${w.quantity.fmt} ${w.unit.isNotEmpty ? w.unit : ""} • التاريخ: ${intl.DateFormat("yyyy-MM-dd").format(w.date)}${w.sourceSection.isNotEmpty ? " • المصدر: ${w.sourceSection}" : ""}${isUnnatural ? " • سند الإتلاف: ${w.destructionVoucherNo}" : ""}',
             ),
-            trailing: Text(
-              'خسارة: ${w.cost}\$',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: isUnnatural
-                    ? AppColors.dangerWaste
-                    : AppColors.brandPrimaryText,
-              ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'خسارة: ${w.cost.fmt}${AppCurrency.symbol(w.currency)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: isUnnatural
+                        ? AppColors.dangerWaste
+                        : AppColors.brandPrimaryText,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    size: 20,
+                    color: AppColors.dangerWaste,
+                  ),
+                  tooltip: 'حذف قيد الهدر واسترجاع الكمية للمخزون',
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        title: const Text('تأكيد حذف قيد الهدر'),
+                        content: Text(
+                          'هل أنت متأكد من حذف قيد الهدر هذا؟ سيتم استرجاع الكمية (${w.quantity.fmt} ${w.unit}) تلقائياً إلى مخزون ${w.sourceSection.isNotEmpty ? w.sourceSection : "الورشة"}.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(c),
+                            child: const Text('إلغاء'),
+                          ),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.dangerWaste,
+                            ),
+                            onPressed: () {
+                              final erp = Provider.of<ERPProvider>(context, listen: false);
+                              erp.deleteWasteLog(w.id);
+                              Navigator.pop(c);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('تم حذف قيد الهدر واسترجاع الكمية للمخزون بنجاح.'),
+                                  backgroundColor: AppColors.successGreen,
+                                ),
+                              );
+                            },
+                            child: const Text('حذف واسترجاع المخزون'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
           );
         },
@@ -6054,126 +6102,569 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
   }
 
   void _showAddWasteLogDialog(ERPProvider erp) {
-    String type = 'هدر طبيعي';
+    String sourceSection = 'مواد المعمل';
+    String? selectedItemId;
+    String type = 'هدر غير طبيعي';
     final descCtrl = TextEditingController();
     final qtyCtrl = TextEditingController(text: '1');
-    final costCtrl = TextEditingController(text: '50');
-    final vouchCtrl = TextEditingController();
+    final costCtrl = TextEditingController();
+    final vouchCtrl = TextEditingController(
+      text: 'إتلاف-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
+    );
     String? formError;
     String wasteCurrency = AppCurrency.usd;
+    bool costManuallyEdited = false;
+
+    // Helper to calculate available quantity, unit, and unit cost
+    void updateItemCalculations(StateSetter setSt) {
+      double avail = 0.0;
+      String unit = '';
+      double unitCost = 0.0;
+      String autoDesc = '';
+
+      if (sourceSection == 'مواد المعمل') {
+        final matches = erp.workshopStock.where((w) => w.id == selectedItemId).toList();
+        if (matches.isNotEmpty) {
+          final w = matches.first;
+          avail = w.availableQty;
+          unit = w.category;
+          unitCost = w.netCostPerUnit;
+          autoDesc = '${w.typeName} (${w.grade}) - مواد المعمل';
+        }
+      } else if (sourceSection == 'قسم التفصيل البسيط') {
+        final matches = erp.simpleTailorings.where((t) => t.id == selectedItemId).toList();
+        if (matches.isNotEmpty) {
+          final t = matches.first;
+          avail = t.quantity;
+          unit = t.unitSymbol;
+          unitCost = t.costPerMeterAfterServices > 0
+              ? t.costPerMeterAfterServices
+              : (t.quantity > 0 ? t.totalNetCost / t.quantity : t.materialNetCost);
+          autoDesc = '${t.name} - قسم التفصيل البسيط';
+        }
+      } else if (sourceSection == 'قسم التفصيل المعقد') {
+        final matches = erp.complexTailorings.where((t) => t.id == selectedItemId).toList();
+        if (matches.isNotEmpty) {
+          final t = matches.first;
+          avail = t.quantity;
+          unit = 'قطعة';
+          unitCost = t.quantity > 0 ? t.totalNetCost / t.quantity : t.materialNetCost;
+          autoDesc = '${t.name} - قسم التفصيل المعقد';
+        }
+      } else if (sourceSection == 'قسم الزيادات') {
+        final matches = erp.scrapItems.where((s) => s.id == selectedItemId).toList();
+        if (matches.isNotEmpty) {
+          final s = matches.first;
+          avail = s.quantity;
+          unit = 'قطعة';
+          unitCost = s.quantity > 0 ? s.baseCost / s.quantity : s.baseCost;
+          autoDesc = '${s.description} - قسم الزيادات';
+          wasteCurrency = s.currency;
+        }
+      }
+
+      if (descCtrl.text.trim().isEmpty || descCtrl.text.contains(' - ')) {
+        descCtrl.text = autoDesc;
+      }
+
+      if (!costManuallyEdited && selectedItemId != null) {
+        final qty = double.tryParse(qtyCtrl.text.trim()) ?? 0.0;
+        final totalCost = qty * unitCost;
+        costCtrl.text = totalCost.toStringAsFixed(2);
+      }
+    }
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSt) => AlertDialog(
-          title: const Text('إضافة قيد هدر جديد'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: type,
-                isExpanded: true,
-                items: const [
-                  DropdownMenuItem(
-                    value: 'هدر طبيعي',
-                    child: Text('هدر طبيعي'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'هدر غير طبيعي',
-                    child: Text('هدر غير طبيعي (يتطلب سند إتلاف)'),
-                  ),
-                ],
-                onChanged: (v) => setSt(() => type = v!),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: descCtrl,
-                decoration: const InputDecoration(labelText: 'وصف سبب الهدر'),
-              ),
-              const SizedBox(height: 8),
-              CurrencySelector(
-                value: wasteCurrency,
-                dense: true,
-                onChanged: (v) => setSt(() => wasteCurrency = v),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: qtyCtrl,
-                      keyboardType: TextInputType.number,
+        builder: (ctx, setSt) {
+          double currentAvail = 0.0;
+          String currentUnit = '';
+          double currentUnitCost = 0.0;
+
+          if (sourceSection == 'مواد المعمل') {
+            final m = erp.workshopStock.where((w) => w.id == selectedItemId).firstOrNull;
+            if (m != null) {
+              currentAvail = m.availableQty;
+              currentUnit = m.category;
+              currentUnitCost = m.netCostPerUnit;
+            }
+          } else if (sourceSection == 'قسم التفصيل البسيط') {
+            final m = erp.simpleTailorings.where((t) => t.id == selectedItemId).firstOrNull;
+            if (m != null) {
+              currentAvail = m.quantity;
+              currentUnit = m.unitSymbol;
+              currentUnitCost = m.costPerMeterAfterServices > 0
+                  ? m.costPerMeterAfterServices
+                  : (m.quantity > 0 ? m.totalNetCost / m.quantity : m.materialNetCost);
+            }
+          } else if (sourceSection == 'قسم التفصيل المعقد') {
+            final m = erp.complexTailorings.where((t) => t.id == selectedItemId).firstOrNull;
+            if (m != null) {
+              currentAvail = m.quantity;
+              currentUnit = 'قطعة';
+              currentUnitCost = m.quantity > 0 ? m.totalNetCost / m.quantity : m.materialNetCost;
+            }
+          } else if (sourceSection == 'قسم الزيادات') {
+            final m = erp.scrapItems.where((s) => s.id == selectedItemId).firstOrNull;
+            if (m != null) {
+              currentAvail = m.quantity;
+              currentUnit = 'قطعة';
+              currentUnitCost = m.quantity > 0 ? m.baseCost / m.quantity : m.baseCost;
+            }
+          }
+
+          return Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Container(
+              width: 580,
+              padding: const EdgeInsets.all(24),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: AppColors.chipBgRed,
+                          child: const Icon(
+                            Icons.delete_sweep_rounded,
+                            color: AppColors.dangerWaste,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'تسجيل هدر / إتلاف ورشة مرتبط بمصدر',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'يتم الخصم تلقائياً من مخزون القسم المختار وترحيل الخسارة إلى ملخص الدخل',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.brandSecondaryText,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+
+                    // Section Dropdown
+                    DropdownButtonFormField<String>(
+                      value: sourceSection,
+                      isExpanded: true,
                       decoration: const InputDecoration(
-                        labelText: 'الكمية المهدرة',
+                        labelText: 'موقع / مصدر الهدر (اختر القسم)',
+                        prefixIcon: Icon(Icons.source_rounded),
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'مواد المعمل',
+                          child: Text('1. مواد المعمل (Raw Stock - بالأمتار)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'قسم التفصيل البسيط',
+                          child: Text('2. قسم التفصيل البسيط (Simple - بالأمتار)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'قسم التفصيل المعقد',
+                          child: Text('3. قسم التفصيل المعقد (Complex - بالقطع)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'قسم الزيادات',
+                          child: Text('4. قسم الزيادات والخردة (Surplus - بالقطع)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'يدوي',
+                          child: Text('5. إدخال يدوي مباشر (بدون خصم مخزني)'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setSt(() {
+                          sourceSection = v;
+                          selectedItemId = null;
+                          costManuallyEdited = false;
+                          qtyCtrl.text = '1';
+                          costCtrl.text = '';
+                          updateItemCalculations(setSt);
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Product / Item Dropdown
+                    if (sourceSection == 'مواد المعمل') ...[
+                      DropdownButtonFormField<String>(
+                        value: selectedItemId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'اختر مادة المعمل المراد إتلافها/هدرها',
+                          prefixIcon: Icon(Icons.category_rounded),
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        ),
+                        hint: const Text('اضغط لاختيار مادة من رصيد المعمل...'),
+                        items: erp.workshopStock
+                            .where((w) => w.availableQty > 0)
+                            .map(
+                              (w) => DropdownMenuItem(
+                                value: w.id,
+                                child: Text(
+                                  '${w.typeName} (${w.grade}) - ${w.category} - الرصيد: ${w.availableQty.fmt} ${w.category == "متر مكعب" ? "م³" : "م²"} (تكلفة: ${w.netCostPerUnit.fmt}\$)',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          setSt(() {
+                            selectedItemId = v;
+                            costManuallyEdited = false;
+                            updateItemCalculations(setSt);
+                          });
+                        },
+                      ),
+                    ] else if (sourceSection == 'قسم التفصيل البسيط') ...[
+                      DropdownButtonFormField<String>(
+                        value: selectedItemId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'اختر القطعة المفصلة البسيطة',
+                          prefixIcon: Icon(Icons.straighten_rounded),
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        ),
+                        hint: const Text('اضغط لاختيار تفصيل بسيط...'),
+                        items: erp.simpleTailorings
+                            .where((t) => t.complexity == 'بسيط' && t.quantity > 0)
+                            .map(
+                              (t) => DropdownMenuItem(
+                                value: t.id,
+                                child: Text(
+                                  '${t.name} - الرصيد: ${t.quantity.fmt} ${t.unitSymbol}',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          setSt(() {
+                            selectedItemId = v;
+                            costManuallyEdited = false;
+                            updateItemCalculations(setSt);
+                          });
+                        },
+                      ),
+                    ] else if (sourceSection == 'قسم التفصيل المعقد') ...[
+                      DropdownButtonFormField<String>(
+                        value: selectedItemId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'اختر القطعة المفصلة المعقدة',
+                          prefixIcon: Icon(Icons.architecture_rounded),
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        ),
+                        hint: const Text('اضغط لاختيار تفصيل معقد...'),
+                        items: erp.complexTailorings
+                            .where((t) => t.complexity == 'معقد' && t.quantity > 0)
+                            .map(
+                              (t) => DropdownMenuItem(
+                                value: t.id,
+                                child: Text(
+                                  '${t.name} - الرصيد: ${t.quantity.toInt()} قطعة',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          setSt(() {
+                            selectedItemId = v;
+                            costManuallyEdited = false;
+                            updateItemCalculations(setSt);
+                          });
+                        },
+                      ),
+                    ] else if (sourceSection == 'قسم الزيادات') ...[
+                      DropdownButtonFormField<String>(
+                        value: selectedItemId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'اختر القطعة الزائدة من صندوق الزيادات',
+                          prefixIcon: Icon(Icons.inventory_2_rounded),
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        ),
+                        hint: const Text('اضغط لاختيار قطعة زائدة...'),
+                        items: erp.scrapItems
+                            .where((s) => !s.isSold && s.quantity > 0)
+                            .map(
+                              (s) => DropdownMenuItem(
+                                value: s.id,
+                                child: Text(
+                                  '${s.description} - الرصيد: ${s.quantity.toInt() == s.quantity ? s.quantity.toInt() : s.quantity.fmt} قطعة (تكلفة: ${s.baseCost.fmt}${AppCurrency.symbol(s.currency)})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          setSt(() {
+                            selectedItemId = v;
+                            costManuallyEdited = false;
+                            updateItemCalculations(setSt);
+                          });
+                        },
+                      ),
+                    ],
+
+                    // Stock Info Banner
+                    if (sourceSection != 'يدوي' && selectedItemId != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.chipBgGreen,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.successGreen.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, size: 18, color: AppColors.successGreen),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'الرصيد المتاح حالياً: ${currentAvail.fmt} $currentUnit  |  تكلفة الوحدة: ${currentUnitCost.fmt} ${AppCurrency.symbol(wasteCurrency)}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.successGreen,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+
+                    // Quantity and Cost
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: qtyCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(
+                              labelText: 'الكمية المهدرة (${currentUnit.isNotEmpty ? currentUnit : "وحدة"})',
+                              border: const OutlineInputBorder(),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            ),
+                            onChanged: (_) {
+                              setSt(() {
+                                if (!costManuallyEdited && selectedItemId != null) {
+                                  final q = double.tryParse(qtyCtrl.text.trim()) ?? 0.0;
+                                  costCtrl.text = (q * currentUnitCost).toStringAsFixed(2);
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: costCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(
+                              labelText: 'التكلفة الإجمالية (${AppCurrency.symbol(wasteCurrency)})',
+                              border: const OutlineInputBorder(),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            ),
+                            onChanged: (_) => costManuallyEdited = true,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Destruction Voucher & Waste Type
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: type,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'نوع الهدر والتوجيه',
+                              border: const OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'هدر غير طبيعي',
+                                child: Text('هدر غير طبيعي (خسارة ملخص الدخل)'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'هدر طبيعي',
+                                child: Text('هدر طبيعي تشغيلي'),
+                              ),
+                            ],
+                            onChanged: (v) => setSt(() => type = v!),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: CurrencySelector(
+                            value: wasteCurrency,
+                            dense: true,
+                            onChanged: (v) => setSt(() => wasteCurrency = v),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextField(
+                      controller: vouchCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'رقم سند الإتلاف الرسمي',
+                        hintText: 'مثال: إتلاف-1044',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: costCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText:
-                            'التكلفة الإجمالية (${AppCurrency.symbol(wasteCurrency)})',
+                    const SizedBox(height: 12),
+
+                    TextField(
+                      controller: descCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'بيان وسبب الهدر أو التلف',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                       ),
                     ),
-                  ),
-                ],
+
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.chipBgAmber,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.account_balance_wallet_outlined, size: 18, color: AppColors.partnersEquityAccent),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'الأثر المحاسبي: ستُخصم الكمية المهدرة مباشرة من مخزون القسم المحدد، وتُرحل قيمة الخسارة تلقائياً إلى قائمة الدخل تحت بند "خسائر الهدر غير الطبيعي".',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.partnersEquityAccent,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    if (formError != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        formError!,
+                        style: const TextStyle(
+                          color: AppColors.dangerWaste,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('إلغاء'),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.dangerWaste,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          ),
+                          onPressed: () {
+                            if (sourceSection != 'يدوي' && selectedItemId == null) {
+                              setSt(() => formError = 'يرجى اختيار المادة أو القطعة المراد هدرها من القسم المحدد.');
+                              return;
+                            }
+                            final q = double.tryParse(qtyCtrl.text.trim()) ?? 0.0;
+                            if (q <= 0) {
+                              setSt(() => formError = 'يرجى إدخال كمية مهدرة صالحة أكبر من الصفر.');
+                              return;
+                            }
+                            if (sourceSection != 'يدوي' && q > currentAvail) {
+                              setSt(() => formError = 'الكمية المهدرة (${q.fmt}) تتجاوز الرصيد المتاح (${currentAvail.fmt} $currentUnit).');
+                              return;
+                            }
+                            final cost = double.tryParse(costCtrl.text.trim()) ?? 0.0;
+                            if (type == 'هدر غير طبيعي' && vouchCtrl.text.trim().isEmpty) {
+                              setSt(() => formError = 'الهدر غير الطبيعي يتطلب رقم سند إتلاف رسمي ويُحتسب خسارة.');
+                              return;
+                            }
+
+                            try {
+                              erp.recordWorkshopWaste(
+                                sourceSection: sourceSection,
+                                sourceItemId: selectedItemId ?? '',
+                                quantity: q,
+                                cost: cost,
+                                wasteType: type,
+                                destructionVoucherNo: vouchCtrl.text.trim(),
+                                currency: wasteCurrency,
+                                customDescription: descCtrl.text.trim(),
+                              );
+                              Navigator.pop(ctx);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'تم تسجيل الهدر وخصم ${q.fmt} ${currentUnit.isNotEmpty ? currentUnit : "وحدة"} من [$sourceSection] وترحيل التكلفة (${cost.fmt} ${AppCurrency.symbol(wasteCurrency)}) إلى ملخص الدخل.',
+                                  ),
+                                  backgroundColor: AppColors.successGreen,
+                                ),
+                              );
+                            } catch (e) {
+                              setSt(() => formError = e.toString());
+                            }
+                          },
+                          icon: const Icon(Icons.check_circle_outline),
+                          label: const Text('تسجيل الهدر والخصم المخزني'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              if (type == 'هدر غير طبيعي') ...[
-                const SizedBox(height: 8),
-                TextField(
-                  controller: vouchCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'رقم سند الإتلاف الرسمي (إلزامي — يُحتسب خسارة)',
-                  ),
-                ),
-              ],
-              if (formError != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  formError!,
-                  style: const TextStyle(
-                    color: AppColors.dangerWaste,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('إلغاء'),
             ),
-            ElevatedButton(
-              onPressed: () {
-                if (type == 'هدر غير طبيعي' && vouchCtrl.text.trim().isEmpty) {
-                  setSt(
-                    () => formError =
-                        'الهدر غير الطبيعي يتطلب رقم سند إتلاف ويُحتسب خسارة.',
-                  );
-                  return;
-                }
-                erp.addWasteLog(
-                  WasteLogModel(
-                    id: 'wl_${DateTime.now().millisecondsSinceEpoch}',
-                    date: DateTime.now(),
-                    wasteType: type,
-                    itemDescription: descCtrl.text,
-                    quantity: double.tryParse(qtyCtrl.text) ?? 1.0,
-                    cost: double.tryParse(costCtrl.text) ?? 0.0,
-                    destructionVoucherNo: vouchCtrl.text,
-                    currency: wasteCurrency,
-                  ),
-                );
-                Navigator.pop(ctx);
-              },
-              child: const Text('تسجيل الهدر'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
