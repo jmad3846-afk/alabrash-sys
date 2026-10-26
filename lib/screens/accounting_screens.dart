@@ -1653,70 +1653,167 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
               ),
             ),
           for (final type in matchingTypes)
-            Card(
-              child: ExpansionTile(
-                initiallyExpanded: true,
-                title: Text(
-                  type.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+            _buildExpenseCategoryCard(erp, type, query),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExpenseCategoryCard(
+    ERPProvider erp,
+    ExpenseTypeModel type,
+    String query,
+  ) {
+    final typeExpenses =
+        erp.expenseRecords.where((e) => e.typeId == type.id).toList();
+    final totalUsd = typeExpenses
+        .where((e) => AppCurrency.isUsd(e.currency))
+        .fold<double>(0.0, (s, e) => s + e.amount);
+    final totalSyp = typeExpenses
+        .where((e) => AppCurrency.isSyp(e.currency))
+        .fold<double>(0.0, (s, e) => s + e.amount);
+
+    final String totalStr;
+    if (totalUsd > 0.001 && totalSyp > 0.001) {
+      totalStr = '${totalUsd.fmt} \$ • ${totalSyp.fmt} ل.س';
+    } else if (totalSyp > 0.001) {
+      totalStr = '${totalSyp.fmt} ل.س';
+    } else {
+      totalStr = '${totalUsd.fmt} \$';
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppColors.panelBorder),
+      ),
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                type.name,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
                 ),
-                subtitle: Text(type.description),
-                trailing: IconButton(
-                  tooltip: 'إضافة مصروف',
-                  onPressed: () => _addExpense(erp, type),
-                  icon: const Icon(Icons.add_circle_outline),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.chipBgBlue,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.accentPrimary.withValues(alpha: 0.3),
                 ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  for (final expense in erp.expenseRecords.where((expense) {
-                    if (expense.typeId != type.id) return false;
-                    if (query.isEmpty ||
-                        '${type.name} ${type.description}'
-                            .toLowerCase()
-                            .contains(query)) {
-                      return true;
-                    }
-                    return '${expense.amount} ${expense.currency} ${expense.personName} ${expense.description}'
-                        .toLowerCase()
-                        .contains(query);
-                  }))
-                    ListTile(
-                      title: Row(
-                        children: [
-                          Text(
-                            '${expense.amount.fmt} ${AppCurrency.symbol(expense.currency)}',
-                          ),
-                          if (expense.isInformational) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEFF6FF),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: const Color(0xFF3B82F6),
-                                  width: 0.8,
-                                ),
-                              ),
-                              child: const Text(
-                                'قيد إعلامي (مرسمل على المواد)',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF1D4ED8),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      subtitle: Text(
-                        '${expense.description} • ${expense.personName.isEmpty ? 'دون مستفيد' : expense.personName}${expense.personShare > 0 ? ' • الحصة ${expense.personShare.fmt}' : ''}${expense.staffId != null ? ' • مسجل في القوى العاملة' : ''} • مخصوم من: ${expense.cashBox == 'scrap' ? 'صندوق الزيادات' : expense.cashBox == 'order' ? 'صندوق الطلبيات' : 'الخزينة الرئيسية'}',
+                  const Icon(
+                    Icons.receipt_long_rounded,
+                    size: 15,
+                    color: AppColors.accentPrimary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'المجموع الكلي: $totalStr',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.accentPrimary,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.panelSurface,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      '${typeExpenses.length} بنود',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.brandSecondaryText,
                       ),
                     ),
+                  ),
                 ],
+              ),
+            ),
+          ],
+        ),
+        subtitle: type.description.trim().isNotEmpty
+            ? Text(type.description)
+            : null,
+        trailing: IconButton(
+          tooltip: 'إضافة مصروف',
+          onPressed: () => _addExpense(erp, type),
+          icon: const Icon(
+            Icons.add_circle_outline,
+            color: AppColors.accentPrimary,
+          ),
+        ),
+        children: [
+          for (final expense in erp.expenseRecords.where((expense) {
+            if (expense.typeId != type.id) return false;
+            if (query.isEmpty ||
+                '${type.name} ${type.description}'
+                    .toLowerCase()
+                    .contains(query)) {
+              return true;
+            }
+            return '${expense.amount} ${expense.currency} ${expense.personName} ${expense.description}'
+                .toLowerCase()
+                .contains(query);
+          }))
+            ListTile(
+              title: Row(
+                children: [
+                  Text(
+                    '${expense.amount.fmt} ${AppCurrency.symbol(expense.currency)}',
+                  ),
+                  if (expense.isInformational) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: const Color(0xFF3B82F6),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: const Text(
+                        'قيد إعلامي (مرسمل على المواد)',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1D4ED8),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              subtitle: Text(
+                '${expense.description} • ${expense.personName.isEmpty ? 'دون مستفيد' : expense.personName}${expense.personShare > 0 ? ' • الحصة ${expense.personShare.fmt}' : ''}${expense.staffId != null ? ' • مسجل في القوى العاملة' : ''} • مخصوم من: ${expense.cashBox == 'scrap' ? 'صندوق الزيادات' : expense.cashBox == 'order' ? 'صندوق الطلبيات' : 'الخزينة الرئيسية'}',
               ),
             ),
         ],
@@ -1754,11 +1851,19 @@ class _ReturnsAllowancesScreenState extends State<ReturnsAllowancesScreen> {
     'مسموحات مبيعات المعمل',
   ];
   late int _selectedTab;
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _selectedTab = widget.initialTab;
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   List<String> get _tabs {
@@ -1792,6 +1897,16 @@ class _ReturnsAllowancesScreenState extends State<ReturnsAllowancesScreen> {
     final matching = erp.adjustmentInvoices
         .where((invoice) => invoice.module == _module && invoice.kind == _kind)
         .toList();
+    final filtered = matching.where((invoice) {
+      if (_searchQuery.trim().isEmpty) return true;
+      final q = _searchQuery.trim().toLowerCase();
+      final targetNo = invoice.targetInvoiceNo.toLowerCase();
+      final invNo = invoice.invoiceNo.toLowerCase();
+      final party = invoice.partyName.toLowerCase();
+      final desc = invoice.description.toLowerCase();
+      return invNo.contains(q) || targetNo.contains(q) || party.contains(q) || desc.contains(q);
+    }).toList();
+
     return Scaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1823,19 +1938,57 @@ class _ReturnsAllowancesScreenState extends State<ReturnsAllowancesScreen> {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
-            child: FilledButton.icon(
-              onPressed: () => _addInvoice(erp),
-              icon: const Icon(Icons.add),
-              label: const Text('إضافة فاتورة جديدة'),
+            child: Row(
+              children: [
+                FilledButton.icon(
+                  onPressed: () => _addInvoice(erp),
+                  icon: const Icon(Icons.add),
+                  label: const Text('إضافة فاتورة جديدة'),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: TextField(
+                    controller: _searchCtrl,
+                    decoration: InputDecoration(
+                      hintText: 'بحث برقم الفاتورة، أو رقم الفاتورة الأصلية، أو اسم الطرف...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            )
+                          : null,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      isDense: true,
+                    ),
+                    onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(
-            child: matching.isEmpty
-                ? const Center(child: Text('لا توجد فواتير في هذا القسم.'))
+            child: filtered.isEmpty
+                ? Center(
+                    child: Text(
+                      _searchQuery.isNotEmpty
+                          ? 'لا توجد فواتير مطابقة للبحث "$_searchQuery".'
+                          : 'لا توجد فواتير في هذا القسم.',
+                    ),
+                  )
                 : ListView.builder(
-                    itemCount: matching.length,
+                    itemCount: filtered.length,
                     itemBuilder: (context, index) {
-                      final invoice = matching[index];
+                      final invoice = filtered[index];
                       final isReturn = invoice.kind.endsWith('return');
                       final isCash =
                           invoice.paymentAction ==

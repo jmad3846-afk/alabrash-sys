@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:marble_granite_erp/core/database/erp_provider.dart';
 import 'package:marble_granite_erp/core/models/models.dart';
 import 'package:marble_granite_erp/widgets/a4_statement_print_dialog.dart';
+import 'package:marble_granite_erp/widgets/a4_statement_invoice_selection_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -176,4 +177,81 @@ void main() {
     expect(workshopDetails.servicesText, contains('تلميع: 10 \$'));
     expect(workshopDetails.total, 100);
   });
+
+  testWidgets(
+    'statement selection binds linked return invoices and prevents independent exclusion',
+    (tester) async {
+      final masterItem = A4StatementLineItem(
+        index: 1,
+        date: DateTime(2026, 10, 24),
+        documentNo: 'F-001',
+        description: 'فاتورة بيع أصلية',
+        category: 'فاتورة بيع',
+        currency: AppCurrency.usd,
+        totalAmount: 1000,
+        paidAmount: 500,
+        remainingAmount: 500,
+        status: 'مستحق التحصيل',
+      );
+      final returnItem = A4StatementLineItem(
+        index: 2,
+        date: DateTime(2026, 10, 25),
+        documentNo: 'RET-001',
+        parentInvoiceNo: 'F-001',
+        description: 'إشعار مرتجع',
+        category: 'مرتجع مبيعات',
+        currency: AppCurrency.usd,
+        totalAmount: 200,
+        paidAmount: 0,
+        remainingAmount: 0,
+        status: 'مرتجع مسوى',
+        isReturn: true,
+      );
+
+      final statementData = A4StatementData(
+        type: AccountStatementType.accreditedAgent,
+        statementNo: 'ST-001',
+        issueDate: DateTime(2026, 10, 26),
+        accountId: 'client-1',
+        accountName: 'عميل الاختبار',
+        currentBalanceUsd: 300,
+        currentBalanceSyp: 0,
+        items: [masterItem, returnItem],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: A4StatementInvoiceSelectionDialog(data: statementData),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Checkboxes: 1 select-all + 2 items
+      expect(find.byType(CheckboxListTile), findsNWidgets(3));
+
+      // Return item tile displays the binding badge
+      expect(find.textContaining('مرتبطة بالفاتورة #F-001'), findsOneWidget);
+
+      // Attempt to tap the return item's checkbox to uncheck it
+      final returnTile = find.byWidgetPredicate(
+        (w) => w is CheckboxListTile && w.title is Row &&
+            (w.title as Row).children.any((c) => c is Expanded && c.child is Text && ((c.child as Text).data?.contains('RET-001') ?? false)),
+      );
+      expect(returnTile, findsOneWidget);
+      await tester.tap(returnTile);
+      await tester.pump();
+
+      // Verify snackbar is shown explaining it cannot be excluded
+      expect(
+        find.textContaining('لا يمكن استبعاد فاتورة المرتجع (RET-001)'),
+        findsOneWidget,
+      );
+
+      // Verify return item is still selected
+      final returnCheckbox = tester.widget<CheckboxListTile>(returnTile);
+      expect(returnCheckbox.value, isTrue);
+    },
+  );
 }

@@ -135,6 +135,9 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
   bool get _isPurchase => widget.kind.startsWith('purchase');
   bool get _isFactory => widget.module == 'factory';
 
+  final TextEditingController _targetSearchCtrl = TextEditingController();
+  String _targetSearchQuery = '';
+
   @override
   void initState() {
     super.initState();
@@ -151,6 +154,7 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
     _docNoController.dispose();
     _amountController.dispose();
     _notesController.dispose();
+    _targetSearchCtrl.dispose();
     for (final row in _rows) {
       row.dispose();
     }
@@ -620,20 +624,64 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
         ),
       );
     }
-    return DropdownButtonFormField<String>(
-      initialValue: _target?.id,
-      decoration: const InputDecoration(
-        labelText: 'الفاتورة الأصلية (Master Invoice)',
-        helperText: 'سيتم تحميل جميع بنود الفاتورة تلقائياً',
-      ),
-      items: [
-        for (final invoice in candidates)
-          DropdownMenuItem(value: invoice.id, child: Text(invoice.label)),
+
+    final filtered = candidates.where((inv) {
+      if (_targetSearchQuery.trim().isEmpty) return true;
+      final q = _targetSearchQuery.trim().toLowerCase();
+      return inv.invoiceNo.toLowerCase().contains(q) ||
+          inv.partyName.toLowerCase().contains(q);
+    }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (candidates.length > 3) ...[
+          TextField(
+            controller: _targetSearchCtrl,
+            decoration: InputDecoration(
+              labelText:
+                  'بحث عن الفاتورة المستهدفة (برقم الفاتورة أو اسم الطرف)...',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _targetSearchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 16),
+                      onPressed: () {
+                        _targetSearchCtrl.clear();
+                        setState(() => _targetSearchQuery = '');
+                      },
+                    )
+                  : null,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              border: const OutlineInputBorder(),
+            ),
+            onChanged: (q) => setState(() => _targetSearchQuery = q),
+          ),
+          const SizedBox(height: 8),
+        ],
+        DropdownButtonFormField<String>(
+          key: ValueKey(
+            'target_picker_${_target?.id}_${filtered.length}_$_targetSearchQuery',
+          ),
+          value: filtered.any((c) => c.id == _target?.id) ? _target?.id : null,
+          decoration: InputDecoration(
+            labelText:
+                'الفاتورة الأصلية (Master Invoice) — متوفر (${filtered.length})',
+            helperText: 'سيتم تحميل جميع بنود الفاتورة تلقائياً',
+          ),
+          items: [
+            for (final invoice in filtered)
+              DropdownMenuItem(value: invoice.id, child: Text(invoice.label)),
+          ],
+          onChanged: (id) {
+            if (id == null) return;
+            _selectTarget(_invoiceById(id));
+          },
+        ),
       ],
-      onChanged: (id) {
-        if (id == null) return;
-        _selectTarget(_invoiceById(id));
-      },
     );
   }
 

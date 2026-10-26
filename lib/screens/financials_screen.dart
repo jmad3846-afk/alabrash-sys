@@ -285,6 +285,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ),
                   AppColors.accentPrimary,
                   AppColors.chipBgBlue,
+                  expanded: true,
                 ),
                 const SizedBox(width: 14),
                 _buildSummaryCard(
@@ -295,6 +296,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ),
                   const Color(0xFF0284C7),
                   const Color(0xFFF0F9FF),
+                  expanded: true,
                 ),
                 const SizedBox(width: 14),
                 _buildSummaryCard(
@@ -305,6 +307,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ),
                   AppColors.dangerWaste,
                   AppColors.chipBgRed,
+                  expanded: true,
                 ),
                 const SizedBox(width: 14),
                 _buildSummaryCard(
@@ -319,6 +322,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   availableUsd > 0.01 || availableSyp > 0.01
                       ? AppColors.chipBgGreen
                       : const Color(0xFFF1F5F9),
+                  expanded: true,
                 ),
               ],
             );
@@ -4095,6 +4099,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   Widget _buildSurplusTab(ERPProvider erp) {
     final items = erp.scrapItems;
     final remaining = erp.totalSurplusCostRemaining;
+    final filteredItems = items.where((sc) {
+      if (_surplusCurrency == 'ALL') return true;
+      return sc.currency == _surplusCurrency;
+    }).toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -4287,18 +4295,26 @@ class _FinancialsScreenState extends State<FinancialsScreen>
             ],
           ),
           const SizedBox(height: 10),
-          if (items.isEmpty)
+          if (filteredItems.isEmpty)
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(24),
-                child: Center(child: Text('لا توجد قطع زائدة مسجلة بعد.')),
+                child: Center(
+                  child: Text('لا توجد قطع زائدة مطابقة للعملة المحددة.'),
+                ),
               ),
             ),
-          ...items.map((sc) {
+          ...filteredItems.map((sc) {
             final linked = erp.surplusCostsForItem(sc.id);
             final paid = erp.surplusItemPaid(sc.id);
             final due = erp.surplusItemRemaining(sc.id);
-            final marginPct = (sc.profitMargin * 100).fmt;
+            final marginPct = sc.profitMargin.isFinite
+                ? (sc.profitMargin * 100).fmt
+                : '0';
+            final cleanDesc = sc.description.trim();
+            final firstChar = cleanDesc.isEmpty
+                ? '؟'
+                : String.fromCharCode(cleanDesc.runes.first);
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
               child: ExpansionTile(
@@ -4307,7 +4323,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       ? AppColors.chipBgRed
                       : AppColors.chipBgGreen,
                   child: Text(
-                    sc.description.isEmpty ? '؟' : sc.description[0],
+                    firstChar,
                     style: TextStyle(
                       color: sc.isSold
                           ? AppColors.dangerWaste
@@ -5001,39 +5017,49 @@ class _FinancialsScreenState extends State<FinancialsScreen>
     );
   }
 
-  Widget _buildSummaryCard(String title, String val, Color color, Color bg) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                color: color,
-                fontWeight: FontWeight.bold,
-              ),
+  Widget _buildSummaryCard(
+    String title,
+    String val,
+    Color color,
+    Color bg, {
+    bool expanded = false,
+  }) {
+    final card = Container(
+      constraints: const BoxConstraints(minWidth: 170),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              color: color,
+              fontWeight: FontWeight.bold,
             ),
-            const SizedBox(height: 6),
-            Text(
-              val,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            val,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
+    if (expanded) {
+      return Expanded(child: card);
+    }
+    return card;
   }
 
   Widget _buildCashRegisterCard({

@@ -170,6 +170,7 @@ class A4StatementLineItem {
   final double remainingAmount;
   final String status;
   final bool isReturn;
+  final String parentInvoiceNo;
   final String notes;
   final List<A4StatementDetailLine> details;
 
@@ -185,6 +186,7 @@ class A4StatementLineItem {
     required this.remainingAmount,
     required this.status,
     this.isReturn = false,
+    this.parentInvoiceNo = '',
     this.notes = '',
     this.details = const [],
   });
@@ -203,6 +205,7 @@ class A4StatementLineItem {
     remainingAmount: remainingAmount,
     status: status,
     isReturn: isReturn,
+    parentInvoiceNo: parentInvoiceNo,
     notes: notes,
     details: details,
   );
@@ -517,6 +520,7 @@ class A4StatementData {
       index: index,
       date: ret.date,
       documentNo: ret.invoiceNo,
+      parentInvoiceNo: ret.targetInvoiceNo,
       description: ret.description.isNotEmpty
           ? 'إشعار مرتجع: ${ret.description}'
           : (ret.itemDescription.isNotEmpty
@@ -551,6 +555,7 @@ class A4StatementData {
       index: index,
       date: ret.date,
       documentNo: ret.returnNo,
+      parentInvoiceNo: ret.parentInvoiceNo,
       description: 'إشعار مرتجع: ${ret.itemDescription}',
       category: category,
       currency: ret.currency,
