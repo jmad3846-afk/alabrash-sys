@@ -3007,51 +3007,80 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final nameCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     final locCtrl = TextEditingController();
+    String? errorMsg;
+
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إضافة مورد جديد'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(labelText: 'اسم المورد'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: const Text('إضافة مورد جديد'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: InputDecoration(
+                  labelText: 'اسم المورد',
+                  errorText: errorMsg,
+                ),
+                onChanged: (_) {
+                  if (errorMsg != null) setSt(() => errorMsg = null);
+                },
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: phoneCtrl,
+                decoration: const InputDecoration(labelText: 'رقم الهاتف'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: locCtrl,
+                decoration: const InputDecoration(labelText: 'الموقع / المدينة'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء'),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: phoneCtrl,
-              decoration: const InputDecoration(labelText: 'رقم الهاتف'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: locCtrl,
-              decoration: const InputDecoration(labelText: 'الموقع / المدينة'),
+            ElevatedButton(
+              onPressed: () {
+                final name = nameCtrl.text.trim();
+                if (name.isEmpty) {
+                  setSt(() => errorMsg = 'يرجى إدخال اسم المورد');
+                  return;
+                }
+                if (erp.suppliers.any((s) => s.name.trim().toLowerCase() == name.toLowerCase())) {
+                  setSt(() => errorMsg = 'اسم المورد مسجل مسبقاً! يرجى إدخال اسم مميز.');
+                  return;
+                }
+                if (erp.clients.any((c) => c.name.trim().toLowerCase() == name.toLowerCase())) {
+                  setSt(() => errorMsg = 'هذا الاسم مسجل مسبقاً كمعتمد/عميل في قسم الأشخاص!');
+                  return;
+                }
+                final ok = erp.addSupplier(
+                  SupplierModel(
+                    id: 'sup_${DateTime.now().millisecondsSinceEpoch}',
+                    name: name,
+                    phone: phoneCtrl.text.trim(),
+                    location: locCtrl.text.trim(),
+                  ),
+                );
+                if (ok) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('تمت إضافة المورد "$name" بنجاح'),
+                      backgroundColor: AppColors.successGreen,
+                    ),
+                  );
+                }
+              },
+              child: const Text('حفظ'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (nameCtrl.text.isNotEmpty) {
-                erp.addSupplier(
-                  SupplierModel(
-                    id: 'sup_${DateTime.now().millisecondsSinceEpoch}',
-                    name: nameCtrl.text,
-                    phone: phoneCtrl.text,
-                    location: locCtrl.text,
-                  ),
-                );
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('حفظ'),
-          ),
-        ],
       ),
     );
   }
@@ -3061,69 +3090,98 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final phoneCtrl = TextEditingController();
     final locCtrl = TextEditingController();
     String type = 'معتمد مصنع';
+    String? errorMsg;
+
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إضافة معتمد/زبون جديد'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(labelText: 'الاسم الكامل'),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: type,
-              items: const [
-                DropdownMenuItem(
-                  value: 'معتمد مصنع',
-                  child: Text('معتمد مصنع'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: const Text('إضافة معتمد/زبون جديد'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: InputDecoration(
+                  labelText: 'الاسم الكامل',
+                  errorText: errorMsg,
                 ),
-                DropdownMenuItem(value: 'زبون معمل', child: Text('زبون معمل')),
-                DropdownMenuItem(
-                  value: 'مشروع معمل',
-                  child: Text('مشروع معمل'),
-                ),
-              ],
-              onChanged: (v) => type = v!,
-              decoration: const InputDecoration(labelText: 'الصفة'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: phoneCtrl,
-              decoration: const InputDecoration(labelText: 'الهاتف'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: locCtrl,
-              decoration: const InputDecoration(labelText: 'الموقع'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('إلغاء'),
+                onChanged: (_) {
+                  if (errorMsg != null) setSt(() => errorMsg = null);
+                },
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: type,
+                items: const [
+                  DropdownMenuItem(
+                    value: 'معتمد مصنع',
+                    child: Text('معتمد مصنع'),
+                  ),
+                  DropdownMenuItem(value: 'زبون معمل', child: Text('زبون معمل')),
+                  DropdownMenuItem(
+                    value: 'مشروع معمل',
+                    child: Text('مشروع معمل'),
+                  ),
+                ],
+                onChanged: (v) => type = v!,
+                decoration: const InputDecoration(labelText: 'الصفة'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: phoneCtrl,
+                decoration: const InputDecoration(labelText: 'الهاتف'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: locCtrl,
+                decoration: const InputDecoration(labelText: 'الموقع'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              if (nameCtrl.text.isNotEmpty) {
-                erp.addClient(
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final name = nameCtrl.text.trim();
+                if (name.isEmpty) {
+                  setSt(() => errorMsg = 'يرجى إدخال اسم المعتمد/الزبون');
+                  return;
+                }
+                if (erp.clients.any((c) => c.name.trim().toLowerCase() == name.toLowerCase())) {
+                  setSt(() => errorMsg = 'اسم المعتمد/الزبون مسجل مسبقاً! يرجى إدخال اسم مميز.');
+                  return;
+                }
+                if (erp.suppliers.any((s) => s.name.trim().toLowerCase() == name.toLowerCase())) {
+                  setSt(() => errorMsg = 'هذا الاسم مسجل مسبقاً كمورد في قسم الأشخاص!');
+                  return;
+                }
+                final ok = erp.addClient(
                   ClientModel(
                     id: 'cli_${DateTime.now().millisecondsSinceEpoch}',
-                    name: nameCtrl.text,
-                    phone: phoneCtrl.text,
-                    location: locCtrl.text,
+                    name: name,
+                    phone: phoneCtrl.text.trim(),
+                    location: locCtrl.text.trim(),
                     clientType: type,
                   ),
                 );
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('حفظ'),
-          ),
-        ],
+                if (ok) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('تمت إضافة "$name" بنجاح'),
+                      backgroundColor: AppColors.successGreen,
+                    ),
+                  );
+                }
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -7112,16 +7112,33 @@ class ERPProvider extends ChangeNotifier {
       .toList();
 
   // 12. Add Inline Entities
-  void addSupplier(SupplierModel s) {
+  /// Checks whether a person name already exists in Suppliers or Clients (case-insensitive & trimmed).
+  bool isPersonNameExists(String name) {
+    final clean = name.trim().toLowerCase();
+    if (clean.isEmpty) return false;
+    final inSuppliers = suppliers.any((s) => s.name.trim().toLowerCase() == clean);
+    final inClients = clients.any((c) => c.name.trim().toLowerCase() == clean);
+    return inSuppliers || inClients;
+  }
+
+  bool addSupplier(SupplierModel s) {
+    final clean = s.name.trim();
+    if (clean.isEmpty) return false;
+    if (isPersonNameExists(clean)) return false;
     suppliers.add(s);
     notifyListeners();
     saveToDisk();
+    return true;
   }
 
-  void addClient(ClientModel c) {
+  bool addClient(ClientModel c) {
+    final clean = c.name.trim();
+    if (clean.isEmpty) return false;
+    if (isPersonNameExists(clean)) return false;
     clients.add(c);
     notifyListeners();
     saveToDisk();
+    return true;
   }
 
   void addBlockType(BlockTypeModel bt) {
