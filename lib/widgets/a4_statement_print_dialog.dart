@@ -649,10 +649,10 @@ class A4StatementData {
                 .join(' + ')
           : 'فاتورة توريد مواد خام ومستلزمات';
 
-      final originalRemaining = (inv.grandTotal - inv.advancePayment).clamp(0.0, double.infinity);
-      final status = originalRemaining <= 0.01
+      final netRemaining = inv.remainingBalance;
+      final status = (inv.grandTotal - inv.advancePayment).clamp(0.0, double.infinity) <= 0.01
           ? 'مدفوعة بالكامل'
-          : (inv.remainingBalance <= 0.01 ? 'مصفى بالمرتجعات' : 'مستحق الدفع');
+          : (netRemaining <= 0.01 ? 'مصفى بالمرتجعات' : 'مستحق الدفع');
 
       items.add(
         A4StatementLineItem(
@@ -664,7 +664,7 @@ class A4StatementData {
           currency: inv.currency,
           totalAmount: inv.grandTotal,
           paidAmount: inv.advancePayment,
-          remainingAmount: originalRemaining,
+          remainingAmount: netRemaining,
           status: status,
           notes: inv.isGoodsDelivered ? 'واصلة' : 'غير واصلة (شحن مرسمل)',
           details: _factoryInvoiceDetails(inv, isSale: false),
@@ -796,10 +796,10 @@ class A4StatementData {
                 .join(' + ')
           : 'فاتورة مبيعات مستودع المصنع';
 
-      final originalRemaining = (inv.grandTotal - inv.advancePayment).clamp(0.0, double.infinity);
-      final status = originalRemaining <= 0.01
+      final netRemaining = inv.remainingBalance;
+      final status = (inv.grandTotal - inv.advancePayment).clamp(0.0, double.infinity) <= 0.01
           ? 'مسددة بالكامل'
-          : (inv.remainingBalance <= 0.01 ? 'مصفى بالمرتجعات' : 'مستحق التحصيل');
+          : (netRemaining <= 0.01 ? 'مصفى بالمرتجعات' : 'مستحق التحصيل');
 
       items.add(
         A4StatementLineItem(
@@ -811,7 +811,7 @@ class A4StatementData {
           currency: inv.currency,
           totalAmount: inv.grandTotal,
           paidAmount: inv.advancePayment,
-          remainingAmount: originalRemaining,
+          remainingAmount: netRemaining,
           status: status,
           details: _factoryInvoiceDetails(inv, isSale: true),
         ),
@@ -943,10 +943,10 @@ class A4StatementData {
             : 'أعمال وتفصيل رخام وجرانيت ورشة المعمل';
       }
 
-      final originalRemaining = (inv.grandTotal - (inv.cashPaidNow + inv.depositDeducted)).clamp(0.0, double.infinity);
-      final status = originalRemaining <= 0.01
+      final netRemaining = inv.remainingBalance;
+      final status = (inv.grandTotal - (inv.cashPaidNow + inv.depositDeducted)).clamp(0.0, double.infinity) <= 0.01
           ? 'مسددة بالكامل'
-          : (inv.remainingBalance <= 0.01 ? 'مصفى بالمرتجعات' : 'مستحق التحصيل');
+          : (netRemaining <= 0.01 ? 'مصفى بالمرتجعات' : 'مستحق التحصيل');
 
       items.add(
         A4StatementLineItem(
@@ -958,7 +958,7 @@ class A4StatementData {
           currency: inv.currency,
           totalAmount: inv.grandTotal,
           paidAmount: inv.cashPaidNow + inv.depositDeducted,
-          remainingAmount: originalRemaining,
+          remainingAmount: netRemaining,
           status: status,
           details: _workshopInvoiceDetails(inv),
         ),
@@ -1055,10 +1055,10 @@ class A4StatementData {
             : 'تنفيذ أعمال رخام وجرانيت للمشروع';
       }
 
-      final originalRemaining = (inv.grandTotal - (inv.cashPaidNow + inv.depositDeducted)).clamp(0.0, double.infinity);
-      final status = originalRemaining <= 0.01
+      final netRemaining = inv.remainingBalance;
+      final status = (inv.grandTotal - (inv.cashPaidNow + inv.depositDeducted)).clamp(0.0, double.infinity) <= 0.01
           ? 'مسدد بالكامل'
-          : (inv.remainingBalance <= 0.01 ? 'مصفى بالمرتجعات' : 'متبقي');
+          : (netRemaining <= 0.01 ? 'مصفى بالمرتجعات' : 'متبقي');
 
       items.add(
         A4StatementLineItem(
@@ -1070,7 +1070,7 @@ class A4StatementData {
           currency: inv.currency,
           totalAmount: inv.grandTotal,
           paidAmount: inv.cashPaidNow + inv.depositDeducted,
-          remainingAmount: originalRemaining,
+          remainingAmount: netRemaining,
           status: status,
           details: _workshopInvoiceDetails(inv),
         ),

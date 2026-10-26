@@ -217,6 +217,7 @@ void main() {
         partyId: 'sup1',
         partyName: erp.suppliers.first.name,
         invoiceType: 'شراء_مورد',
+        advancePayment: 100.0,
         items: [
           FactoryInvoiceItem(
             itemId: '',

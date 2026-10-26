@@ -1492,8 +1492,10 @@ class FactoryInvoiceModel {
             discountAmount)
         .clamp(0.0, double.infinity);
   }
+  /// Net Remaining Balance = (Original Gross Total - Return Value) - (Paid Amount - Cash Refunded)
   double get remainingBalance =>
-      (grandTotal - advancePayment + adjustmentsCashRefund - adjustmentsAmount).clamp(0.0, double.infinity);
+      ((grandTotal - adjustmentsAmount + adjustmentsCashRefund) - advancePayment)
+          .clamp(0.0, double.infinity);
 
   /// Due (مستحق الدفع) when any balance remains, otherwise Paid (مدفوعة).
   bool get isDue => remainingBalance > 0.01;
@@ -2417,8 +2419,14 @@ class WorkshopInvoiceModel {
   double get grandTotal =>
       (itemsSubtotal + servicesTotal - salesDiscount).clamp(0.0, double.infinity);
 
+  /// Net Remaining Balance = (Original Gross Total - Return Value) - (Paid Amount - Cash Refunded)
   double get remainingBalance =>
-      (grandTotal - depositDeducted - cashPaidNow + adjustmentsCashRefund - adjustmentsAmount).clamp(0.0, double.infinity);
+      ((grandTotal - adjustmentsAmount + adjustmentsCashRefund) -
+              (depositDeducted + cashPaidNow))
+          .clamp(0.0, double.infinity);
+
+  /// Due (مستحق التحصيل) when any balance remains, otherwise Paid (مسددة).
+  bool get isDue => remainingBalance > 0.01;
 
   Map<String, dynamic> toJson() => {
     'id': id,

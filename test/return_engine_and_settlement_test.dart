@@ -1074,11 +1074,11 @@ void main() {
       // Statement should have 2 items: original invoice and return row
       expect(statement.items.length, 2);
 
-      // Original invoice row maintains true historical remaining balance
+      // Original invoice row reflects net remaining balance (0.0 when cleared via returns)
       final invRow = statement.items.firstWhere((i) => !i.isReturn);
       expect(invRow.totalAmount, 1000.0);
       expect(invRow.paidAmount, 0.0);
-      expect(invRow.remainingAmount, 1000.0); // True historical remaining balance before return!
+      expect(invRow.remainingAmount, 0.0); // Net remaining balance strictly 0.0!
       expect(invRow.status, 'مصفى بالمرتجعات');
 
       // Independent return row
@@ -1221,5 +1221,312 @@ void main() {
       expect(customerStatement.items.any((i) => i.isReturn), isTrue);
       expect(customerStatement.isClearedViaReturns, isTrue);
     });
+
+    test('Net Remaining Balance: Partial payment with matching partial return evaluates strictly to 0', () {
+      final erp = ERPProvider();
+      final supplier = SupplierModel(
+        id: 'sup-partial-zero',
+        name: 'مورد تصفية متطابقة',
+        phone: '0999000111',
+        location: 'دمشق',
+        debtBalance: 0.0,
+      );
+      erp.suppliers.add(supplier);
+      erp.factoryBlocks.add(
+        FactoryBlockModel(
+          id: 'blk-part-1',
+          blockCode: 'BLK-PART-1',
+          typeName: 'بلوك تركي',
+          grade: 'درجة أولى',
+          supplierId: supplier.id,
+          supplierName: supplier.name,
+          weightTons: 10.0,
+          tonCost: 100.0,
+          tonSellingPrice: 150.0,
+        ),
+      );
+
+      // 1. Create a Factory Purchase invoice: Total $1,000, Advance Payment (Paid) $500, Debt $500
+      final inv = FactoryInvoiceModel(
+        id: 'inv-part-1',
+        invoiceNo: 'PINV-PART-1',
+        invoiceType: 'شراء_مورد',
+        partyId: supplier.id,
+        partyName: supplier.name,
+        date: DateTime(2026, 10, 1),
+        advancePayment: 500.0, // Paid half
+        currency: AppCurrency.usd,
+        items: [
+          FactoryInvoiceItem(
+            itemId: 'blk-part-1',
+            typeName: 'بلوك تركي',
+            quantity: 10.0,
+            unitPrice: 100.0,
+            unitCost: 100.0,
+            description: 'كتل رخام خام',
+          ),
+        ],
+      );
+      erp.factoryInvoices.add(inv);
+      // Supplier debt balance increases by unpaid portion ($500)
+      supplier.debtBalance += (inv.grandTotal - inv.advancePayment);
+      expect(supplier.debtBalance, 500.0);
+      expect(inv.remainingBalance, 500.0);
+      expect(inv.isDue, isTrue);
+
+      // 2. Execute a partial return of equal value ($500)
+      // Net Remaining Balance = (Gross Total - Return Value) - Paid Amount
+      // = (1,000 - 500) - 500 = 0
+      final retAdj = AdjustmentInvoiceModel(
+        id: 'adj-part-1',
+        invoiceNo: 'RET-PART-1',
+        module: 'factory',
+        kind: 'purchase_return',
+        partyName: supplier.name,
+        targetInvoiceId: inv.id,
+        targetInvoiceNo: inv.invoiceNo,
+        description: 'إرجاع نصف الكمية',
+        amount: 500.0,
+        quantity: 5.0,
+        paymentAction: 'تخفيض دين',
+        currency: AppCurrency.usd,
+        date: DateTime(2026, 10, 2),
+        lines: [
+          AdjustmentLineModel(
+            itemId: 'blk-part-1',
+            itemIndex: 0,
+            description: 'كتل رخام خام',
+            unit: 'طن',
+            quantity: 5.0,
+            unitPrice: 100.0,
+            amount: 500.0,
+          ),
+        ],
+      );
+
+      final ok = erp.addAdjustmentInvoice(retAdj);
+      expect(ok, isTrue);
+
+      // 3. Verify Factory Invoice net remaining balance
+      final updatedInv = erp.factoryInvoices.firstWhere((i) => i.id == inv.id);
+      expect(updatedInv.adjustmentsAmount, 500.0);
+      expect(updatedInv.remainingBalance, 0.0); // Strictly 0!
+      expect(updatedInv.isDue, isFalse);
+
+      // 4. Verify supplier debt ledger is fully cleared to 0
+      expect(supplier.debtBalance, 0.0);
+
+      // 5. Verify Statement of Account
+      final statement = A4StatementData.fromSupplier(
+        supplier: supplier,
+        erp: erp,
+      );
+
+      final invRow = statement.items.firstWhere((i) => !i.isReturn);
+      expect(invRow.totalAmount, 1000.0);
+      expect(invRow.paidAmount, 500.0);
+      expect(invRow.remainingAmount, 0.0); // Zero remaining balance! No ghost debt!
+      expect(invRow.status, 'مصفى بالمرتجعات');
+
+      final retRow = statement.items.firstWhere((i) => i.isReturn);
+      expect(retRow.totalAmount, 500.0);
+      expect(retRow.paidAmount, 0.0);
+      expect(retRow.remainingAmount, 0.0);
+      expect(retRow.status, 'مرتجع مسوى');
+    });
+
+    test('Net Remaining Balance: Workshop invoice with partial cash payment and partial return evaluates strictly to 0', () {
+      final erp = ERPProvider();
+      final client = ClientModel(
+        id: 'cli-part-zero',
+        name: 'عميل ورشة تصفية متطابقة',
+        phone: '0999000222',
+        clientType: 'زبون عادي',
+        debtBalance: 0.0,
+      );
+      erp.clients.add(client);
+
+      // 1. Create Workshop Invoice: Total $1,000, Cash Paid $500, Remaining $500
+      final wInv = WorkshopInvoiceModel(
+        id: 'winv-part-1',
+        invoiceNo: 'WINV-PART-1',
+        clientName: client.name,
+        date: DateTime(2026, 10, 1),
+        agreedPrice: 1000.0,
+        cashPaidNow: 500.0, // Paid half
+        depositDeducted: 0.0,
+        netCost: 500.0,
+        currency: AppCurrency.usd,
+        items: [
+          WorkshopInvoiceItem(
+            id: 'wi-part-1',
+            sourceType: 'تفصيل بسيط',
+            description: 'رخام موغلا تركي مفصل',
+            quantity: 10.0,
+            unitPrice: 100.0,
+            agreedPrice: 1000.0,
+            unitCategory: 'متر مربع',
+          ),
+        ],
+      );
+      erp.workshopInvoices.add(wInv);
+      client.debtBalance += (wInv.grandTotal - (wInv.cashPaidNow + wInv.depositDeducted));
+      expect(client.debtBalance, 500.0);
+      expect(wInv.remainingBalance, 500.0);
+      expect(wInv.isDue, isTrue);
+
+      // 2. Partial return of $500
+      final retAdj = AdjustmentInvoiceModel(
+        id: 'adj-wpart-1',
+        invoiceNo: 'WRET-PART-1',
+        module: 'workshop',
+        kind: 'sales_return',
+        partyName: client.name,
+        targetInvoiceId: wInv.id,
+        targetInvoiceNo: wInv.invoiceNo,
+        description: 'مرتجع ورشة',
+        amount: 500.0,
+        quantity: 5.0,
+        paymentAction: 'تخفيض دين',
+        currency: AppCurrency.usd,
+        date: DateTime(2026, 10, 2),
+        lines: [
+          AdjustmentLineModel(
+            itemId: 'wi-part-1',
+            itemIndex: 0,
+            description: 'رخام موغلا تركي مفصل',
+            unit: 'متر مربع',
+            quantity: 5.0,
+            unitPrice: 100.0,
+            amount: 500.0,
+          ),
+        ],
+      );
+
+      final ok = erp.addAdjustmentInvoice(retAdj);
+      expect(ok, isTrue);
+
+      // 3. Verify Workshop Invoice net remaining balance
+      final updatedWInv = erp.workshopInvoices.firstWhere((i) => i.id == wInv.id);
+      expect(updatedWInv.adjustmentsAmount, 500.0);
+      expect(updatedWInv.remainingBalance, 0.0); // Strictly 0!
+      expect(updatedWInv.isDue, isFalse);
+
+      // 4. Verify client debt balance is cleared
+      expect(client.debtBalance, 0.0);
+
+      // 5. Verify Customer Statement of Account
+      final statement = A4StatementData.fromCustomer(
+        client: client,
+        erp: erp,
+      );
+
+      final invRow = statement.items.firstWhere((i) => !i.isReturn);
+      expect(invRow.totalAmount, 1000.0);
+      expect(invRow.paidAmount, 500.0);
+      expect(invRow.remainingAmount, 0.0); // Zero remaining balance!
+      expect(invRow.status, 'مصفى بالمرتجعات');
+    });
+
+    test('Net Remaining Balance: Partial return less than unpaid portion leaves correct net balance and remains due', () {
+      final erp = ERPProvider();
+      final supplier = SupplierModel(
+        id: 'sup-partial-rem',
+        name: 'مورد تصفية جزئية',
+        phone: '0999000333',
+        location: 'دمشق',
+        debtBalance: 0.0,
+      );
+      erp.suppliers.add(supplier);
+      erp.factoryBlocks.add(
+        FactoryBlockModel(
+          id: 'blk-part-2',
+          blockCode: 'BLK-PART-2',
+          typeName: 'بلوك تركي',
+          grade: 'درجة أولى',
+          supplierId: supplier.id,
+          supplierName: supplier.name,
+          weightTons: 10.0,
+          tonCost: 100.0,
+          tonSellingPrice: 150.0,
+        ),
+      );
+
+      // Invoice Total $1,000, Paid $400, Unpaid Debt $600
+      final inv = FactoryInvoiceModel(
+        id: 'inv-part-2',
+        invoiceNo: 'PINV-PART-2',
+        invoiceType: 'شراء_مورد',
+        partyId: supplier.id,
+        partyName: supplier.name,
+        date: DateTime(2026, 10, 1),
+        advancePayment: 400.0,
+        currency: AppCurrency.usd,
+        items: [
+          FactoryInvoiceItem(
+            itemId: 'blk-part-2',
+            typeName: 'بلوك تركي',
+            quantity: 10.0,
+            unitPrice: 100.0,
+            unitCost: 100.0,
+            description: 'كتل رخام خام',
+          ),
+        ],
+      );
+      erp.factoryInvoices.add(inv);
+      supplier.debtBalance += (inv.grandTotal - inv.advancePayment);
+      expect(supplier.debtBalance, 600.0);
+
+      // Partial return of $200
+      // Net Remaining Balance = (1000 - 200) - 400 = 400
+      final retAdj = AdjustmentInvoiceModel(
+        id: 'adj-part-2',
+        invoiceNo: 'RET-PART-2',
+        module: 'factory',
+        kind: 'purchase_return',
+        partyName: supplier.name,
+        targetInvoiceId: inv.id,
+        targetInvoiceNo: inv.invoiceNo,
+        description: 'إرجاع جزئي',
+        amount: 200.0,
+        quantity: 2.0,
+        paymentAction: 'تخفيض دين',
+        currency: AppCurrency.usd,
+        date: DateTime(2026, 10, 2),
+        lines: [
+          AdjustmentLineModel(
+            itemId: 'blk-part-2',
+            itemIndex: 0,
+            description: 'كتل رخام خام',
+            unit: 'طن',
+            quantity: 2.0,
+            unitPrice: 100.0,
+            amount: 200.0,
+          ),
+        ],
+      );
+
+      final ok = erp.addAdjustmentInvoice(retAdj);
+      expect(ok, isTrue);
+
+      final updatedInv = erp.factoryInvoices.firstWhere((i) => i.id == inv.id);
+      expect(updatedInv.adjustmentsAmount, 200.0);
+      expect(updatedInv.remainingBalance, 400.0);
+      expect(updatedInv.isDue, isTrue);
+
+      // Supplier debt reduced by $200 to $400
+      expect(supplier.debtBalance, 400.0);
+
+      // Statement of Account
+      final statement = A4StatementData.fromSupplier(
+        supplier: supplier,
+        erp: erp,
+      );
+
+      final invRow = statement.items.firstWhere((i) => !i.isReturn);
+      expect(invRow.remainingAmount, 400.0);
+      expect(invRow.status, 'مستحق الدفع');
+    });
   });
 }
+
