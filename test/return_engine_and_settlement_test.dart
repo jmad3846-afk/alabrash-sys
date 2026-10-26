@@ -533,6 +533,369 @@ void main() {
       // Safe overdraft: 50 - 200 = -150
       expect(erp.mainCashBox, -150.0);
     });
+
+    test('Strict Cash Refund Cap: Purchase full return with partial deposit refunds ONLY actual paid deposit to safe', () {
+      final supplier = SupplierModel(
+        id: 'sup-cap-test',
+        name: 'مورد فحص سقف الكاش',
+        phone: '0911223344',
+        location: 'دمشق',
+        debtBalance: 800.0, // Remaining liability owed to supplier (1000 - 200)
+      );
+      erp.suppliers.add(supplier);
+
+      erp.factoryBlocks.add(
+        FactoryBlockModel(
+          id: 'blk-cap',
+          blockCode: 'BLK-CAP-1',
+          typeName: 'رخام سقف الكاش',
+          grade: 'درجة أولى',
+          supplierId: supplier.id,
+          supplierName: supplier.name,
+          weightTons: 10.0,
+          tonCost: 100.0,
+          tonSellingPrice: 150.0,
+        ),
+      );
+
+      final invoice = FactoryInvoiceModel(
+        id: 'inv-cap-pur',
+        invoiceNo: 'PINV-CAP-01',
+        date: DateTime.now(),
+        invoiceType: 'شراء_مورد',
+        partyId: supplier.id,
+        partyName: supplier.name,
+        advancePayment: 200.0, // Paid deposit: 200.0 out of 1000.0
+        items: [
+          FactoryInvoiceItem(
+            itemId: 'blk-cap',
+            typeName: 'رخام سقف الكاش',
+            quantity: 10.0,
+            unitPrice: 100.0,
+            unitCost: 100.0,
+            description: 'بلوك كاب',
+          ),
+        ],
+      );
+      erp.factoryInvoices.add(invoice);
+
+      final initialSafe = erp.mainCashBox; // 1000.0
+
+      // Full Return of 1000.0 with Cash Refund selected
+      final returnDoc = AdjustmentInvoiceModel(
+        id: 'ret-cap-pur-1',
+        invoiceNo: 'RET-CAP-01',
+        module: 'factory',
+        kind: 'purchase_return',
+        targetInvoiceId: invoice.id,
+        targetInvoiceNo: invoice.invoiceNo,
+        partyName: supplier.name,
+        description: 'مرتجع كامل مع دفعة جزئية',
+        amount: 1000.0, // Full return
+        quantity: 10.0,
+        paymentAction: 'استرداد نقدي للصندوق الرئيسي',
+        currency: AppCurrency.usd,
+        lines: [
+          AdjustmentLineModel(
+            itemId: 'blk-cap',
+            itemIndex: 0,
+            description: 'بلوك كاب',
+            unit: 'طن',
+            quantity: 10.0,
+            unitPrice: 100.0,
+            amount: 1000.0,
+          ),
+        ],
+      );
+
+      final success = erp.addAdjustmentInvoice(returnDoc);
+      expect(success, isTrue);
+
+      // Safe increases strictly by the paid deposit (200.0), NOT 1000.0!
+      expect(erp.mainCashBox, initialSafe + 200.0);
+
+      // The remaining 800.0 clears the supplier debt cleanly to 0.0
+      expect(supplier.debtBalance, 0.0);
+
+      // Master invoice is completely cleared
+      expect(invoice.remainingBalance, 0.0);
+      expect(invoice.adjustmentsCashRefund, 200.0);
+
+      // Stored adjustment record reflects exact cash moved
+      final storedRet = erp.adjustmentInvoices.last;
+      expect(storedRet.cashAmount, 200.0);
+      expect(storedRet.amount, 1000.0);
+    });
+
+    test('Strict Cash Refund Cap: Sales full return with partial deposit refunds ONLY actual paid deposit from safe', () {
+      final client = ClientModel(
+        id: 'cli-cap-test',
+        name: 'عميل فحص سقف الكاش',
+        phone: '0911223344',
+        location: 'دمشق',
+        clientType: 'معتمد مصنع',
+        debtBalance: 800.0, // Remaining debt (1000 - 200)
+      );
+      erp.clients.add(client);
+
+      final invoice = FactoryInvoiceModel(
+        id: 'inv-cap-sale',
+        invoiceNo: 'SINV-CAP-01',
+        date: DateTime.now(),
+        invoiceType: 'بيع_معتمد',
+        partyId: client.id,
+        partyName: client.name,
+        advancePayment: 200.0, // Paid deposit: 200.0 out of 1000.0
+        items: [
+          FactoryInvoiceItem(
+            itemId: erp.factoryWarehouse.first.id,
+            typeName: erp.factoryWarehouse.first.typeName,
+            quantity: 10.0,
+            unitPrice: 100.0,
+            unitCost: 50.0,
+            description: 'ألواح كاب',
+          ),
+        ],
+      );
+      erp.factoryInvoices.add(invoice);
+
+      final initialSafe = erp.mainCashBox; // 1000.0
+
+      // Full Return of 1000.0 with Cash Refund selected
+      final returnDoc = AdjustmentInvoiceModel(
+        id: 'ret-cap-sale-1',
+        invoiceNo: 'RET-CAP-SALE-01',
+        module: 'factory',
+        kind: 'sales_return',
+        targetInvoiceId: invoice.id,
+        targetInvoiceNo: invoice.invoiceNo,
+        partyName: client.name,
+        description: 'مرتجع مبيعات كامل مع دفعة جزئية',
+        amount: 1000.0, // Full return
+        quantity: 10.0,
+        paymentAction: 'استرداد نقدي للصندوق الرئيسي',
+        currency: AppCurrency.usd,
+        lines: [
+          AdjustmentLineModel(
+            itemId: erp.factoryWarehouse.first.id,
+            itemIndex: 0,
+            description: 'ألواح كاب',
+            unit: 'متر مربع',
+            quantity: 10.0,
+            unitPrice: 100.0,
+            amount: 1000.0,
+          ),
+        ],
+      );
+
+      final success = erp.addAdjustmentInvoice(returnDoc);
+      expect(success, isTrue);
+
+      // Safe decreases strictly by the paid deposit (200.0), NOT 1000.0!
+      expect(erp.mainCashBox, initialSafe - 200.0);
+
+      // The remaining 800.0 clears the client debt cleanly to 0.0
+      expect(client.debtBalance, 0.0);
+
+      // Master invoice is completely cleared
+      expect(invoice.remainingBalance, 0.0);
+      expect(invoice.adjustmentsCashRefund, 200.0);
+
+      final storedRet = erp.adjustmentInvoices.last;
+      expect(storedRet.cashAmount, 200.0);
+    });
+
+    test('Strict Cash Refund Cap: Unpaid credit invoice return moves ZERO cash and clears debt 100%', () {
+      final supplier = SupplierModel(
+        id: 'sup-credit-cap',
+        name: 'مورد آجل بالكامل',
+        phone: '0911223344',
+        location: 'دمشق',
+        debtBalance: 1000.0,
+      );
+      erp.suppliers.add(supplier);
+
+      erp.factoryBlocks.add(
+        FactoryBlockModel(
+          id: 'blk-credit-cap',
+          blockCode: 'BLK-CREDIT-1',
+          typeName: 'رخام آجل',
+          grade: 'درجة أولى',
+          supplierId: supplier.id,
+          supplierName: supplier.name,
+          weightTons: 10.0,
+          tonCost: 100.0,
+          tonSellingPrice: 150.0,
+        ),
+      );
+
+      final invoice = FactoryInvoiceModel(
+        id: 'inv-credit-cap',
+        invoiceNo: 'PINV-CREDIT-01',
+        date: DateTime.now(),
+        invoiceType: 'شراء_مورد',
+        partyId: supplier.id,
+        partyName: supplier.name,
+        advancePayment: 0.0, // Zero deposit paid!
+        items: [
+          FactoryInvoiceItem(
+            itemId: 'blk-credit-cap',
+            typeName: 'رخام آجل',
+            quantity: 10.0,
+            unitPrice: 100.0,
+            unitCost: 100.0,
+            description: 'بلوك آجل',
+          ),
+        ],
+      );
+      erp.factoryInvoices.add(invoice);
+
+      final initialSafe = erp.mainCashBox;
+
+      // User selects Cash Refund on an unpaid invoice
+      final returnDoc = AdjustmentInvoiceModel(
+        id: 'ret-credit-cap-1',
+        invoiceNo: 'RET-CREDIT-01',
+        module: 'factory',
+        kind: 'purchase_return',
+        targetInvoiceId: invoice.id,
+        targetInvoiceNo: invoice.invoiceNo,
+        partyName: supplier.name,
+        description: 'مرتجع فاتورة آجل غير مسددة',
+        amount: 1000.0,
+        quantity: 10.0,
+        paymentAction: 'استرداد نقدي للصندوق الرئيسي',
+        currency: AppCurrency.usd,
+        lines: [
+          AdjustmentLineModel(
+            itemId: 'blk-credit-cap',
+            itemIndex: 0,
+            description: 'بلوك آجل',
+            unit: 'طن',
+            quantity: 10.0,
+            unitPrice: 100.0,
+            amount: 1000.0,
+          ),
+        ],
+      );
+
+      final success = erp.addAdjustmentInvoice(returnDoc);
+      expect(success, isTrue);
+
+      // Safe untouched! 0.0 cash moved!
+      expect(erp.mainCashBox, initialSafe);
+
+      // 100% of return reduces supplier debt
+      expect(supplier.debtBalance, 0.0);
+      expect(invoice.remainingBalance, 0.0);
+
+      final storedRet = erp.adjustmentInvoices.last;
+      expect(storedRet.cashAmount, 0.0);
+    });
+
+    test('Strict Cash Refund Cap: Multi-stage return exhausts available cash deposit accurately', () {
+      final client = ClientModel(
+        id: 'cli-multistage-cap',
+        name: 'عميل مرتجع متعدد المراحل',
+        phone: '0911223344',
+        location: 'دمشق',
+        clientType: 'معتمد مصنع',
+        debtBalance: 800.0,
+      );
+      erp.clients.add(client);
+
+      final invoice = FactoryInvoiceModel(
+        id: 'inv-multi-cap',
+        invoiceNo: 'SINV-MULTI-CAP',
+        date: DateTime.now(),
+        invoiceType: 'بيع_معتمد',
+        partyId: client.id,
+        partyName: client.name,
+        advancePayment: 200.0, // 200.0 deposit out of 1000.0
+        items: [
+          FactoryInvoiceItem(
+            itemId: erp.factoryWarehouse.first.id,
+            typeName: erp.factoryWarehouse.first.typeName,
+            quantity: 10.0,
+            unitPrice: 100.0,
+            unitCost: 50.0,
+            description: 'ألواح متعددة المراحل',
+          ),
+        ],
+      );
+      erp.factoryInvoices.add(invoice);
+
+      final initialSafe = erp.mainCashBox;
+
+      // Stage 1: Partial return of 150.0 with cash refund (<= 200 deposit)
+      final ret1 = AdjustmentInvoiceModel(
+        id: 'ret-multi-1',
+        invoiceNo: 'RET-M-01',
+        module: 'factory',
+        kind: 'sales_return',
+        targetInvoiceId: invoice.id,
+        targetInvoiceNo: invoice.invoiceNo,
+        partyName: client.name,
+        description: 'مرتجع مرحلة 1',
+        amount: 150.0,
+        quantity: 1.5,
+        paymentAction: 'استرداد نقدي للصندوق الرئيسي',
+        currency: AppCurrency.usd,
+        lines: [
+          AdjustmentLineModel(
+            itemId: erp.factoryWarehouse.first.id,
+            itemIndex: 0,
+            description: 'ألواح متعددة المراحل',
+            unit: 'متر مربع',
+            quantity: 1.5,
+            unitPrice: 100.0,
+            amount: 150.0,
+          ),
+        ],
+      );
+      expect(erp.addAdjustmentInvoice(ret1), isTrue);
+      // 150 refunded from safe
+      expect(erp.mainCashBox, initialSafe - 150.0);
+      expect(client.debtBalance, 800.0); // Debt untouched because cash was taken
+      expect(invoice.remainingBalance, 800.0); // 1000 - 200 + 150 - 150 = 800
+
+      // Stage 2: Return remaining 850.0 with cash refund
+      // Remaining refundable cash is 200 - 150 = 50.0!
+      final ret2 = AdjustmentInvoiceModel(
+        id: 'ret-multi-2',
+        invoiceNo: 'RET-M-02',
+        module: 'factory',
+        kind: 'sales_return',
+        targetInvoiceId: invoice.id,
+        targetInvoiceNo: invoice.invoiceNo,
+        partyName: client.name,
+        description: 'مرتجع مرحلة 2',
+        amount: 850.0,
+        quantity: 8.5,
+        paymentAction: 'استرداد نقدي للصندوق الرئيسي',
+        currency: AppCurrency.usd,
+        lines: [
+          AdjustmentLineModel(
+            itemId: erp.factoryWarehouse.first.id,
+            itemIndex: 0,
+            description: 'ألواح متعددة المراحل',
+            unit: 'متر مربع',
+            quantity: 8.5,
+            unitPrice: 100.0,
+            amount: 850.0,
+          ),
+        ],
+      );
+      expect(erp.addAdjustmentInvoice(ret2), isTrue);
+
+      // Safe refund for stage 2 is strictly capped at remaining deposit: 50.0!
+      // Total safe decrease across stage 1 & 2 = 150 + 50 = 200.0 (exact paid deposit!)
+      expect(erp.mainCashBox, initialSafe - 200.0);
+
+      // Remaining 800.0 of stage 2 clears the 800.0 client debt: 800 - 800 = 0.0!
+      expect(client.debtBalance, 0.0);
+      expect(invoice.remainingBalance, 0.0);
+    });
   });
 
   group('Damaged Goods Routing (isDamaged flag)', () {

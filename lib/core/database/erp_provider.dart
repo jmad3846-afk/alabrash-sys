@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -3200,12 +3201,32 @@ class ERPProvider extends ChangeNotifier {
     final isDebt = action == debtAction || action.contains('دين') || action.contains('ذمة') || action.contains('دائن');
     if (!isCash && !isDebt) return false;
 
+    // Actual cash deposit/payment made against this specific invoice
+    final double paidOnTarget = original != null
+        ? original.advancePayment
+        : (workshopOriginal!.depositDeducted + workshopOriginal.cashPaidNow);
+
+    // Any cash already refunded on prior returns for this specific invoice
+    final double priorRefundedCash = adjustmentInvoices
+        .where((doc) =>
+            doc.module == invoice.module &&
+            doc.targetInvoiceId == invoice.targetInvoiceId &&
+            doc.isReturn)
+        .fold<double>(0.0, (sum, doc) => sum + doc.cashAmount);
+
+    final double availablePaidDeposit =
+        (paidOnTarget - priorRefundedCash).clamp(0.0, double.infinity);
+
     var debtPortion = 0.0;
     var cashPortion = 0.0;
-    if (isDebt) {
-      debtPortion = totalAmount;
+    if (isCash) {
+      // Strict Cash Refund Cap: Min(Return Value, Actual Paid Deposit for this Invoice)
+      cashPortion = _money(math.min(totalAmount, availablePaidDeposit));
+      debtPortion = _money(totalAmount - cashPortion);
     } else {
-      cashPortion = totalAmount;
+      // Account / debt settlement
+      debtPortion = totalAmount;
+      cashPortion = 0.0;
     }
 
     if (cashPortion > 0) {
@@ -3242,12 +3263,18 @@ class ERPProvider extends ChangeNotifier {
       original.adjustmentsAmount = _money(
         original.adjustmentsAmount + totalAmount,
       );
+      original.adjustmentsCashRefund = _money(
+        original.adjustmentsCashRefund + cashPortion,
+      );
       original.paymentStatus = original.remainingBalance > 0.01
           ? 'مستحق الدفع'
           : 'مدفوعة';
     } else {
       workshopOriginal!.adjustmentsAmount = _money(
         workshopOriginal.adjustmentsAmount + totalAmount,
+      );
+      workshopOriginal.adjustmentsCashRefund = _money(
+        workshopOriginal.adjustmentsCashRefund + cashPortion,
       );
     }
 
@@ -3275,6 +3302,7 @@ class ERPProvider extends ChangeNotifier {
       currency: invoice.currency,
       date: invoice.date,
       lines: [for (final entry in resolved) entry.line],
+      cashAmount: cashPortion,
     );
     adjustmentInvoices.add(stored);
 
@@ -3347,6 +3375,38 @@ class ERPProvider extends ChangeNotifier {
     partyId: partyId,
     currency: currency,
   );
+
+  /// Total cash deposit/advance previously paid on the specified master invoice.
+  double invoicePaidAmount({
+    required String module,
+    required String invoiceId,
+  }) {
+    if (module == 'factory') {
+      final matches = factoryInvoices.where((i) => i.id == invoiceId).toList();
+      if (matches.isEmpty) return 0.0;
+      return matches.first.advancePayment;
+    } else {
+      final matches = workshopInvoices.where((i) => i.id == invoiceId).toList();
+      if (matches.isEmpty) return 0.0;
+      return matches.first.depositDeducted + matches.first.cashPaidNow;
+    }
+  }
+
+  /// Remaining cash deposit on the invoice that is eligible for cash refund.
+  /// Strictly capped so that cash refunds never exceed actual paid deposit.
+  double invoiceRemainingRefundableCash({
+    required String module,
+    required String invoiceId,
+  }) {
+    final paid = invoicePaidAmount(module: module, invoiceId: invoiceId);
+    final priorRefunded = adjustmentInvoices
+        .where((doc) =>
+            doc.module == module &&
+            doc.targetInvoiceId == invoiceId &&
+            doc.isReturn)
+        .fold<double>(0.0, (sum, doc) => sum + doc.cashAmount);
+    return (paid - priorRefunded).clamp(0.0, double.infinity);
+  }
 
   /// Materialized line items of a workshop invoice (legacy invoices keep
   /// their data in the scalar fields instead of an items list).

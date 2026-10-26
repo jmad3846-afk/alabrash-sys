@@ -12,6 +12,7 @@ class ReturnTargetInvoice {
   final String partyId;
   final String currency;
   final double totalAmount;
+  final double paidAmount;
   final DateTime date;
 
   const ReturnTargetInvoice({
@@ -21,11 +22,12 @@ class ReturnTargetInvoice {
     required this.partyId,
     required this.currency,
     required this.totalAmount,
+    this.paidAmount = 0.0,
     required this.date,
   });
 
   String get label =>
-      '$invoiceNo • $partyName • ${totalAmount.fmt} ${AppCurrency.symbol(currency)}';
+      '$invoiceNo • $partyName • ${totalAmount.fmt} ${AppCurrency.symbol(currency)}${paidAmount > 0 ? " • مدفوع: ${paidAmount.fmt} ${AppCurrency.symbol(currency)}" : " • آجل"}';
 }
 
 /// One master-invoice line rendered as a row of the dialog table.
@@ -173,6 +175,7 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
               partyId: invoice.partyId,
               currency: invoice.currency,
               totalAmount: invoice.grandTotal,
+              paidAmount: invoice.advancePayment,
               date: invoice.date,
             ),
           )
@@ -187,6 +190,7 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
             partyId: '',
             currency: invoice.currency,
             totalAmount: invoice.grandTotal,
+            paidAmount: invoice.depositDeducted + invoice.cashPaidNow,
             date: invoice.date,
           ),
         )
@@ -208,6 +212,15 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
       _target = target;
       _rows = target == null ? const [] : _buildRows(target);
       _error = null;
+      if (target != null) {
+        final availableCash = widget.erp.invoiceRemainingRefundableCash(
+          module: widget.module,
+          invoiceId: target.id,
+        );
+        if (availableCash <= 0.0001 && _paymentAction == _cashAction) {
+          _paymentAction = _debtAction;
+        }
+      }
     });
   }
 
@@ -372,13 +385,17 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
   /// How the chosen settlement will actually be applied.
   ({double cash, double account}) get _settlementSplit {
     final total = _totalAmount;
-    if (_paymentAction == _debtAction) {
+    if (_paymentAction == _debtAction || _target == null) {
       return (cash: 0.0, account: total);
     }
-    final balance = _partyBalance;
-    final account = total < balance ? total : balance;
+    final availableDeposit = widget.erp.invoiceRemainingRefundableCash(
+      module: widget.module,
+      invoiceId: _target!.id,
+    );
+    final cash = total < availableDeposit ? total : availableDeposit;
+    final account = total - cash;
     return (
-      cash: AppCurrency.money(total - account),
+      cash: AppCurrency.money(cash),
       account: AppCurrency.money(account),
     );
   }
@@ -411,6 +428,15 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
         }
       }
     }
+    if (_paymentAction == _cashAction && _target != null) {
+      final availableDeposit = widget.erp.invoiceRemainingRefundableCash(
+        module: widget.module,
+        invoiceId: _target!.id,
+      );
+      if (availableDeposit <= 0.0001) {
+        return 'لا يمكن الاسترداد النقدي لفاتورة آجل لم يُسدد منها أي مبلغ نقدي. يرجى اختيار تسوية الحساب (تخفيض الذمة).';
+      }
+    }
     return null;
   }
 
@@ -441,6 +467,7 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
         quantity: _isReturn ? _totalQuantity : 0,
         paymentAction: _paymentAction,
         currency: target.currency,
+        cashAmount: _settlementSplit.cash,
         lines: [
           for (final row in _rows)
             if (!_isReturn || row.qty > 0)
@@ -995,9 +1022,19 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
   Widget _buildSettlementFields() {
     final target = _target;
     final currency = target?.currency ?? AppCurrency.usd;
-    final cashLabel = _isPurchase
-        ? 'استرداد نقدي إلى الصندوق الرئيسي (مع إمكانية السحب على المكشوف)'
-        : 'صرف نقدي من الصندوق الرئيسي للطرف (مع إمكانية السحب على المكشوف)';
+    final availableRefundableCash = target != null
+        ? widget.erp.invoiceRemainingRefundableCash(
+            module: widget.module,
+            invoiceId: target.id,
+          )
+        : 0.0;
+    final isCreditInvoice = target != null && availableRefundableCash <= 0.0001;
+
+    final cashLabel = isCreditInvoice
+        ? '${_isPurchase ? "استرداد نقدي" : "صرف نقدي"} (غير متاح — الفاتورة آجل وبدون دفعة نقدية مسددة)'
+        : (_isPurchase
+            ? 'استرداد نقدي إلى الصندوق الرئيسي (الحد الأقصى: ${availableRefundableCash.fmt} ${AppCurrency.symbol(currency)})'
+            : 'صرف نقدي من الصندوق الرئيسي للطرف (الحد الأقصى: ${availableRefundableCash.fmt} ${AppCurrency.symbol(currency)})');
     final split = _settlementSplit;
     final showSplit = target != null && _paymentAction == _cashAction && _totalAmount > 0;
     return Column(
@@ -1011,7 +1048,16 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
               value: _debtAction,
               child: Text('تسوية حساب (تخفيض الذمة / رصيد دائن للطرف)'),
             ),
-            DropdownMenuItem(value: _cashAction, child: Text(cashLabel)),
+            DropdownMenuItem(
+              value: _cashAction,
+              enabled: !isCreditInvoice,
+              child: Text(
+                cashLabel,
+                style: TextStyle(
+                  color: isCreditInvoice ? Colors.grey : null,
+                ),
+              ),
+            ),
           ],
           onChanged: (value) {
             if (value == null) return;
@@ -1044,9 +1090,10 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
                   ),
                 ),
                 Text(
-                  'ذمة الطرف الحالية: ${_partyBalance.fmt} ${AppCurrency.symbol(currency)}',
+                  'المدفوع نقداً أصلاً: ${availableRefundableCash.fmt} ${AppCurrency.symbol(currency)}',
                   style: const TextStyle(
                     fontSize: 11,
+                    fontWeight: FontWeight.bold,
                     color: AppColors.brandSecondaryText,
                   ),
                 ),

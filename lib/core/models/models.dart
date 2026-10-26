@@ -634,6 +634,8 @@ class AdjustmentInvoiceModel {
   /// Every line of this document (multi-line returns). Legacy single-item
   /// records simply carry an empty list and use the scalar fields above.
   final List<AdjustmentLineModel> lines;
+  /// Actual cash moved through the safe for this return (0 for credit adjustments).
+  final double cashAmount;
 
   AdjustmentInvoiceModel({
     required this.id,
@@ -653,6 +655,7 @@ class AdjustmentInvoiceModel {
     required this.currency,
     DateTime? date,
     this.lines = const [],
+    this.cashAmount = 0.0,
   }) : date = date ?? DateTime.now();
 
   bool get isReturn => kind.endsWith('return');
@@ -676,6 +679,7 @@ class AdjustmentInvoiceModel {
     'currency': currency,
     'date': date.toIso8601String(),
     'lines': lines.map((line) => line.toJson()).toList(),
+    'cashAmount': cashAmount,
   };
 
   factory AdjustmentInvoiceModel.fromJson(Map<String, dynamic> json) =>
@@ -701,6 +705,7 @@ class AdjustmentInvoiceModel {
                   .map((line) => AdjustmentLineModel.fromJson(line))
                   .toList()
             : const [],
+        cashAmount: (json['cashAmount'] as num?)?.toDouble() ?? 0.0,
       );
 }
 
@@ -1438,6 +1443,7 @@ class FactoryInvoiceModel {
   double advancePayment; // mutable: grows as dues are paid / collected
   final double discountAmount;
   double adjustmentsAmount;
+  double adjustmentsCashRefund;
   final String photoUrl;
   final bool isCashInvoice;
   String paymentStatus; // 'مستحق الدفع' | 'مدفوعة'
@@ -1458,6 +1464,7 @@ class FactoryInvoiceModel {
     this.advancePayment = 0.0,
     this.discountAmount = 0.0,
     this.adjustmentsAmount = 0.0,
+    this.adjustmentsCashRefund = 0.0,
     this.photoUrl = '',
     this.isCashInvoice = false,
     this.paymentStatus = 'تم الدفع',
@@ -1486,7 +1493,7 @@ class FactoryInvoiceModel {
         .clamp(0.0, double.infinity);
   }
   double get remainingBalance =>
-      (grandTotal - advancePayment - adjustmentsAmount).clamp(0.0, double.infinity);
+      (grandTotal - advancePayment + adjustmentsCashRefund - adjustmentsAmount).clamp(0.0, double.infinity);
 
   /// Due (مستحق الدفع) when any balance remains, otherwise Paid (مدفوعة).
   bool get isDue => remainingBalance > 0.01;
@@ -1521,6 +1528,7 @@ class FactoryInvoiceModel {
     'advancePayment': advancePayment,
     'discountAmount': discountAmount,
     'adjustmentsAmount': adjustmentsAmount,
+    'adjustmentsCashRefund': adjustmentsCashRefund,
     'photoUrl': photoUrl,
     'isCashInvoice': isCashInvoice,
     'paymentStatus': paymentStatus,
@@ -1548,6 +1556,7 @@ class FactoryInvoiceModel {
         advancePayment: (json['advancePayment'] ?? 0.0).toDouble(),
         discountAmount: (json['discountAmount'] ?? 0.0).toDouble(),
         adjustmentsAmount: (json['adjustmentsAmount'] ?? 0.0).toDouble(),
+        adjustmentsCashRefund: (json['adjustmentsCashRefund'] ?? 0.0).toDouble(),
         photoUrl: json['photoUrl'] ?? '',
         isCashInvoice: json['isCashInvoice'] ?? false,
         paymentStatus: json['paymentStatus'] ?? 'تم الدفع',
@@ -2362,6 +2371,7 @@ class WorkshopInvoiceModel {
   final double netCost;
   final double salesDiscount;
   double adjustmentsAmount;
+  double adjustmentsCashRefund;
   final List<ServiceAttachment> services;
   final String photoPath;
   final bool isGranite;
@@ -2386,6 +2396,7 @@ class WorkshopInvoiceModel {
     required this.netCost,
     this.salesDiscount = 0.0,
     this.adjustmentsAmount = 0.0,
+    this.adjustmentsCashRefund = 0.0,
     this.services = const [],
     this.photoPath = '',
     this.isGranite = false,
@@ -2407,7 +2418,7 @@ class WorkshopInvoiceModel {
       (itemsSubtotal + servicesTotal - salesDiscount).clamp(0.0, double.infinity);
 
   double get remainingBalance =>
-      (grandTotal - depositDeducted - cashPaidNow - adjustmentsAmount).clamp(0.0, double.infinity);
+      (grandTotal - depositDeducted - cashPaidNow + adjustmentsCashRefund - adjustmentsAmount).clamp(0.0, double.infinity);
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -2427,6 +2438,7 @@ class WorkshopInvoiceModel {
     'netCost': netCost,
     'salesDiscount': salesDiscount,
     'adjustmentsAmount': adjustmentsAmount,
+    'adjustmentsCashRefund': adjustmentsCashRefund,
     'services': services.isNotEmpty
         ? services.map((s) => s.toJson()).toList()
         : items.expand((i) => i.services).map((s) => s.toJson()).toList(),
@@ -2491,6 +2503,7 @@ class WorkshopInvoiceModel {
       netCost: (json['netCost'] as num?)?.toDouble() ?? parsedItems.fold(0.0, (s, e) => s + e.netCost),
       salesDiscount: (json['salesDiscount'] ?? 0.0).toDouble(),
       adjustmentsAmount: (json['adjustmentsAmount'] ?? 0.0).toDouble(),
+      adjustmentsCashRefund: (json['adjustmentsCashRefund'] ?? 0.0).toDouble(),
       services: rawServices,
       photoPath: json['photoPath'] ?? '',
       isGranite: json['isGranite'] ?? false,

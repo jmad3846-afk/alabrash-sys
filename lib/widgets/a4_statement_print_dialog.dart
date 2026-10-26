@@ -505,6 +505,14 @@ class A4StatementData {
   }) {
     final isCashRefund = ret.paymentAction.contains('نقدي') ||
         ret.paymentAction == 'cash_refund';
+    final cashPaid = ret.cashAmount > 0
+        ? ret.cashAmount
+        : (isCashRefund ? ret.amount : 0.0);
+    final status = isCashRefund
+        ? (cashPaid < ret.amount && cashPaid > 0
+            ? 'مرتجع نقدي ومسوى'
+            : (cashPaid <= 0.001 ? 'مرتجع مسوى' : 'مرتجع نقدي'))
+        : 'مرتجع مسوى';
     return A4StatementLineItem(
       index: index,
       date: ret.date,
@@ -517,9 +525,9 @@ class A4StatementData {
       category: category,
       currency: ret.currency,
       totalAmount: ret.amount,
-      paidAmount: isCashRefund ? ret.amount : 0.0,
+      paidAmount: cashPaid,
       remainingAmount: 0.0,
-      status: isCashRefund ? 'مرتجع نقدي' : 'مرتجع مسوى',
+      status: status,
       isReturn: true,
       details: _adjustmentDetails(ret),
     );
@@ -531,6 +539,14 @@ class A4StatementData {
     required String category,
   }) {
     final isCashRefund = ret.paymentAction.contains('نقدي');
+    final cashPaid = ret.cashAmount != null
+        ? ret.cashAmount!
+        : (isCashRefund ? ret.refundAmount : 0.0);
+    final status = isCashRefund
+        ? (cashPaid < ret.refundAmount && cashPaid > 0
+            ? 'مرتجع نقدي ومسوى'
+            : (cashPaid <= 0.001 ? 'مرتجع مسوى' : 'مرتجع نقدي'))
+        : 'مرتجع مسوى';
     return A4StatementLineItem(
       index: index,
       date: ret.date,
@@ -539,9 +555,9 @@ class A4StatementData {
       category: category,
       currency: ret.currency,
       totalAmount: ret.refundAmount,
-      paidAmount: isCashRefund ? ret.refundAmount : 0.0,
+      paidAmount: cashPaid,
       remainingAmount: 0.0,
-      status: isCashRefund ? 'مرتجع نقدي' : 'مرتجع مسوى',
+      status: status,
       isReturn: true,
       details: [
         A4StatementDetailLine(
