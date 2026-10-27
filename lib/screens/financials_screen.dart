@@ -4637,8 +4637,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   // TAB 8: INCOME STATEMENT (ملخص الدخل P&L)
   // -------------------------------------------------------------
   Widget _buildIncomeStatementTab(ERPProvider erp) {
-    final expensesUsd = erp.totalDirectExpensesOf(AppCurrency.usd);
-    final expensesSyp = erp.totalDirectExpensesOf(AppCurrency.syp);
+    final expensesUsd = erp.incomeSummaryExpensesOf(AppCurrency.usd);
+    final expensesSyp = erp.incomeSummaryExpensesOf(AppCurrency.syp);
+    final netProfitUsd = erp.incomeSummaryNetProfitOf(AppCurrency.usd);
+    final netProfitSyp = erp.incomeSummaryNetProfitOf(AppCurrency.syp);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -4660,7 +4662,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'المعادلة المحاسبية المباشرة: صافي الأرباح التشغيلية = إجمالي الإيرادات - إجمالي المصروفات المباشرة (دفعات البلوكات + مصاريف القص + المصاريف التشغيلية)',
+                      'المعادلة المحاسبية المباشرة: صافي الأرباح التشغيلية = إجمالي الإيرادات - إجمالي المصروفات المباشرة (دفعات البلوكات + المصاريف التشغيلية)',
                       style: TextStyle(color: AppColors.brandSecondaryText),
                     ),
                   ],
@@ -4691,13 +4693,13 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     Text(
                       () {
                         if (_pnlCurrency == AppCurrency.usd) {
-                          return '${erp.netOperatingProfit.fmt} \$';
+                          return '${netProfitUsd.fmt} \$';
                         } else if (_pnlCurrency == AppCurrency.syp) {
-                          return '${erp.netOperatingProfitSyp.fmt} ل.س';
+                          return '${netProfitSyp.fmt} ل.س';
                         } else {
                           return AppCurrency.dual(
-                            erp.netOperatingProfit,
-                            erp.netOperatingProfitSyp,
+                            netProfitUsd,
+                            netProfitSyp,
                           );
                         }
                       }(),
@@ -4830,11 +4832,6 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     syp: erp.totalBlockPurchaseExpensesOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
-                    'مصاريف القص والتصنيع المباشرة:',
-                    erp.totalCuttingExpensesOf(AppCurrency.usd),
-                    syp: erp.totalCuttingExpensesOf(AppCurrency.syp),
-                  ),
-                  _buildPlLine(
                     'مصاريف أجرة العمالة وإنجاز أيام العمل:',
                     erp.totalOperationalExpenses,
                     syp: erp.totalOperationalExpensesSyp,
@@ -4934,10 +4931,18 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                               ),
                             ),
                             Text(
-                              AppCurrency.dual(
-                                erp.netOperatingProfit,
-                                erp.netOperatingProfitSyp,
-                              ),
+                              () {
+                                if (_pnlCurrency == AppCurrency.usd) {
+                                  return '${netProfitUsd.fmt} \$';
+                                } else if (_pnlCurrency == AppCurrency.syp) {
+                                  return '${netProfitSyp.fmt} ل.س';
+                                } else {
+                                  return AppCurrency.dual(
+                                    netProfitUsd,
+                                    netProfitSyp,
+                                  );
+                                }
+                              }(),
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -4957,9 +4962,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         const SizedBox(height: 8),
                         Row(
                           children: erp.partners.map((p) {
-                            double share = erp.netOperatingProfit * p.ratio;
-                            double shareSyp =
-                                erp.netOperatingProfitSyp * p.ratio;
+                            double share = netProfitUsd * p.ratio;
+                            double shareSyp = netProfitSyp * p.ratio;
                             return Expanded(
                               child: Container(
                                 margin: const EdgeInsets.symmetric(
@@ -4992,7 +4996,19 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      AppCurrency.dual(share, shareSyp),
+                                      () {
+                                        if (_pnlCurrency == AppCurrency.usd) {
+                                          return '${share.fmt} \$';
+                                        } else if (_pnlCurrency ==
+                                            AppCurrency.syp) {
+                                          return '${shareSyp.fmt} ل.س';
+                                        } else {
+                                          return AppCurrency.dual(
+                                            share,
+                                            shareSyp,
+                                          );
+                                        }
+                                      }(),
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         color: AppColors.successGreen,

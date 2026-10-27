@@ -4360,6 +4360,28 @@ class ERPProvider extends ChangeNotifier {
   double get netOperatingProfit => netOperatingProfitOf(AppCurrency.usd);
   double get netOperatingProfitSyp => netOperatingProfitOf(AppCurrency.syp);
 
+  /// Total expenses for the Income Summary / Statement (excluding direct cutting/manufacturing expenses).
+  double incomeSummaryExpensesOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return totalDirectExpensesOf(c) - totalCuttingExpensesOf(c);
+  }
+
+  double get incomeSummaryExpenses =>
+      incomeSummaryExpensesOf(AppCurrency.usd);
+  double get incomeSummaryExpensesSyp =>
+      incomeSummaryExpensesOf(AppCurrency.syp);
+
+  /// Net operating profit for the Income Summary / Statement (excluding direct cutting/manufacturing expenses).
+  double incomeSummaryNetProfitOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return totalRevenuesOf(c) - incomeSummaryExpensesOf(c);
+  }
+
+  double get incomeSummaryNetProfit =>
+      incomeSummaryNetProfitOf(AppCurrency.usd);
+  double get incomeSummaryNetProfitSyp =>
+      incomeSummaryNetProfitOf(AppCurrency.syp);
+
   // -------------------------------------------------------------
   // ACTIONS & TRANSACTIONS (ACID Lock Simulation)
   // -------------------------------------------------------------
