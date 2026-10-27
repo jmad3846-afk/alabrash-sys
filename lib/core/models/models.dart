@@ -650,6 +650,12 @@ class AdjustmentInvoiceModel {
   final List<AdjustmentLineModel> lines;
   /// Actual cash moved through the safe for this return (0 for credit adjustments).
   final double cashAmount;
+  /// Whether the financial impact on Income Summary is deferred (Account Settlement).
+  final bool isSettlementDeferred;
+  /// Total amount deferred from Income Summary until actual payment/collection.
+  final double deferredAmount;
+  /// Portion of the deferred amount that has been formally realized in Income Summary.
+  double realizedAmount;
 
   AdjustmentInvoiceModel({
     required this.id,
@@ -670,10 +676,21 @@ class AdjustmentInvoiceModel {
     DateTime? date,
     this.lines = const [],
     this.cashAmount = 0.0,
-  }) : date = date ?? DateTime.now();
+    this.isSettlementDeferred = false,
+    this.deferredAmount = 0.0,
+    double? realizedAmount,
+  }) : date = date ?? DateTime.now(),
+       realizedAmount = realizedAmount ??
+           (isSettlementDeferred
+               ? 0.0
+               : (cashAmount > 0 ? cashAmount : amount));
 
   bool get isReturn => kind.endsWith('return');
   bool get isPurchase => kind.startsWith('purchase');
+  bool get isFullyRealized =>
+      realizedAmount >= (isSettlementDeferred ? deferredAmount - 0.0001 : amount - 0.0001);
+  double get pendingDeferredAmount =>
+      isSettlementDeferred ? (deferredAmount - realizedAmount).clamp(0.0, double.infinity) : 0.0;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -694,6 +711,9 @@ class AdjustmentInvoiceModel {
     'date': date.toIso8601String(),
     'lines': lines.map((line) => line.toJson()).toList(),
     'cashAmount': cashAmount,
+    'isSettlementDeferred': isSettlementDeferred,
+    'deferredAmount': deferredAmount,
+    'realizedAmount': realizedAmount,
   };
 
   factory AdjustmentInvoiceModel.fromJson(Map<String, dynamic> json) =>
@@ -720,6 +740,12 @@ class AdjustmentInvoiceModel {
                   .toList()
             : const [],
         cashAmount: (json['cashAmount'] as num?)?.toDouble() ?? 0.0,
+        isSettlementDeferred: json['isSettlementDeferred'] as bool? ?? false,
+        deferredAmount: (json['deferredAmount'] as num?)?.toDouble() ?? 0.0,
+        realizedAmount: (json['realizedAmount'] as num?)?.toDouble() ??
+            ((json['isSettlementDeferred'] == true)
+                ? 0.0
+                : ((json['amount'] as num?)?.toDouble() ?? 0.0)),
       );
 }
 
@@ -3124,6 +3150,12 @@ class ReturnInvoiceModel {
   /// Cash actually moved through the main safe for this document.
   /// `null` = legacy record (cash = full amount when settled in cash).
   final double? cashAmount;
+  /// Whether Income Summary impact is deferred (Account Settlement).
+  final bool isSettlementDeferred;
+  /// Total amount deferred until actual payment/collection.
+  final double deferredAmount;
+  /// Portion of the return formally realized in Income Summary.
+  double realizedAmount;
 
   ReturnInvoiceModel({
     required this.id,
@@ -3140,7 +3172,20 @@ class ReturnInvoiceModel {
     this.parentInvoiceNo = '',
     this.unit = '',
     this.cashAmount,
-  });
+    this.isSettlementDeferred = false,
+    this.deferredAmount = 0.0,
+    double? realizedAmount,
+  }) : realizedAmount = realizedAmount ??
+            (isSettlementDeferred
+                ? 0.0
+                : (cashAmount != null && cashAmount > 0
+                    ? cashAmount
+                    : refundAmount));
+
+  bool get isFullyRealized =>
+      realizedAmount >= (isSettlementDeferred ? deferredAmount - 0.0001 : refundAmount - 0.0001);
+  double get pendingDeferredAmount =>
+      isSettlementDeferred ? (deferredAmount - realizedAmount).clamp(0.0, double.infinity) : 0.0;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -3157,6 +3202,9 @@ class ReturnInvoiceModel {
     'parentInvoiceNo': parentInvoiceNo,
     'unit': unit,
     'cashAmount': cashAmount,
+    'isSettlementDeferred': isSettlementDeferred,
+    'deferredAmount': deferredAmount,
+    'realizedAmount': realizedAmount,
   };
 
   factory ReturnInvoiceModel.fromJson(Map<String, dynamic> json) =>
@@ -3175,6 +3223,12 @@ class ReturnInvoiceModel {
         parentInvoiceNo: json['parentInvoiceNo'] ?? '',
         unit: json['unit'] ?? '',
         cashAmount: (json['cashAmount'] as num?)?.toDouble(),
+        isSettlementDeferred: json['isSettlementDeferred'] as bool? ?? false,
+        deferredAmount: (json['deferredAmount'] as num?)?.toDouble() ?? 0.0,
+        realizedAmount: (json['realizedAmount'] as num?)?.toDouble() ??
+            ((json['isSettlementDeferred'] == true)
+                ? 0.0
+                : ((json['refundAmount'] as num?)?.toDouble() ?? 0.0)),
       );
 }
 

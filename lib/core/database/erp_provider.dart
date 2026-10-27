@@ -3234,6 +3234,10 @@ class ERPProvider extends ChangeNotifier {
       cashPortion = 0.0;
     }
 
+    final bool isSettlementDeferred = isDebt || debtPortion > 0.0001;
+    final double deferredAmount = debtPortion;
+    final double realizedAmount = cashPortion;
+
     if (cashPortion > 0) {
       if (purchase) {
         addCash('main', invoice.currency, cashPortion);
@@ -3308,6 +3312,9 @@ class ERPProvider extends ChangeNotifier {
       date: invoice.date,
       lines: [for (final entry in resolved) entry.line],
       cashAmount: cashPortion,
+      isSettlementDeferred: isSettlementDeferred,
+      deferredAmount: deferredAmount,
+      realizedAmount: realizedAmount,
     );
     adjustmentInvoices.add(stored);
 
@@ -3341,6 +3348,9 @@ class ERPProvider extends ChangeNotifier {
           parentInvoiceNo: invoice.targetInvoiceNo,
           unit: units,
           cashAmount: cashPortion,
+          isSettlementDeferred: isSettlementDeferred,
+          deferredAmount: deferredAmount,
+          realizedAmount: realizedAmount,
         ),
       );
     }
@@ -3995,13 +4005,41 @@ class ERPProvider extends ChangeNotifier {
   double salesDiscountsOf(String? currency) =>
       factorySalesDiscountOf(currency) + workshopSalesDiscountOf(currency);
 
+  /// Total realized adjustments recognized in the Income Summary (P&L).
+  /// For deferred account settlements, only the formally paid/collected portion is recognized.
   double adjustmentTotalOf(String kind, String? currency) => adjustmentInvoices
       .where(
         (invoice) =>
             invoice.kind == kind &&
             invoice.currency == AppCurrency.normalize(currency),
       )
-      .fold<double>(0, (sum, invoice) => sum + invoice.amount);
+      .fold<double>(0, (sum, invoice) {
+        if (invoice.isSettlementDeferred) {
+          return sum + invoice.realizedAmount;
+        }
+        return sum + invoice.amount;
+      });
+
+  /// Total nominal adjustment volume across all records regardless of deferral state.
+  double totalAdjustmentVolumeOf(String kind, String? currency) =>
+      adjustmentInvoices
+          .where(
+            (invoice) =>
+                invoice.kind == kind &&
+                invoice.currency == AppCurrency.normalize(currency),
+          )
+          .fold<double>(0, (sum, invoice) => sum + invoice.amount);
+
+  /// Total pending deferred adjustment amount yet to be realized in Income Summary.
+  double deferredAdjustmentTotalOf(String kind, String? currency) =>
+      adjustmentInvoices
+          .where(
+            (invoice) =>
+                invoice.kind == kind &&
+                invoice.currency == AppCurrency.normalize(currency) &&
+                invoice.isSettlementDeferred,
+          )
+          .fold<double>(0, (sum, invoice) => sum + invoice.pendingDeferredAmount);
 
   double get purchaseReturnsAndAllowances =>
       adjustmentTotalOf('purchase_return', AppCurrency.usd) +
@@ -7204,6 +7242,15 @@ class ERPProvider extends ChangeNotifier {
     // Reduce the credit balance towards zero (debtBalance was negative, so addDebt increases it towards zero)
     supplier.addDebt(c, take);
 
+    // Release deferred purchase returns to Income Summary
+    _releaseDeferredAdjustments(
+      kind: 'purchase_return',
+      partyName: supplier.name,
+      partyId: supplier.id,
+      currency: c,
+      amount: take,
+    );
+
     notifyListeners();
     saveToDisk();
     return true;
@@ -7231,6 +7278,122 @@ class ERPProvider extends ChangeNotifier {
 
     // Reduce the customer's credit balance towards zero (debtBalance was negative, so addDebt increases it towards zero)
     client.addDebt(c, pay);
+
+    // Release deferred sales returns to Income Summary
+    _releaseDeferredAdjustments(
+      kind: 'sales_return',
+      partyName: client.name,
+      partyId: client.id,
+      currency: c,
+      amount: pay,
+    );
+
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  /// Releases pending deferred return settlement amounts into Income Summary
+  /// on a FIFO basis when cash payment or collection is executed.
+  double _releaseDeferredAdjustments({
+    required String kind,
+    required String partyName,
+    required String partyId,
+    required String currency,
+    required double amount,
+  }) {
+    if (amount <= 0.0001) return 0.0;
+    final c = AppCurrency.normalize(currency);
+    final targetName = partyName.trim().toLowerCase();
+    var remainingToRelease = amount;
+    var totalReleased = 0.0;
+
+    final candidates = adjustmentInvoices
+        .where(
+          (doc) =>
+              doc.kind == kind &&
+              doc.currency == c &&
+              doc.isSettlementDeferred &&
+              doc.pendingDeferredAmount > 0.0001 &&
+              (doc.partyName.trim().toLowerCase() == targetName ||
+                  (partyId.isNotEmpty && doc.itemId == partyId) ||
+                  doc.partyName.trim().toLowerCase().contains(targetName) ||
+                  targetName.contains(doc.partyName.trim().toLowerCase())),
+        )
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    for (final doc in candidates) {
+      if (remainingToRelease <= 0.0001) break;
+      final needed = doc.pendingDeferredAmount;
+      final releasePart = _money(math.min(needed, remainingToRelease));
+      doc.realizedAmount = _money(doc.realizedAmount + releasePart);
+      remainingToRelease = _money(remainingToRelease - releasePart);
+      totalReleased = _money(totalReleased + releasePart);
+
+      // Sync matching ReturnInvoiceModel
+      for (final ret in returnInvoices) {
+        if (ret.returnNo == doc.invoiceNo ||
+            (ret.parentInvoiceId == doc.targetInvoiceId &&
+                ret.currency == doc.currency)) {
+          ret.realizedAmount = doc.realizedAmount;
+        }
+      }
+    }
+    return totalReleased;
+  }
+
+  /// Formally processes a cash payment or collection linked to a deferred return invoice,
+  /// releasing its deferred amount into the Income Summary.
+  ///
+  /// * For purchase return: Cash collection from supplier into Main Safe.
+  /// * For sales return: Cash payment to customer out of Main Safe.
+  bool processDeferredReturnExecution({
+    required String returnIdOrNo,
+    required double amount,
+    String? notes,
+  }) {
+    if (amount <= 0.0001) return false;
+    final adjIdx = adjustmentInvoices.indexWhere(
+      (a) => a.id == returnIdOrNo || a.invoiceNo == returnIdOrNo,
+    );
+    if (adjIdx < 0) return false;
+    final adj = adjustmentInvoices[adjIdx];
+    if (!adj.isSettlementDeferred || adj.pendingDeferredAmount <= 0.0001) {
+      return false;
+    }
+
+    final releaseAmount = _money(math.min(amount, adj.pendingDeferredAmount));
+    final c = adj.currency;
+
+    if (adj.kind == 'purchase_return') {
+      // Collection from supplier into main safe
+      addCash('main', c, releaseAmount);
+      final supplier = suppliers.where(
+        (s) => s.name.trim() == adj.partyName.trim(),
+      ).firstOrNull;
+      if (supplier != null && supplier.creditOf(c) > 0.0001) {
+        supplier.addDebt(c, math.min(releaseAmount, supplier.creditOf(c)));
+      }
+    } else if (adj.kind == 'sales_return') {
+      // Payment to customer from main safe
+      if (!takeCash('main', c, releaseAmount, allowNegative: true)) return false;
+      final client = clients.where(
+        (cl) => cl.name.trim() == adj.partyName.trim(),
+      ).firstOrNull;
+      if (client != null && client.creditOf(c) > 0.0001) {
+        client.addDebt(c, math.min(releaseAmount, client.creditOf(c)));
+      }
+    } else {
+      return false;
+    }
+
+    adj.realizedAmount = _money(adj.realizedAmount + releaseAmount);
+    for (final ret in returnInvoices) {
+      if (ret.returnNo == adj.invoiceNo || ret.parentInvoiceId == adj.targetInvoiceId) {
+        ret.realizedAmount = adj.realizedAmount;
+      }
+    }
 
     notifyListeners();
     saveToDisk();

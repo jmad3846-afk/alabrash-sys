@@ -1093,8 +1093,42 @@ class _GlobalOrdersScreenState extends State<GlobalOrdersScreen>
                       '${ret.returnNo} • ${ret.returnType}',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    subtitle: Text(
-                      'الطرف: ${ret.partyName} • الصنف: ${ret.itemDescription} • المعالجة: ${ret.paymentAction}',
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'الطرف: ${ret.partyName} • الصنف: ${ret.itemDescription} • المعالجة: ${ret.paymentAction}',
+                        ),
+                        if (ret.isSettlementDeferred)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: ret.isFullyRealized ? AppColors.chipBgGreen : AppColors.chipBgAmber,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: ret.isFullyRealized ? AppColors.successGreen : AppColors.partnersEquityAccent,
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    ret.isFullyRealized
+                                        ? 'تم التحرير في ملخص الدخل (${ret.realizedAmount.fmt} ${AppCurrency.symbol(ret.currency)})'
+                                        : 'تسوية معلقة في ملخص الدخل (المعلق: ${ret.pendingDeferredAmount.fmt} ${AppCurrency.symbol(ret.currency)})',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: ret.isFullyRealized ? AppColors.successGreen : AppColors.partnersEquityAccent,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
