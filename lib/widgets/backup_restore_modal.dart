@@ -234,70 +234,6 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
     }
   }
 
-  Future<void> _confirmAndPopulateTestData(ERPProvider erp) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.science_rounded, color: Color(0xFF0D9488), size: 26),
-            SizedBox(width: 10),
-            Text(
-              'تعبئة بيانات تجريبية شاملة',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-          ],
-        ),
-        content: const Text(
-          'هل ترغب في تعبئة بيانات تجريبية شاملة لكافة أقسام وشاشات البرنامج؟\n\n'
-          '• سيتم ملء القيد الافتتاحي كاملاً (الأصول الثابتة، بضاعة أول المدة لكافة الأصناف، الذمم السابقة، ورؤوس أموال الشركاء) واعتماده وترحيله.\n'
-          '• سيتم ملء واجهات المصنع (بلوكات، مستودع، فواتير موردين، فواتير بيع مع طول وعرض، طلبيات).\n'
-          '• سيتم ملء واجهات المعمل (مخزون، تفصيل بسيط ومعقد، سكراب، مشاريع، طلبيات ورشة).\n'
-          '• سيتم ملء الحسابات والصناديق بالدولار والليرة، شؤون العمال والحضور، والتقارير اليومية.\n\n'
-          'هذا يتيح لك فحص وتجربة النسخ الاحتياطي والاستعادة وتأكيد استرجاع 100% من السجلات بدقة متناهية.',
-          style: TextStyle(height: 1.5, fontSize: 13.5),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0D9488),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text(
-              'تأكيد التعبئة الآن',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      await erp.populateComprehensiveSeedData();
-      if (!mounted) return;
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'تمت تعبئة بيانات تجريبية شاملة بنجاح لكافة الأقسام والقيد الافتتاحي! 🎉',
-          ),
-          backgroundColor: Color(0xFF16A34A),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
-
   // =========================================================================
   // BUILD METHOD
   // =========================================================================
@@ -466,59 +402,6 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
                         ),
                       ),
                     ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Test Data Seed Banner
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFCBD5E1)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.science_rounded, color: Color(0xFF0D9488), size: 28),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'بيئة الاختبار: تعبئة بيانات تجريبية شاملة لكافة الأقسام',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13.5,
-                          color: Color(0xFF0F172A),
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'تعبئة القيد الافتتاحي (الأصول وبضاعة أول المدة والذمم) والمصنع والمعمل والحسابات والمشاريع لاختبار النسخ والاستعادة.',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                      ),
-                    ],
-                  ),
-                ),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F172A),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: () => _confirmAndPopulateTestData(erp),
-                  icon: const Icon(Icons.playlist_add_check_rounded, size: 18),
-                  label: const Text(
-                    'تعبئة بيانات تجريبية شاملة',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
@@ -791,59 +674,6 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
                         ),
                       ),
                     ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Test Data Seed Banner
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFCBD5E1)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.science_rounded, color: Color(0xFF0D9488), size: 28),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'بيئة الاختبار: تعبئة بيانات تجريبية شاملة لكافة الأقسام',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13.5,
-                          color: Color(0xFF0F172A),
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'تعبئة القيد الافتتاحي (الأصول وبضاعة أول المدة والذمم) والمصنع والمعمل والحسابات والمشاريع لاختبار النسخ والاستعادة.',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                      ),
-                    ],
-                  ),
-                ),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F172A),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: () => _confirmAndPopulateTestData(erp),
-                  icon: const Icon(Icons.playlist_add_check_rounded, size: 18),
-                  label: const Text(
-                    'تعبئة بيانات تجريبية شاملة',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
