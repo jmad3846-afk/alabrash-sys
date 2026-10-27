@@ -1523,6 +1523,10 @@ class FactoryInvoiceModel {
       ((grandTotal - adjustmentsAmount + adjustmentsCashRefund) - advancePayment)
           .clamp(0.0, double.infinity);
 
+  /// Historical remaining balance at issuance / direct payments before subsequent adjustments/returns.
+  double get historicalRemainingBalance =>
+      (grandTotal - advancePayment).clamp(0.0, double.infinity);
+
   /// Due (مستحق الدفع) when any balance remains, otherwise Paid (مدفوعة).
   bool get isDue => remainingBalance > 0.01;
 
@@ -2451,6 +2455,10 @@ class WorkshopInvoiceModel {
               (depositDeducted + cashPaidNow))
           .clamp(0.0, double.infinity);
 
+  /// Historical remaining balance at issuance / direct payments before subsequent adjustments/returns.
+  double get historicalRemainingBalance =>
+      (grandTotal - (depositDeducted + cashPaidNow)).clamp(0.0, double.infinity);
+
   /// Due (مستحق التحصيل) when any balance remains, otherwise Paid (مسددة).
   bool get isDue => remainingBalance > 0.01;
 
@@ -2695,6 +2703,9 @@ class FactoryOrderModel {
 
   double get remainingBalance =>
       (grandTotal - depositAmount).clamp(0.0, double.infinity);
+
+  /// Historical remaining balance at issuance / direct deposits before subsequent adjustments/returns.
+  double get historicalRemainingBalance => remainingBalance;
 
   Map<String, dynamic> toJson() => {
     'id': id,

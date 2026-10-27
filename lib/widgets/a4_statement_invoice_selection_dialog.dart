@@ -320,7 +320,7 @@ class _A4StatementInvoiceSelectionDialogState
                         ],
                       ),
                       subtitle: Text(
-                        'الإجمالي: ${it.totalAmount.fmt} ${it.currencySymbol} • المدفوع/المسوى: ${it.paidAmount.fmt} ${it.currencySymbol} • المتبقي: ${it.remainingAmount.fmt} ${it.currencySymbol} • ${it.details.length} بند',
+                        'الإجمالي: ${it.totalAmount.fmt} ${it.currencySymbol} • المدفوع/المسوى: ${it.paidAmount.fmt} ${it.currencySymbol} • المتبقي: ${it.remainingAmount.fmt} ${it.currencySymbol} • الرصيد التراكمي: ${it.runningBalance.fmt} ${it.currencySymbol} • ${it.details.length} بند',
                       ),
                     );
                   },

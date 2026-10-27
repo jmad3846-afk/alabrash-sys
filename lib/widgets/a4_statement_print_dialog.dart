@@ -168,6 +168,7 @@ class A4StatementLineItem {
   final double totalAmount;
   final double paidAmount;
   final double remainingAmount;
+  final double runningBalance;
   final String status;
   final bool isReturn;
   final String parentInvoiceNo;
@@ -184,6 +185,7 @@ class A4StatementLineItem {
     required this.totalAmount,
     required this.paidAmount,
     required this.remainingAmount,
+    this.runningBalance = 0.0,
     required this.status,
     this.isReturn = false,
     this.parentInvoiceNo = '',
@@ -193,21 +195,40 @@ class A4StatementLineItem {
 
   String get currencySymbol => AppCurrency.symbol(currency);
 
-  A4StatementLineItem withIndex(int newIndex) => A4StatementLineItem(
-    index: newIndex,
-    date: date,
-    documentNo: documentNo,
-    description: description,
-    category: category,
-    currency: currency,
-    totalAmount: totalAmount,
-    paidAmount: paidAmount,
-    remainingAmount: remainingAmount,
-    status: status,
-    isReturn: isReturn,
-    parentInvoiceNo: parentInvoiceNo,
-    notes: notes,
-    details: details,
+  A4StatementLineItem withIndex(int newIndex) => copyWith(index: newIndex);
+
+  A4StatementLineItem copyWith({
+    int? index,
+    DateTime? date,
+    String? documentNo,
+    String? description,
+    String? category,
+    String? currency,
+    double? totalAmount,
+    double? paidAmount,
+    double? remainingAmount,
+    double? runningBalance,
+    String? status,
+    bool? isReturn,
+    String? parentInvoiceNo,
+    String? notes,
+    List<A4StatementDetailLine>? details,
+  }) => A4StatementLineItem(
+    index: index ?? this.index,
+    date: date ?? this.date,
+    documentNo: documentNo ?? this.documentNo,
+    description: description ?? this.description,
+    category: category ?? this.category,
+    currency: currency ?? this.currency,
+    totalAmount: totalAmount ?? this.totalAmount,
+    paidAmount: paidAmount ?? this.paidAmount,
+    remainingAmount: remainingAmount ?? this.remainingAmount,
+    runningBalance: runningBalance ?? this.runningBalance,
+    status: status ?? this.status,
+    isReturn: isReturn ?? this.isReturn,
+    parentInvoiceNo: parentInvoiceNo ?? this.parentInvoiceNo,
+    notes: notes ?? this.notes,
+    details: details ?? this.details,
   );
 }
 
@@ -345,12 +366,78 @@ class A4StatementData {
     this.openingBalanceSyp = 0.0,
   });
 
-  /// Returns a copy that only contains the selected rows (re-numbered).
-  A4StatementData copyWithItems(List<A4StatementLineItem> selected) {
-    final renumbered = <A4StatementLineItem>[];
-    for (int i = 0; i < selected.length; i++) {
-      renumbered.add(selected[i].withIndex(i + 1));
+  /// Sequentially calculates and assigns the cumulative Running Balance (الرصيد التراكمي)
+  /// per currency across chronological Statement of Account rows.
+  static List<A4StatementLineItem> computeRunningBalances(
+    List<A4StatementLineItem> sortedItems, {
+    double openingUsd = 0.0,
+    double openingSyp = 0.0,
+  }) {
+    final hasOpeningLineUsd = sortedItems.any(
+      (it) => it.category == 'قيد افتتاحي' && AppCurrency.isUsd(it.currency),
+    );
+    final hasOpeningLineSyp = sortedItems.any(
+      (it) => it.category == 'قيد افتتاحي' && AppCurrency.isSyp(it.currency),
+    );
+
+    double runningUsd = hasOpeningLineUsd ? 0.0 : openingUsd;
+    double runningSyp = hasOpeningLineSyp ? 0.0 : openingSyp;
+
+    final result = <A4StatementLineItem>[];
+    for (int i = 0; i < sortedItems.length; i++) {
+      final it = sortedItems[i];
+      final isSyp = AppCurrency.isSyp(it.currency);
+      double currentRunning = isSyp ? runningSyp : runningUsd;
+
+      if (it.category == 'قيد افتتاحي') {
+        currentRunning += it.remainingAmount;
+      } else if (it.isReturn) {
+        // Return invoice reduces debt/balance by the non-cash-refunded portion (debt settlement)
+        final debtReduction =
+            (it.totalAmount - it.paidAmount).clamp(0.0, double.infinity);
+        currentRunning -= debtReduction;
+      } else {
+        // Master invoice increases running balance by its historical unpaid remaining balance
+        currentRunning += it.remainingAmount;
+      }
+
+      currentRunning = AppCurrency.money(currentRunning);
+
+      if (isSyp) {
+        runningSyp = currentRunning;
+      } else {
+        runningUsd = currentRunning;
+      }
+
+      result.add(
+        it.copyWith(
+          index: i + 1,
+          runningBalance: currentRunning,
+        ),
+      );
     }
+    return result;
+  }
+
+  /// Returns a copy that only contains the selected rows (re-numbered and recomputed running balance).
+  A4StatementData copyWithItems(List<A4StatementLineItem> selected) {
+    final sorted = List<A4StatementLineItem>.from(selected);
+    sorted.sort((a, b) {
+      final cmp = a.date.compareTo(b.date);
+      if (cmp != 0) return cmp;
+      if (a.category == 'قيد افتتاحي') return -1;
+      if (b.category == 'قيد افتتاحي') return 1;
+      if (!a.isReturn && b.isReturn) return -1;
+      if (a.isReturn && !b.isReturn) return 1;
+      return 0;
+    });
+
+    final recomputed = computeRunningBalances(
+      sorted,
+      openingUsd: openingBalanceUsd,
+      openingSyp: openingBalanceSyp,
+    );
+
     return A4StatementData(
       type: type,
       statementNo: statementNo,
@@ -362,7 +449,7 @@ class A4StatementData {
       accountDescription: accountDescription,
       clientName: clientName,
       projectName: projectName,
-      items: renumbered,
+      items: recomputed,
       currentBalanceUsd: currentBalanceUsd,
       currentBalanceSyp: currentBalanceSyp,
       openingBalanceUsd: openingBalanceUsd,
@@ -654,10 +741,10 @@ class A4StatementData {
                 .join(' + ')
           : 'فاتورة توريد مواد خام ومستلزمات';
 
-      final netRemaining = inv.remainingBalance;
-      final status = (inv.grandTotal - inv.advancePayment).clamp(0.0, double.infinity) <= 0.01
+      final historicalRemaining = inv.historicalRemainingBalance;
+      final status = historicalRemaining <= 0.01
           ? 'مدفوعة بالكامل'
-          : (netRemaining <= 0.01 ? 'مصفى بالمرتجعات' : 'مستحق الدفع');
+          : (inv.advancePayment > 0.01 ? 'مدفوعة جزئياً' : 'مستحق الدفع');
 
       items.add(
         A4StatementLineItem(
@@ -669,7 +756,7 @@ class A4StatementData {
           currency: inv.currency,
           totalAmount: inv.grandTotal,
           paidAmount: inv.advancePayment,
-          remainingAmount: netRemaining,
+          remainingAmount: historicalRemaining,
           status: status,
           notes: inv.isGoodsDelivered ? 'واصلة' : 'غير واصلة (شحن مرسمل)',
           details: _factoryInvoiceDetails(inv, isSale: false),
@@ -713,10 +800,21 @@ class A4StatementData {
       );
     }
 
-    items.sort((a, b) => a.date.compareTo(b.date));
-    for (int i = 0; i < items.length; i++) {
-      items[i] = items[i].withIndex(i + 1);
-    }
+    items.sort((a, b) {
+      final cmp = a.date.compareTo(b.date);
+      if (cmp != 0) return cmp;
+      if (a.category == 'قيد افتتاحي') return -1;
+      if (b.category == 'قيد افتتاحي') return 1;
+      if (!a.isReturn && b.isReturn) return -1;
+      if (a.isReturn && !b.isReturn) return 1;
+      return 0;
+    });
+
+    final computedItems = computeRunningBalances(
+      items,
+      openingUsd: legacyUsd,
+      openingSyp: legacySyp,
+    );
 
     final serial =
         'SOA-SUP-${supplier.name.hashCode.abs().toString().padLeft(6, "0").substring(0, 6)}';
@@ -729,7 +827,7 @@ class A4StatementData {
       accountName: supplier.name,
       accountPhone: supplier.phone,
       accountLocation: supplier.location,
-      items: items,
+      items: computedItems,
       currentBalanceUsd: supplier.debtBalance,
       currentBalanceSyp: supplier.debtBalanceSyp,
       openingBalanceUsd: legacyUsd,
@@ -801,10 +899,10 @@ class A4StatementData {
                 .join(' + ')
           : 'فاتورة مبيعات مستودع المصنع';
 
-      final netRemaining = inv.remainingBalance;
-      final status = (inv.grandTotal - inv.advancePayment).clamp(0.0, double.infinity) <= 0.01
+      final historicalRemaining = inv.historicalRemainingBalance;
+      final status = historicalRemaining <= 0.01
           ? 'مسددة بالكامل'
-          : (netRemaining <= 0.01 ? 'مصفى بالمرتجعات' : 'مستحق التحصيل');
+          : (inv.advancePayment > 0.01 ? 'مسددة جزئياً' : 'مستحق التحصيل');
 
       items.add(
         A4StatementLineItem(
@@ -816,7 +914,7 @@ class A4StatementData {
           currency: inv.currency,
           totalAmount: inv.grandTotal,
           paidAmount: inv.advancePayment,
-          remainingAmount: netRemaining,
+          remainingAmount: historicalRemaining,
           status: status,
           details: _factoryInvoiceDetails(inv, isSale: true),
         ),
@@ -859,10 +957,21 @@ class A4StatementData {
       );
     }
 
-    items.sort((a, b) => a.date.compareTo(b.date));
-    for (int i = 0; i < items.length; i++) {
-      items[i] = items[i].withIndex(i + 1);
-    }
+    items.sort((a, b) {
+      final cmp = a.date.compareTo(b.date);
+      if (cmp != 0) return cmp;
+      if (a.category == 'قيد افتتاحي') return -1;
+      if (b.category == 'قيد افتتاحي') return 1;
+      if (!a.isReturn && b.isReturn) return -1;
+      if (a.isReturn && !b.isReturn) return 1;
+      return 0;
+    });
+
+    final computedItems = computeRunningBalances(
+      items,
+      openingUsd: legacyUsd,
+      openingSyp: legacySyp,
+    );
 
     final serial =
         'SOA-AGT-${client.name.hashCode.abs().toString().padLeft(6, "0").substring(0, 6)}';
@@ -876,7 +985,7 @@ class A4StatementData {
       accountPhone: client.phone,
       accountLocation: client.location,
       accountDescription: client.description,
-      items: items,
+      items: computedItems,
       currentBalanceUsd: client.debtBalance,
       currentBalanceSyp: client.debtBalanceSyp,
       openingBalanceUsd: legacyUsd,
@@ -948,10 +1057,11 @@ class A4StatementData {
             : 'أعمال وتفصيل رخام وجرانيت ورشة المعمل';
       }
 
-      final netRemaining = inv.remainingBalance;
-      final status = (inv.grandTotal - (inv.cashPaidNow + inv.depositDeducted)).clamp(0.0, double.infinity) <= 0.01
+      final paidAmt = inv.cashPaidNow + inv.depositDeducted;
+      final historicalRemaining = inv.historicalRemainingBalance;
+      final status = historicalRemaining <= 0.01
           ? 'مسددة بالكامل'
-          : (netRemaining <= 0.01 ? 'مصفى بالمرتجعات' : 'مستحق التحصيل');
+          : (paidAmt > 0.01 ? 'مسددة جزئياً' : 'مستحق التحصيل');
 
       items.add(
         A4StatementLineItem(
@@ -962,8 +1072,8 @@ class A4StatementData {
           category: inv.sourceType,
           currency: inv.currency,
           totalAmount: inv.grandTotal,
-          paidAmount: inv.cashPaidNow + inv.depositDeducted,
-          remainingAmount: netRemaining,
+          paidAmount: paidAmt,
+          remainingAmount: historicalRemaining,
           status: status,
           details: _workshopInvoiceDetails(inv),
         ),
@@ -1006,10 +1116,21 @@ class A4StatementData {
       );
     }
 
-    items.sort((a, b) => a.date.compareTo(b.date));
-    for (int i = 0; i < items.length; i++) {
-      items[i] = items[i].withIndex(i + 1);
-    }
+    items.sort((a, b) {
+      final cmp = a.date.compareTo(b.date);
+      if (cmp != 0) return cmp;
+      if (a.category == 'قيد افتتاحي') return -1;
+      if (b.category == 'قيد افتتاحي') return 1;
+      if (!a.isReturn && b.isReturn) return -1;
+      if (a.isReturn && !b.isReturn) return 1;
+      return 0;
+    });
+
+    final computedItems = computeRunningBalances(
+      items,
+      openingUsd: legacyUsd,
+      openingSyp: legacySyp,
+    );
 
     final serial =
         'SOA-CUST-${client.name.hashCode.abs().toString().padLeft(6, "0").substring(0, 6)}';
@@ -1023,7 +1144,7 @@ class A4StatementData {
       accountPhone: client.phone,
       accountLocation: client.location,
       accountDescription: client.description,
-      items: items,
+      items: computedItems,
       currentBalanceUsd: client.debtBalance,
       currentBalanceSyp: client.debtBalanceSyp,
       openingBalanceUsd: legacyUsd,
@@ -1060,10 +1181,11 @@ class A4StatementData {
             : 'تنفيذ أعمال رخام وجرانيت للمشروع';
       }
 
-      final netRemaining = inv.remainingBalance;
-      final status = (inv.grandTotal - (inv.cashPaidNow + inv.depositDeducted)).clamp(0.0, double.infinity) <= 0.01
+      final paidAmt = inv.cashPaidNow + inv.depositDeducted;
+      final historicalRemaining = inv.historicalRemainingBalance;
+      final status = historicalRemaining <= 0.01
           ? 'مسدد بالكامل'
-          : (netRemaining <= 0.01 ? 'مصفى بالمرتجعات' : 'متبقي');
+          : (paidAmt > 0.01 ? 'مسدد جزئياً' : 'متبقي');
 
       items.add(
         A4StatementLineItem(
@@ -1074,8 +1196,8 @@ class A4StatementData {
           category: 'فاتورة مشروع',
           currency: inv.currency,
           totalAmount: inv.grandTotal,
-          paidAmount: inv.cashPaidNow + inv.depositDeducted,
-          remainingAmount: netRemaining,
+          paidAmount: paidAmt,
+          remainingAmount: historicalRemaining,
           status: status,
           details: _workshopInvoiceDetails(inv),
         ),
@@ -1098,10 +1220,17 @@ class A4StatementData {
       );
     }
 
-    items.sort((a, b) => a.date.compareTo(b.date));
-    for (int i = 0; i < items.length; i++) {
-      items[i] = items[i].withIndex(i + 1);
-    }
+    items.sort((a, b) {
+      final cmp = a.date.compareTo(b.date);
+      if (cmp != 0) return cmp;
+      if (a.category == 'قيد افتتاحي') return -1;
+      if (b.category == 'قيد افتتاحي') return 1;
+      if (!a.isReturn && b.isReturn) return -1;
+      if (a.isReturn && !b.isReturn) return 1;
+      return 0;
+    });
+
+    final computedItems = computeRunningBalances(items);
 
     final dueUsd = erp.projectDue(project.id);
     final dueSyp = erp.projectDueSyp(project.id);
@@ -1120,7 +1249,7 @@ class A4StatementData {
       accountPhone: project.phone,
       accountLocation: '',
       accountDescription: project.description,
-      items: items,
+      items: computedItems,
       currentBalanceUsd: dueUsd,
       currentBalanceSyp: dueSyp,
     );
@@ -2216,7 +2345,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
             child: Row(
               children: const [
                 SizedBox(
-                  width: 28,
+                  width: 26,
                   child: Text(
                     'م',
                     style: TextStyle(
@@ -2228,7 +2357,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 72,
+                  width: 68,
                   child: Text(
                     'التاريخ',
                     style: TextStyle(
@@ -2239,7 +2368,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 80,
+                  width: 76,
                   child: Text(
                     'رقم السند/الفاتورة',
                     style: TextStyle(
@@ -2261,7 +2390,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 44,
+                  width: 38,
                   child: Text(
                     'العملة',
                     style: TextStyle(
@@ -2273,7 +2402,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 82,
+                  width: 74,
                   child: Text(
                     'القيمة الإجمالية',
                     style: TextStyle(
@@ -2285,7 +2414,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 80,
+                  width: 72,
                   child: Text(
                     'المدفوع/المسدد',
                     style: TextStyle(
@@ -2297,7 +2426,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 82,
+                  width: 72,
                   child: Text(
                     'المتبقي',
                     style: TextStyle(
@@ -2309,7 +2438,19 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 74,
+                  width: 76,
+                  child: Text(
+                    'الرصيد التراكمي',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                SizedBox(
+                  width: 68,
                   child: Text(
                     'الحالة',
                     style: TextStyle(
@@ -2349,7 +2490,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
               child: Row(
                 children: [
                   SizedBox(
-                    width: 28,
+                    width: 26,
                     child: Text(
                       '${it.index}',
                       style: const TextStyle(
@@ -2361,21 +2502,21 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 72,
+                    width: 68,
                     child: Text(
                       intl.DateFormat('yyyy-MM-dd').format(it.date),
                       style: const TextStyle(
-                        fontSize: 10,
+                        fontSize: 9.5,
                         color: Color(0xFF334155),
                       ),
                     ),
                   ),
                   SizedBox(
-                    width: 80,
+                    width: 76,
                     child: Text(
                       it.documentNo,
                       style: TextStyle(
-                        fontSize: 10,
+                        fontSize: 9.5,
                         fontWeight: FontWeight.bold,
                         color: it.isReturn
                             ? const Color(0xFF7C3AED)
@@ -2388,7 +2529,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     child: Text(
                       it.description,
                       style: const TextStyle(
-                        fontSize: 10,
+                        fontSize: 9.5,
                         color: Color(0xFF1E293B),
                         fontWeight: FontWeight.w500,
                       ),
@@ -2397,11 +2538,11 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 44,
+                    width: 38,
                     child: Center(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
+                          horizontal: 3,
                           vertical: 1,
                         ),
                         decoration: BoxDecoration(
@@ -2413,7 +2554,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                         child: Text(
                           it.currencySymbol,
                           style: TextStyle(
-                            fontSize: 9,
+                            fontSize: 8.5,
                             fontWeight: FontWeight.bold,
                             color: AppCurrency.isSyp(it.currency)
                                 ? const Color(0xFFB45309)
@@ -2424,13 +2565,13 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 82,
+                    width: 74,
                     child: Text(
                       it.isReturn
                           ? '-${it.totalAmount.fmt} ${it.currencySymbol}'
                           : '${it.totalAmount.fmt} ${it.currencySymbol}',
                       style: TextStyle(
-                        fontSize: 10,
+                        fontSize: 9.5,
                         fontWeight: FontWeight.bold,
                         color: it.isReturn
                             ? const Color(0xFF7C3AED)
@@ -2440,11 +2581,11 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 80,
+                    width: 72,
                     child: Text(
                       '${it.paidAmount.fmt} ${it.currencySymbol}',
                       style: const TextStyle(
-                        fontSize: 10,
+                        fontSize: 9.5,
                         fontWeight: FontWeight.bold,
                         color: Color(0xFF16A34A),
                       ),
@@ -2452,11 +2593,11 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 82,
+                    width: 72,
                     child: Text(
                       '${it.remainingAmount.fmt} ${it.currencySymbol}',
                       style: TextStyle(
-                        fontSize: 10,
+                        fontSize: 9.5,
                         fontWeight: FontWeight.bold,
                         color: isDue
                             ? const Color(0xFFDC2626)
@@ -2466,11 +2607,25 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 74,
+                    width: 76,
+                    child: Text(
+                      '${it.runningBalance.fmt} ${it.currencySymbol}',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold,
+                        color: it.runningBalance.abs() > 0.01
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFF16A34A),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 68,
                     child: Center(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
+                          horizontal: 4,
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
@@ -2480,11 +2635,13 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                         child: Text(
                           it.status,
                           style: TextStyle(
-                            fontSize: 9,
+                            fontSize: 8.5,
                             fontWeight: FontWeight.bold,
                             color: statusTextColor,
                           ),
                           textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),

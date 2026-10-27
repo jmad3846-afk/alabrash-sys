@@ -3266,7 +3266,7 @@ class ERPProvider extends ChangeNotifier {
       original.adjustmentsCashRefund = _money(
         original.adjustmentsCashRefund + cashPortion,
       );
-      original.paymentStatus = original.remainingBalance > 0.01
+      original.paymentStatus = original.historicalRemainingBalance > 0.01
           ? 'مستحق الدفع'
           : 'مدفوعة';
     } else {
@@ -3413,17 +3413,6 @@ class ERPProvider extends ChangeNotifier {
   List<WorkshopInvoiceItem> workshopInvoiceLines(WorkshopInvoiceModel inv) =>
       _workshopInvoiceLines(inv);
 
-  bool _canReduceAdjustmentDebt({
-    required bool supplier,
-    required String partyName,
-    required String partyId,
-    required String currency,
-    required double amount,
-  }) {
-    // Automated financial settlement allows surplus return amounts to convert into
-    // permanent Credit Balance / Advance for future use across all states.
-    return true;
-  }
 
   double _adjustmentDebtBalance({
     required bool supplier,
@@ -8653,7 +8642,7 @@ class ERPProvider extends ChangeNotifier {
         partyName: inv.partyName,
         totalAmount: inv.grandTotal,
         paidAmount: inv.advancePayment,
-        remainingAmount: inv.remainingBalance,
+        remainingAmount: inv.historicalRemainingBalance,
         currency: inv.currency,
         itemsSummary: itemsSummary,
         time: inv.date,
@@ -8721,7 +8710,7 @@ class ERPProvider extends ChangeNotifier {
         partyName: inv.clientName,
         totalAmount: inv.grandTotal,
         paidAmount: paidAmt,
-        remainingAmount: inv.remainingBalance,
+        remainingAmount: inv.historicalRemainingBalance,
         currency: inv.currency,
         itemsSummary: itemsSummary,
         time: inv.date,

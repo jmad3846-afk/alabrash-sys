@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marble_granite_erp/core/database/erp_provider.dart';
 import 'package:marble_granite_erp/core/models/models.dart';
@@ -1074,18 +1073,20 @@ void main() {
       // Statement should have 2 items: original invoice and return row
       expect(statement.items.length, 2);
 
-      // Original invoice row reflects net remaining balance (0.0 when cleared via returns)
+      // Original invoice row retains its historical remaining balance and running balance
       final invRow = statement.items.firstWhere((i) => !i.isReturn);
       expect(invRow.totalAmount, 1000.0);
       expect(invRow.paidAmount, 0.0);
-      expect(invRow.remainingAmount, 0.0); // Net remaining balance strictly 0.0!
-      expect(invRow.status, 'مصفى بالمرتجعات');
+      expect(invRow.remainingAmount, 1000.0); // True historical remaining balance preserved!
+      expect(invRow.runningBalance, 1000.0);
+      expect(invRow.status, 'مستحق الدفع');
 
       // Independent return row
       final retRow = statement.items.firstWhere((i) => i.isReturn);
       expect(retRow.totalAmount, 1000.0);
       expect(retRow.paidAmount, 0.0); // No cash moved
       expect(retRow.remainingAmount, 0.0);
+      expect(retRow.runningBalance, 0.0);
       expect(retRow.status, 'مرتجع مسوى');
 
       // Account status displays 'مصفى بالمرتجعات'
@@ -1325,13 +1326,15 @@ void main() {
       final invRow = statement.items.firstWhere((i) => !i.isReturn);
       expect(invRow.totalAmount, 1000.0);
       expect(invRow.paidAmount, 500.0);
-      expect(invRow.remainingAmount, 0.0); // Zero remaining balance! No ghost debt!
-      expect(invRow.status, 'مصفى بالمرتجعات');
+      expect(invRow.remainingAmount, 500.0); // Historical remaining balance preserved!
+      expect(invRow.runningBalance, 500.0);
+      expect(invRow.status, 'مدفوعة جزئياً');
 
       final retRow = statement.items.firstWhere((i) => i.isReturn);
       expect(retRow.totalAmount, 500.0);
       expect(retRow.paidAmount, 0.0);
       expect(retRow.remainingAmount, 0.0);
+      expect(retRow.runningBalance, 0.0);
       expect(retRow.status, 'مرتجع مسوى');
     });
 
@@ -1424,8 +1427,9 @@ void main() {
       final invRow = statement.items.firstWhere((i) => !i.isReturn);
       expect(invRow.totalAmount, 1000.0);
       expect(invRow.paidAmount, 500.0);
-      expect(invRow.remainingAmount, 0.0); // Zero remaining balance!
-      expect(invRow.status, 'مصفى بالمرتجعات');
+      expect(invRow.remainingAmount, 500.0); // Historical remaining balance preserved!
+      expect(invRow.runningBalance, 500.0);
+      expect(invRow.status, 'مسددة جزئياً');
     });
 
     test('Net Remaining Balance: Partial return less than unpaid portion leaves correct net balance and remains due', () {
@@ -1524,8 +1528,14 @@ void main() {
       );
 
       final invRow = statement.items.firstWhere((i) => !i.isReturn);
-      expect(invRow.remainingAmount, 400.0);
-      expect(invRow.status, 'مستحق الدفع');
+      expect(invRow.remainingAmount, 600.0); // True historical remaining balance (1000 - 400)
+      expect(invRow.runningBalance, 600.0);
+      expect(invRow.status, 'مدفوعة جزئياً');
+
+      final retRow = statement.items.firstWhere((i) => i.isReturn);
+      expect(retRow.remainingAmount, 0.0);
+      expect(retRow.runningBalance, 400.0); // Sequential running balance after $200 return
+      expect(retRow.status, 'مرتجع مسوى');
     });
 
     test('Supplier Balance Flip: purchase return with prior deposit flips supplier to debtor and enables "Collect from Supplier"', () {
