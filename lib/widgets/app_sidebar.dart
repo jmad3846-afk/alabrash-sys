@@ -29,6 +29,7 @@ class AppSidebar extends StatelessWidget {
     {'title': 'إدارة الأصول الثابتة', 'icon': Icons.apartment_rounded},
     {'title': 'المصروفات', 'icon': Icons.request_quote_rounded},
     {'title': 'الميزانية العمومية', 'icon': Icons.table_chart_rounded},
+    {'title': 'الأرشيف', 'icon': Icons.inventory_2_rounded},
   ];
 
   @override

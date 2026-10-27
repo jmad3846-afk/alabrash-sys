@@ -205,6 +205,9 @@ class ERPProvider extends ChangeNotifier {
   // Daily Reports Archive
   List<DailyReportModel> dailyReports = [];
 
+  // Closed Periods Archive
+  List<PeriodArchiveModel> periodArchives = [];
+
   static const String blockPurchaseExpenseTypeId = 'block_purchases_expense';
   static const String cuttingExpenseTypeId = 'cutting_processing_expense';
 
@@ -214,9 +217,11 @@ class ERPProvider extends ChangeNotifier {
   double unallocatedWorkshopCollectionsUsd = 0.0;
   double unallocatedWorkshopCollectionsSyp = 0.0;
 
+  Future<void>? loadFuture;
+
   ERPProvider() {
     _initDefaultSeedData();
-    loadFromDisk();
+    loadFuture = loadFromDisk();
   }
 
   // -------------------------------------------------------------
@@ -4402,6 +4407,389 @@ class ERPProvider extends ChangeNotifier {
     saveToDisk();
   }
 
+  // -------------------------------------------------------------
+  // SEMI-ANNUAL ARCHIVING & OPENING BALANCE ROLL-OVER ENGINE
+  // -------------------------------------------------------------
+
+  /// Current total active physical inventory cost in USD.
+  double get currentInventoryValueUsd {
+    double total = 0.0;
+    for (final b in factoryBlocks) {
+      total += b.totalCost;
+    }
+    for (final w in factoryWarehouse) {
+      total += w.totalInventoryValue;
+    }
+    for (final s in workshopStock) {
+      total += s.availableQty * s.netCostPerUnit;
+    }
+    for (final sc in scrapItems.where((i) => !i.isSold && i.currency == AppCurrency.usd)) {
+      total += sc.baseCost;
+    }
+    if (total <= 0.01 && openingEntry.inventoryValue > 0.01) {
+      total = openingEntry.inventoryValue;
+    }
+    return total;
+  }
+
+  /// Current total active physical inventory cost in SYP.
+  double get currentInventoryValueSyp {
+    double total = 0.0;
+    for (final sc in scrapItems.where((i) => !i.isSold && i.currency == AppCurrency.syp)) {
+      total += sc.baseCost;
+    }
+    if (total <= 0.01 && openingEntry.totalOpeningStockOf(AppCurrency.syp) > 0.01) {
+      total = openingEntry.totalOpeningStockOf(AppCurrency.syp);
+    }
+    return total;
+  }
+
+  /// Converts active inventory into Opening Stock items for the new opening entry.
+  List<OpeningStockItemModel> _generateOpeningStockFromCurrentInventory() {
+    final list = <OpeningStockItemModel>[];
+    for (final b in factoryBlocks) {
+      list.add(OpeningStockItemModel(
+        id: 'op_blk_${b.id}',
+        category: 'بلوكات خام المصنع',
+        typeName: b.typeName,
+        grade: b.grade,
+        isGranite: b.isGranite,
+        supplierName: b.supplierName,
+        quantity: b.weightTons,
+        unitPrice: b.tonCost,
+        sellingPrice: b.tonSellingPrice,
+        currency: AppCurrency.usd,
+        description: 'بلوك مدور من الدورة السابقة: ${b.blockCode}',
+      ));
+    }
+    for (final w in factoryWarehouse) {
+      list.add(OpeningStockItemModel(
+        id: 'op_wh_${w.id}',
+        category: 'أمتار المصنع',
+        typeName: w.typeName,
+        grade: w.grade,
+        isGranite: w.isGranite,
+        thicknessCm: w.thicknessCm,
+        quantity: w.availableQty,
+        unitPrice: w.netCostPerUnit,
+        sellingPrice: w.recommendedSalePrice,
+        currency: AppCurrency.usd,
+        description: 'مخزون مستودع مصنع مدور: ${w.category}',
+      ));
+    }
+    for (final s in workshopStock) {
+      list.add(OpeningStockItemModel(
+        id: 'op_ws_${s.id}',
+        category: 'أمتار المعمل',
+        typeName: s.typeName,
+        grade: s.grade,
+        isGranite: s.isGranite,
+        thicknessCm: s.thicknessCm,
+        quantity: s.availableQty,
+        unitPrice: s.netCostPerUnit,
+        sellingPrice: s.recommendedSalePrice,
+        currency: AppCurrency.usd,
+        description: 'مخزون معمل مدور: ${s.category}',
+      ));
+    }
+    return list;
+  }
+
+  /// Converts current active debtor/creditor balances into Legacy Financial records.
+  List<LegacyFinancialRecordModel> _generateRolledLegacyFinancials() {
+    final list = <LegacyFinancialRecordModel>[];
+    for (final c in clients) {
+      if (c.debtBalance > 0.01) {
+        list.add(LegacyFinancialRecordModel(
+          id: 'leg_cli_${c.id}_usd',
+          category: 'clients',
+          name: c.name,
+          phone: c.phone,
+          currency: AppCurrency.usd,
+          amount: c.debtBalance,
+          description: 'رصيد عميل مدور من الدورة السابقة',
+        ));
+      }
+      if (c.debtBalanceSyp > 0.01) {
+        list.add(LegacyFinancialRecordModel(
+          id: 'leg_cli_${c.id}_syp',
+          category: 'clients',
+          name: c.name,
+          phone: c.phone,
+          currency: AppCurrency.syp,
+          amount: c.debtBalanceSyp,
+          description: 'رصيد عميل مدور بالليرة من الدورة السابقة',
+        ));
+      }
+    }
+    for (final s in suppliers) {
+      if (s.debtBalance > 0.01) {
+        list.add(LegacyFinancialRecordModel(
+          id: 'leg_sup_${s.id}_usd',
+          category: 'suppliers',
+          name: s.name,
+          phone: s.phone,
+          currency: AppCurrency.usd,
+          amount: s.debtBalance,
+          description: 'رصيد مورد مدور من الدورة السابقة',
+        ));
+      }
+      if (s.debtBalanceSyp > 0.01) {
+        list.add(LegacyFinancialRecordModel(
+          id: 'leg_sup_${s.id}_syp',
+          category: 'suppliers',
+          name: s.name,
+          phone: s.phone,
+          currency: AppCurrency.syp,
+          amount: s.debtBalanceSyp,
+          description: 'رصيد مورد مدور بالليرة من الدورة السابقة',
+        ));
+      }
+    }
+    for (final stf in staffList) {
+      if (stf.netRemainingBalance > 0.01) {
+        list.add(LegacyFinancialRecordModel(
+          id: 'leg_stf_${stf.id}_usd',
+          category: 'employees',
+          name: stf.name,
+          phone: stf.phone,
+          currency: AppCurrency.usd,
+          amount: stf.netRemainingBalance,
+          description: 'أجور مدورة مستحقة للعامل',
+        ));
+      }
+      if (stf.netRemainingBalanceSyp > 0.01) {
+        list.add(LegacyFinancialRecordModel(
+          id: 'leg_stf_${stf.id}_syp',
+          category: 'employees',
+          name: stf.name,
+          phone: stf.phone,
+          currency: AppCurrency.syp,
+          amount: stf.netRemainingBalanceSyp,
+          description: 'أجور مدورة بالليرة مستحقة للعامل',
+        ));
+      }
+    }
+    return list;
+  }
+
+  /// Previews the automated Opening Journal Entry for the new period.
+  OpeningEntryModel previewNextPeriodOpeningEntry() {
+    final rolledAssets = openingEntry.fixedAssets
+        .where((a) => !a.isSold)
+        .map((a) => FixedAssetModel(
+              id: a.id,
+              category: a.category,
+              name: a.name,
+              amount: a.amount,
+              description: a.description,
+              currency: a.currency,
+              isSold: false,
+              saleAmount: 0.0,
+            ))
+        .toList();
+
+    final legacy = _generateRolledLegacyFinancials();
+    final invValUsd = currentInventoryValueUsd;
+    final clientsDebtsUsd = clientsTotalDebts;
+    final suppliersDebtsUsd = suppliersTotalDebts;
+    final workersDebtsUsd = workersTotalDebts;
+
+    final fixedAssetsUsd = rolledAssets
+        .where((a) => a.currency == AppCurrency.usd)
+        .fold(0.0, (sum, a) => sum + a.amount);
+    final calculatedAssetsUsd = fixedAssetsUsd +
+        mainCashBox +
+        scrapCashBox +
+        orderCashBox +
+        invValUsd +
+        clientsDebtsUsd;
+    final calculatedLiabilitiesUsd = suppliersDebtsUsd + workersDebtsUsd;
+    final calculatedEquityUsd = calculatedAssetsUsd - calculatedLiabilitiesUsd;
+
+    final fixedAssetsSyp = rolledAssets
+        .where((a) => a.currency == AppCurrency.syp)
+        .fold(0.0, (sum, a) => sum + a.amount);
+    final stockSyp = _generateOpeningStockFromCurrentInventory()
+        .where((i) => i.currency == AppCurrency.syp)
+        .fold(0.0, (sum, i) => sum + i.totalPrice);
+    final clientDebtsSyp = legacy
+        .where((r) => r.category == 'clients' && r.currency == AppCurrency.syp)
+        .fold(0.0, (sum, r) => sum + r.amount);
+    final calculatedAssetsSyp = fixedAssetsSyp +
+        mainCashBoxSyp +
+        scrapCashBoxSyp +
+        orderCashBoxSyp +
+        stockSyp +
+        clientDebtsSyp;
+    final liabilitiesSyp = legacy
+        .where((r) =>
+            (r.category == 'suppliers' || r.category == 'employees') &&
+            r.currency == AppCurrency.syp)
+        .fold(0.0, (sum, r) => sum + r.amount);
+    final calculatedEquitySyp = calculatedAssetsSyp - liabilitiesSyp;
+
+    return OpeningEntryModel(
+      landValue: 0.0,
+      buildingsValue: 0.0,
+      machineryValue: 0.0,
+      vehiclesValue: 0.0,
+      furnitureValue: 0.0,
+      mainCashValue: mainCashBox,
+      scrapCashValue: scrapCashBox,
+      orderCashValue: orderCashBox,
+      mainCashValueSyp: mainCashBoxSyp,
+      scrapCashValueSyp: scrapCashBoxSyp,
+      orderCashValueSyp: orderCashBoxSyp,
+      inventoryValue: invValUsd,
+      customerDebtsValue: clientsDebtsUsd,
+      supplierPayablesValue: suppliersDebtsUsd,
+      workerSalariesValue: workersDebtsUsd,
+      fixedAssets: rolledAssets,
+      openingStock: _generateOpeningStockFromCurrentInventory(),
+      legacyFinancials: legacy,
+      hassanRatio: openingEntry.hassanRatio,
+      adnanRatio: openingEntry.adnanRatio,
+      abdelMoeenRatio: openingEntry.abdelMoeenRatio,
+      openingCapital: calculatedEquityUsd,
+      openingCapitalSyp: calculatedEquitySyp,
+      isLocked: true,
+      lockedAt: DateTime.now(),
+      openingStockApplied: true,
+    );
+  }
+
+  /// Mathematically validates Trial Balance integrity:
+  /// Total Assets + Receivables == Total Liabilities + Payables + Opening Capital/Retained Earnings.
+  AccountingValidationResult validateTrialBalanceIntegrity({
+    required OpeningEntryModel proposedEntry,
+  }) {
+    final assetsUsd = proposedEntry.totalAssets;
+    final liabilitiesUsd = proposedEntry.totalLiabilities;
+    final equityUsd = proposedEntry.totalEquity;
+    final diffUsd = (assetsUsd - (liabilitiesUsd + equityUsd)).abs();
+
+    final assetsSyp = proposedEntry.totalAssetsSyp;
+    final liabilitiesSyp = proposedEntry.totalLiabilitiesSyp;
+    final equitySyp = proposedEntry.totalEquitySyp;
+    final diffSyp = (assetsSyp - (liabilitiesSyp + equitySyp)).abs();
+
+    final isValid = diffUsd < 0.01 && diffSyp < 0.01;
+    return AccountingValidationResult(
+      isValid: isValid,
+      totalAssetsUsd: assetsUsd,
+      totalLiabilitiesUsd: liabilitiesUsd,
+      totalEquityUsd: equityUsd,
+      discrepancyUsd: diffUsd,
+      totalAssetsSyp: assetsSyp,
+      totalLiabilitiesSyp: liabilitiesSyp,
+      totalEquitySyp: equitySyp,
+      discrepancySyp: diffSyp,
+      errorMessage: isValid
+          ? null
+          : 'اختلال في توازن ميزان المراجعة (Trial Balance Discrepancy): إجمالي الأصول ($assetsUsd USD) لا يتطابق مع مجموع الخصوم وحقوق الملكية (${liabilitiesUsd + equityUsd} USD). الفرق: $diffUsd USD.',
+    );
+  }
+
+  /// Executes the Archive & Close Period workflow:
+  /// - Validates Trial Balance mathematically
+  /// - Archives completed/historical operational records
+  /// - Resets temporary revenue & expense counters to 0
+  /// - Rolls over net profit into Retained Earnings & partner capitals
+  /// - Generates & locks the balanced Opening Journal Entry for the new period.
+  AccountingValidationResult archiveAndClosePeriod({
+    required String archiveName,
+    String notes = '',
+  }) {
+    final proposedEntry = previewNextPeriodOpeningEntry();
+    final validation = validateTrialBalanceIntegrity(proposedEntry: proposedEntry);
+
+    if (!validation.isValid) {
+      return validation;
+    }
+
+    final revUsd = totalRevenuesOf(AppCurrency.usd);
+    final revSyp = totalRevenuesOf(AppCurrency.syp);
+    final expUsd = totalDirectExpensesOf(AppCurrency.usd);
+    final expSyp = totalDirectExpensesOf(AppCurrency.syp);
+    final profitUsd = netOperatingProfitOf(AppCurrency.usd);
+    final profitSyp = netOperatingProfitOf(AppCurrency.syp);
+
+    final archiveRecord = PeriodArchiveModel(
+      id: 'arch_${DateTime.now().millisecondsSinceEpoch}',
+      archiveName: archiveName.trim().isEmpty
+          ? 'أرشيف ${DateTime.now().year}/${DateTime.now().month}'
+          : archiveName.trim(),
+      archivedAt: DateTime.now(),
+      notes: notes,
+      totalRevenuesUsd: revUsd,
+      totalRevenuesSyp: revSyp,
+      totalExpensesUsd: expUsd,
+      totalExpensesSyp: expSyp,
+      netProfitUsd: profitUsd,
+      netProfitSyp: profitSyp,
+      totalAssetsUsd: validation.totalAssetsUsd,
+      totalLiabilitiesUsd: validation.totalLiabilitiesUsd,
+      totalEquityUsd: validation.totalEquityUsd,
+      mainCashUsd: mainCashBox,
+      scrapCashUsd: scrapCashBox,
+      orderCashUsd: orderCashBox,
+      mainCashSyp: mainCashBoxSyp,
+      scrapCashSyp: scrapCashBoxSyp,
+      orderCashSyp: orderCashBoxSyp,
+      factoryInvoices: List<FactoryInvoiceModel>.from(factoryInvoices),
+      workshopInvoices: List<WorkshopInvoiceModel>.from(workshopInvoices),
+      adjustmentInvoices: List<AdjustmentInvoiceModel>.from(adjustmentInvoices),
+      returnInvoices: List<ReturnInvoiceModel>.from(returnInvoices),
+      factoryOrders: List<FactoryOrderModel>.from(factoryOrders),
+      workshopOrders: List<WorkshopOrderModel>.from(workshopOrders),
+      expenseRecords: List<ExpenseRecordModel>.from(expenseRecords),
+      surplusCosts: List<SurplusCostModel>.from(surplusCosts),
+      workdayEntries: List<WorkdayEntryModel>.from(workdayEntries),
+      staffAttendance: List<StaffAttendanceModel>.from(staffAttendance),
+      advanceRepayments: List<AdvanceRepaymentModel>.from(advanceRepayments),
+      dailyReports: List<DailyReportModel>.from(dailyReports),
+      assetSaleRecords: List<AssetSaleRecordModel>.from(assetSaleRecords),
+      accountantWithdrawals: List<AccountantWithdrawalModel>.from(accountantWithdrawals),
+      rolledOpeningEntry: proposedEntry,
+    );
+
+    // 1. Clear operational lists for the new clean period
+    factoryInvoices.clear();
+    workshopInvoices.clear();
+    adjustmentInvoices.clear();
+    returnInvoices.clear();
+    factoryOrders.removeWhere((o) => o.status == 'منجزة' || o.status == 'ملغاة');
+    workshopOrders.removeWhere((o) => o.status == 'منجزة' || o.status == 'مسلّمة' || o.status == 'ملغاة');
+    dailyReports.clear();
+    workdayEntries.clear();
+    staffAttendance.clear();
+    advanceRepayments.clear();
+    expenseRecords.clear();
+    surplusCosts.clear();
+    assetSaleRecords.clear();
+    accountantWithdrawals.clear();
+    unallocatedFactoryCollectionsUsd = 0.0;
+    unallocatedFactoryCollectionsSyp = 0.0;
+    unallocatedWorkshopCollectionsUsd = 0.0;
+    unallocatedWorkshopCollectionsSyp = 0.0;
+
+    // 2. Set new Opening Entry & roll net profit into partner equity
+    openingEntry = proposedEntry;
+    for (final partner in partners) {
+      partner.injectedCapital = proposedEntry.totalEquity * partner.ratio;
+      partner.injectedCapitalSyp = proposedEntry.totalEquitySyp * partner.ratio;
+    }
+
+    // 3. Add to archive records
+    periodArchives.add(archiveRecord);
+
+    notifyListeners();
+    saveToDisk();
+
+    return validation;
+  }
+
   void _applyOpeningStockToOperationalInventory() {
     if (openingEntry.openingStockApplied) return;
     for (final item in openingEntry.openingStock) {
@@ -7862,6 +8250,10 @@ class ERPProvider extends ChangeNotifier {
         'dailyReports',
         jsonEncode(dailyReports.map((r) => r.toJson()).toList()),
       );
+      await prefs.setString(
+        'periodArchives',
+        jsonEncode(periodArchives.map((a) => a.toJson()).toList()),
+      );
       await prefs.setDouble(
         'unallocatedFactoryCollectionsUsd',
         unallocatedFactoryCollectionsUsd,
@@ -8198,6 +8590,16 @@ class ERPProvider extends ChangeNotifier {
         } catch (_) {}
       }
 
+      final archivesJson = prefs.getString('periodArchives');
+      if (archivesJson != null) {
+        try {
+          periodArchives = (jsonDecode(archivesJson) as List)
+              .map((item) =>
+                  PeriodArchiveModel.fromJson(Map<String, dynamic>.from(item)))
+              .toList();
+        } catch (_) {}
+      }
+
       if (openingEntry.isLocked &&
           openingEntry.openingStock.isNotEmpty &&
           !openingEntry.openingStockApplied) {
@@ -8284,12 +8686,16 @@ class ERPProvider extends ChangeNotifier {
         'dailyReports': dailyReports.map((d) => d.toJson()).toList(),
       },
       'centerInfo': centerInfo.toJson(),
+      'periodArchives': periodArchives.map((a) => a.toJson()).toList(),
     };
   }
 
   /// Restores and distributes all data back to its correct places across all screens and sections.
   Future<Map<String, dynamic>> importFullBackupData(
       Map<String, dynamic> raw) async {
+    if (loadFuture != null) {
+      await loadFuture;
+    }
     // 1. Resolve sections with fallback to root keys if present
     final fin = (raw['financials'] is Map)
         ? raw['financials'] as Map<String, dynamic>
@@ -8568,6 +8974,15 @@ class ERPProvider extends ChangeNotifier {
       } catch (_) {}
     }
 
+    if (raw['periodArchives'] is List) {
+      try {
+        periodArchives = (raw['periodArchives'] as List)
+            .map((item) =>
+                PeriodArchiveModel.fromJson(Map<String, dynamic>.from(item)))
+            .toList();
+      } catch (_) {}
+    }
+
     // Persist to disk immediately
     await saveToDisk();
 
@@ -8575,6 +8990,7 @@ class ERPProvider extends ChangeNotifier {
     notifyListeners();
 
     return {
+      'success': true,
       'factoryInvoices': factoryInvoices.length,
       'workshopInvoices': workshopInvoices.length,
       'suppliers': suppliers.length,
@@ -8585,6 +9001,7 @@ class ERPProvider extends ChangeNotifier {
       'workshopProjects': workshopProjects.length,
       'staffList': staffList.length,
       'dailyReports': dailyReports.length,
+      'periodArchives': periodArchives.length,
       'totalCashUsd': mainCashBox + scrapCashBox + orderCashBox,
       'totalCashSyp': mainCashBoxSyp + scrapCashBoxSyp + orderCashBoxSyp,
       'openingEntryStatus': openingEntry.isLocked ? 'معتمد ومرحل' : 'مسودة',

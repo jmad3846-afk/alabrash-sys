@@ -11,6 +11,7 @@ import '../widgets/supplier_worker_debt_modal.dart';
 import '../widgets/partner_management_modal.dart';
 import '../widgets/system_reset_modal.dart';
 import '../widgets/backup_restore_modal.dart';
+import '../widgets/archive_and_close_period_modal.dart';
 import 'daily_reports_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
@@ -1391,6 +1392,29 @@ class DashboardScreen extends StatelessWidget {
                           color: const Color(0xFF2563EB),
                           tab: 1,
                         ),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFD97706),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 13,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            elevation: 2,
+                          ),
+                          onPressed: () => _showArchiveAndClosePeriodDialog(context),
+                          icon: const Icon(Icons.inventory_2_rounded, size: 20),
+                          label: const Text(
+                            'ترحيل وجرد الفترة',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13.5,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -1528,6 +1552,16 @@ class DashboardScreen extends StatelessWidget {
             onTap: () => _showCenterInfoDialog(context, erp),
           ),
 
+          // Archive & Close Period (ترحيل وجرد)
+          _buildNavbarItem(
+            icon: Icons.inventory_2_rounded,
+            label: 'ترحيل وجرد',
+            primaryColor: const Color(0xFFD97706),
+            bgColor: const Color(0xFFFFFBEB),
+            borderColor: const Color(0xFFFDE68A),
+            onTap: () => _showArchiveAndClosePeriodDialog(context),
+          ),
+
           // 5. Export Backup (تصدير نسخة احتياطية)
           _buildNavbarItem(
             icon: Icons.cloud_upload_rounded,
@@ -1628,6 +1662,16 @@ class DashboardScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showArchiveAndClosePeriodDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ArchiveAndClosePeriodModal(
+        onNavigateToArchive: () => onNavigateToIndex?.call(14),
       ),
     );
   }

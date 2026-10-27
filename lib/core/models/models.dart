@@ -86,6 +86,9 @@ class OpeningEntryModel {
   double adnanRatio;
   double abdelMoeenRatio;
 
+  double? openingCapital;
+  double? openingCapitalSyp;
+
   bool isLocked;
   DateTime? lockedAt;
   bool openingStockApplied;
@@ -112,6 +115,8 @@ class OpeningEntryModel {
     this.hassanRatio = 0.42,
     this.adnanRatio = 0.35,
     this.abdelMoeenRatio = 0.23,
+    this.openingCapital,
+    this.openingCapitalSyp,
     this.isLocked = true,
     this.lockedAt,
     this.openingStockApplied = false,
@@ -179,8 +184,9 @@ class OpeningEntryModel {
       )
       .fold(0.0, (sum, record) => sum + record.amount);
 
-  double get totalEquity => totalAssets - totalLiabilities;
-  double get totalEquitySyp => totalAssetsSyp - totalLiabilitiesSyp;
+  double get totalEquity => openingCapital ?? (totalAssets - totalLiabilities);
+  double get totalEquitySyp =>
+      openingCapitalSyp ?? (totalAssetsSyp - totalLiabilitiesSyp);
 
   double get hassanCapital => totalEquity * hassanRatio;
   double get adnanCapital => totalEquity * adnanRatio;
@@ -213,6 +219,8 @@ class OpeningEntryModel {
     'hassanRatio': hassanRatio,
     'adnanRatio': adnanRatio,
     'abdelMoeenRatio': abdelMoeenRatio,
+    'openingCapital': openingCapital,
+    'openingCapitalSyp': openingCapitalSyp,
     'isLocked': isLocked,
     'lockedAt': lockedAt?.toIso8601String(),
     'openingStockApplied': openingStockApplied,
@@ -248,6 +256,12 @@ class OpeningEntryModel {
         hassanRatio: (json['hassanRatio'] ?? 0.42).toDouble(),
         adnanRatio: (json['adnanRatio'] ?? 0.35).toDouble(),
         abdelMoeenRatio: (json['abdelMoeenRatio'] ?? 0.23).toDouble(),
+        openingCapital: json['openingCapital'] != null
+            ? (json['openingCapital'] as num).toDouble()
+            : null,
+        openingCapitalSyp: json['openingCapitalSyp'] != null
+            ? (json['openingCapitalSyp'] as num).toDouble()
+            : null,
         isLocked: json['isLocked'] ?? false,
         lockedAt: json['lockedAt'] != null
             ? DateTime.parse(json['lockedAt'])
@@ -3614,6 +3628,253 @@ class DailyReportModel {
             .toList(),
         cuttingOperationsCount: json['cuttingOperationsCount'] ?? 0,
         attendanceCount: json['attendanceCount'] ?? 0,
+      );
+}
+
+// ==========================================
+// 32. PERIOD ARCHIVE & TRIAL BALANCE VALIDATION
+// ==========================================
+
+class AccountingValidationResult {
+  final bool isValid;
+  final double totalAssetsUsd;
+  final double totalLiabilitiesUsd;
+  final double totalEquityUsd;
+  final double discrepancyUsd;
+  final double totalAssetsSyp;
+  final double totalLiabilitiesSyp;
+  final double totalEquitySyp;
+  final double discrepancySyp;
+  final String? errorMessage;
+
+  const AccountingValidationResult({
+    required this.isValid,
+    required this.totalAssetsUsd,
+    required this.totalLiabilitiesUsd,
+    required this.totalEquityUsd,
+    required this.discrepancyUsd,
+    required this.totalAssetsSyp,
+    required this.totalLiabilitiesSyp,
+    required this.totalEquitySyp,
+    required this.discrepancySyp,
+    this.errorMessage,
+  });
+
+  bool get isCleanBalanced => discrepancyUsd < 0.01 && discrepancySyp < 0.01;
+}
+
+class PeriodArchiveModel {
+  final String id;
+  final String archiveName;
+  final DateTime archivedAt;
+  final String notes;
+
+  // Closed period financial summary
+  final double totalRevenuesUsd;
+  final double totalRevenuesSyp;
+  final double totalExpensesUsd;
+  final double totalExpensesSyp;
+  final double netProfitUsd;
+  final double netProfitSyp;
+
+  // Trial balance snapshot
+  final double totalAssetsUsd;
+  final double totalLiabilitiesUsd;
+  final double totalEquityUsd;
+
+  // Safes snapshot
+  final double mainCashUsd;
+  final double scrapCashUsd;
+  final double orderCashUsd;
+  final double mainCashSyp;
+  final double scrapCashSyp;
+  final double orderCashSyp;
+
+  // Archived Operational Collections (Read-Only)
+  final List<FactoryInvoiceModel> factoryInvoices;
+  final List<WorkshopInvoiceModel> workshopInvoices;
+  final List<AdjustmentInvoiceModel> adjustmentInvoices;
+  final List<ReturnInvoiceModel> returnInvoices;
+  final List<FactoryOrderModel> factoryOrders;
+  final List<WorkshopOrderModel> workshopOrders;
+  final List<ExpenseRecordModel> expenseRecords;
+  final List<SurplusCostModel> surplusCosts;
+  final List<WorkdayEntryModel> workdayEntries;
+  final List<StaffAttendanceModel> staffAttendance;
+  final List<AdvanceRepaymentModel> advanceRepayments;
+  final List<DailyReportModel> dailyReports;
+  final List<AssetSaleRecordModel> assetSaleRecords;
+  final List<AccountantWithdrawalModel> accountantWithdrawals;
+
+  // Rolled-over Opening Entry generated for the new period
+  final OpeningEntryModel rolledOpeningEntry;
+
+  PeriodArchiveModel({
+    required this.id,
+    required this.archiveName,
+    required this.archivedAt,
+    this.notes = '',
+    required this.totalRevenuesUsd,
+    required this.totalRevenuesSyp,
+    required this.totalExpensesUsd,
+    required this.totalExpensesSyp,
+    required this.netProfitUsd,
+    required this.netProfitSyp,
+    required this.totalAssetsUsd,
+    required this.totalLiabilitiesUsd,
+    required this.totalEquityUsd,
+    required this.mainCashUsd,
+    required this.scrapCashUsd,
+    required this.orderCashUsd,
+    required this.mainCashSyp,
+    required this.scrapCashSyp,
+    required this.orderCashSyp,
+    List<FactoryInvoiceModel>? factoryInvoices,
+    List<WorkshopInvoiceModel>? workshopInvoices,
+    List<AdjustmentInvoiceModel>? adjustmentInvoices,
+    List<ReturnInvoiceModel>? returnInvoices,
+    List<FactoryOrderModel>? factoryOrders,
+    List<WorkshopOrderModel>? workshopOrders,
+    List<ExpenseRecordModel>? expenseRecords,
+    List<SurplusCostModel>? surplusCosts,
+    List<WorkdayEntryModel>? workdayEntries,
+    List<StaffAttendanceModel>? staffAttendance,
+    List<AdvanceRepaymentModel>? advanceRepayments,
+    List<DailyReportModel>? dailyReports,
+    List<AssetSaleRecordModel>? assetSaleRecords,
+    List<AccountantWithdrawalModel>? accountantWithdrawals,
+    required this.rolledOpeningEntry,
+  })  : factoryInvoices = factoryInvoices ?? [],
+        workshopInvoices = workshopInvoices ?? [],
+        adjustmentInvoices = adjustmentInvoices ?? [],
+        returnInvoices = returnInvoices ?? [],
+        factoryOrders = factoryOrders ?? [],
+        workshopOrders = workshopOrders ?? [],
+        expenseRecords = expenseRecords ?? [],
+        surplusCosts = surplusCosts ?? [],
+        workdayEntries = workdayEntries ?? [],
+        staffAttendance = staffAttendance ?? [],
+        advanceRepayments = advanceRepayments ?? [],
+        dailyReports = dailyReports ?? [],
+        assetSaleRecords = assetSaleRecords ?? [],
+        accountantWithdrawals = accountantWithdrawals ?? [];
+
+  int get totalInvoicesCount => factoryInvoices.length + workshopInvoices.length;
+  int get totalAdjustmentsCount => adjustmentInvoices.length + returnInvoices.length;
+  int get totalOrdersCount => factoryOrders.length + workshopOrders.length;
+  int get totalExpensesCount => expenseRecords.length + surplusCosts.length;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'archiveName': archiveName,
+    'archivedAt': archivedAt.toIso8601String(),
+    'notes': notes,
+    'totalRevenuesUsd': totalRevenuesUsd,
+    'totalRevenuesSyp': totalRevenuesSyp,
+    'totalExpensesUsd': totalExpensesUsd,
+    'totalExpensesSyp': totalExpensesSyp,
+    'netProfitUsd': netProfitUsd,
+    'netProfitSyp': netProfitSyp,
+    'totalAssetsUsd': totalAssetsUsd,
+    'totalLiabilitiesUsd': totalLiabilitiesUsd,
+    'totalEquityUsd': totalEquityUsd,
+    'mainCashUsd': mainCashUsd,
+    'scrapCashUsd': scrapCashUsd,
+    'orderCashUsd': orderCashUsd,
+    'mainCashSyp': mainCashSyp,
+    'scrapCashSyp': scrapCashSyp,
+    'orderCashSyp': orderCashSyp,
+    'factoryInvoices': factoryInvoices.map((i) => i.toJson()).toList(),
+    'workshopInvoices': workshopInvoices.map((i) => i.toJson()).toList(),
+    'adjustmentInvoices': adjustmentInvoices.map((i) => i.toJson()).toList(),
+    'returnInvoices': returnInvoices.map((i) => i.toJson()).toList(),
+    'factoryOrders': factoryOrders.map((o) => o.toJson()).toList(),
+    'workshopOrders': workshopOrders.map((o) => o.toJson()).toList(),
+    'expenseRecords': expenseRecords.map((e) => e.toJson()).toList(),
+    'surplusCosts': surplusCosts.map((s) => s.toJson()).toList(),
+    'workdayEntries': workdayEntries.map((w) => w.toJson()).toList(),
+    'staffAttendance': staffAttendance.map((a) => a.toJson()).toList(),
+    'advanceRepayments': advanceRepayments.map((a) => a.toJson()).toList(),
+    'dailyReports': dailyReports.map((d) => d.toJson()).toList(),
+    'assetSaleRecords': assetSaleRecords.map((a) => a.toJson()).toList(),
+    'accountantWithdrawals': accountantWithdrawals.map((w) => w.toJson()).toList(),
+    'rolledOpeningEntry': rolledOpeningEntry.toJson(),
+  };
+
+  factory PeriodArchiveModel.fromJson(Map<String, dynamic> json) =>
+      PeriodArchiveModel(
+        id: json['id'] ?? '',
+        archiveName: json['archiveName'] ?? 'أرشيف غير مسمى',
+        archivedAt: json['archivedAt'] != null
+            ? DateTime.parse(json['archivedAt'])
+            : DateTime.now(),
+        notes: json['notes'] ?? '',
+        totalRevenuesUsd: (json['totalRevenuesUsd'] as num?)?.toDouble() ?? 0.0,
+        totalRevenuesSyp: (json['totalRevenuesSyp'] as num?)?.toDouble() ?? 0.0,
+        totalExpensesUsd: (json['totalExpensesUsd'] as num?)?.toDouble() ?? 0.0,
+        totalExpensesSyp: (json['totalExpensesSyp'] as num?)?.toDouble() ?? 0.0,
+        netProfitUsd: (json['netProfitUsd'] as num?)?.toDouble() ?? 0.0,
+        netProfitSyp: (json['netProfitSyp'] as num?)?.toDouble() ?? 0.0,
+        totalAssetsUsd: (json['totalAssetsUsd'] as num?)?.toDouble() ?? 0.0,
+        totalLiabilitiesUsd:
+            (json['totalLiabilitiesUsd'] as num?)?.toDouble() ?? 0.0,
+        totalEquityUsd: (json['totalEquityUsd'] as num?)?.toDouble() ?? 0.0,
+        mainCashUsd: (json['mainCashUsd'] as num?)?.toDouble() ?? 0.0,
+        scrapCashUsd: (json['scrapCashUsd'] as num?)?.toDouble() ?? 0.0,
+        orderCashUsd: (json['orderCashUsd'] as num?)?.toDouble() ?? 0.0,
+        mainCashSyp: (json['mainCashSyp'] as num?)?.toDouble() ?? 0.0,
+        scrapCashSyp: (json['scrapCashSyp'] as num?)?.toDouble() ?? 0.0,
+        orderCashSyp: (json['orderCashSyp'] as num?)?.toDouble() ?? 0.0,
+        factoryInvoices: (json['factoryInvoices'] as List? ?? [])
+            .map((i) => FactoryInvoiceModel.fromJson(Map<String, dynamic>.from(i)))
+            .toList(),
+        workshopInvoices: (json['workshopInvoices'] as List? ?? [])
+            .map((i) => WorkshopInvoiceModel.fromJson(Map<String, dynamic>.from(i)))
+            .toList(),
+        adjustmentInvoices: (json['adjustmentInvoices'] as List? ?? [])
+            .map((i) =>
+                AdjustmentInvoiceModel.fromJson(Map<String, dynamic>.from(i)))
+            .toList(),
+        returnInvoices: (json['returnInvoices'] as List? ?? [])
+            .map((i) => ReturnInvoiceModel.fromJson(Map<String, dynamic>.from(i)))
+            .toList(),
+        factoryOrders: (json['factoryOrders'] as List? ?? [])
+            .map((o) => FactoryOrderModel.fromJson(Map<String, dynamic>.from(o)))
+            .toList(),
+        workshopOrders: (json['workshopOrders'] as List? ?? [])
+            .map((o) => WorkshopOrderModel.fromJson(Map<String, dynamic>.from(o)))
+            .toList(),
+        expenseRecords: (json['expenseRecords'] as List? ?? [])
+            .map((e) => ExpenseRecordModel.fromJson(Map<String, dynamic>.from(e)))
+            .toList(),
+        surplusCosts: (json['surplusCosts'] as List? ?? [])
+            .map((s) => SurplusCostModel.fromJson(Map<String, dynamic>.from(s)))
+            .toList(),
+        workdayEntries: (json['workdayEntries'] as List? ?? [])
+            .map((w) => WorkdayEntryModel.fromJson(Map<String, dynamic>.from(w)))
+            .toList(),
+        staffAttendance: (json['staffAttendance'] as List? ?? [])
+            .map((a) => StaffAttendanceModel.fromJson(Map<String, dynamic>.from(a)))
+            .toList(),
+        advanceRepayments: (json['advanceRepayments'] as List? ?? [])
+            .map((a) =>
+                AdvanceRepaymentModel.fromJson(Map<String, dynamic>.from(a)))
+            .toList(),
+        dailyReports: (json['dailyReports'] as List? ?? [])
+            .map((d) => DailyReportModel.fromJson(Map<String, dynamic>.from(d)))
+            .toList(),
+        assetSaleRecords: (json['assetSaleRecords'] as List? ?? [])
+            .map((a) =>
+                AssetSaleRecordModel.fromJson(Map<String, dynamic>.from(a)))
+            .toList(),
+        accountantWithdrawals: (json['accountantWithdrawals'] as List? ?? [])
+            .map((w) => AccountantWithdrawalModel.fromJson(
+                Map<String, dynamic>.from(w)))
+            .toList(),
+        rolledOpeningEntry: json['rolledOpeningEntry'] != null
+            ? OpeningEntryModel.fromJson(
+                Map<String, dynamic>.from(json['rolledOpeningEntry']))
+            : OpeningEntryModel(),
       );
 }
 
