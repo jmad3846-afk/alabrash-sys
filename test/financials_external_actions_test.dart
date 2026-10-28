@@ -236,14 +236,9 @@ void main() {
       await tester.tap(find.textContaining('مالية المعمل'));
       await tester.pumpAndSettle();
 
-      // In Workshop Finances: tab 0 is Retail Customers, tab 1 is Projects
+      // In Workshop Finances: Retail Customers are displayed directly, Project finances removed
       expect(find.textContaining('حسابات زبائن المعمل'), findsOneWidget);
-
-      // Switch to Projects tab
-      await tester.tap(find.text('مالية المشاريع (Project Financials)'));
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('كافة المشاريع'), findsOneWidget);
+      expect(find.textContaining('مالية المشاريع'), findsNothing);
     });
   });
 }

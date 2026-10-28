@@ -714,7 +714,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final workshopCashTab = find.text('9. فواتير المبيعات النقدية');
+    final workshopCashTab = find.text('8. فواتير المبيعات النقدية');
     await tester.ensureVisible(workshopCashTab);
     await tester.pumpAndSettle();
     await tester.tap(workshopCashTab);
@@ -832,7 +832,7 @@ void main() {
 
     await tester.tap(find.text('المعمل').first);
     await tester.pumpAndSettle();
-    expect(find.text('8. مرتجعات ومسموحات المبيعات'), findsOneWidget);
+    expect(find.text('7. مرتجعات ومسموحات المبيعات'), findsOneWidget);
   });
 
   test('updateBlockType cascades changes to blocks and meter types', () {

@@ -97,7 +97,7 @@ class DashboardScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             GridView.count(
-              crossAxisCount: 4,
+              crossAxisCount: 3,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               crossAxisSpacing: 16,
@@ -153,23 +153,6 @@ class DashboardScreen extends StatelessWidget {
                     showDialog(
                       context: context,
                       builder: (_) => const ClientDebtModal(titleFilter: 'زبون معمل'),
-                    );
-                  },
-                ),
-
-                // Card 4: المعمل - لنا مشاريع
-                MetricCard(
-                  title: 'تحليلات المعمل • لنا مشاريع',
-                  value: AppCurrency.dual(
-                      erp.clientsProjectDebts, erp.clientsProjectDebtsSyp),
-                  subtitle: 'انقر لعرض مستحقات المشاريع المتعهد بها',
-                  icon: Icons.domain_rounded,
-                  iconColor: AppColors.partnersEquityAccent,
-                  bgColor: AppColors.chipBgAmber,
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => const ClientDebtModal(titleFilter: 'مشروع معمل'),
                     );
                   },
                 ),
@@ -1273,7 +1256,7 @@ class DashboardScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     const Text(
-                      'تأمين كافة سجلات النظام (الفواتير، الصناديق بالدولار والليرة، المخزون، العمال، والمشاريع) على فلاشة USB أو قرص خارجي، مع استعادة وتوزيع البيانات تلقائياً وفورياً على أماكنها الصحيحة في كافة واجهات وشاشات البرنامج.',
+                      'تأمين كافة سجلات النظام (الفواتير، الصناديق بالدولار والليرة، المخزون، والعمال) على فلاشة USB أو قرص خارجي، مع استعادة وتوزيع البيانات تلقائياً وفورياً على أماكنها الصحيحة في كافة واجهات وشاشات البرنامج.',
                       style: TextStyle(
                         fontSize: 12,
                         color: Color(0xFF94A3B8),
@@ -1363,7 +1346,7 @@ class DashboardScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           const Text(
-                            'تأمين كافة سجلات النظام (الفواتير، الصناديق بالدولار والليرة، المخزون، العمال، والمشاريع) على فلاشة USB أو قرص خارجي، مع استعادة وتوزيع البيانات تلقائياً وفورياً على أماكنها الصحيحة في كافة واجهات وشاشات البرنامج.',
+                            'تأمين كافة سجلات النظام (الفواتير، الصناديق بالدولار والليرة، المخزون، والعمال) على فلاشة USB أو قرص خارجي، مع استعادة وتوزيع البيانات تلقائياً وفورياً على أماكنها الصحيحة في كافة واجهات وشاشات البرنامج.',
                             style: TextStyle(
                               fontSize: 12.5,
                               color: Color(0xFF94A3B8),

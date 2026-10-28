@@ -154,21 +154,20 @@ void main() {
       findsNothing,
     );
 
-    // Workshop finances tab renders retail + projects.
+    // Workshop finances tab renders retail finances directly (Projects removed).
     await tester.tap(find.text('5. مالية المعمل'));
     await tester.pumpAndSettle();
-    expect(find.text('زبائن المعمل (الطلبيات والجزافي)'), findsOneWidget);
-    expect(find.text('مالية المشاريع (Project Financials)'), findsOneWidget);
+    expect(find.textContaining('مالية المشاريع'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('workshop projects section CRUD tabs render', (tester) async {
-    await openWorkshopTab(tester, ERPProvider(), '7. المشاريع (Projects)');
-    expect(find.textContaining('بانتظار الدفع'), findsWidgets);
-    expect(find.textContaining('مكتملة / مدفوعة'), findsWidgets);
-    await tester.tap(find.text('إضافة مشروع'));
+  testWidgets('workshop projects section removed and replaced cleanly', (tester) async {
+    final erp = ERPProvider();
+    await setDesktop(tester);
+    await tester.pumpWidget(workshopWrap(erp));
     await tester.pumpAndSettle();
-    expect(find.text('إضافة مشروع جديد'), findsOneWidget);
+    expect(find.textContaining('المشاريع'), findsNothing);
+    expect(find.text('7. مرتجعات ومسموحات المبيعات'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
