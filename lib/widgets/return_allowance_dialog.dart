@@ -142,6 +142,10 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
   List<_LineRow> _rows = const [];
   String? _error;
 
+  bool _isStandalone = false;
+  String? _selectedPartyName;
+  String _selectedCurrency = AppCurrency.usd;
+
   bool get _isReturn => widget.kind.endsWith('return');
   bool get _isPurchase => widget.kind.startsWith('purchase');
   bool get _isFactory => widget.module == 'factory';
@@ -158,6 +162,9 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
     );
     _amountController = TextEditingController();
     _notesController = TextEditingController();
+    if (!_isReturn && _candidates.isEmpty) {
+      _isStandalone = true;
+    }
   }
 
   @override
@@ -403,6 +410,12 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
   /// How the chosen settlement will actually be applied.
   ({double cash, double account}) get _settlementSplit {
     final total = _totalAmount;
+    if (_isStandalone) {
+      if (_paymentAction == _cashAction) {
+        return (cash: total, account: 0.0);
+      }
+      return (cash: 0.0, account: total);
+    }
     if (_paymentAction == _debtAction || _target == null) {
       return (cash: 0.0, account: total);
     }
@@ -422,6 +435,20 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
   // Validation
   // ------------------------------------------------------------------
   String? _validate() {
+    if (_isStandalone) {
+      if (_selectedPartyName == null || _selectedPartyName!.trim().isEmpty) {
+        return _isPurchase ? 'اختر المورد أولاً.' : 'اختر العميل أولاً.';
+      }
+      if (_docNoController.text.trim().isEmpty) {
+        return 'أدخل رقماً لفاتورة الحركة.';
+      }
+      final total = _totalAmount;
+      if (total <= 0) {
+        return 'أدخل مبلغ السمح (مبلغاً أكبر من صفر).';
+      }
+      return null;
+    }
+
     if (_target == null) return 'اختر الفاتورة الأصلية أولاً.';
     if (_docNoController.text.trim().isEmpty) {
       return 'أدخل رقماً لفاتورة الحركة.';
@@ -464,6 +491,40 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
       setState(() => _error = problem);
       return;
     }
+    if (_isStandalone) {
+      final total = _totalAmount;
+      final currency = _selectedCurrency;
+      final isCash = _paymentAction == _cashAction;
+      Navigator.of(context).pop(
+        AdjustmentInvoiceModel(
+          id: 'adjustment_${DateTime.now().microsecondsSinceEpoch}',
+          invoiceNo: _docNoController.text.trim(),
+          module: widget.module,
+          kind: widget.kind,
+          targetInvoiceId: 'standalone',
+          targetInvoiceNo: 'خارج الفاتورة',
+          itemId: '',
+          itemDescription: _notesController.text.trim().isNotEmpty
+              ? _notesController.text.trim()
+              : (_isPurchase ? 'مسموح مشتريات خارج الفاتورة' : 'مسموح مبيعات خارج الفاتورة'),
+          itemIndex: -1,
+          partyName: _selectedPartyName!.trim(),
+          description: _notesController.text.trim(),
+          amount: total,
+          quantity: 0,
+          paymentAction: _paymentAction,
+          currency: currency,
+          cashAmount: isCash ? total : 0.0,
+          isSettlementDeferred: false,
+          deferredAmount: 0.0,
+          realizedAmount: total,
+          discountRatio: 1.0,
+          lines: const [],
+        ),
+      );
+      return;
+    }
+
     final target = _target!;
     Navigator.of(context).pop(
       AdjustmentInvoiceModel(
@@ -552,13 +613,24 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _buildInvoicePicker(),
-                    const SizedBox(height: 14),
-                    _buildInvoiceSummary(),
-                    const SizedBox(height: 14),
-                    if (_target != null) ...[
-                      _isReturn ? _buildReturnTable(isNarrow) : _buildAllowanceTable(isNarrow),
+                    if (!_isReturn) ...[
+                      _buildAllowanceModeSelector(),
                       const SizedBox(height: 14),
+                    ],
+                    if (_isStandalone) ...[
+                      _buildStandalonePartyPicker(),
+                      const SizedBox(height: 14),
+                      _buildStandaloneAmountField(),
+                      const SizedBox(height: 14),
+                    ] else ...[
+                      _buildInvoicePicker(),
+                      const SizedBox(height: 14),
+                      _buildInvoiceSummary(),
+                      const SizedBox(height: 14),
+                      if (_target != null) ...[
+                        _isReturn ? _buildReturnTable(isNarrow) : _buildAllowanceTable(isNarrow),
+                        const SizedBox(height: 14),
+                      ],
                     ],
                     _buildTotalsCard(),
                     const SizedBox(height: 14),
@@ -615,6 +687,190 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildAllowanceModeSelector() {
+    return SegmentedButton<bool>(
+      segments: const [
+        ButtonSegment<bool>(
+          value: false,
+          label: Text('سماح مرتبط بفاتورة أصلية'),
+          icon: Icon(Icons.receipt_long_rounded, size: 16),
+        ),
+        ButtonSegment<bool>(
+          value: true,
+          label: Text('سماح خارج الفاتورة (مباشر على الحساب)'),
+          icon: Icon(Icons.account_balance_wallet_rounded, size: 16),
+        ),
+      ],
+      selected: {_isStandalone},
+      onSelectionChanged: (newSelection) {
+        setState(() {
+          _isStandalone = newSelection.first;
+          _error = null;
+          if (_isStandalone) {
+            _selectTarget(null);
+          }
+        });
+      },
+    );
+  }
+
+  Widget _buildStandalonePartyPicker() {
+    final List<(String id, String name, double debtUsd, double debtSyp)> parties = _isPurchase
+        ? widget.erp.suppliers.map((s) => (s.id, s.name, s.debtBalance, s.debtBalanceSyp)).toList()
+        : widget.erp.clients.map((c) => (c.id, c.name, c.debtBalance, c.debtBalanceSyp)).toList();
+
+    if (!_isPurchase && !_isFactory) {
+      final existingNames = parties.map((p) => p.$2.trim().toLowerCase()).toSet();
+      for (final wInv in widget.erp.workshopInvoices) {
+        if (wInv.clientName.trim().isNotEmpty && !existingNames.contains(wInv.clientName.trim().toLowerCase())) {
+          existingNames.add(wInv.clientName.trim().toLowerCase());
+          parties.add(('', wInv.clientName.trim(), 0.0, 0.0));
+        }
+      }
+    }
+
+    final selectedPartyInfo = parties.where((p) => p.$2 == _selectedPartyName).firstOrNull;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.panelBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.person_rounded,
+                color: _isPurchase ? AppColors.dangerWaste : AppColors.accentPrimary,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _isPurchase ? 'اختيار المورد المستفيد من السمح:' : 'اختيار العميل المستفيد من السمح:',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(
+            initialValue: _selectedPartyName,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: _isPurchase ? 'المورد' : 'العميل',
+              prefixIcon: const Icon(Icons.search_rounded),
+              isDense: true,
+            ),
+            hint: Text(_isPurchase ? 'اختر المورد من القائمة...' : 'اختر العميل من القائمة...'),
+            items: [
+              for (final p in parties)
+                DropdownMenuItem<String>(
+                  value: p.$2,
+                  child: Text(
+                    '${p.$2} • (الذمة: ${p.$3.fmt} \$ / ${p.$4.fmt} ل.س)',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+            ],
+            onChanged: (val) {
+              setState(() {
+                _selectedPartyName = val;
+                _error = null;
+              });
+            },
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Text('عملة السمح: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              const SizedBox(width: 10),
+              ChoiceChip(
+                label: const Text('\$ دولار أمريكي'),
+                selected: _selectedCurrency == AppCurrency.usd,
+                onSelected: (val) {
+                  if (val) setState(() => _selectedCurrency = AppCurrency.usd);
+                },
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('ل.س ليرة سورية'),
+                selected: _selectedCurrency == AppCurrency.syp,
+                onSelected: (val) {
+                  if (val) setState(() => _selectedCurrency = AppCurrency.syp);
+                },
+              ),
+            ],
+          ),
+          if (selectedPartyInfo != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF2563EB)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'الرصيد الحالي للطرف: ${selectedPartyInfo.$3.fmt} \$ • ${selectedPartyInfo.$4.fmt} ل.س — سيتم تخفيض هذا الرصيد مباشرةً في كشف حسابه.',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF1E40AF), fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStandaloneAmountField() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.panelBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.money_off_csred_rounded, size: 18, color: AppColors.partnersEquityAccent),
+              const SizedBox(width: 8),
+              Text(
+                'مبلغ السمح (${AppCurrency.symbol(_selectedCurrency)}):',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _amountController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) => setState(() => _error = null),
+            decoration: InputDecoration(
+              labelText: 'أدخل مبلغ السمح المطلوب خصمه من حساب الطرف',
+              hintText: '0.0',
+              prefixIcon: const Icon(Icons.attach_money_rounded),
+              helperText: 'يتم قيد هذا المبلغ مباشرة على حساب الطرف في دفتر الأستاذ وكشف الحساب دون أي حركة مخزون',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1061,9 +1317,8 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
   }
 
   Widget _buildTotalsCard() {
-    final target = _target;
+    final currency = _isStandalone ? _selectedCurrency : (_target?.currency ?? AppCurrency.usd);
     final total = _totalAmount;
-    final currency = target?.currency ?? AppCurrency.usd;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1078,7 +1333,7 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _isReturn ? 'إجمالي قيمة المرتجع' : 'إجمالي مبلغ السمح',
+                  _isReturn ? 'إجمالي قيمة المرتجع' : (_isStandalone ? 'مبلغ السمح خارج الفاتورة' : 'إجمالي مبلغ السمح'),
                   style: const TextStyle(
                     fontSize: 11,
                     color: AppColors.brandSecondaryText,
@@ -1109,23 +1364,24 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
   }
 
   Widget _buildSettlementFields() {
-    final target = _target;
-    final currency = target?.currency ?? AppCurrency.usd;
-    final availableRefundableCash = target != null
+    final currency = _isStandalone ? _selectedCurrency : (_target?.currency ?? AppCurrency.usd);
+    final availableRefundableCash = (!_isStandalone && _target != null)
         ? widget.erp.invoiceRemainingRefundableCash(
             module: widget.module,
-            invoiceId: target.id,
+            invoiceId: _target!.id,
           )
         : 0.0;
-    final isCreditInvoice = target != null && availableRefundableCash <= 0.0001;
+    final isCreditInvoice = !_isStandalone && _target != null && availableRefundableCash <= 0.0001;
 
-    final cashLabel = isCreditInvoice
-        ? '${_isPurchase ? "استرداد نقدي" : "صرف نقدي"} (غير متاح — الفاتورة آجل وبدون دفعة نقدية مسددة)'
-        : (_isPurchase
-            ? 'استرداد نقدي إلى الصندوق الرئيسي (الحد الأقصى: ${availableRefundableCash.fmt} ${AppCurrency.symbol(currency)})'
-            : 'صرف نقدي من الصندوق الرئيسي للطرف (الحد الأقصى: ${availableRefundableCash.fmt} ${AppCurrency.symbol(currency)})');
+    final cashLabel = _isStandalone
+        ? (_isPurchase ? 'استرداد نقدي إلى الصندوق الرئيسي' : 'صرف نقدي من الصندوق الرئيسي للطرف')
+        : (isCreditInvoice
+            ? '${_isPurchase ? "استرداد نقدي" : "صرف نقدي"} (غير متاح — الفاتورة آجل وبدون دفعة نقدية مسددة)'
+            : (_isPurchase
+                ? 'استرداد نقدي إلى الصندوق الرئيسي (الحد الأقصى: ${availableRefundableCash.fmt} ${AppCurrency.symbol(currency)})'
+                : 'صرف نقدي من الصندوق الرئيسي للطرف (الحد الأقصى: ${availableRefundableCash.fmt} ${AppCurrency.symbol(currency)})'));
     final split = _settlementSplit;
-    final showSplit = target != null && _paymentAction == _cashAction && _totalAmount > 0;
+    final showSplit = !_isStandalone && _target != null && _paymentAction == _cashAction && _totalAmount > 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

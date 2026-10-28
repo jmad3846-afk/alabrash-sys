@@ -598,21 +598,32 @@ class A4StatementData {
     final cashPaid = ret.cashAmount > 0
         ? ret.cashAmount
         : (isCashRefund ? ret.amount : 0.0);
+    final isAllowance = !ret.isReturn;
     final status = isCashRefund
         ? (cashPaid < ret.amount && cashPaid > 0
-            ? 'مرتجع نقدي ومسوى'
-            : (cashPaid <= 0.001 ? 'مرتجع مسوى' : 'مرتجع نقدي'))
-        : 'مرتجع مسوى';
+            ? (isAllowance ? 'مسموح نقدي ومسوى' : 'مرتجع نقدي ومسوى')
+            : (cashPaid <= 0.001
+                ? (isAllowance ? 'مسموح مسوى' : 'مرتجع مسوى')
+                : (isAllowance ? 'مسموح نقدي' : 'مرتجع نقدي')))
+        : (isAllowance ? 'مسموح مسوى' : 'مرتجع مسوى');
+
+    final actionPrefix = isAllowance ? 'إشعار مسموح' : 'إشعار مرتجع';
+    final desc = ret.description.isNotEmpty
+        ? '$actionPrefix: ${ret.description}'
+        : (ret.itemDescription.isNotEmpty
+            ? '$actionPrefix: ${ret.itemDescription}'
+            : 'إشعار $category');
+
+    final parentNo = ret.targetInvoiceNo.isNotEmpty
+        ? ret.targetInvoiceNo
+        : (isAllowance ? 'خارج الفاتورة' : '');
+
     return A4StatementLineItem(
       index: index,
       date: ret.date,
       documentNo: ret.invoiceNo,
-      parentInvoiceNo: ret.targetInvoiceNo,
-      description: ret.description.isNotEmpty
-          ? 'إشعار مرتجع: ${ret.description}'
-          : (ret.itemDescription.isNotEmpty
-              ? 'إشعار مرتجع: ${ret.itemDescription}'
-              : 'إشعار $category'),
+      parentInvoiceNo: parentNo,
+      description: desc,
       category: category,
       currency: ret.currency,
       totalAmount: ret.amount,
@@ -764,10 +775,10 @@ class A4StatementData {
       );
     }
 
-    // Check return invoices
+    // Check adjustment invoices (returns & allowances)
     final adjReturns = erp.adjustmentInvoices
         .where((r) =>
-            r.isReturn &&
+            r.isPurchase &&
             (r.partyName.trim() == supplier.name.trim() ||
                 invs.any((i) => i.id == r.targetInvoiceId)))
         .toList();
@@ -776,7 +787,7 @@ class A4StatementData {
         _fromAdjustment(
           index: idx++,
           ret: ret,
-          category: 'مرتجع مشتريات',
+          category: ret.isReturn ? 'مرتجع مشتريات' : 'مسموح مشتريات',
         ),
       );
     }
@@ -921,10 +932,10 @@ class A4StatementData {
       );
     }
 
-    // Check return invoices
+    // Check adjustment invoices (returns & allowances)
     final adjReturns = erp.adjustmentInvoices
         .where((r) =>
-            r.isReturn &&
+            !r.isPurchase &&
             (r.partyName.trim() == client.name.trim() ||
                 invs.any((i) => i.id == r.targetInvoiceId)))
         .toList();
@@ -933,7 +944,7 @@ class A4StatementData {
         _fromAdjustment(
           index: idx++,
           ret: ret,
-          category: 'مرتجع مبيعات',
+          category: ret.isReturn ? 'مرتجع مبيعات' : 'مسموح مبيعات',
         ),
       );
     }
@@ -1080,10 +1091,10 @@ class A4StatementData {
       );
     }
 
-    // Check return invoices
+    // Check adjustment invoices (returns & allowances)
     final adjReturns = erp.adjustmentInvoices
         .where((r) =>
-            r.isReturn &&
+            !r.isPurchase &&
             (r.partyName.trim() == client.name.trim() ||
                 invs.any((i) => i.id == r.targetInvoiceId)))
         .toList();
@@ -1092,7 +1103,7 @@ class A4StatementData {
         _fromAdjustment(
           index: idx++,
           ret: ret,
-          category: 'مرتجع مبيعات معمل',
+          category: ret.isReturn ? 'مرتجع مبيعات معمل' : 'مسموح مبيعات معمل',
         ),
       );
     }
@@ -1204,10 +1215,10 @@ class A4StatementData {
       );
     }
 
-    // Check return invoices for this project
+    // Check adjustment invoices for this project
     final adjReturns = erp.adjustmentInvoices
         .where((r) =>
-            r.isReturn &&
+            !r.isPurchase &&
             invs.any((i) => i.id == r.targetInvoiceId))
         .toList();
     for (final ret in adjReturns) {
@@ -1215,7 +1226,7 @@ class A4StatementData {
         _fromAdjustment(
           index: idx++,
           ret: ret,
-          category: 'مرتجع مشروع',
+          category: ret.isReturn ? 'مرتجع مشروع' : 'مسموح مشروع',
         ),
       );
     }
@@ -2715,7 +2726,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                         ),
                         if (data.totalReturnsUsd > 0.001)
                           _buildSummaryLine(
-                            'إجمالي المرتجعات:',
+                            'إجمالي المرتجعات والمسموحات:',
                             '-${data.totalReturnsUsd.fmt} \$',
                             color: const Color(0xFF7C3AED),
                             isBold: true,
@@ -2776,7 +2787,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                         ),
                         if (data.totalReturnsSyp > 0.001)
                           _buildSummaryLine(
-                            'إجمالي المرتجعات:',
+                            'إجمالي المرتجعات والمسموحات:',
                             '-${data.totalReturnsSyp.fmt} ل.س',
                             color: const Color(0xFF7C3AED),
                             isBold: true,

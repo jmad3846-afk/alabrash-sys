@@ -1983,7 +1983,11 @@ class _ReturnsAllowancesScreenState extends State<ReturnsAllowancesScreen> {
                                 : AppColors.partnersEquityAccent,
                           ),
                           title: Text(
-                            '${invoice.invoiceNo} • فاتورة: ${invoice.targetInvoiceNo}',
+                            invoice.targetInvoiceNo == 'خارج الفاتورة' ||
+                                    invoice.targetInvoiceId == 'standalone' ||
+                                    invoice.targetInvoiceNo.isEmpty
+                                ? '${invoice.invoiceNo} • سماح خارج الفاتورة'
+                                : '${invoice.invoiceNo} • فاتورة: ${invoice.targetInvoiceNo}',
                           ),
                           subtitle: Text(
                             [
