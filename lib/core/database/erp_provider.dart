@@ -4271,41 +4271,6 @@ class ERPProvider extends ChangeNotifier {
       (nominalSupplierDiscountsOf(currency) - activeSupplierDiscountsOf(currency))
           .clamp(0.0, double.infinity);
 
-  /// Realized earned discounts on purchase invoices recognized in the Income Summary (P&L).
-  /// Strictly prevents false income generation on unpaid transactions by scaling proportionally to actual payments.
-  double realizedSupplierDiscountsOf(String? currency) => factoryInvoices
-      .where(
-        (invoice) =>
-            invoice.invoiceType == 'شراء_مورد' &&
-            invoice.currency == AppCurrency.normalize(currency),
-      )
-      .fold<double>(
-        0,
-        (sum, invoice) {
-          final discount = invoice.discountAmount;
-          if (discount <= 0) return sum;
-          final activeRatio = invoice.grandTotal > 0.0001
-              ? ((invoice.grandTotal - invoice.adjustmentsAmount) /
-                      invoice.grandTotal)
-                  .clamp(0.0, 1.0)
-              : 0.0;
-          final activeDiscount = discount * activeRatio;
-          if (activeDiscount <= 0) return sum;
-
-          final paidNet = (invoice.advancePayment - invoice.adjustmentsCashRefund)
-              .clamp(0.0, double.infinity);
-          final remainingNet = (invoice.grandTotal - invoice.adjustmentsAmount)
-              .clamp(0.0, double.infinity);
-
-          final paidRatio = remainingNet > 0.0001
-              ? (paidNet / remainingNet).clamp(0.0, 1.0)
-              : (invoice.grandTotal > 0.0001
-                  ? (invoice.advancePayment / invoice.grandTotal).clamp(0.0, 1.0)
-                  : 0.0);
-          return sum + (activeDiscount * paidRatio);
-        },
-      );
-
   double assetSaleGainsOf(String? currency) => assetSaleRecords
       .where(
         (record) =>
@@ -4349,7 +4314,6 @@ class ERPProvider extends ChangeNotifier {
       salesDiscountsOf(currency) +
       adjustmentTotalOf('purchase_return', currency) +
       adjustmentTotalOf('purchase_allowance', currency) +
-      realizedSupplierDiscountsOf(currency) +
       assetSaleRevenueOf(currency) +
       totalAdvanceRepaymentsRevenueOf(currency);
   double get totalRevenues => totalRevenuesOf(AppCurrency.usd);

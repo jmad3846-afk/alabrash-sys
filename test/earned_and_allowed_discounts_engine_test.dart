@@ -81,11 +81,10 @@ void main() {
       expect(erp.returnedSupplierDiscountsOf(AppCurrency.usd), 0.0);
 
       // 4. Zero False Income: Unpaid purchase discount MUST NOT produce fake cash revenue in P&L
-      expect(erp.realizedSupplierDiscountsOf(AppCurrency.usd), 0.0);
       expect(erp.totalRevenuesOf(AppCurrency.usd), 0.0);
     });
 
-    test('1b. Supplier payment realizes earned discount in P&L and updates safe accurately', () {
+    test('1b. Supplier payment excludes earned discount from P&L and updates safe accurately', () {
       final erp = createERP();
       erp.mainCashBox = 1000.0;
       final supplier = SupplierModel(
@@ -121,7 +120,6 @@ void main() {
       erp.addSupplierPurchaseInvoice(purchaseInvoice);
 
       expect(erp.mainCashBox, 1000.0); // 0 movement on invoice creation
-      expect(erp.realizedSupplierDiscountsOf(AppCurrency.usd), 0.0); // 0 false revenue
 
       // Pay the net discounted debt ($900)
       final paid = erp.paySupplierInvoice(purchaseInvoice, 900.0);
@@ -131,9 +129,8 @@ void main() {
       expect(erp.mainCashBox, 100.0);
       // Supplier debt cleared to 0
       expect(supplier.debtOf(AppCurrency.usd), 0.0);
-      // Earned discount is now formally realized in Income Summary
-      expect(erp.realizedSupplierDiscountsOf(AppCurrency.usd), 100.0);
-      expect(erp.totalRevenuesOf(AppCurrency.usd), 100.0);
+      // Earned discount never contributes to Income Summary revenue
+      expect(erp.totalRevenuesOf(AppCurrency.usd), 0.0);
     });
 
     test('2. Purchase return with earned discount strictly uses net effective price (ratio) and reverses discount share', () {
@@ -208,7 +205,7 @@ void main() {
             itemIndex: 0,
             description: 'بلوك مرمر يوناني',
             quantity: 2,
-            unitPrice: 0, // derived by engine
+            unitPrice: 100, // Gross caller price must be overridden by parent net price
             amount: 0,
           ),
         ],
