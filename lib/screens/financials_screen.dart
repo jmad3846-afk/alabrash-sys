@@ -3716,9 +3716,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     syp: erp.purchaseReturnsAndAllowancesSyp,
                   ),
                   _buildPlLine(
-                    'الخصومات المكتسبة من الموردين:',
-                    erp.supplierDiscountsOf(AppCurrency.usd),
-                    syp: erp.supplierDiscountsOf(AppCurrency.syp),
+                    'الخصومات المكتسبة من الموردين (المحققة):',
+                    erp.realizedSupplierDiscountsOf(AppCurrency.usd),
+                    syp: erp.realizedSupplierDiscountsOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
                     'أرباح بيع الأصول الثابتة (فائض سعر البيع):',

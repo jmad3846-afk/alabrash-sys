@@ -14,6 +14,8 @@ class ReturnTargetInvoice {
   final double totalAmount;
   final double paidAmount;
   final DateTime date;
+  final double discountAmount;
+  final double discountRatio;
 
   const ReturnTargetInvoice({
     required this.id,
@@ -24,10 +26,14 @@ class ReturnTargetInvoice {
     required this.totalAmount,
     this.paidAmount = 0.0,
     required this.date,
+    this.discountAmount = 0.0,
+    this.discountRatio = 1.0,
   });
 
+  bool get hasDiscount => discountRatio < 0.9999 && discountRatio > 0;
+
   String get label =>
-      '$invoiceNo • $partyName • ${totalAmount.fmt} ${AppCurrency.symbol(currency)}${paidAmount > 0 ? " • مدفوع: ${paidAmount.fmt} ${AppCurrency.symbol(currency)}" : " • آجل"}';
+      '$invoiceNo • $partyName • ${totalAmount.fmt} ${AppCurrency.symbol(currency)}${hasDiscount ? " • (خصم: ${discountAmount.fmt})" : ""}${paidAmount > 0 ? " • مدفوع: ${paidAmount.fmt} ${AppCurrency.symbol(currency)}" : " • آجل"}';
 }
 
 /// One master-invoice line rendered as a row of the dialog table.
@@ -38,7 +44,9 @@ class _LineRow {
   final String unit;
   final double originalQty;
   final double alreadyReturned;
-  final double unitPrice;
+  final double unitPrice; // net effective unit price
+  final double rawUnitPrice; // gross unit price before discount
+  final double discountRatio;
   final bool readOnly;
   final TextEditingController controller;
   bool isDamaged;
@@ -51,9 +59,12 @@ class _LineRow {
     required this.originalQty,
     required this.alreadyReturned,
     required this.unitPrice,
+    double? rawUnitPrice,
+    this.discountRatio = 1.0,
     this.readOnly = false,
-    this.isDamaged = false,
-  }) : controller = TextEditingController(
+  }) : isDamaged = false,
+       rawUnitPrice = rawUnitPrice ?? unitPrice,
+       controller = TextEditingController(
          text: readOnly ? AppCurrency.fmt(originalQty, 4) : '',
        );
 
@@ -181,6 +192,8 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
               totalAmount: invoice.grandTotal,
               paidAmount: invoice.advancePayment,
               date: invoice.date,
+              discountAmount: invoice.discountAmount,
+              discountRatio: invoice.discountRatio,
             ),
           )
           .toList();
@@ -196,6 +209,8 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
             totalAmount: invoice.grandTotal,
             paidAmount: invoice.depositDeducted + invoice.cashPaidNow,
             date: invoice.date,
+            discountAmount: invoice.salesDiscount,
+            discountRatio: invoice.discountRatio,
           ),
         )
         .toList();
@@ -234,12 +249,14 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
       final invoice = widget.erp.factoryInvoices.firstWhere(
         (item) => item.id == target.id,
       );
+      final ratio = invoice.discountRatio;
       for (var index = 0; index < invoice.items.length; index++) {
         final item = invoice.items[index];
         final unitQty = item.quantity > 0
             ? item.calculatedArea / item.quantity
             : 1.0;
-        final unitPrice = AppCurrency.money(item.unitPrice * unitQty);
+        final rawUnitPrice = AppCurrency.money(item.unitPrice * unitQty);
+        final unitPrice = AppCurrency.money(rawUnitPrice * ratio);
         final alreadyReturned = widget.erp.returnedQuantityOf(
           module: widget.module,
           targetInvoiceId: target.id,
@@ -256,6 +273,8 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
             originalQty: item.quantity,
             alreadyReturned: alreadyReturned,
             unitPrice: unitPrice,
+            rawUnitPrice: rawUnitPrice,
+            discountRatio: ratio,
             readOnly: !_isReturn,
           ),
         );
@@ -266,12 +285,14 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
     final invoice = widget.erp.workshopInvoices.firstWhere(
       (item) => item.id == target.id,
     );
+    final ratio = invoice.discountRatio;
     final lines = widget.erp.workshopInvoiceLines(invoice);
     for (var index = 0; index < lines.length; index++) {
       final item = lines[index];
-      final unitPrice = AppCurrency.money(
+      final rawUnitPrice = AppCurrency.money(
         item.quantity > 0 ? item.agreedPrice / item.quantity : item.agreedPrice,
       );
+      final unitPrice = AppCurrency.money(rawUnitPrice * ratio);
       final alreadyReturned = widget.erp.returnedQuantityOf(
         module: widget.module,
         targetInvoiceId: target.id,
@@ -317,6 +338,8 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
           originalQty: item.quantity,
           alreadyReturned: alreadyReturned,
           unitPrice: unitPrice,
+          rawUnitPrice: rawUnitPrice,
+          discountRatio: ratio,
           readOnly: !_isReturn,
         ),
       );
@@ -376,15 +399,6 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
     return AppCurrency.money(grandTotal - alreadyAdjusted);
   }
 
-  double get _partyBalance {
-    if (_target == null) return 0;
-    return widget.erp.partyAdjustmentBalanceOf(
-      supplier: _isPurchase,
-      partyName: _target!.partyName,
-      partyId: _target!.partyId,
-      currency: _target!.currency,
-    );
-  }
 
   /// How the chosen settlement will actually be applied.
   ({double cash, double account}) get _settlementSplit {
@@ -666,7 +680,7 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
           key: ValueKey(
             'target_picker_${_target?.id}_${filtered.length}_$_targetSearchQuery',
           ),
-          value: filtered.any((c) => c.id == _target?.id) ? _target?.id : null,
+          initialValue: filtered.any((c) => c.id == _target?.id) ? _target?.id : null,
           decoration: InputDecoration(
             labelText:
                 'الفاتورة الأصلية (Master Invoice) — متوفر (${filtered.length})',
@@ -741,18 +755,23 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
   );
   static const _cellStyle = TextStyle(fontSize: 11);
 
-  List<DataColumn> get _returnColumns => const [
-    DataColumn(label: Text('#', style: _headerStyle)),
-    DataColumn(label: Text('الصنف', style: _headerStyle)),
-    DataColumn(label: Text('الوحدة', style: _headerStyle)),
-    DataColumn(label: Text('الكمية', style: _headerStyle)),
-    DataColumn(label: Text('مرتجع', style: _headerStyle)),
-    DataColumn(label: Text('المتاح', style: _headerStyle)),
-    DataColumn(label: Text('سعر الوحدة', style: _headerStyle)),
-    DataColumn(label: Text('الكمية المرتجعة', style: _headerStyle)),
-    DataColumn(label: Text('المبلغ', style: _headerStyle)),
-    DataColumn(label: Text('تالف / هدر', style: _headerStyle)),
-    DataColumn(label: Text('', style: _headerStyle)),
+  List<DataColumn> get _returnColumns => [
+    const DataColumn(label: Text('#', style: _headerStyle)),
+    const DataColumn(label: Text('الصنف', style: _headerStyle)),
+    const DataColumn(label: Text('الوحدة', style: _headerStyle)),
+    const DataColumn(label: Text('الكمية', style: _headerStyle)),
+    const DataColumn(label: Text('مرتجع', style: _headerStyle)),
+    const DataColumn(label: Text('المتاح', style: _headerStyle)),
+    DataColumn(
+      label: Text(
+        _target?.hasDiscount == true ? 'سعر الوحدة (صافي)' : 'سعر الوحدة',
+        style: _headerStyle,
+      ),
+    ),
+    const DataColumn(label: Text('الكمية المرتجعة', style: _headerStyle)),
+    const DataColumn(label: Text('المبلغ', style: _headerStyle)),
+    const DataColumn(label: Text('تالف / هدر', style: _headerStyle)),
+    const DataColumn(label: Text('', style: _headerStyle)),
   ];
 
   List<DataColumn> get _allowanceColumns => const [
@@ -778,6 +797,28 @@ class _ReturnAllowanceDialogState extends State<ReturnAllowanceDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_target != null && _target!.hasDiscount)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFBFDBFE)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF2563EB)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'توزيع نسبي للخصم (${_isPurchase ? "المكتسب" : "الممنوح"}): تم احتساب أسعار الإرجاع بناءً على السعر الصافي بعد الخصم (نسبة الصافي: ${(_target!.discountRatio * 100).toStringAsFixed(1)}%) لضمان الدقة المحاسبية.',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF1E40AF), fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
         Row(
           children: [
             const Expanded(

@@ -153,23 +153,9 @@ class ChartOfAccountsScreen extends StatelessWidget {
         )
         .fold<double>(0, (sum, invoice) => sum + invoice.amount);
     double salesDiscount(String currency) =>
-        erp.factoryInvoices
-            .where(
-              (invoice) =>
-                  invoice.invoiceType == 'بيع_معتمد' &&
-                  invoice.currency == currency,
-            )
-            .fold<double>(0, (sum, invoice) => sum + invoice.discountAmount) +
-        erp.workshopInvoices
-            .where((invoice) => invoice.currency == currency)
-            .fold<double>(0, (sum, invoice) => sum + invoice.salesDiscount);
-    double purchaseDiscount(String currency) => erp.factoryInvoices
-        .where(
-          (invoice) =>
-              invoice.invoiceType == 'شراء_مورد' &&
-              invoice.currency == currency,
-        )
-        .fold<double>(0, (sum, invoice) => sum + invoice.discountAmount);
+        erp.activeSalesDiscountsOf(currency);
+    double purchaseDiscount(String currency) =>
+        erp.activeSupplierDiscountsOf(currency);
     double serviceRevenue(String currency) =>
         erp.factoryInvoices
             .where((invoice) => invoice.currency == currency)
@@ -181,13 +167,6 @@ class ChartOfAccountsScreen extends StatelessWidget {
         erp.workshopInvoices
             .where((invoice) => invoice.currency == currency)
             .fold<double>(0, (sum, invoice) => sum + invoice.servicesTotal);
-    double factoryPurchaseAmount(String currency) => erp.factoryInvoices
-        .where(
-          (invoice) =>
-              invoice.invoiceType == 'شراء_مورد' &&
-              invoice.currency == currency,
-        )
-        .fold<double>(0, (sum, invoice) => sum + invoice.grandTotal);
     String fixedAssetDetails(String category) {
       final categoryAssets = assets
           .where((asset) => asset.category == category)

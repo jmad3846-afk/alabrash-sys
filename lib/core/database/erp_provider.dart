@@ -2352,7 +2352,9 @@ class ERPProvider extends ChangeNotifier {
     final unitQty = item.quantity > 0
         ? item.calculatedArea / item.quantity
         : 1.0;
-    final unitPrice = _money(item.unitPrice * unitQty);
+    final rawUnitPrice = _money(item.unitPrice * unitQty);
+    final ratio = parent.discountRatio;
+    final effectiveUnitPrice = _money(rawUnitPrice * ratio);
     return _ResolvedReturnLine(
       line: AdjustmentLineModel(
         itemId: item.itemId,
@@ -2360,8 +2362,10 @@ class ERPProvider extends ChangeNotifier {
         description: item.description,
         unit: _factoryLineUnit(item, parent: parent),
         quantity: quantity,
-        unitPrice: unitPrice,
-        amount: _money(quantity * unitPrice),
+        unitPrice: effectiveUnitPrice,
+        rawUnitPrice: rawUnitPrice,
+        discountRatio: ratio,
+        amount: _money(quantity * effectiveUnitPrice),
         isDamaged: isDamaged,
       ),
       factoryItem: item,
@@ -2374,11 +2378,13 @@ class ERPProvider extends ChangeNotifier {
     int index,
     double quantity, {
     bool isDamaged = false,
+    double discountRatio = 1.0,
   }) {
     final item = lines[index];
-    final unitPrice = _money(
+    final rawUnitPrice = _money(
       item.quantity > 0 ? item.agreedPrice / item.quantity : item.agreedPrice,
     );
+    final effectiveUnitPrice = _money(rawUnitPrice * discountRatio);
     return _ResolvedReturnLine(
       line: AdjustmentLineModel(
         itemId: item.sourceId,
@@ -2386,8 +2392,10 @@ class ERPProvider extends ChangeNotifier {
         description: item.description,
         unit: _workshopLineUnit(item),
         quantity: quantity,
-        unitPrice: unitPrice,
-        amount: _money(quantity * unitPrice),
+        unitPrice: effectiveUnitPrice,
+        rawUnitPrice: rawUnitPrice,
+        discountRatio: discountRatio,
+        amount: _money(quantity * effectiveUnitPrice),
         sourceType: item.sourceType,
         sourceLineItemId: item.sourceLineItemId,
         isDamaged: isDamaged,
@@ -3115,7 +3123,7 @@ class ERPProvider extends ChangeNotifier {
                   raw.description.trim()) {
             return false;
           }
-          resolved.add(_describeWorkshopLine(workshopLines, index, raw.quantity, isDamaged: raw.isDamaged));
+          resolved.add(_describeWorkshopLine(workshopLines, index, raw.quantity, isDamaged: raw.isDamaged, discountRatio: workshopOriginal!.discountRatio));
         }
       }
 
@@ -3132,6 +3140,8 @@ class ERPProvider extends ChangeNotifier {
             unit: single.line.unit,
             quantity: single.line.quantity,
             unitPrice: explicitPrice,
+            rawUnitPrice: single.line.rawUnitPrice,
+            discountRatio: single.line.discountRatio,
             amount: invoice.amount,
             sourceType: single.line.sourceType,
             sourceLineItemId: single.line.sourceLineItemId,
@@ -3179,7 +3189,7 @@ class ERPProvider extends ChangeNotifier {
       } else {
         final lines = _workshopInvoiceLines(workshopOriginal!);
         for (var i = 0; i < lines.length; i++) {
-          resolved.add(_describeWorkshopLine(lines, i, 0));
+          resolved.add(_describeWorkshopLine(lines, i, 0, discountRatio: workshopOriginal.discountRatio));
         }
       }
     }
@@ -3315,6 +3325,7 @@ class ERPProvider extends ChangeNotifier {
       isSettlementDeferred: isSettlementDeferred,
       deferredAmount: deferredAmount,
       realizedAmount: realizedAmount,
+      discountRatio: original?.discountRatio ?? workshopOriginal?.discountRatio ?? 1.0,
     );
     adjustmentInvoices.add(stored);
 
@@ -3351,6 +3362,7 @@ class ERPProvider extends ChangeNotifier {
           isSettlementDeferred: isSettlementDeferred,
           deferredAmount: deferredAmount,
           realizedAmount: realizedAmount,
+          discountRatio: original?.discountRatio ?? workshopOriginal?.discountRatio ?? 1.0,
         ),
       );
     }
@@ -3971,12 +3983,26 @@ class ERPProvider extends ChangeNotifier {
           (sum, invoice) {
             final discount = invoice.discountAmount;
             if (discount <= 0) return sum;
-            final ratio = invoice.grandTotal > 0.0001
-                ? (invoice.advancePayment.clamp(0.0, invoice.grandTotal) /
+            // Proportion of invoice that remains active (not returned)
+            final activeRatio = invoice.grandTotal > 0.0001
+                ? ((invoice.grandTotal - invoice.adjustmentsAmount) /
                         invoice.grandTotal)
                     .clamp(0.0, 1.0)
                 : 0.0;
-            return sum + (discount * ratio);
+            final activeDiscount = discount * activeRatio;
+            if (activeDiscount <= 0) return sum;
+
+            final paidNet = (invoice.advancePayment - invoice.adjustmentsCashRefund)
+                .clamp(0.0, double.infinity);
+            final remainingNet = (invoice.grandTotal - invoice.adjustmentsAmount)
+                .clamp(0.0, double.infinity);
+
+            final collectionRatio = remainingNet > 0.0001
+                ? (paidNet / remainingNet).clamp(0.0, 1.0)
+                : (invoice.grandTotal > 0.0001
+                    ? (invoice.advancePayment / invoice.grandTotal).clamp(0.0, 1.0)
+                    : 0.0);
+            return sum + (activeDiscount * collectionRatio);
           },
         );
   }
@@ -3990,12 +4016,29 @@ class ERPProvider extends ChangeNotifier {
           (sum, invoice) {
             final discount = invoice.salesDiscount;
             if (discount <= 0) return sum;
-            final paid = (invoice.depositDeducted + invoice.cashPaidNow)
-                .clamp(0.0, invoice.grandTotal);
-            final ratio = invoice.grandTotal > 0.0001
-                ? (paid / invoice.grandTotal).clamp(0.0, 1.0)
+            // Proportion of invoice that remains active (not returned)
+            final activeRatio = invoice.grandTotal > 0.0001
+                ? ((invoice.grandTotal - invoice.adjustmentsAmount) /
+                        invoice.grandTotal)
+                    .clamp(0.0, 1.0)
                 : 0.0;
-            return sum + (discount * ratio);
+            final activeDiscount = discount * activeRatio;
+            if (activeDiscount <= 0) return sum;
+
+            final paidNet = ((invoice.depositDeducted + invoice.cashPaidNow) -
+                    invoice.adjustmentsCashRefund)
+                .clamp(0.0, double.infinity);
+            final remainingNet = (invoice.grandTotal - invoice.adjustmentsAmount)
+                .clamp(0.0, double.infinity);
+
+            final collectionRatio = remainingNet > 0.0001
+                ? (paidNet / remainingNet).clamp(0.0, 1.0)
+                : (invoice.grandTotal > 0.0001
+                    ? ((invoice.depositDeducted + invoice.cashPaidNow) /
+                            invoice.grandTotal)
+                        .clamp(0.0, 1.0)
+                    : 0.0);
+            return sum + (activeDiscount * collectionRatio);
           },
         );
   }
@@ -4004,6 +4047,47 @@ class ERPProvider extends ChangeNotifier {
   double get salesDiscountsSyp => salesDiscountsOf(AppCurrency.syp);
   double salesDiscountsOf(String? currency) =>
       factorySalesDiscountOf(currency) + workshopSalesDiscountOf(currency);
+
+  /// Total nominal gross allowed discounts on sales invoices before returns.
+  double nominalSalesDiscountsOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    final factoryPart = factoryInvoices
+        .where((i) => i.invoiceType == 'بيع_معتمد' && i.currency == c)
+        .fold<double>(0.0, (sum, i) => sum + i.discountAmount);
+    final workshopPart = workshopInvoices
+        .where((i) => i.currency == c)
+        .fold<double>(0.0, (sum, i) => sum + i.salesDiscount);
+    return factoryPart + workshopPart;
+  }
+
+  /// Total active non-returned allowed discounts on sales invoices.
+  double activeSalesDiscountsOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    final factoryPart = factoryInvoices
+        .where((i) => i.invoiceType == 'بيع_معتمد' && i.currency == c)
+        .fold<double>(0.0, (sum, i) {
+          if (i.discountAmount <= 0) return sum;
+          final activeRatio = i.grandTotal > 0.0001
+              ? ((i.grandTotal - i.adjustmentsAmount) / i.grandTotal).clamp(0.0, 1.0)
+              : 0.0;
+          return sum + (i.discountAmount * activeRatio);
+        });
+    final workshopPart = workshopInvoices
+        .where((i) => i.currency == c)
+        .fold<double>(0.0, (sum, i) {
+          if (i.salesDiscount <= 0) return sum;
+          final activeRatio = i.grandTotal > 0.0001
+              ? ((i.grandTotal - i.adjustmentsAmount) / i.grandTotal).clamp(0.0, 1.0)
+              : 0.0;
+          return sum + (i.salesDiscount * activeRatio);
+        });
+    return factoryPart + workshopPart;
+  }
+
+  /// Total allowed discount reversed due to sales returns.
+  double returnedSalesDiscountsOf(String? currency) =>
+      (nominalSalesDiscountsOf(currency) - activeSalesDiscountsOf(currency))
+          .clamp(0.0, double.infinity);
 
   /// Total realized adjustments recognized in the Income Summary (P&L).
   /// For deferred account settlements, only the formally paid/collected portion is recognized.
@@ -4053,13 +4137,80 @@ class ERPProvider extends ChangeNotifier {
   double get salesReturnsAndAllowancesSyp =>
       adjustmentTotalOf('sales_return', AppCurrency.syp) +
       adjustmentTotalOf('sales_allowance', AppCurrency.syp);
-  double supplierDiscountsOf(String? currency) => factoryInvoices
+
+  /// Active non-returned earned discount on supplier purchase invoices (General Ledger).
+  double supplierDiscountsOf(String? currency) => activeSupplierDiscountsOf(currency);
+
+  /// Total active non-returned earned discounts on supplier purchase invoices.
+  double activeSupplierDiscountsOf(String? currency) => factoryInvoices
+      .where(
+        (invoice) =>
+            invoice.invoiceType == 'شراء_مورد' &&
+            invoice.currency == AppCurrency.normalize(currency),
+      )
+      .fold<double>(
+        0,
+        (sum, invoice) {
+          final discount = invoice.discountAmount;
+          if (discount <= 0) return sum;
+          // Active non-returned ratio of the purchase invoice:
+          final activeRatio = invoice.grandTotal > 0.0001
+              ? ((invoice.grandTotal - invoice.adjustmentsAmount) /
+                      invoice.grandTotal)
+                  .clamp(0.0, 1.0)
+              : 0.0;
+          return sum + (discount * activeRatio);
+        },
+      );
+
+  /// Total nominal gross earned discounts on purchase invoices before returns.
+  double nominalSupplierDiscountsOf(String? currency) => factoryInvoices
       .where(
         (invoice) =>
             invoice.invoiceType == 'شراء_مورد' &&
             invoice.currency == AppCurrency.normalize(currency),
       )
       .fold<double>(0, (sum, invoice) => sum + invoice.discountAmount);
+
+  /// Total earned discount reversed due to purchase returns.
+  double returnedSupplierDiscountsOf(String? currency) =>
+      (nominalSupplierDiscountsOf(currency) - activeSupplierDiscountsOf(currency))
+          .clamp(0.0, double.infinity);
+
+  /// Realized earned discounts on purchase invoices recognized in the Income Summary (P&L).
+  /// Strictly prevents false income generation on unpaid transactions by scaling proportionally to actual payments.
+  double realizedSupplierDiscountsOf(String? currency) => factoryInvoices
+      .where(
+        (invoice) =>
+            invoice.invoiceType == 'شراء_مورد' &&
+            invoice.currency == AppCurrency.normalize(currency),
+      )
+      .fold<double>(
+        0,
+        (sum, invoice) {
+          final discount = invoice.discountAmount;
+          if (discount <= 0) return sum;
+          final activeRatio = invoice.grandTotal > 0.0001
+              ? ((invoice.grandTotal - invoice.adjustmentsAmount) /
+                      invoice.grandTotal)
+                  .clamp(0.0, 1.0)
+              : 0.0;
+          final activeDiscount = discount * activeRatio;
+          if (activeDiscount <= 0) return sum;
+
+          final paidNet = (invoice.advancePayment - invoice.adjustmentsCashRefund)
+              .clamp(0.0, double.infinity);
+          final remainingNet = (invoice.grandTotal - invoice.adjustmentsAmount)
+              .clamp(0.0, double.infinity);
+
+          final paidRatio = remainingNet > 0.0001
+              ? (paidNet / remainingNet).clamp(0.0, 1.0)
+              : (invoice.grandTotal > 0.0001
+                  ? (invoice.advancePayment / invoice.grandTotal).clamp(0.0, 1.0)
+                  : 0.0);
+          return sum + (activeDiscount * paidRatio);
+        },
+      );
 
   double assetSaleGainsOf(String? currency) => assetSaleRecords
       .where(
@@ -4104,7 +4255,7 @@ class ERPProvider extends ChangeNotifier {
       salesDiscountsOf(currency) +
       adjustmentTotalOf('purchase_return', currency) +
       adjustmentTotalOf('purchase_allowance', currency) +
-      supplierDiscountsOf(currency) +
+      realizedSupplierDiscountsOf(currency) +
       assetSaleRevenueOf(currency) +
       totalAdvanceRepaymentsRevenueOf(currency);
   double get totalRevenues => totalRevenuesOf(AppCurrency.usd);

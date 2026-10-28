@@ -581,7 +581,9 @@ class AdjustmentLineModel {
   final String description;
   final String unit; // measurement unit label (متر مربع، متر مكعب، طن، قطعة…)
   final double quantity; // returned quantity in the line's own unit
-  final double unitPrice; // original unit price from the parent invoice
+  final double unitPrice; // net effective unit price after discount
+  final double rawUnitPrice; // gross unit price before discount
+  final double discountRatio; // discount multiplier applied from parent invoice
   final double amount; // quantity * unitPrice (rounded to 2 decimals)
   final String sourceType; // workshop source classification when applicable
   final String sourceLineItemId; // tailoring line item when applicable
@@ -594,11 +596,15 @@ class AdjustmentLineModel {
     this.unit = '',
     required this.quantity,
     required this.unitPrice,
+    double? rawUnitPrice,
+    this.discountRatio = 1.0,
     required this.amount,
     this.sourceType = '',
     this.sourceLineItemId = '',
     this.isDamaged = false,
-  });
+  }) : rawUnitPrice = rawUnitPrice ?? (discountRatio < 0.9999 && discountRatio > 0 ? unitPrice / discountRatio : unitPrice);
+
+  double get discountShare => ((rawUnitPrice - unitPrice) * quantity).clamp(0.0, double.infinity);
 
   Map<String, dynamic> toJson() => {
     'itemId': itemId,
@@ -607,25 +613,34 @@ class AdjustmentLineModel {
     'unit': unit,
     'quantity': quantity,
     'unitPrice': unitPrice,
+    'rawUnitPrice': rawUnitPrice,
+    'discountRatio': discountRatio,
     'amount': amount,
     'sourceType': sourceType,
     'sourceLineItemId': sourceLineItemId,
     'isDamaged': isDamaged,
   };
 
-  factory AdjustmentLineModel.fromJson(Map<String, dynamic> json) =>
-      AdjustmentLineModel(
-        itemId: json['itemId'] ?? '',
-        itemIndex: json['itemIndex'] ?? -1,
-        description: json['description'] ?? '',
-        unit: json['unit'] ?? '',
-        quantity: (json['quantity'] as num).toDouble(),
-        unitPrice: (json['unitPrice'] as num?)?.toDouble() ?? 0.0,
-        amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
-        sourceType: json['sourceType'] ?? '',
-        sourceLineItemId: json['sourceLineItemId'] ?? '',
-        isDamaged: json['isDamaged'] ?? false,
-      );
+  factory AdjustmentLineModel.fromJson(Map<String, dynamic> json) {
+    final double uPrice = (json['unitPrice'] as num?)?.toDouble() ?? 0.0;
+    final double ratio = (json['discountRatio'] as num?)?.toDouble() ?? 1.0;
+    final double rawPrice = (json['rawUnitPrice'] as num?)?.toDouble() ??
+        (ratio < 0.9999 && ratio > 0 ? uPrice / ratio : uPrice);
+    return AdjustmentLineModel(
+      itemId: json['itemId'] ?? '',
+      itemIndex: json['itemIndex'] ?? -1,
+      description: json['description'] ?? '',
+      unit: json['unit'] ?? '',
+      quantity: (json['quantity'] as num).toDouble(),
+      unitPrice: uPrice,
+      rawUnitPrice: rawPrice,
+      discountRatio: ratio,
+      amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+      sourceType: json['sourceType'] ?? '',
+      sourceLineItemId: json['sourceLineItemId'] ?? '',
+      isDamaged: json['isDamaged'] ?? false,
+    );
+  }
 }
 
 class AdjustmentInvoiceModel {
@@ -656,6 +671,8 @@ class AdjustmentInvoiceModel {
   final double deferredAmount;
   /// Portion of the deferred amount that has been formally realized in Income Summary.
   double realizedAmount;
+  /// Multiplier/ratio from the parent invoice (Net Total / Gross Total).
+  final double discountRatio;
 
   AdjustmentInvoiceModel({
     required this.id,
@@ -679,6 +696,7 @@ class AdjustmentInvoiceModel {
     this.isSettlementDeferred = false,
     this.deferredAmount = 0.0,
     double? realizedAmount,
+    this.discountRatio = 1.0,
   }) : date = date ?? DateTime.now(),
        realizedAmount = realizedAmount ??
            (isSettlementDeferred
@@ -691,6 +709,9 @@ class AdjustmentInvoiceModel {
       realizedAmount >= (isSettlementDeferred ? deferredAmount - 0.0001 : amount - 0.0001);
   double get pendingDeferredAmount =>
       isSettlementDeferred ? (deferredAmount - realizedAmount).clamp(0.0, double.infinity) : 0.0;
+  bool get hasDiscount => discountRatio < 0.9999 && discountRatio > 0;
+  double get originalGrossAmount => hasDiscount ? (amount / discountRatio) : amount;
+  double get discountShare => (originalGrossAmount - amount).clamp(0.0, double.infinity);
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -714,6 +735,7 @@ class AdjustmentInvoiceModel {
     'isSettlementDeferred': isSettlementDeferred,
     'deferredAmount': deferredAmount,
     'realizedAmount': realizedAmount,
+    'discountRatio': discountRatio,
   };
 
   factory AdjustmentInvoiceModel.fromJson(Map<String, dynamic> json) =>
@@ -746,6 +768,7 @@ class AdjustmentInvoiceModel {
             ((json['isSettlementDeferred'] == true)
                 ? 0.0
                 : ((json['amount'] as num?)?.toDouble() ?? 0.0)),
+        discountRatio: (json['discountRatio'] as num?)?.toDouble() ?? 1.0,
       );
 }
 
@@ -1558,6 +1581,22 @@ class FactoryInvoiceModel {
             discountAmount)
         .clamp(0.0, double.infinity);
   }
+
+  /// Gross total before discount
+  double get grossTotal => (invoiceType == 'شراء_مورد')
+      ? (subtotal + itemsServicesTotal + servicesTotal)
+      : (subtotal + itemsServicesTotal + servicesTotal + shippingFee);
+
+  /// Discount multiplier / ratio = Net Total / Gross Total
+  double get discountRatio {
+    if (discountAmount <= 0.0001) return 1.0;
+    final gross = grossTotal;
+    if (gross <= 0.0001) return 1.0;
+    return (grandTotal / gross).clamp(0.0, 1.0);
+  }
+
+  /// Whether this invoice has an earned discount (purchases) or allowed discount (sales)
+  bool get hasDiscount => discountAmount > 0.0001;
   /// Net Remaining Balance = (Original Gross Total - Return Value) - (Paid Amount - Cash Refunded)
   double get remainingBalance =>
       ((grandTotal - adjustmentsAmount + adjustmentsCashRefund) - advancePayment)
@@ -2489,6 +2528,20 @@ class WorkshopInvoiceModel {
   double get grandTotal =>
       (itemsSubtotal + servicesTotal - salesDiscount).clamp(0.0, double.infinity);
 
+  /// Gross total before discount
+  double get grossTotal => itemsSubtotal + servicesTotal;
+
+  /// Discount multiplier / ratio = Net Total / Gross Total
+  double get discountRatio {
+    if (salesDiscount <= 0.0001) return 1.0;
+    final gross = grossTotal;
+    if (gross <= 0.0001) return 1.0;
+    return (grandTotal / gross).clamp(0.0, 1.0);
+  }
+
+  /// Whether this invoice has an allowed discount
+  bool get hasDiscount => salesDiscount > 0.0001;
+
   /// Net Remaining Balance = (Original Gross Total - Return Value) - (Paid Amount - Cash Refunded)
   double get remainingBalance =>
       ((grandTotal - adjustmentsAmount + adjustmentsCashRefund) -
@@ -3156,6 +3209,8 @@ class ReturnInvoiceModel {
   final double deferredAmount;
   /// Portion of the return formally realized in Income Summary.
   double realizedAmount;
+  /// Multiplier/ratio from the parent invoice (Net Total / Gross Total).
+  final double discountRatio;
 
   ReturnInvoiceModel({
     required this.id,
@@ -3175,6 +3230,7 @@ class ReturnInvoiceModel {
     this.isSettlementDeferred = false,
     this.deferredAmount = 0.0,
     double? realizedAmount,
+    this.discountRatio = 1.0,
   }) : realizedAmount = realizedAmount ??
             (isSettlementDeferred
                 ? 0.0
@@ -3186,6 +3242,9 @@ class ReturnInvoiceModel {
       realizedAmount >= (isSettlementDeferred ? deferredAmount - 0.0001 : refundAmount - 0.0001);
   double get pendingDeferredAmount =>
       isSettlementDeferred ? (deferredAmount - realizedAmount).clamp(0.0, double.infinity) : 0.0;
+  bool get hasDiscount => discountRatio < 0.9999 && discountRatio > 0;
+  double get originalGrossAmount => hasDiscount ? (refundAmount / discountRatio) : refundAmount;
+  double get discountShare => (originalGrossAmount - refundAmount).clamp(0.0, double.infinity);
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -3205,6 +3264,7 @@ class ReturnInvoiceModel {
     'isSettlementDeferred': isSettlementDeferred,
     'deferredAmount': deferredAmount,
     'realizedAmount': realizedAmount,
+    'discountRatio': discountRatio,
   };
 
   factory ReturnInvoiceModel.fromJson(Map<String, dynamic> json) =>
@@ -3229,6 +3289,7 @@ class ReturnInvoiceModel {
             ((json['isSettlementDeferred'] == true)
                 ? 0.0
                 : ((json['refundAmount'] as num?)?.toDouble() ?? 0.0)),
+        discountRatio: (json['discountRatio'] as num?)?.toDouble() ?? 1.0,
       );
 }
 
