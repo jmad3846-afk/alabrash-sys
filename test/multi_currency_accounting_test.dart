@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:marble_granite_erp/core/database/erp_provider.dart';
-import 'package:marble_granite_erp/core/models/models.dart';
-import 'package:marble_granite_erp/widgets/customer_collection_dialog.dart';
+import 'package:abaad/core/database/erp_provider.dart';
+import 'package:abaad/core/models/models.dart';
+import 'package:abaad/widgets/customer_collection_dialog.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

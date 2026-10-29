@@ -487,10 +487,10 @@ class _AppImageAttachmentPickerState extends State<AppImageAttachmentPicker> {
       if (Platform.isWindows) {
         final appData = Platform.environment['APPDATA'];
         baseDir = appData != null && appData.isNotEmpty
-            ? '$appData\\MarbleGraniteERP\\media'
+            ? '$appData\\Abaad\\media'
             : '${Directory.current.path}\\erp_media';
       } else {
-        baseDir = '${Directory.systemTemp.path}/marble_granite_erp/media';
+        baseDir = '${Directory.systemTemp.path}/abaad/media';
       }
 
       final dir = Directory(baseDir);

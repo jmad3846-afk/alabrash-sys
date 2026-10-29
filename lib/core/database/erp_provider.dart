@@ -8413,7 +8413,7 @@ class ERPProvider extends ChangeNotifier {
       if (!await tempDir.exists()) return;
       await for (final entity in tempDir.list()) {
         final path = entity.path.toLowerCase();
-        if (path.contains('marble_granite_erp') ||
+        if (path.contains('abaad') ||
             path.contains('erp_uploads') ||
             path.contains('erp_photos') ||
             path.contains('erp_receipts')) {
@@ -8953,7 +8953,7 @@ class ERPProvider extends ChangeNotifier {
     return {
       'metadata': {
         'systemName': 'Abaad ERP (برنامج أبعاد)',
-        'systemIdentifier': 'abaad_marble_granite_erp',
+        'systemIdentifier': 'abaad_abaad',
         'backupVersion': '2.0.0',
         'exportDate': DateTime.now().toIso8601String(),
         'centerName': centerInfo.centerName,

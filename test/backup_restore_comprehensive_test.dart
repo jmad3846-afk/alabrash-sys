@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:marble_granite_erp/core/database/erp_provider.dart';
-import 'package:marble_granite_erp/core/models/models.dart';
+import 'package:abaad/core/database/erp_provider.dart';
+import 'package:abaad/core/models/models.dart';
 
 void main() {
   setUp(() {
@@ -108,7 +108,7 @@ void main() {
       final jsonString = jsonEncode(exported);
       expect(jsonString.isNotEmpty, isTrue);
       final decoded = jsonDecode(jsonString) as Map<String, dynamic>;
-      expect(decoded['metadata']['systemIdentifier'], 'abaad_marble_granite_erp');
+      expect(decoded['metadata']['systemIdentifier'], 'abaad_abaad');
       expect((decoded['factory']['factoryInvoices'] as List).length, erp.factoryInvoices.length);
       expect((decoded['workshop']['workshopProjects'] as List).length, erp.workshopProjects.length);
     });

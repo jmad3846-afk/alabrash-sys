@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:marble_granite_erp/core/database/erp_provider.dart';
-import 'package:marble_granite_erp/core/models/models.dart';
-import 'package:marble_granite_erp/widgets/a4_invoice_print_dialog.dart';
+import 'package:abaad/core/database/erp_provider.dart';
+import 'package:abaad/core/models/models.dart';
+import 'package:abaad/widgets/a4_invoice_print_dialog.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

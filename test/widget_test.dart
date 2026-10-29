@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:marble_granite_erp/core/database/erp_provider.dart';
-import 'package:marble_granite_erp/main.dart';
+import 'package:abaad/core/database/erp_provider.dart';
+import 'package:abaad/main.dart';
 
 void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
@@ -16,9 +16,9 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider(
         create: (_) => ERPProvider(),
-        child: const MarbleGraniteERPApp(),
+        child: const AbaadApp(),
       ),
     );
-    expect(find.byType(MarbleGraniteERPApp), findsOneWidget);
+    expect(find.byType(AbaadApp), findsOneWidget);
   });
 }

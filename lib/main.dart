@@ -9,18 +9,18 @@ void main() {
   runApp(
     ChangeNotifierProvider(
       create: (_) => ERPProvider(),
-      child: const MarbleGraniteERPApp(),
+      child: const AbaadApp(),
     ),
   );
 }
 
-class MarbleGraniteERPApp extends StatelessWidget {
-  const MarbleGraniteERPApp({super.key});
+class AbaadApp extends StatelessWidget {
+  const AbaadApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ABAAD',
+      title: 'Abaad (أبعاد)',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       home: const ExcludeSemantics(child: MainLayout()),

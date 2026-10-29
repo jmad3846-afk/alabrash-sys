@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "Abaad" "\0"
-            VALUE "FileDescription", "Abaad ERP" "\0"
+            VALUE "FileDescription", "Abaad" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "abaad_erp" "\0"
+            VALUE "InternalName", "abaad" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 Abaad. All rights reserved." "\0"
-            VALUE "OriginalFilename", "abaad_erp.exe" "\0"
-            VALUE "ProductName", "Abaad ERP" "\0"
+            VALUE "OriginalFilename", "abaad.exe" "\0"
+            VALUE "ProductName", "Abaad" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

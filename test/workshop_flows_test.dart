@@ -4,13 +4,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:marble_granite_erp/core/database/erp_provider.dart';
-import 'package:marble_granite_erp/core/models/models.dart';
-import 'package:marble_granite_erp/core/theme/app_theme.dart';
-import 'package:marble_granite_erp/screens/factory_workspace_screen.dart';
-import 'package:marble_granite_erp/screens/financials_screen.dart';
-import 'package:marble_granite_erp/screens/workforce_screen.dart';
-import 'package:marble_granite_erp/screens/workshop_workspace_screen.dart';
+import 'package:abaad/core/database/erp_provider.dart';
+import 'package:abaad/core/models/models.dart';
+import 'package:abaad/core/theme/app_theme.dart';
+import 'package:abaad/screens/factory_workspace_screen.dart';
+import 'package:abaad/screens/financials_screen.dart';
+import 'package:abaad/screens/workforce_screen.dart';
+import 'package:abaad/screens/workshop_workspace_screen.dart';
 
 void main() {
   setUp(() {

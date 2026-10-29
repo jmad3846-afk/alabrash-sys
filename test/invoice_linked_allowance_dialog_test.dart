@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:marble_granite_erp/core/database/erp_provider.dart';
-import 'package:marble_granite_erp/widgets/return_allowance_dialog.dart';
+import 'package:abaad/core/database/erp_provider.dart';
+import 'package:abaad/widgets/return_allowance_dialog.dart';
 void main() {
   for (final module in ['factory', 'workshop']) {
     for (final kind in ['sales_allowance', 'purchase_allowance']) {
