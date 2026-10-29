@@ -3003,98 +3003,11 @@ class ERPProvider extends ChangeNotifier {
     final purchase = invoice.kind.startsWith('purchase');
     final isReturn = invoice.kind.endsWith('return');
 
-    final isStandalone = !isReturn &&
-        (invoice.targetInvoiceId.isEmpty ||
-            invoice.targetInvoiceId == 'standalone' ||
-            invoice.targetInvoiceId == 'none');
-
-    if (isStandalone) {
-      final totalAmount = _money(invoice.amount);
-      if (totalAmount <= 0) return false;
-
-      final currency = AppCurrency.normalize(invoice.currency);
-      final rawPartyName = invoice.partyName.trim();
-      if (rawPartyName.isEmpty) return false;
-
-      // Resolve party
-      String partyName = rawPartyName;
-      String partyId = '';
-      if (purchase) {
-        final supplier = suppliers.where(
-          (s) => s.name.trim() == rawPartyName || s.id == rawPartyName,
-        ).firstOrNull;
-        if (supplier != null) {
-          partyName = supplier.name;
-          partyId = supplier.id;
-        }
-      } else {
-        final client = clients.where(
-          (c) => c.name.trim() == rawPartyName || c.id == rawPartyName,
-        ).firstOrNull;
-        if (client != null) {
-          partyName = client.name;
-          partyId = client.id;
-        }
-      }
-
-      // Financial settlement
-      const cashAction = 'استرداد نقدي للصندوق الرئيسي';
-      const debtAction = 'تخفيض دين';
-      final action = invoice.paymentAction;
-      final isCash = action == cashAction || action.contains('نقدي') || action.contains('صندوق');
-      final isDebt = action == debtAction || action.contains('دين') || action.contains('ذمة') || action.contains('دائن');
-      if (!isCash && !isDebt) return false;
-
-      final cashPortion = isCash ? totalAmount : 0.0;
-      final debtPortion = isCash ? 0.0 : totalAmount;
-
-      if (cashPortion > 0) {
-        if (purchase) {
-          addCash('main', currency, cashPortion);
-        } else {
-          takeCash('main', currency, cashPortion, allowNegative: true);
-        }
-      }
-      if (debtPortion > 0) {
-        _reduceAdjustmentDebt(
-          supplier: purchase,
-          partyName: partyName,
-          partyId: partyId,
-          currency: currency,
-          amount: debtPortion,
-        );
-      }
-
-      final stored = AdjustmentInvoiceModel(
-        id: invoice.id,
-        invoiceNo: invoice.invoiceNo,
-        module: invoice.module,
-        kind: invoice.kind,
-        targetInvoiceId: 'standalone',
-        targetInvoiceNo: 'خارج الفاتورة',
-        itemId: '',
-        itemDescription: invoice.itemDescription.isNotEmpty
-            ? invoice.itemDescription
-            : (purchase ? 'مسموح مشتريات خارج الفاتورة' : 'مسموح مبيعات خارج الفاتورة'),
-        itemIndex: -1,
-        partyName: partyName,
-        description: invoice.description,
-        amount: totalAmount,
-        quantity: 0,
-        paymentAction: action,
-        currency: currency,
-        date: invoice.date,
-        lines: const [],
-        cashAmount: cashPortion,
-        isSettlementDeferred: false,
-        deferredAmount: 0.0,
-        realizedAmount: totalAmount,
-        discountRatio: 1.0,
-      );
-      adjustmentInvoices.add(stored);
-
-      refresh();
-      return true;
+    // Every new adjustment must reference a real parent invoice.
+    if (invoice.targetInvoiceId.trim().isEmpty ||
+        invoice.targetInvoiceId == 'standalone' ||
+        invoice.targetInvoiceId == 'none') {
+      return false;
     }
 
     // 1. Resolve and validate the master invoice.

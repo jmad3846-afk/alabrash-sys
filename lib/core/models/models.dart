@@ -706,10 +706,6 @@ class AdjustmentInvoiceModel {
   bool get isReturn => kind.endsWith('return');
   bool get isAllowance => !isReturn;
   bool get isPurchase => kind.startsWith('purchase');
-  bool get isStandalone =>
-      targetInvoiceId.isEmpty ||
-      targetInvoiceId == 'standalone' ||
-      targetInvoiceId == 'none';
   bool get isFullyRealized =>
       realizedAmount >= (isSettlementDeferred ? deferredAmount - 0.0001 : amount - 0.0001);
   double get pendingDeferredAmount =>
