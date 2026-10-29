@@ -4316,7 +4316,6 @@ class ERPProvider extends ChangeNotifier {
 
   double expenseRecordsTotalOf(String? currency) => expenseRecords
       .where((expense) =>
-          !expense.isInformational &&
           expense.currency == AppCurrency.normalize(currency))
       .fold<double>(0, (sum, expense) => sum + expense.amount);
 
@@ -4631,10 +4630,10 @@ class ERPProvider extends ChangeNotifier {
   double get netOperatingProfit => netOperatingProfitOf(AppCurrency.usd);
   double get netOperatingProfitSyp => netOperatingProfitOf(AppCurrency.syp);
 
-  /// Total expenses for the Income Summary / Statement (excluding direct cutting/manufacturing expenses).
+  /// Total expenses for the Income Summary / Statement (including every expense record).
   double incomeSummaryExpensesOf(String? currency) {
     final c = AppCurrency.normalize(currency);
-    return totalDirectExpensesOf(c) - totalCuttingExpensesOf(c);
+    return totalDirectExpensesOf(c);
   }
 
   double get incomeSummaryExpenses =>
@@ -5479,11 +5478,16 @@ class ERPProvider extends ChangeNotifier {
 
   // 3. Factory Block Purchase Invoice (multi-item, Due/Paid split)
   //
-  // Shipping rule: when the shipment has NOT arrived, the shipping fee is
+  // Shipping rule: the separately paid shipping fee is
   // combined with the invoice capital cost and distributed over the stone
   // items proportionally to each item's capital cost.
   bool addSupplierPurchaseInvoice(FactoryInvoiceModel inv) {
-    if (inv.advancePayment < 0 || inv.advancePayment > inv.grandTotal + 0.001) {
+    if (inv.invoiceType != 'شراء_مورد' ||
+        factoryInvoices.any((existing) => existing.id == inv.id) ||
+        !inv.shippingFee.isFinite || inv.shippingFee < 0 ||
+        !inv.advancePayment.isFinite ||
+        cashOf('main', inv.currency) + 0.0001 < inv.advancePayment + inv.shippingFee ||
+        inv.advancePayment < 0 || inv.advancePayment > inv.grandTotal + 0.001) {
       return false;
     }
     if (inv.isCashInvoice &&
@@ -5520,10 +5524,9 @@ class ERPProvider extends ChangeNotifier {
       (s, it) => s + (it.quantity * it.unitCost),
     );
 
-    // If the shipment has not arrived and shipping costs were entered,
-    // record an informational expense entry under "Shipping and Transportation Costs"
-    // (allocated to material capital costs, not charged to the supplier).
-    if (!inv.isGoodsDelivered && inv.shippingFee > 0) {
+    // Pay freight independently of supplier debt and allocate it to inventory capital.
+    if (inv.shippingFee > 0) {
+      takeCash('main', inv.currency, inv.shippingFee);
       final matchingTypes = expenseTypes
           .where(
             (t) =>
@@ -5555,9 +5558,9 @@ class ERPProvider extends ChangeNotifier {
           currency: inv.currency,
           personName: 'شحن مشتريات - ${inv.partyName}',
           description:
-              'قيد إعلامي: تكاليف شحن ونقل موزعة على التكلفة الرأسمالية لمواد الفاتورة رقم ${inv.invoiceNo} (غير محملة على المورد)',
+              'تكاليف شحن ونقل مدفوعة من الصندوق وموزعة على التكلفة الرأسمالية لمواد الفاتورة رقم ${inv.invoiceNo} (غير محملة على المورد)',
           date: inv.date,
-          isInformational: true,
+          isInformational: false,
         ),
       );
     }
@@ -5566,7 +5569,7 @@ class ERPProvider extends ChangeNotifier {
     for (var item in inv.items) {
       final double itemCapital = item.quantity * item.unitCost;
       double shippingShare = 0.0;
-      if (!inv.isGoodsDelivered && inv.shippingFee > 0 && item.quantity > 0) {
+      if (inv.shippingFee > 0 && item.quantity > 0) {
         if (itemsCapital > 0) {
           shippingShare = (itemCapital / itemsCapital) * inv.shippingFee;
         } else {

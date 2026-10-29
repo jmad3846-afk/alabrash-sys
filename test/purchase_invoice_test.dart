@@ -97,7 +97,7 @@ void main() {
     ));
 
     final inv = erp.factoryInvoices.last;
-    // Items 1500 + 800 = 2300. Shipping (230) is capitalized to stone cost and recorded in expenses as informational, NOT charged to supplier.
+    // Items 1500 + 800 = 2300. Shipping (230) is capitalized to stone cost and recorded in expenses as paid, NOT charged to supplier.
     // Grand total owed to supplier is 2300, minus 1000 advance = 1300 due.
     expect(inv.grandTotal, closeTo(2300.0, 0.001));
     expect(inv.isDue, isTrue);
@@ -115,11 +115,11 @@ void main() {
     final sup = erp.suppliers.firstWhere((s) => s.id == 'sup1');
     expect(sup.debtBalance, closeTo(25000.0 + 1300.0, 0.001));
 
-    // Informational shipping expense record created
-    final shipExp = erp.expenseRecords.where((e) => e.isInformational).toList();
+    // Paid shipping expense record created
+    final shipExp = erp.expenseRecords.where((e) => e.typeId == 'shipping_transport_costs').toList();
     expect(shipExp, isNotEmpty);
     expect(shipExp.last.amount, 230.0);
-    expect(erp.expenseRecordsTotalOf('USD'), 1000.0); // Direct expense from advance payment; informational shipping (230) excluded
+    expect(erp.expenseRecordsTotalOf('USD'), 1230.0); // Direct expense from advance payment; informational shipping (230) excluded
   });
 
   test('fully paid purchase lands in Paid section', () async {
@@ -583,11 +583,11 @@ void main() {
     expect(whNew.availableQty, 50.0);
     expect(whNew.netCostPerUnit, closeTo(22.0, 0.001));
 
-    // Verify informational expense in Shipping and Transportation Costs category
-    final shipExp = erp.expenseRecords.where((e) => e.isInformational).toList();
+    // Verify paid expense in Shipping and Transportation Costs category
+    final shipExp = erp.expenseRecords.where((e) => e.typeId == 'shipping_transport_costs').toList();
     expect(shipExp, isNotEmpty);
     expect(shipExp.last.amount, 200.0);
-    expect(shipExp.last.description, contains('قيد إعلامي'));
+    expect(shipExp.last.description, contains('مدفوعة من الصندوق'));
     expect(erp.expenseTypes.any((t) => t.name.contains('Shipping and Transportation Costs') || t.name.contains('الشحن')), isTrue);
   });
 
@@ -614,7 +614,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('undelivered shipping cost is capitalized into materials, recorded in expenses as informational, and NOT charged to supplier', () async {
+  test('undelivered shipping cost is capitalized into materials, recorded in expenses as paid, and NOT charged to supplier', () async {
     final erp = ERPProvider();
     final sup = erp.suppliers.firstWhere((s) => s.id == 'sup1');
     final double supDebtBefore = sup.debtBalance;
@@ -674,17 +674,17 @@ void main() {
     final meter = erp.factoryWarehouse.last;
     expect(meter.netCostPerUnit, closeTo(18.0, 0.001));
 
-    // 4. An informational expense record exists under "Shipping and Transportation Costs"
+    // 4. An paid expense record exists under "Shipping and Transportation Costs"
     final expType = erp.expenseTypes.firstWhere(
       (t) => t.name.contains('Shipping and Transportation Costs') || t.name.contains('الشحن'),
     );
     final exp = erp.expenseRecords.firstWhere(
-      (e) => e.typeId == expType.id && e.isInformational,
+      (e) => e.typeId == expType.id && e.typeId == 'shipping_transport_costs',
     );
     expect(exp.amount, 500.0);
-    expect(exp.isInformational, isTrue);
+    expect(exp.isInformational, isFalse);
 
     // 5. Informational record does NOT count as an operational expense deducting from operating profit
-    expect(erp.expenseRecordsTotalOf('USD'), 0.0);
+    expect(erp.expenseRecordsTotalOf('USD'), 500.0);
   });
 }

@@ -3763,17 +3763,14 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ),
                   for (final type in erp.expenseTypes.where((t) =>
                       t.id != ERPProvider.blockPurchaseExpenseTypeId &&
-                      t.id != ERPProvider.cuttingExpenseTypeId &&
                       !t.name.contains('Block Purchase') &&
-                      !t.name.contains('مشتريات البلوكات') &&
-                      !t.name.contains('Cutting Expenses') &&
-                      !t.name.contains('مصاريف القص والتصنيع')))
+                      !t.name.contains('مشتريات البلوكات')))
                     _buildPlLine(
                       'مصروفات ${type.name}:',
                       erp.expenseRecords
                           .where(
                             (expense) =>
-                                !expense.isInformational &&
+
                                 expense.typeId == type.id &&
                                 expense.currency == AppCurrency.usd,
                           )
@@ -3784,7 +3781,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       syp: erp.expenseRecords
                           .where(
                             (expense) =>
-                                !expense.isInformational &&
+
                                 expense.typeId == type.id &&
                                 expense.currency == AppCurrency.syp,
                           )
