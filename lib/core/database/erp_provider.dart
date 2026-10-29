@@ -3829,33 +3829,56 @@ class ERPProvider extends ChangeNotifier {
       .where((c) => c.clientType == 'معتمد مصنع')
       .fold(0.0, (s, c) => s + c.debtOf(currency));
 
-  // Granite 50% Accountant Net Profit Ledger Calculation (per currency)
-  double graniteTotalRevenueOf(String? currency) {
+  // Granite returns reverse the original line margin without posting cash.
+  ({double revenue, double cost}) _graniteAmounts(String? currency, {bool returned = false, String? invoiceId, String? module}) {
     final c = AppCurrency.normalize(currency);
-    double total = 0.0;
-    for (var inv in factoryInvoices.where((i) => i.currency == c)) {
-      for (var item in inv.items) {
-        if (item.isGranite) total += item.totalPrice;
+    double revenue = 0, cost = 0;
+    double fraction(String id, String source, int index, double quantity) {
+      if (!returned) return 1;
+      if (quantity <= 0) return 0;
+      final returnedQuantity = adjustmentInvoices
+          .where((doc) => doc.kind == 'sales_return' && doc.module == source && doc.targetInvoiceId == id && doc.currency == c)
+          .expand((doc) => doc.lines)
+          .where((line) => line.itemIndex == index)
+          .fold<double>(0, (sum, line) => sum + line.quantity);
+      return (returnedQuantity / quantity).clamp(0.0, 1.0);
+    }
+    for (final inv in factoryInvoices.where((i) => i.currency == c && i.invoiceType == 'بيع_معتمد' && (invoiceId == null || i.id == invoiceId) && (module == null || module == 'factory'))) {
+      for (var index = 0; index < inv.items.length; index++) {
+        final item = inv.items[index];
+        if (!item.isGranite) continue;
+        final ratio = fraction(inv.id, 'factory', index, item.quantity);
+        revenue += item.totalPrice * inv.discountRatio * ratio;
+        cost += item.totalCost * ratio;
       }
     }
-    for (var inv in workshopInvoices.where((i) => i.currency == c)) {
-      if (inv.isGranite) total += inv.agreedPrice;
+    for (final inv in workshopInvoices.where((i) => i.currency == c && (invoiceId == null || i.id == invoiceId) && (module == null || module == 'workshop'))) {
+      final lines = _workshopInvoiceLines(inv);
+      for (var index = 0; index < lines.length; index++) {
+        final item = lines[index];
+        if (!item.isGranite) continue;
+        final ratio = fraction(inv.id, 'workshop', index, item.quantity);
+        revenue += item.agreedPrice * inv.discountRatio * ratio;
+        cost += item.netCost * ratio;
+      }
     }
-    return total;
+    return (revenue: revenue, cost: cost);
   }
 
-  double graniteTotalCOGSOf(String? currency) {
-    final c = AppCurrency.normalize(currency);
-    double total = 0.0;
-    for (var inv in factoryInvoices.where((i) => i.currency == c)) {
-      for (var item in inv.items) {
-        if (item.isGranite) total += item.totalCost;
-      }
-    }
-    for (var inv in workshopInvoices.where((i) => i.currency == c)) {
-      if (inv.isGranite) total += inv.netCost;
-    }
-    return total;
+  double graniteTotalRevenueOf(String? currency) =>
+      _graniteAmounts(currency).revenue - _graniteAmounts(currency, returned: true).revenue;
+  double graniteTotalCOGSOf(String? currency) =>
+      _graniteAmounts(currency).cost - _graniteAmounts(currency, returned: true).cost;
+
+  double graniteReturnAccountantRevenueOf(String? currency) {
+    final amounts = _graniteAmounts(currency, returned: true);
+    return (amounts.revenue - amounts.cost).clamp(0.0, double.infinity) * (graniteAccountantPercentage / 100.0);
+  }
+
+  double graniteInvoiceProfitOf(String id, String module, String currency) {
+    final original = _graniteAmounts(currency, invoiceId: id, module: module);
+    final returned = _graniteAmounts(currency, returned: true, invoiceId: id, module: module);
+    return (original.revenue - original.cost - returned.revenue + returned.cost).clamp(0.0, double.infinity);
   }
 
   double get graniteTotalRevenue => graniteTotalRevenueOf(AppCurrency.usd);
@@ -4314,6 +4337,7 @@ class ERPProvider extends ChangeNotifier {
       salesDiscountsOf(currency) +
       adjustmentTotalOf('purchase_return', currency) +
       adjustmentTotalOf('purchase_allowance', currency) +
+      graniteReturnAccountantRevenueOf(currency) +
       assetSaleRevenueOf(currency) +
       totalAdvanceRepaymentsRevenueOf(currency);
   double get totalRevenues => totalRevenuesOf(AppCurrency.usd);
@@ -9014,13 +9038,18 @@ class ERPProvider extends ChangeNotifier {
       'metadata': {
         'systemName': 'Abaad ERP (برنامج أبعاد)',
         'systemIdentifier': 'abaad_marble_granite_erp',
-        'backupVersion': '1.0.0',
+        'backupVersion': '2.0.0',
         'exportDate': DateTime.now().toIso8601String(),
         'centerName': centerInfo.centerName,
         'centerPhone': centerInfo.phone1,
         'graniteAccountantPercentage': graniteAccountantPercentage,
       },
       'financials': {
+        'unallocatedFactoryCollectionsUsd': unallocatedFactoryCollectionsUsd,
+        'unallocatedFactoryCollectionsSyp': unallocatedFactoryCollectionsSyp,
+        'unallocatedWorkshopCollectionsUsd': unallocatedWorkshopCollectionsUsd,
+        'unallocatedWorkshopCollectionsSyp': unallocatedWorkshopCollectionsSyp,
+        'isOpeningEntryCompleted': isOpeningEntryCompleted,
         'mainCashBox': mainCashBox,
         'scrapCashBox': scrapCashBox,
         'orderCashBox': orderCashBox,
@@ -9028,13 +9057,13 @@ class ERPProvider extends ChangeNotifier {
         'scrapCashBoxSyp': scrapCashBoxSyp,
         'orderCashBoxSyp': orderCashBoxSyp,
         'graniteAccountantPercentage': graniteAccountantPercentage,
-        'accountantWithdrawals':
-            accountantWithdrawals.map((w) => w.toJson()).toList(),
+        'accountantWithdrawals': accountantWithdrawals
+            .map((w) => w.toJson())
+            .toList(),
         'partners': partners.map((p) => p.toJson()).toList(),
         'openingEntry': openingEntry.toJson(),
         'assetSaleRecords': assetSaleRecords.map((w) => w.toJson()).toList(),
-        'capitalInjections':
-            capitalInjections.map((w) => w.toJson()).toList(),
+        'capitalInjections': capitalInjections.map((w) => w.toJson()).toList(),
       },
       'factory': {
         'suppliers': suppliers.map((s) => s.toJson()).toList(),
@@ -9043,8 +9072,7 @@ class ERPProvider extends ChangeNotifier {
         'meterTypes': meterTypes.map((m) => m.toJson()).toList(),
         'factoryBlocks': factoryBlocks.map((b) => b.toJson()).toList(),
         'factoryWarehouse': factoryWarehouse.map((w) => w.toJson()).toList(),
-        'cuttingOperations':
-            cuttingOperations.map((c) => c.toJson()).toList(),
+        'cuttingOperations': cuttingOperations.map((c) => c.toJson()).toList(),
         'factoryInvoices': factoryInvoices.map((inv) => inv.toJson()).toList(),
         'factoryOrders': factoryOrders.map((o) => o.toJson()).toList(),
       },
@@ -9056,10 +9084,10 @@ class ERPProvider extends ChangeNotifier {
         'surplusCosts': surplusCosts.map((s) => s.toJson()).toList(),
         'wasteLogs': wasteLogs.map((w) => w.toJson()).toList(),
         'workshopOrders': workshopOrders.map((o) => o.toJson()).toList(),
-        'workshopInvoices':
-            workshopInvoices.map((inv) => inv.toJson()).toList(),
-        'workshopProjects':
-            workshopProjects.map((p) => p.toJson()).toList(),
+        'workshopInvoices': workshopInvoices
+            .map((inv) => inv.toJson())
+            .toList(),
+        'workshopProjects': workshopProjects.map((p) => p.toJson()).toList(),
       },
       'staff': {
         'staffTypes': staffTypes.map((t) => t.toJson()).toList(),
@@ -9072,10 +9100,10 @@ class ERPProvider extends ChangeNotifier {
         'returnInvoices': returnInvoices.map((r) => r.toJson()).toList(),
         'expenseTypes': expenseTypes.map((e) => e.toJson()).toList(),
         'expenseRecords': expenseRecords.map((e) => e.toJson()).toList(),
-        'advanceRepayments':
-            advanceRepayments.map((a) => a.toJson()).toList(),
-        'adjustmentInvoices':
-            adjustmentInvoices.map((a) => a.toJson()).toList(),
+        'advanceRepayments': advanceRepayments.map((a) => a.toJson()).toList(),
+        'adjustmentInvoices': adjustmentInvoices
+            .map((a) => a.toJson())
+            .toList(),
         'services': services.map((s) => s.toJson()).toList(),
         'dailyReports': dailyReports.map((d) => d.toJson()).toList(),
       },
@@ -9085,8 +9113,124 @@ class ERPProvider extends ChangeNotifier {
   }
 
   /// Restores and distributes all data back to its correct places across all screens and sections.
+  /// Includes local images so backups remain portable between computers.
+  Future<Map<String, dynamic>> exportPortableBackupData() async {
+    await loadFuture;
+    final data =
+        jsonDecode(jsonEncode(exportFullBackupData())) as Map<String, dynamic>;
+    final attachments = <String, String>{};
+    Future<void> collect(dynamic value) async {
+      if (value is Map) {
+        for (final entry in value.entries) {
+          if (const ['photoPath', 'photoUrl', 'logoPath'].contains(entry.key) &&
+              entry.value is String &&
+              (entry.value as String).isNotEmpty &&
+              !entry.value.startsWith('http') &&
+              !entry.value.startsWith('data:')) {
+            final path = entry.value as String;
+            final file = File(
+              path.startsWith('file:') ? Uri.parse(path).toFilePath() : path,
+            );
+            attachments[path] = base64Encode(await file.readAsBytes());
+          } else {
+            await collect(entry.value);
+          }
+        }
+      } else if (value is List) {
+        for (final item in value) {
+          await collect(item);
+        }
+      }
+    }
+
+    await collect(data);
+    data['attachments'] = attachments;
+    return data;
+  }
+
   Future<Map<String, dynamic>> importFullBackupData(
-      Map<String, dynamic> raw) async {
+    Map<String, dynamic> raw,
+  ) async {
+    await loadFuture;
+    final previous =
+        jsonDecode(jsonEncode(exportFullBackupData())) as Map<String, dynamic>;
+    final data = jsonDecode(jsonEncode(raw)) as Map<String, dynamic>;
+    // Missing legacy collections are empty, never merged with live records.
+    for (final section in previous.keys.where((key) => key != 'metadata')) {
+      final template = previous[section];
+      if (template is Map) {
+        final input = data[section];
+        if (input != null && input is! Map) {
+          throw FormatException('Invalid backup section: $section');
+        }
+        data[section] = <String, dynamic>{
+          for (final key in template.keys)
+            key: (input is Map && input.containsKey(key))
+                ? input[key]
+                : data.containsKey(key)
+                ? data[key]
+                : template[key] is List
+                ? []
+                : template[key] is num
+                ? 0.0
+                : template[key] is bool
+                ? false
+                : template[key] is Map
+                ? <String, dynamic>{}
+                : template[key],
+        };
+      } else if (template is List) {
+        data[section] ??= [];
+      }
+    }
+    for (final section in previous.keys.where((key) => key != 'metadata')) {
+      final template = previous[section];
+      final input = data[section];
+      if (template is List && input is! List) throw FormatException('Invalid collection: $section');
+      if (template is Map && input is Map) {
+        for (final key in template.keys) {
+          if (template[key] is List && input[key] is! List) throw FormatException('Invalid collection: $key');
+        }
+      }
+    }
+    Map<String, dynamic> metrics;
+    try {
+      await _applyBackupData(data);
+      final attachments = data.remove('attachments');
+      if (attachments != null) {
+        final directory = await Directory.systemTemp.createTemp('erp_restored_');
+        final paths = <String, String>{};
+        for (final entry in (attachments as Map).entries) {
+          final extension = (entry.key as String).split('.').last;
+          final suffix = RegExp(r'^[a-zA-Z0-9]{1,8}$').hasMatch(extension) ? extension : 'bin';
+          final file = File('${directory.path}/${paths.length}.$suffix');
+          await file.writeAsBytes(base64Decode(entry.value as String), flush: true);
+          paths[entry.key as String] = file.path;
+        }
+        void rewrite(dynamic value) {
+          if (value is Map) {
+            for (final key in value.keys.toList()) {
+              if (const ['photoPath', 'photoUrl', 'logoPath'].contains(key) && paths.containsKey(value[key])) {
+                value[key] = paths[value[key]];
+              } else { rewrite(value[key]); }
+            }
+          } else if (value is List) { for (final item in value) { rewrite(item); } }
+        }
+        rewrite(data);
+      }
+      metrics = await _applyBackupData(data);
+    } catch (_) {
+      await _applyBackupData(previous);
+      rethrow;
+    }
+    await saveToDisk();
+    notifyListeners();
+    return metrics;
+  }
+
+  Future<Map<String, dynamic>> _applyBackupData(
+    Map<String, dynamic> raw,
+  ) async {
     if (loadFuture != null) {
       await loadFuture;
     }
@@ -9107,13 +9251,23 @@ class ERPProvider extends ChangeNotifier {
         ? raw['operations'] as Map<String, dynamic>
         : raw;
 
+    unallocatedFactoryCollectionsUsd =
+        (fin['unallocatedFactoryCollectionsUsd'] as num?)?.toDouble() ?? 0.0;
+    unallocatedFactoryCollectionsSyp =
+        (fin['unallocatedFactoryCollectionsSyp'] as num?)?.toDouble() ?? 0.0;
+    unallocatedWorkshopCollectionsUsd =
+        (fin['unallocatedWorkshopCollectionsUsd'] as num?)?.toDouble() ?? 0.0;
+    unallocatedWorkshopCollectionsSyp =
+        (fin['unallocatedWorkshopCollectionsSyp'] as num?)?.toDouble() ?? 0.0;
+
     // Financials
     if (fin['openingEntry'] != null) {
-      try {
         openingEntry = OpeningEntryModel.fromJson(
-            Map<String, dynamic>.from(fin['openingEntry']));
-        isOpeningEntryCompleted = openingEntry.isLocked;
-      } catch (_) {}
+          Map<String, dynamic>.from(fin['openingEntry']),
+        );
+        isOpeningEntryCompleted =
+            fin['isOpeningEntryCompleted'] as bool? ?? openingEntry.isLocked;
+
     }
     if (fin['partners'] is List) {
       partners = (fin['partners'] as List)
@@ -9139,32 +9293,42 @@ class ERPProvider extends ChangeNotifier {
       orderCashBoxSyp = (fin['orderCashBoxSyp'] as num).toDouble();
     }
     if (fin['graniteAccountantPercentage'] != null) {
-      graniteAccountantPercentage =
-          (fin['graniteAccountantPercentage'] as num).toDouble();
+      graniteAccountantPercentage = (fin['graniteAccountantPercentage'] as num)
+          .toDouble();
     }
     if (fin['accountantWithdrawals'] is List) {
       accountantWithdrawals = (fin['accountantWithdrawals'] as List)
-          .map((item) => AccountantWithdrawalModel.fromJson(
-              Map<String, dynamic>.from(item)))
+          .map(
+            (item) => AccountantWithdrawalModel.fromJson(
+              Map<String, dynamic>.from(item),
+            ),
+          )
           .toList();
     }
     if (fin['assetSaleRecords'] is List) {
       assetSaleRecords = (fin['assetSaleRecords'] as List)
-          .map((item) => AssetSaleRecordModel.fromJson(
-              Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                AssetSaleRecordModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (fin['capitalInjections'] is List) {
       capitalInjections = (fin['capitalInjections'] as List)
-          .map((item) => CapitalInjectionRecordModel.fromJson(
-              Map<String, dynamic>.from(item)))
+          .map(
+            (item) => CapitalInjectionRecordModel.fromJson(
+              Map<String, dynamic>.from(item),
+            ),
+          )
           .toList();
     }
 
     // Factory
     if (fac['suppliers'] is List) {
       suppliers = (fac['suppliers'] as List)
-          .map((item) => SupplierModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) => SupplierModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (fac['clients'] is List) {
@@ -9174,103 +9338,139 @@ class ERPProvider extends ChangeNotifier {
     }
     if (fac['blockTypes'] is List) {
       blockTypes = (fac['blockTypes'] as List)
-          .map((item) => BlockTypeModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) => BlockTypeModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (fac['meterTypes'] is List) {
       meterTypes = (fac['meterTypes'] as List)
-          .map((item) => MeterTypeModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) => MeterTypeModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (fac['factoryBlocks'] is List) {
       factoryBlocks = (fac['factoryBlocks'] as List)
-          .map((item) =>
-              FactoryBlockModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                FactoryBlockModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (fac['factoryWarehouse'] is List) {
       factoryWarehouse = (fac['factoryWarehouse'] as List)
-          .map((item) =>
-              FactoryWarehouseModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                FactoryWarehouseModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (fac['cuttingOperations'] is List) {
       cuttingOperations = (fac['cuttingOperations'] as List)
-          .map((item) =>
-              CuttingOperationModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                CuttingOperationModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (fac['factoryInvoices'] is List) {
       factoryInvoices = (fac['factoryInvoices'] as List)
-          .map((item) =>
-              FactoryInvoiceModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                FactoryInvoiceModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (fac['factoryOrders'] is List) {
       factoryOrders = (fac['factoryOrders'] as List)
-          .map((item) =>
-              FactoryOrderModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                FactoryOrderModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
 
     // Workshop
     if (wrk['workshopStock'] is List) {
       workshopStock = (wrk['workshopStock'] as List)
-          .map((item) =>
-              WorkshopStockModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                WorkshopStockModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (wrk['simpleTailorings'] is List) {
       simpleTailorings = (wrk['simpleTailorings'] as List)
-          .map((item) =>
-              WorkshopTailoringModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) => WorkshopTailoringModel.fromJson(
+              Map<String, dynamic>.from(item),
+            ),
+          )
           .toList();
     }
     if (wrk['complexTailorings'] is List) {
       complexTailorings = (wrk['complexTailorings'] as List)
-          .map((item) =>
-              WorkshopTailoringModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) => WorkshopTailoringModel.fromJson(
+              Map<String, dynamic>.from(item),
+            ),
+          )
           .toList();
     }
     if (wrk['scrapItems'] is List) {
       scrapItems = (wrk['scrapItems'] as List)
-          .map((item) => ScrapItemModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) => ScrapItemModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (wrk['surplusCosts'] is List) {
       surplusCosts = (wrk['surplusCosts'] as List)
-          .map((item) =>
-              SurplusCostModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                SurplusCostModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (wrk['wasteLogs'] is List) {
       wasteLogs = (wrk['wasteLogs'] as List)
-          .map((item) => WasteLogModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) => WasteLogModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (wrk['workshopOrders'] is List) {
       workshopOrders = (wrk['workshopOrders'] as List)
-          .map((item) =>
-              WorkshopOrderModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                WorkshopOrderModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (wrk['workshopInvoices'] is List) {
       workshopInvoices = (wrk['workshopInvoices'] as List)
-          .map((item) =>
-              WorkshopInvoiceModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                WorkshopInvoiceModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (wrk['workshopProjects'] is List) {
       workshopProjects = (wrk['workshopProjects'] as List)
-          .map((item) =>
-              WorkshopProjectModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                WorkshopProjectModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
 
     // Staff
     if (stf['staffTypes'] is List) {
       staffTypes = (stf['staffTypes'] as List)
-          .map((item) => StaffTypeModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) => StaffTypeModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (stf['staffList'] is List) {
@@ -9290,98 +9490,119 @@ class ERPProvider extends ChangeNotifier {
     }
     if (stf['staffAttendance'] is List) {
       staffAttendance = (stf['staffAttendance'] as List)
-          .map((item) =>
-              StaffAttendanceModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                StaffAttendanceModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (stf['workdayEntries'] is List) {
       workdayEntries = (stf['workdayEntries'] as List)
-          .map((item) =>
-              WorkdayEntryModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                WorkdayEntryModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (stf['activeWorkweekStart'] != null) {
-      try {
         activeWorkweekStart = DateTime.parse(stf['activeWorkweekStart']);
-      } catch (_) {}
+
     }
 
     // Operations
     if (ops['returnInvoices'] is List) {
       returnInvoices = (ops['returnInvoices'] as List)
-          .map((item) =>
-              ReturnInvoiceModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                ReturnInvoiceModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (ops['expenseTypes'] is List) {
       expenseTypes = (ops['expenseTypes'] as List)
-          .map((item) =>
-              ExpenseTypeModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                ExpenseTypeModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (ops['expenseRecords'] is List) {
       expenseRecords = (ops['expenseRecords'] as List)
-          .map((item) =>
-              ExpenseRecordModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                ExpenseRecordModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (ops['advanceRepayments'] is List) {
       advanceRepayments = (ops['advanceRepayments'] as List)
-          .map((item) =>
-              AdvanceRepaymentModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                AdvanceRepaymentModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     } else if (raw['advanceRepayments'] is List) {
       advanceRepayments = (raw['advanceRepayments'] as List)
-          .map((item) =>
-              AdvanceRepaymentModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                AdvanceRepaymentModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (ops['adjustmentInvoices'] is List) {
       adjustmentInvoices = (ops['adjustmentInvoices'] as List)
-          .map((item) =>
-              AdjustmentInvoiceModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) => AdjustmentInvoiceModel.fromJson(
+              Map<String, dynamic>.from(item),
+            ),
+          )
           .toList();
     }
     if (ops['services'] is List) {
       services = (ops['services'] as List)
-          .map((item) =>
-              ServiceItemModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                ServiceItemModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
     if (ops['dailyReports'] is List) {
       dailyReports = (ops['dailyReports'] as List)
-          .map((item) =>
-              DailyReportModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                DailyReportModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     } else if (raw['dailyReports'] is List) {
       dailyReports = (raw['dailyReports'] as List)
-          .map((item) =>
-              DailyReportModel.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                DailyReportModel.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     }
 
     // Settings
     if (raw['centerInfo'] != null) {
-      try {
-        centerInfo =
-            CenterInfoModel.fromJson(Map<String, dynamic>.from(raw['centerInfo']));
-      } catch (_) {}
+        centerInfo = CenterInfoModel.fromJson(
+          Map<String, dynamic>.from(raw['centerInfo']),
+        );
+
     }
 
     if (raw['periodArchives'] is List) {
-      try {
         periodArchives = (raw['periodArchives'] as List)
-            .map((item) =>
-                PeriodArchiveModel.fromJson(Map<String, dynamic>.from(item)))
+            .map(
+              (item) =>
+                  PeriodArchiveModel.fromJson(Map<String, dynamic>.from(item)),
+            )
             .toList();
-      } catch (_) {}
+
     }
 
     // Persist to disk immediately
-    await saveToDisk();
 
     // Notify all UI consumers to immediately re-render across all screens
-    notifyListeners();
 
     return {
       'success': true,

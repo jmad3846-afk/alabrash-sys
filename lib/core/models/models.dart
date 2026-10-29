@@ -2590,7 +2590,7 @@ class WorkshopInvoiceModel {
 
   factory WorkshopInvoiceModel.fromJson(Map<String, dynamic> json) {
     List<WorkshopInvoiceItem> parsedItems = [];
-    if (json['items'] != null && (json['items'] as List).isNotEmpty) {
+    if (json['items'] is List) {
       parsedItems = (json['items'] as List)
           .map((i) => WorkshopInvoiceItem.fromJson(i))
           .toList();

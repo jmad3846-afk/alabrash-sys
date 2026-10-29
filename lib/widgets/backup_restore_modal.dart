@@ -73,7 +73,7 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
       final suggestedFileName = 'Abaad_Backup_$dateStr.json';
 
       // 1. Pack 100% of the ERP system data
-      final backupData = erp.exportFullBackupData();
+      final backupData = await erp.exportPortableBackupData();
       final jsonString =
           const JsonEncoder.withIndent('  ').convert(backupData);
       final bytes = Uint8List.fromList(utf8.encode(jsonString));

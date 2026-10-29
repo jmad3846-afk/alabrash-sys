@@ -662,7 +662,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 graniteCogs += item.totalCost;
               }
             }
-            final profit = (graniteRev - graniteCogs).clamp(0.0, double.infinity);
+            final profit = erp.graniteInvoiceProfitOf(inv.id, 'factory', inv.currency);
             final accShare = profit * (erp.graniteAccountantPercentage / 100.0);
 
             return ListTile(
@@ -707,7 +707,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
             );
           }),
           ...graniteWorkshopInvoices.map((inv) {
-            final profit = (inv.agreedPrice - inv.netCost).clamp(0.0, double.infinity);
+            final profit = erp.graniteInvoiceProfitOf(inv.id, 'workshop', inv.currency);
             final accShare = profit * (erp.graniteAccountantPercentage / 100.0);
 
             return ListTile(
@@ -3714,6 +3714,11 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     'مرتجعات ومسموحات المشتريات:',
                     erp.purchaseReturnsAndAllowances,
                     syp: erp.purchaseReturnsAndAllowancesSyp,
+                  ),
+                  _buildPlLine(
+                    'إيرادات مرتجعات جرانيت من محاسب:',
+                    erp.graniteReturnAccountantRevenueOf(AppCurrency.usd),
+                    syp: erp.graniteReturnAccountantRevenueOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
                     'أرباح بيع الأصول الثابتة (فائض سعر البيع):',
