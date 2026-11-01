@@ -4404,12 +4404,6 @@ class ERPProvider extends ChangeNotifier {
       _graniteAmounts(currency).cost -
       _graniteAmounts(currency, returned: true).cost;
 
-  double graniteReturnAccountantRevenueOf(String? currency) {
-    final amounts = _graniteAmounts(currency, returned: true);
-    return (amounts.revenue - amounts.cost).clamp(0.0, double.infinity) *
-        (graniteAccountantPercentage / 100.0);
-  }
-
   double graniteInvoiceProfitOf(String id, String module, String currency) {
     final original = _graniteAmounts(currency, invoiceId: id, module: module);
     final returned = _graniteAmounts(
@@ -4834,7 +4828,6 @@ class ERPProvider extends ChangeNotifier {
       totalScrapRevenueOf(currency) +
       totalKeptDepositsRevenueOf(currency) +
       salesDiscountsOf(currency) +
-      graniteReturnAccountantRevenueOf(currency) +
       assetSaleRevenueOf(currency);
   double get totalRevenues => totalRevenuesOf(AppCurrency.usd);
   double get totalRevenuesSyp => totalRevenuesOf(AppCurrency.syp);

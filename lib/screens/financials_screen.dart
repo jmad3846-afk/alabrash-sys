@@ -3821,11 +3821,6 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ),
 
                   _buildPlLine(
-                    'إيرادات مرتجعات جرانيت من محاسب:',
-                    erp.graniteReturnAccountantRevenueOf(AppCurrency.usd),
-                    syp: erp.graniteReturnAccountantRevenueOf(AppCurrency.syp),
-                  ),
-                  _buildPlLine(
                     'أرباح بيع الأصول الثابتة (فائض سعر البيع):',
                     erp.assetSaleGainsOf(AppCurrency.usd),
                     syp: erp.assetSaleGainsOf(AppCurrency.syp),
