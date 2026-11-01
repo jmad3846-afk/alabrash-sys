@@ -5710,7 +5710,8 @@ class ERPProvider extends ChangeNotifier {
               !i.unitCost.isFinite ||
               i.unitCost < 0 ||
               !i.unitPrice.isFinite ||
-              i.unitPrice < 0,
+              i.unitPrice < 0 ||
+              (i.sellingPrice != null && (!i.sellingPrice!.isFinite || i.sellingPrice! < 0)),
         ) ||
         factoryInvoices.any((existing) => existing.id == inv.id) ||
         !inv.shippingFee.isFinite ||
@@ -5815,7 +5816,7 @@ class ERPProvider extends ChangeNotifier {
                   w.typeName == targetTypeName &&
                   w.grade == targetGrade &&
                   (w.thicknessCm - targetThickness).abs() < 0.01 &&
-                  w.category == category,
+                  w.category == category && w.currency == inv.currency && w.batchUnitsPerUnit.isEmpty,
             )
             .toList();
 
@@ -5829,6 +5830,7 @@ class ERPProvider extends ChangeNotifier {
               : effectiveUnitCost;
           w.availableQty = mergedQty;
           w.netCostPerUnit = mergedCost;
+          if (item.sellingPrice != null) w.recommendedSalePrice = item.sellingPrice!;
         } else {
           factoryWarehouse.add(
             FactoryWarehouseModel(
@@ -5840,7 +5842,7 @@ class ERPProvider extends ChangeNotifier {
               category: category,
               availableQty: item.quantity,
               netCostPerUnit: effectiveUnitCost,
-              recommendedSalePrice: effectiveUnitCost * 1.25,
+              recommendedSalePrice: item.sellingPrice ?? effectiveUnitCost * 1.25,
               isGranite: item.isGranite,
             ),
           );

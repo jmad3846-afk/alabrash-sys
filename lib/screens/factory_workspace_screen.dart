@@ -3259,6 +3259,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final meterQtyCtrl = TextEditingController();
     final meterPriceCtrl = TextEditingController();
     final meterTotalCostCtrl = TextEditingController();
+    final meterSellingPriceCtrl = TextEditingController();
 
     final shippingFeeCtrl = TextEditingController();
     final downPayCtrl = TextEditingController();
@@ -4108,6 +4109,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         ],
                                       ),
                                       const SizedBox(height: 8),
+                                      TextField(
+                                        controller: meterSellingPriceCtrl,
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        decoration: InputDecoration(
+                                          labelText: 'سعر بيع المتر (' + selectedMeterUnit + ' • ' + AppCurrency.symbol(invCurrency) + ')',
+                                          hintText: 'اختياري: اتركه فارغاً للتسعير التلقائي',
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
                                       Align(
                                         alignment: AlignmentDirectional.centerStart,
                                         child: ElevatedButton.icon(
@@ -4139,6 +4149,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               );
                                               return;
                                             }
+                                            final sellingText = meterSellingPriceCtrl.text.trim();
+                                            final sellingPrice = sellingText.isEmpty ? null : double.tryParse(sellingText.replaceAll(',', '.'));
+                                            if (sellingText.isNotEmpty && (sellingPrice == null || !sellingPrice.isFinite || sellingPrice < 0)) {
+                                              setSt(() => formError = 'أدخل سعر بيع متر صالحاً غير سالب.');
+                                              return;
+                                            }
                                             final mt = erp.meterTypes.firstWhere(
                                               (m) => m.id == selectedMeterTypeId,
                                               orElse: () => erp.meterTypes.first,
@@ -4156,6 +4172,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   quantity: q,
                                                   unitPrice: p,
                                                   unitCost: p,
+                                                  sellingPrice: sellingPrice,
                                                   isGranite: mt.isGranite,
                                                   itemCategory: 'meter',
                                                   meterUnit: selectedMeterUnit,
@@ -4164,6 +4181,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               meterQtyCtrl.clear();
                                               meterPriceCtrl.clear();
                                               meterTotalCostCtrl.clear();
+                                              meterSellingPriceCtrl.clear();
                                               selectedMeterTypeId = null;
                                             });
                                           },
@@ -4515,7 +4533,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   ),
                                                   subtitle: Text(
                                                     isMeter
-                                                        ? '${it.quantity.fmt} ${it.meterUnit} × ${it.unitPrice.fmt}${AppCurrency.symbol(invCurrency)} = ${(it.quantity * it.unitPrice).fmt}${AppCurrency.symbol(invCurrency)}'
+                                                        ? '${it.quantity.fmt} ${it.meterUnit} × ${it.unitPrice.fmt}${AppCurrency.symbol(invCurrency)} = ${(it.quantity * it.unitPrice).fmt}${AppCurrency.symbol(invCurrency)}${it.sellingPrice != null ? ' • سعر البيع: ${it.sellingPrice!.fmt}${AppCurrency.symbol(invCurrency)}' : ''}'
                                                         : '${it.quantity.fmt} طن × ${it.unitPrice.fmt}${AppCurrency.symbol(invCurrency)} = ${(it.quantity * it.unitPrice).fmt}${AppCurrency.symbol(invCurrency)}',
                                                   ),
                                                   trailing: IconButton(

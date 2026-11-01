@@ -429,6 +429,7 @@ void main() {
           quantity: 50.0,
           unitPrice: 30.0,
           unitCost: 30.0,
+          sellingPrice: 42.0,
           itemCategory: 'meter',
           meterUnit: 'متر مربع',
         ),
@@ -462,6 +463,7 @@ void main() {
     final expectedCost =
         ((whQtyBefore * whCostBefore) + (50.0 * 30.0)) / (whQtyBefore + 50.0);
     expect(whUpdated.netCostPerUnit, closeTo(expectedCost, 0.001));
+    expect(whUpdated.recommendedSalePrice, 42.0);
 
     // 3. Supplier debt increased by remainder
     final sup = erp.suppliers.firstWhere((s) => s.id == 'sup1');
@@ -492,6 +494,7 @@ void main() {
           quantity: 20.0,
           unitPrice: 45.0,
           unitCost: 45.0,
+          sellingPrice: 65.0,
           isGranite: true,
           itemCategory: 'meter',
           meterUnit: 'متر مربع',
@@ -516,6 +519,8 @@ void main() {
         w.grade == 'ممتاز' &&
         w.thicknessCm == 3.0);
     expect(wh.isGranite, isTrue);
+    expect(wh.recommendedSalePrice, 65.0);
+    expect(FactoryInvoiceModel.fromJson(invoice.toJson()).items.single.sellingPrice, 65.0);
     expect(wh.availableQty, greaterThanOrEqualTo(20.0));
   });
 
@@ -606,6 +611,7 @@ void main() {
 
     // Verify meter fields are displayed
     expect(find.text('بحث نوع المتر أو السماكة...'), findsOneWidget);
+    expect(find.textContaining('سعر بيع المتر ('), findsOneWidget);
     expect(find.text('وحدة القياس: '), findsOneWidget);
     expect(find.text('متر مربع (م²)'), findsOneWidget);
     expect(find.text('متر طولي (م.ط)'), findsOneWidget);

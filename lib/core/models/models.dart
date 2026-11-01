@@ -1474,6 +1474,7 @@ class FactoryInvoiceItem {
   final double quantity;
   final double unitPrice;
   final double unitCost;
+  final double? sellingPrice;
   final bool isGranite;
   final List<ServiceAttachment> services; // services attached to this line item
   final String itemCategory; // 'block' | 'meter'
@@ -1492,6 +1493,7 @@ class FactoryInvoiceItem {
     required this.quantity,
     required this.unitPrice,
     required this.unitCost,
+    this.sellingPrice,
     this.isGranite = false,
     this.services = const [],
     this.itemCategory = 'block',
@@ -1561,6 +1563,7 @@ class FactoryInvoiceItem {
     double? quantity,
     double? unitPrice,
     double? unitCost,
+    double? sellingPrice,
     bool? isGranite,
     List<ServiceAttachment>? services,
     String? itemCategory,
@@ -1578,6 +1581,7 @@ class FactoryInvoiceItem {
     quantity: quantity ?? this.quantity,
     unitPrice: unitPrice ?? this.unitPrice,
     unitCost: unitCost ?? this.unitCost,
+    sellingPrice: sellingPrice ?? this.sellingPrice,
     isGranite: isGranite ?? this.isGranite,
     services: services ?? List.of(this.services),
     itemCategory: itemCategory ?? this.itemCategory,
@@ -1597,6 +1601,7 @@ class FactoryInvoiceItem {
     'quantity': quantity,
     'unitPrice': unitPrice,
     'unitCost': unitCost,
+    'sellingPrice': sellingPrice,
     'isGranite': isGranite,
     'services': services.map((s) => s.toJson()).toList(),
     'itemCategory': itemCategory,
@@ -1617,6 +1622,7 @@ class FactoryInvoiceItem {
         quantity: (json['quantity'] as num).toDouble(),
         unitPrice: (json['unitPrice'] as num).toDouble(),
         unitCost: (json['unitCost'] as num).toDouble(),
+        sellingPrice: (json['sellingPrice'] as num?)?.toDouble(),
         isGranite: json['isGranite'] ?? false,
         services: json['services'] != null
             ? (json['services'] as List)
