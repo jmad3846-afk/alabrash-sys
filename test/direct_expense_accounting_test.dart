@@ -116,16 +116,21 @@ void main() {
         wasteValue: 0.0,
       );
 
-      expect(erp.totalCuttingExpenses - initialCuttingExpense, closeTo(expectedFee, 0.01));
+      expect(
+        erp.totalCuttingExpenses - initialCuttingExpense,
+        closeTo(0, 0.01),
+      );
 
       expect(erp.netOperatingProfit, closeTo(initialProfit, 0.01));
 
-      final whMatches = erp.factoryWarehouse.where((w) => w.typeName == 'رخام تركي');
+      final whMatches = erp.factoryWarehouse.where(
+        (w) => w.typeName == 'رخام تركي',
+      );
       expect(whMatches.isNotEmpty, isTrue);
       expect(whMatches.first.availableQty, greaterThanOrEqualTo(80.0));
     });
 
-    test('4. Single cutting operation routes cutting fee (9%) immediately to Cutting Expenses', () {
+    test('4. Single cutting estimate creates no financial expense', () {
       final erp = ERPProvider();
       final initialCuttingExpense = erp.totalCuttingExpenses;
 
@@ -158,47 +163,53 @@ void main() {
         isGranite: true,
       );
 
-      expect(erp.totalCuttingExpenses - initialCuttingExpense, closeTo(expectedFee, 0.01));
-    });
-
-    test('5. Decoupled COGS: Sales recognize revenue less delivered inventory cost', () {
-      final erp = ERPProvider();
-      final initialProfit = erp.netOperatingProfit;
-      final initialRevenues = erp.totalRevenues;
-
-      const saleQuantity = 20.0;
-      const saleUnitPrice = 45.0; // Total revenue = 900 USD
-      const unitCost = 25.0; // Old COGS = 500 USD
-
-      erp.factoryInvoices.add(
-        FactoryInvoiceModel(
-          id: 'pos_sale_1',
-          invoiceNo: 'POS-001',
-          date: DateTime.now(),
-          partyId: 'client_1',
-          partyName: 'عميل معتمد',
-          invoiceType: 'بيع_معتمد',
-          items: [
-            FactoryInvoiceItem(
-              itemId: 'fw_item',
-              description: 'ألواح رخام',
-              quantity: saleQuantity,
-              unitPrice: saleUnitPrice,
-              unitCost: unitCost,
-            ),
-          ],
-          advancePayment: 900.0,
-        ),
-      );
-
-      expect(erp.totalRevenues - initialRevenues, closeTo(900.0, 0.01));
-
-      expect(erp.netOperatingProfit - initialProfit, closeTo(400.0, 0.01));
-
       expect(
-        erp.netOperatingProfit,
-        closeTo(erp.totalRevenues - erp.totalDirectExpenses, 0.01),
+        erp.totalCuttingExpenses - initialCuttingExpense,
+        closeTo(0, 0.01),
       );
     });
+
+    test(
+      '5. Decoupled COGS: Sales recognize revenue less delivered inventory cost',
+      () {
+        final erp = ERPProvider();
+        final initialProfit = erp.netOperatingProfit;
+        final initialRevenues = erp.totalRevenues;
+
+        const saleQuantity = 20.0;
+        const saleUnitPrice = 45.0; // Total revenue = 900 USD
+        const unitCost = 25.0; // Old COGS = 500 USD
+
+        erp.factoryInvoices.add(
+          FactoryInvoiceModel(
+            id: 'pos_sale_1',
+            invoiceNo: 'POS-001',
+            date: DateTime.now(),
+            partyId: 'client_1',
+            partyName: 'عميل معتمد',
+            invoiceType: 'بيع_معتمد',
+            items: [
+              FactoryInvoiceItem(
+                itemId: 'fw_item',
+                description: 'ألواح رخام',
+                quantity: saleQuantity,
+                unitPrice: saleUnitPrice,
+                unitCost: unitCost,
+              ),
+            ],
+            advancePayment: 900.0,
+          ),
+        );
+
+        expect(erp.totalRevenues - initialRevenues, closeTo(900.0, 0.01));
+
+        expect(erp.netOperatingProfit - initialProfit, closeTo(400.0, 0.01));
+
+        expect(
+          erp.netOperatingProfit,
+          closeTo(erp.totalRevenues - erp.totalDirectExpenses, 0.01),
+        );
+      },
+    );
   });
 }

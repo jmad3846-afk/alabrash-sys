@@ -2293,7 +2293,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           ),
                         ),
                         Text(
-                          'التكلفة الصافية: ${cut.netCostPerUnit.fmt}\$',
+                          'التكلفة الفعلية: ${((cut.inputTons * cut.baseTonCost + cut.allocatedDirectExpenses) / cut.totalOutputArea).fmt} • التقديرية: ${cut.estimatedUnitCost.fmt}',
                           style: const TextStyle(
                             fontSize: 11,
                             color: AppColors.accentPrimary,

@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets(
-    'expense form requires classification and capitalizes linked tonnage',
+    'expense form requires classification and capitalizes the selected cutting batch',
     (tester) async {
       tester.view.physicalSize = const Size(1400, 1100);
       tester.view.devicePixelRatio = 1;
@@ -34,6 +34,19 @@ void main() {
         tonCost: 100,
       );
       erp.factoryBlocks.add(block);
+      erp.executeCuttingOperation(
+        selectedBlocks: [block],
+        cuttingFeePercent: .1,
+        targetTypeName: block.typeName,
+        targetGrade: block.grade,
+        thicknessCm: 2,
+        category: 'متر مربع',
+        totalOutputArea: 80,
+        wasteValue: 0,
+        recommendedSalePrice: 20,
+        isGranite: false,
+      );
+      final batchId = erp.cuttingOperations.last.id;
       final cash = erp.mainCashBox;
       final pnl = erp.netOperatingProfit;
       await tester.pumpWidget(
@@ -47,12 +60,14 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.byTooltip('إضافة مصروف'));
+      await tester.tap(find.byTooltip('إضافة مصروف').first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('إضافة المصروف وخصم قيمته'));
       await tester.pump();
       expect(
-        find.text('حدد نوع المصروف وتحقق من المبلغ والكمية والمستفيد وحصته.'),
+        find.text(
+          'حدد نوع المصروف وتحقق من المبلغ وعملية القص والمستفيد وحصته.',
+        ),
         findsOneWidget,
       );
       expect(erp.mainCashBox, cash);
@@ -66,21 +81,23 @@ void main() {
       );
       final batch = find.widgetWithText(
         DropdownButtonFormField<String>,
-        'البلوك / دفعة المخزون *',
+        'اختيار عملية القص *',
       );
       await tester.ensureVisible(batch);
       await tester.tap(batch);
       await tester.pumpAndSettle();
-      await tester.tap(find.textContaining('LINKED-001').last);
+      await tester.tap(find.textContaining(batchId).last);
       await tester.pumpAndSettle();
-      final tons = find.widgetWithText(TextField, 'عدد الطونات *');
-      await tester.ensureVisible(tons);
-      await tester.enterText(tons, '10');
       await tester.tap(find.text('إضافة المصروف وخصم قيمته'));
       await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsNothing);
       expect(erp.mainCashBox, cash - 100);
-      expect(block.tonCost, 110);
+      expect(
+        erp.factoryWarehouse
+            .firstWhere((w) => w.batchUnitsPerUnit.containsKey(batchId))
+            .netCostPerUnit,
+        13.75,
+      );
       expect(erp.netOperatingProfit, pnl);
       expect(
         erp.expenseRecords.single.expenseType,

@@ -276,7 +276,7 @@ class _CuttingCalculatorScreenState extends State<CuttingCalculatorScreen> {
                   child: DropdownButtonFormField<double>(
                     initialValue: plan.feePercent,
                     decoration: const InputDecoration(
-                        labelText: 'أجرة القص %'),
+                        labelText: 'نسبة تقديرية للقص % (استرشادية)'),
                     items: const [
                       DropdownMenuItem(
                           value: 0.09, child: Text('9%')),
@@ -386,7 +386,7 @@ class _CuttingCalculatorScreenState extends State<CuttingCalculatorScreen> {
                                     fontWeight: FontWeight.bold)),
                             const SizedBox(height: 4),
                             Text(
-                                'سعر المتر بعد القص: ${net.fmt} \$',
+                                'سعر التكلفة التقديري المبدئي: ${net.fmt} \$',
                                 style: const TextStyle(
                                     color: AppColors.successGreen,
                                     fontWeight: FontWeight.bold)),
@@ -626,7 +626,7 @@ class _CuttingCalculatorScreenState extends State<CuttingCalculatorScreen> {
                   controller: e['netCtrl'] as TextEditingController,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                      labelText: 'سعر المتر بعد القص', isDense: true),
+                      labelText: 'سعر التكلفة التقديري المبدئي', isDense: true),
                 ),
               ),
               const SizedBox(width: 8),

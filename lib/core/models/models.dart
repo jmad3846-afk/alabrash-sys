@@ -1,3 +1,9 @@
+Map<String, double> _batchUnits(dynamic raw) => raw is Map
+    ? raw.map(
+        (key, value) => MapEntry(key.toString(), (value as num).toDouble()),
+      )
+    : <String, double>{};
+
 // ==========================================
 // 0. CURRENCY HELPER (dual-currency: USD $ / SYP ل.س)
 // Every cash box, debt and invoice/order carries a currency.
@@ -547,6 +553,7 @@ class ExpenseRecordModel {
   static const supplierPayment = 'supplier_payment';
   static const freight = 'capitalized_freight';
   final String? expenseType;
+  final String cuttingBatchId;
   final String inventorySource;
   final String inventoryId;
   final String capitalizedInventoryId;
@@ -565,6 +572,7 @@ class ExpenseRecordModel {
 
   ExpenseRecordModel({
     this.expenseType,
+    this.cuttingBatchId = '',
     this.inventorySource = '',
     this.inventoryId = '',
     this.capitalizedInventoryId = '',
@@ -584,6 +592,7 @@ class ExpenseRecordModel {
 
   Map<String, dynamic> toJson() => {
     'expenseType': expenseType,
+    'cuttingBatchId': cuttingBatchId,
     'inventorySource': inventorySource,
     'inventoryId': inventoryId,
     'capitalizedInventoryId': capitalizedInventoryId,
@@ -604,6 +613,7 @@ class ExpenseRecordModel {
   factory ExpenseRecordModel.fromJson(Map<String, dynamic> json) =>
       ExpenseRecordModel(
         expenseType: json['expenseType'] as String?,
+        cuttingBatchId: json['cuttingBatchId'] ?? '',
         inventorySource: json['inventorySource'] ?? '',
         inventoryId: json['inventoryId'] ?? '',
         capitalizedInventoryId: json['capitalizedInventoryId'] ?? '',
@@ -1297,6 +1307,7 @@ class FactoryBlockModel {
 // ==========================================
 class FactoryWarehouseModel {
   final String currency;
+  Map<String, double> batchUnitsPerUnit;
   final String id;
   final String typeName;
   final String grade;
@@ -1309,6 +1320,7 @@ class FactoryWarehouseModel {
 
   FactoryWarehouseModel({
     this.currency = AppCurrency.usd,
+    this.batchUnitsPerUnit = const {},
     required this.id,
     required this.typeName,
     required this.grade,
@@ -1324,6 +1336,7 @@ class FactoryWarehouseModel {
 
   Map<String, dynamic> toJson() => {
     'currency': currency,
+    'batchUnitsPerUnit': batchUnitsPerUnit,
     'id': id,
     'typeName': typeName,
     'grade': grade,
@@ -1338,6 +1351,7 @@ class FactoryWarehouseModel {
   factory FactoryWarehouseModel.fromJson(Map<String, dynamic> json) =>
       FactoryWarehouseModel(
         currency: AppCurrency.normalize(json['currency']),
+        batchUnitsPerUnit: _batchUnits(json['batchUnitsPerUnit']),
         id: json['id'],
         typeName: json['typeName'],
         grade: json['grade'],
@@ -1354,6 +1368,11 @@ class FactoryWarehouseModel {
 // 7. CUTTING OPERATION LOG
 // ==========================================
 class CuttingOperationModel {
+  final String currency;
+  final String sourceSection;
+  List<String> outputItemIds;
+  final double estimatedUnitCost;
+  double allocatedDirectExpenses;
   final String id;
   final DateTime timestamp;
   final double inputTons;
@@ -1370,6 +1389,11 @@ class CuttingOperationModel {
   final bool isGranite;
 
   CuttingOperationModel({
+    this.currency = AppCurrency.usd,
+    this.sourceSection = 'factory',
+    this.outputItemIds = const [],
+    this.estimatedUnitCost = 0,
+    this.allocatedDirectExpenses = 0,
     required this.id,
     required this.timestamp,
     required this.inputTons,
@@ -1387,6 +1411,11 @@ class CuttingOperationModel {
   });
 
   Map<String, dynamic> toJson() => {
+    'currency': currency,
+    'sourceSection': sourceSection,
+    'outputItemIds': outputItemIds,
+    'estimatedUnitCost': estimatedUnitCost,
+    'allocatedDirectExpenses': allocatedDirectExpenses,
     'id': id,
     'timestamp': timestamp.toIso8601String(),
     'inputTons': inputTons,
@@ -1405,6 +1434,14 @@ class CuttingOperationModel {
 
   factory CuttingOperationModel.fromJson(Map<String, dynamic> json) =>
       CuttingOperationModel(
+        currency: AppCurrency.normalize(json['currency']),
+        sourceSection: json['sourceSection'] ?? 'factory',
+        outputItemIds: List<String>.from(json['outputItemIds'] ?? []),
+        estimatedUnitCost:
+            (json['estimatedUnitCost'] as num?)?.toDouble() ??
+            (json['netCostPerUnit'] as num).toDouble(),
+        allocatedDirectExpenses:
+            (json['allocatedDirectExpenses'] as num?)?.toDouble() ?? 0,
         id: json['id'],
         timestamp: DateTime.parse(json['timestamp']),
         inputTons: (json['inputTons'] as num).toDouble(),
@@ -1426,6 +1463,7 @@ class CuttingOperationModel {
 // 8. FACTORY INVOICES (Purchase & POS Sales)
 // ==========================================
 class FactoryInvoiceItem {
+  Map<String, double> batchUnitsPerUnit;
   final String itemId; // warehouse or block ID
   final String description;
   final String typeName; // block type (e.g. بازلت)
@@ -1443,6 +1481,7 @@ class FactoryInvoiceItem {
   final String meterUnit; // 'متر مربع' | 'متر طولي' | 'متر مكعب'
 
   FactoryInvoiceItem({
+    this.batchUnitsPerUnit = const {},
     required this.itemId,
     required this.description,
     this.typeName = '',
@@ -1511,6 +1550,7 @@ class FactoryInvoiceItem {
   double get grandTotal => totalPrice + servicesTotal;
 
   FactoryInvoiceItem copyWith({
+    Map<String, double>? batchUnitsPerUnit,
     String? itemId,
     String? description,
     String? typeName,
@@ -1527,6 +1567,7 @@ class FactoryInvoiceItem {
     double? thicknessCm,
     String? meterUnit,
   }) => FactoryInvoiceItem(
+    batchUnitsPerUnit: batchUnitsPerUnit ?? this.batchUnitsPerUnit,
     itemId: itemId ?? this.itemId,
     description: description ?? this.description,
     typeName: typeName ?? this.typeName,
@@ -1545,6 +1586,7 @@ class FactoryInvoiceItem {
   );
 
   Map<String, dynamic> toJson() => {
+    'batchUnitsPerUnit': batchUnitsPerUnit,
     'itemId': itemId,
     'description': description,
     'typeName': typeName,
@@ -1564,6 +1606,7 @@ class FactoryInvoiceItem {
 
   factory FactoryInvoiceItem.fromJson(Map<String, dynamic> json) =>
       FactoryInvoiceItem(
+        batchUnitsPerUnit: _batchUnits(json['batchUnitsPerUnit']),
         itemId: json['itemId'] ?? '',
         description: json['description'] ?? '',
         typeName: json['typeName'] ?? json['description'] ?? '',
@@ -1775,6 +1818,7 @@ class FactoryInvoiceModel {
 // ==========================================
 class WorkshopStockModel {
   final String currency;
+  Map<String, double> batchUnitsPerUnit;
   final String id;
   final String typeName;
   final String grade;
@@ -1787,6 +1831,7 @@ class WorkshopStockModel {
 
   WorkshopStockModel({
     this.currency = AppCurrency.usd,
+    this.batchUnitsPerUnit = const {},
     required this.id,
     required this.typeName,
     required this.grade,
@@ -1800,6 +1845,7 @@ class WorkshopStockModel {
 
   Map<String, dynamic> toJson() => {
     'currency': currency,
+    'batchUnitsPerUnit': batchUnitsPerUnit,
     'id': id,
     'typeName': typeName,
     'grade': grade,
@@ -1814,6 +1860,7 @@ class WorkshopStockModel {
   factory WorkshopStockModel.fromJson(Map<String, dynamic> json) =>
       WorkshopStockModel(
         currency: AppCurrency.normalize(json['currency']),
+        batchUnitsPerUnit: _batchUnits(json['batchUnitsPerUnit']),
         id: json['id'],
         typeName: json['typeName'],
         grade: json['grade'],
@@ -1828,6 +1875,8 @@ class WorkshopStockModel {
 
 /// One material line inside a tailored piece (materials or scrap source).
 class TailoringLineItem {
+  Map<String, double> batchUnitsPerUnit;
+  final String currency;
   final String id;
   final String source; // 'materials' | 'scrap'
   final String stockId; // workshopStock id or scrap id
@@ -1845,6 +1894,8 @@ class TailoringLineItem {
   final List<ServiceAttachment> services;
 
   TailoringLineItem({
+    this.batchUnitsPerUnit = const {},
+    this.currency = AppCurrency.usd,
     required this.id,
     required this.source,
     required this.stockId,
@@ -1878,14 +1929,17 @@ class TailoringLineItem {
 
   double get materialCost => area * netCostPerMeter;
   double get servicesTotal => services.fold(0.0, (s, e) => s + e.price);
-  double get netCostPerMeterAfterServices =>
+  double get estimatedCostPerMeter =>
       area > 0 ? (materialCost + servicesTotal) / area : netCostPerMeter;
+  double get netCostPerMeterAfterServices => netCostPerMeter;
   double get lineTotal =>
       (area * sellingPricePerMeter) + (laborPerMeter * area) + servicesTotal;
   String get description =>
       typeName.isNotEmpty ? '$typeName $grade'.trim() : 'بند تفصيل';
 
   Map<String, dynamic> toJson() => {
+    'batchUnitsPerUnit': batchUnitsPerUnit,
+    'currency': currency,
     'id': id,
     'source': source,
     'stockId': stockId,
@@ -1905,6 +1959,8 @@ class TailoringLineItem {
 
   factory TailoringLineItem.fromJson(Map<String, dynamic> json) =>
       TailoringLineItem(
+        batchUnitsPerUnit: _batchUnits(json['batchUnitsPerUnit']),
+        currency: AppCurrency.normalize(json['currency']),
         id: json['id'],
         source: json['source'] ?? 'materials',
         stockId: json['stockId'] ?? '',
@@ -1930,6 +1986,8 @@ class TailoringLineItem {
 }
 
 class WorkshopTailoringModel {
+  Map<String, double> batchUnitsPerUnit;
+  final String currency;
   final String id;
   final String name;
   final String complexity; // 'بسيط' | 'معقد' | 'جاهزة'
@@ -1940,6 +1998,7 @@ class WorkshopTailoringModel {
   final String unitCategory;
   final double measurementCount;
   double quantity;
+  double? actualUnitCost;
   double materialNetCost;
   final double laborCostPerMeter;
   final List<ServiceAttachment> attachedServices;
@@ -1949,6 +2008,8 @@ class WorkshopTailoringModel {
   final bool isGranite;
 
   WorkshopTailoringModel({
+    this.batchUnitsPerUnit = const {},
+    this.currency = AppCurrency.usd,
     required this.id,
     required this.name,
     required this.complexity,
@@ -1959,6 +2020,7 @@ class WorkshopTailoringModel {
     this.unitCategory = 'متر مربع',
     this.measurementCount = 1.0,
     required this.quantity,
+    this.actualUnitCost,
     required this.materialNetCost,
     this.laborCostPerMeter = 0.0,
     this.attachedServices = const [],
@@ -1985,12 +2047,17 @@ class WorkshopTailoringModel {
       lineItems.fold(0.0, (s, l) => s + l.servicesTotal);
   double get linesMaterialCost =>
       lineItems.fold(0.0, (s, l) => s + l.materialCost);
-  double get totalNetCost =>
+  double get estimatedTotalCost =>
       materialNetCost + linesMaterialCost + totalLaborCost + totalServicesCost;
+  double get totalNetCost => actualUnitCost != null
+      ? actualUnitCost! * quantity
+      : materialNetCost + linesMaterialCost;
   double get costPerMeterAfterServices =>
       quantity > 0 ? (totalNetCost / quantity) : 0.0;
 
   Map<String, dynamic> toJson() => {
+    'batchUnitsPerUnit': batchUnitsPerUnit,
+    'currency': currency,
     'id': id,
     'name': name,
     'complexity': complexity,
@@ -2001,6 +2068,7 @@ class WorkshopTailoringModel {
     'unitCategory': unitCategory,
     'measurementCount': measurementCount,
     'quantity': quantity,
+    'actualUnitCost': actualUnitCost,
     'materialNetCost': materialNetCost,
     'laborCostPerMeter': laborCostPerMeter,
     'attachedServices': attachedServices.map((s) => s.toJson()).toList(),
@@ -2027,6 +2095,8 @@ class WorkshopTailoringModel {
     final legacyLabor = (json['laborCostPerPiece'] ?? 0.0).toDouble();
     final legacySellingPrice = (json['sellingPrice'] as num).toDouble();
     return WorkshopTailoringModel(
+      batchUnitsPerUnit: _batchUnits(json['batchUnitsPerUnit']),
+      currency: AppCurrency.normalize(json['currency']),
       id: json['id'],
       name: json['name'],
       complexity: json['complexity'] ?? 'بسيط',
@@ -2039,6 +2109,7 @@ class WorkshopTailoringModel {
       quantity: hasMeterUnit || measurePerItem <= 0
           ? legacyQuantity
           : legacyQuantity * measurePerItem,
+      actualUnitCost: (json['actualUnitCost'] as num?)?.toDouble(),
       materialNetCost: (json['materialNetCost'] as num).toDouble(),
       laborCostPerMeter: json['laborCostPerMeter'] != null
           ? (json['laborCostPerMeter'] as num).toDouble()
@@ -2097,6 +2168,7 @@ double _legacyLaborPerMeter(Map<String, dynamic> json) {
 // 10. SCRAP & EXTRA ITEMS (صندوق الزيادات)
 // ==========================================
 class ScrapItemModel {
+  Map<String, double> batchUnitsPerUnit;
   final String id;
   final String description;
   // Initial price (التكلفة الأولية). Mutable so later surplus costs can adjust it.
@@ -2109,6 +2181,7 @@ class ScrapItemModel {
   double quantity;
 
   ScrapItemModel({
+    this.batchUnitsPerUnit = const {},
     required this.id,
     required this.description,
     required this.baseCost,
@@ -2128,6 +2201,7 @@ class ScrapItemModel {
       : (baseCost <= 0 ? 1.0 : (sellingPrice - baseCost) / sellingPrice);
 
   Map<String, dynamic> toJson() => {
+    'batchUnitsPerUnit': batchUnitsPerUnit,
     'id': id,
     'description': description,
     'baseCost': baseCost,
@@ -2139,6 +2213,7 @@ class ScrapItemModel {
   };
 
   factory ScrapItemModel.fromJson(Map<String, dynamic> json) => ScrapItemModel(
+    batchUnitsPerUnit: _batchUnits(json['batchUnitsPerUnit']),
     id: json['id'],
     description: json['description'],
     baseCost: (json['baseCost'] as num).toDouble(),
@@ -2221,12 +2296,13 @@ class SurplusCostModel {
 // 11. WASTE LOG (هدر طبيعي وهدر غير طبيعي)
 // ==========================================
 class WasteLogModel {
+  Map<String, double> batchUnitsPerUnit;
   final String id;
   final DateTime date;
   final String wasteType; // 'هدر طبيعي' | 'هدر غير طبيعي'
   final String itemDescription;
   final double quantity;
-  final double cost;
+  double cost;
   final String destructionVoucherNo; // سند إتلاف for unnatural waste
   final String currency; // AppCurrency.usd | AppCurrency.syp
   final String
@@ -2235,6 +2311,7 @@ class WasteLogModel {
   final String unit; // 'متر مربع' | 'متر مكعب' | 'قطعة'
 
   WasteLogModel({
+    this.batchUnitsPerUnit = const {},
     required this.id,
     required this.date,
     required this.wasteType,
@@ -2249,6 +2326,7 @@ class WasteLogModel {
   });
 
   Map<String, dynamic> toJson() => {
+    'batchUnitsPerUnit': batchUnitsPerUnit,
     'id': id,
     'date': date.toIso8601String(),
     'wasteType': wasteType,
@@ -2263,6 +2341,7 @@ class WasteLogModel {
   };
 
   factory WasteLogModel.fromJson(Map<String, dynamic> json) => WasteLogModel(
+    batchUnitsPerUnit: _batchUnits(json['batchUnitsPerUnit']),
     id: json['id'],
     date: DateTime.parse(json['date']),
     wasteType: json['wasteType'],
@@ -2389,6 +2468,7 @@ class RawMaterialTailoringAssignment {
 // Each line item belongs to a specific source and has its own dedicated services.
 // ==========================================
 class WorkshopInvoiceItem {
+  Map<String, double> batchUnitsPerUnit;
   final String id;
   final String
   sourceType; // 'طلب معمل' | 'بيع خياطة بسيطة' | 'بيع خياطة معقدة' | 'بيع قطع إضافية' | 'بيع مواد خام من المعمل'
@@ -2412,6 +2492,7 @@ class WorkshopInvoiceItem {
   final double count;
 
   WorkshopInvoiceItem({
+    this.batchUnitsPerUnit = const {},
     required this.id,
     required this.sourceType,
     this.sourceId = '',
@@ -2477,6 +2558,7 @@ class WorkshopInvoiceItem {
   double get grandTotal => agreedPrice + servicesTotal;
 
   WorkshopInvoiceItem copyWith({
+    Map<String, double>? batchUnitsPerUnit,
     String? id,
     String? sourceType,
     String? sourceId,
@@ -2496,6 +2578,7 @@ class WorkshopInvoiceItem {
     double? heightCm,
     double? count,
   }) => WorkshopInvoiceItem(
+    batchUnitsPerUnit: batchUnitsPerUnit ?? this.batchUnitsPerUnit,
     id: id ?? this.id,
     sourceType: sourceType ?? this.sourceType,
     sourceId: sourceId ?? this.sourceId,
@@ -2517,6 +2600,7 @@ class WorkshopInvoiceItem {
   );
 
   Map<String, dynamic> toJson() => {
+    'batchUnitsPerUnit': batchUnitsPerUnit,
     'id': id,
     'sourceType': sourceType,
     'sourceId': sourceId,
@@ -2539,6 +2623,7 @@ class WorkshopInvoiceItem {
 
   factory WorkshopInvoiceItem.fromJson(Map<String, dynamic> json) =>
       WorkshopInvoiceItem(
+        batchUnitsPerUnit: _batchUnits(json['batchUnitsPerUnit']),
         id: json['id'] ?? '',
         sourceType: json['sourceType'] ?? 'طلبية معمل',
         sourceId: json['sourceId'] ?? '',
@@ -2569,6 +2654,7 @@ class WorkshopInvoiceItem {
 // Supports multiple line items from multiple sources, each with dedicated services.
 // ==========================================
 class WorkshopInvoiceModel {
+  Map<String, double> batchUnitsPerUnit;
   final String id;
   final String invoiceNo;
   final DateTime date;
@@ -2596,6 +2682,7 @@ class WorkshopInvoiceModel {
   final String currency; // AppCurrency.usd | AppCurrency.syp
 
   WorkshopInvoiceModel({
+    this.batchUnitsPerUnit = const {},
     required this.id,
     required this.invoiceNo,
     required this.date,
@@ -2665,6 +2752,7 @@ class WorkshopInvoiceModel {
   bool get isDue => remainingBalance > 0.01;
 
   Map<String, dynamic> toJson() => {
+    'batchUnitsPerUnit': batchUnitsPerUnit,
     'id': id,
     'invoiceNo': invoiceNo,
     'date': date.toIso8601String(),
@@ -2730,6 +2818,7 @@ class WorkshopInvoiceModel {
         : parsedItems.expand((e) => e.services).toList();
 
     return WorkshopInvoiceModel(
+      batchUnitsPerUnit: _batchUnits(json['batchUnitsPerUnit']),
       id: json['id'],
       invoiceNo: json['invoiceNo'],
       date: DateTime.parse(json['date']),

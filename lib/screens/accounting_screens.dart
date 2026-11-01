@@ -804,8 +804,6 @@ class BalanceSheetScreen extends StatelessWidget {
               ? entry.workerSalariesValue
               : erp.workersTotalDebts);
     final wagesSyp = historicalWagesSyp + erp.workersTotalDebtsSyp;
-    final liabilitiesUsd = suppliersUsd + wagesUsd;
-    final liabilitiesSyp = suppliersSyp + wagesSyp;
     final capitalUsd = erp.partners.fold<double>(
       0,
       (sum, partner) => sum + partner.injectedCapital,
@@ -814,16 +812,8 @@ class BalanceSheetScreen extends StatelessWidget {
       0,
       (sum, partner) => sum + partner.injectedCapitalSyp,
     );
-    final retainedEarningsUsd =
-        assetsUsd -
-        liabilitiesUsd -
-        capitalUsd +
-        entry.retainedWithdrawnOf(AppCurrency.usd);
-    final retainedEarningsSyp =
-        assetsSyp -
-        liabilitiesSyp -
-        capitalSyp +
-        entry.retainedWithdrawnOf(AppCurrency.syp);
+    final retainedEarningsUsd = erp.incomeSummaryNetProfitOf(AppCurrency.usd);
+    final retainedEarningsSyp = erp.incomeSummaryNetProfitOf(AppCurrency.syp);
     final debitRows = <(String, double, double)>[
       ('الأصول الثابتة', fixedUsd, fixedSyp),
       ('الصندوق الرئيسي', erp.mainCashBox, erp.mainCashBoxSyp),
@@ -851,6 +841,11 @@ class BalanceSheetScreen extends StatelessWidget {
       ),
       ('الأرباح والخسائر المتراكمة', retainedEarningsUsd, retainedEarningsSyp),
     ];
+    final creditsUsd = creditRows.fold<double>(0, (sum, row) => sum + row.$2);
+    final creditsSyp = creditRows.fold<double>(0, (sum, row) => sum + row.$3);
+    final isBalanced =
+        (assetsUsd - creditsUsd).abs() < .01 &&
+        (assetsSyp - creditsSyp).abs() < .01;
     final rowCount = debitRows.length > creditRows.length
         ? debitRows.length
         : creditRows.length;
@@ -940,14 +935,20 @@ class BalanceSheetScreen extends StatelessWidget {
           ),
           Card(
             child: ListTile(
-              title: const Text(
-                'إجمالي المدين = إجمالي الدائن',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              title: Text(
+                isBalanced ? 'إجمالي المدين = إجمالي الدائن' : 'فرق الميزانية',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              subtitle: Text('USD: ${assetsUsd.fmt} • SYP: ${assetsSyp.fmt}'),
-              trailing: const Icon(
-                Icons.check_circle_outline,
-                color: AppColors.successGreen,
+              subtitle: Text(
+                'المدين: ${AppCurrency.dual(assetsUsd, assetsSyp)}\n'
+                'الدائن: ${AppCurrency.dual(creditsUsd, creditsSyp)}\n'
+                'الفرق: ${AppCurrency.dual(assetsUsd - creditsUsd, assetsSyp - creditsSyp)}',
+              ),
+              trailing: Icon(
+                isBalanced ? Icons.check_circle_outline : Icons.info_outline,
+                color: isBalanced
+                    ? AppColors.successGreen
+                    : AppColors.dangerWaste,
               ),
             ),
           ),
@@ -1487,52 +1488,35 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
     final share = TextEditingController();
     final description = TextEditingController();
     final person = TextEditingController();
-    final quantity = TextEditingController();
     var currency = AppCurrency.usd;
     var box = 'main';
     String? staffId;
-    String? classification;
-    String? inventoryKey;
+    String? classification = type.name == 'مصروف قص وتصنيع مباشر'
+        ? ExpenseRecordModel.manufacturing
+        : null;
+    String? cuttingBatchId;
     String? error;
     final route = DialogRoute<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, update) {
           final choices = <String, String>{
-            for (final b in erp.factoryBlocks.where(
-              (b) => b.weightTons > 0 && b.currency == currency,
+            for (final batch in erp.cuttingOperations.where(
+              (b) =>
+                  b.currency == currency &&
+                  b.totalOutputArea > 0 &&
+                  b.outputItemIds.isNotEmpty,
             ))
-              'block:' + b.id:
-                  b.blockCode +
+              batch.id:
+                  batch.id +
                   ' • ' +
-                  b.typeName +
+                  batch.targetTypeName +
                   ' • ' +
-                  b.weightTons.fmt +
-                  ' طن',
-            for (final w in erp.factoryWarehouse.where(
-              (w) => w.availableQty > 0 && w.currency == currency,
-            ))
-              'factory_warehouse:' + w.id:
-                  'مستودع المصنع • ' +
-                  w.typeName +
+                  (batch.sourceSection == 'factory' ? 'المصنع' : 'المعمل') +
                   ' • ' +
-                  w.availableQty.fmt +
+                  batch.totalOutputArea.fmt +
                   ' ' +
-                  w.category +
-                  ' • ' +
-                  w.id,
-            for (final w in erp.workshopStock.where(
-              (w) => w.availableQty > 0 && w.currency == currency,
-            ))
-              'workshop_stock:' + w.id:
-                  'مخزون المعمل • ' +
-                  w.typeName +
-                  ' • ' +
-                  w.availableQty.fmt +
-                  ' ' +
-                  w.category +
-                  ' • ' +
-                  w.id,
+                  batch.category,
           };
           return AlertDialog(
             title: Text('مصروف جديد • ' + type.name),
@@ -1587,20 +1571,20 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                       ],
                       onChanged: (v) => update(() {
                         currency = v!;
-                        inventoryKey = null;
+                        cuttingBatchId = null;
                       }),
                     ),
                     if (classification == ExpenseRecordModel.manufacturing) ...[
                       const SizedBox(height: 8),
                       const Text(
-                        'تضاف التكلفة للمخزون المحدد وتدخل تكلفة البضاعة المباعة عند البيع فقط.',
+                        'يوزع المبلغ الفعلي على جميع مخرجات عملية القص المحددة، ويحدث تكلفة المخزون والمباع دون تكرار.',
                       ),
                       DropdownButtonFormField<String>(
                         key: ValueKey(currency),
-                        initialValue: inventoryKey,
+                        initialValue: cuttingBatchId,
                         isExpanded: true,
                         decoration: const InputDecoration(
-                          labelText: 'البلوك / دفعة المخزون *',
+                          labelText: 'اختيار عملية القص *',
                         ),
                         items: choices.entries
                             .map(
@@ -1613,21 +1597,12 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                               ),
                             )
                             .toList(),
-                        onChanged: (v) => update(() => inventoryKey = v),
-                      ),
-                      TextField(
-                        controller: quantity,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: inventoryKey?.startsWith('block:') == true
-                              ? 'عدد الطونات *'
-                              : 'الكمية المصنعة (بوحدة المخزون) *',
-                        ),
+                        onChanged: (v) => update(() => cuttingBatchId = v),
                       ),
                       if (choices.isEmpty)
-                        const Text('لا يوجد مخزون متاح بهذه العملة.'),
+                        const Text(
+                          'لا توجد عمليات قص مرتبطة بمخرجات بهذه العملة.',
+                        ),
                     ],
                     DropdownButtonFormField<String>(
                       initialValue: box,
@@ -1718,10 +1693,6 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                   final personShare = share.text.trim().isEmpty
                       ? 0.0
                       : parse(share);
-                  final tons =
-                      classification == ExpenseRecordModel.manufacturing
-                      ? parse(quantity)
-                      : 0.0;
                   if (classification == null ||
                       value == null ||
                       !value.isFinite ||
@@ -1732,17 +1703,13 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                       personShare > value ||
                       (personShare > 0 && person.text.trim().isEmpty) ||
                       (classification == ExpenseRecordModel.manufacturing &&
-                          (inventoryKey == null ||
-                              tons == null ||
-                              !tons.isFinite ||
-                              tons <= 0))) {
+                          (cuttingBatchId == null))) {
                     update(
                       () => error =
-                          'حدد نوع المصروف وتحقق من المبلغ والكمية والمستفيد وحصته.',
+                          'حدد نوع المصروف وتحقق من المبلغ وعملية القص والمستفيد وحصته.',
                     );
                     return;
                   }
-                  final separator = inventoryKey?.indexOf(':') ?? -1;
                   try {
                     erp.addExpenseRecord(
                       ExpenseRecordModel(
@@ -1758,13 +1725,10 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                         personShare: personShare,
                         description: description.text.trim(),
                         cashBox: box,
-                        inventorySource: separator >= 0
-                            ? inventoryKey!.substring(0, separator)
+                        cuttingBatchId:
+                            classification == ExpenseRecordModel.manufacturing
+                            ? cuttingBatchId!
                             : '',
-                        inventoryId: separator >= 0
-                            ? inventoryKey!.substring(separator + 1)
-                            : '',
-                        manufacturingQuantity: tons ?? 0,
                       ),
                     );
                     if (staffId != null && personShare > 0) {
@@ -1792,7 +1756,6 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
     share.dispose();
     description.dispose();
     person.dispose();
-    quantity.dispose();
   }
 
   void _message(String value) => ScaffoldMessenger.of(
@@ -2016,7 +1979,7 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
               ),
               subtitle: Text(
                 '${erp.expenseTreatmentOf(expense) == ExpenseRecordModel.manufacturing
-                    ? 'قص وتصنيع مرسمل • كمية ${expense.manufacturingQuantity.fmt}'
+                    ? 'قص وتصنيع فعلي • عملية ${expense.cuttingBatchId}'
                     : erp.isOperatingExpense(expense)
                     ? 'مصروف تشغيلي'
                     : 'حركة رأسمالية / تسوية'} • ${expense.description} • ${expense.personName.isEmpty ? 'دون مستفيد' : expense.personName}${expense.personShare > 0 ? ' • الحصة ${expense.personShare.fmt}' : ''}${expense.staffId != null ? ' • مسجل في القوى العاملة' : ''} • مخصوم من: ${expense.cashBox == 'scrap'

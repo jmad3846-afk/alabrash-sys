@@ -7,6 +7,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 
 class ERPProvider extends ChangeNotifier {
+  @override
+  void notifyListeners() {
+    syncCuttingBatchCatalog();
+    super.notifyListeners();
+  }
+
   // Opening Entry
   late OpeningEntryModel openingEntry;
 
@@ -227,6 +233,7 @@ class ERPProvider extends ChangeNotifier {
 
   ERPProvider() {
     _initDefaultSeedData();
+    syncCuttingBatchCatalog();
     loadFuture = loadFromDisk();
   }
 
@@ -1851,7 +1858,7 @@ class ERPProvider extends ChangeNotifier {
       ),
       ExpenseTypeModel(
         id: cuttingExpenseTypeId,
-        name: 'مصاريف القص والتصنيع (Cutting Expenses)',
+        name: 'مصروف قص وتصنيع مباشر',
         description: 'أجور ونسب قص وتصنيع كتل الرخام والغرانيت',
       ),
       ExpenseTypeModel(
@@ -2193,6 +2200,430 @@ class ERPProvider extends ChangeNotifier {
     refresh();
   }
 
+  Map<String, double> _combineBatchUnits(
+    Iterable<(Map<String, double>, double)> parts,
+    double quantity,
+  ) {
+    final result = <String, double>{};
+    if (quantity <= 0) return result;
+    for (final (units, weight) in parts) {
+      for (final e in units.entries) {
+        result[e.key] = (result[e.key] ?? 0) + e.value * weight / quantity;
+      }
+    }
+    return result;
+  }
+
+  void _consumeTailoringInventory(
+    WorkshopTailoringModel t,
+    double quantity,
+    double unitCost,
+    Map<String, double> units,
+  ) {
+    final remaining = (t.quantity - quantity).clamp(0.0, double.infinity);
+    final capital = t.totalNetCost - quantity * unitCost;
+    t.batchUnitsPerUnit = remaining > .000001
+        ? _combineBatchUnits([
+            (t.batchUnitsPerUnit, t.quantity),
+            (units, -quantity),
+          ], remaining)
+        : Map.of(t.batchUnitsPerUnit);
+    t.actualUnitCost = remaining > .000001
+        ? capital.clamp(0.0, double.infinity) / remaining
+        : t.costPerMeterAfterServices;
+    t.quantity = remaining;
+  }
+
+  WorkshopInvoiceItem _priceWorkshopItem(
+    WorkshopInvoiceItem item,
+    String currency,
+  ) {
+    if ([
+      'بيع مواد خام من المعمل',
+      'مواد خام',
+      'raw_materials',
+    ].contains(item.sourceType)) {
+      final stock = _firstOrNull(
+        workshopStock.where(
+          (w) => w.id == item.sourceId && w.currency == currency,
+        ),
+      );
+      if (stock != null)
+        return item.copyWith(
+          netCost: stock.netCostPerUnit * item.quantity,
+          batchUnitsPerUnit: Map.of(stock.batchUnitsPerUnit),
+        );
+    }
+    if ([
+      'بيع خياطة بسيطة',
+      'تفصيل بسيط',
+      'بيع خياطة معقدة',
+      'تفصيل معقد',
+      'simple_tailoring',
+      'complex_tailoring',
+    ].contains(item.sourceType)) {
+      final t = _firstOrNull(
+        [
+          ...simpleTailorings,
+          ...complexTailorings,
+        ].where((t) => t.id == item.sourceId && t.currency == currency),
+      );
+      if (t != null) {
+        final line = _firstOrNull(
+          t.lineItems.where((l) => l.id == item.sourceLineItemId),
+        );
+        return item.copyWith(
+          netCost:
+              (line?.netCostPerMeterAfterServices ??
+                  t.costPerMeterAfterServices) *
+              item.quantity,
+          batchUnitsPerUnit: Map.of(
+            line?.batchUnitsPerUnit ?? t.batchUnitsPerUnit,
+          ),
+        );
+      }
+    }
+    if (['قطع زائدة', 'بيع قطع إضافية', 'scrap'].contains(item.sourceType)) {
+      final scrap = _firstOrNull(
+        scrapItems.where(
+          (sc) => sc.id == item.sourceId && sc.currency == currency,
+        ),
+      );
+      if (scrap != null)
+        return item.copyWith(
+          netCost: scrap.baseCost,
+          batchUnitsPerUnit: Map.of(scrap.batchUnitsPerUnit),
+        );
+    }
+    return item;
+  }
+
+  void registerTailoringReplenishment({
+    required WorkshopTailoringModel tailoring,
+    required TailoringLineItem line,
+    required WorkshopStockModel source,
+    required double quantity,
+    required double oldQuantity,
+    required double oldCapital,
+    required double oldLineArea,
+  }) {
+    final id =
+        'workshop_replenish_' +
+        DateTime.now().microsecondsSinceEpoch.toString();
+    final rawCost = quantity * source.netCostPerUnit;
+    final parentUnits = _combineBatchUnits([
+      (tailoring.batchUnitsPerUnit, oldQuantity),
+      (source.batchUnitsPerUnit, quantity),
+    ], tailoring.quantity);
+    final lineUnits = _combineBatchUnits([
+      (line.batchUnitsPerUnit, oldLineArea),
+      (source.batchUnitsPerUnit, quantity),
+    ], line.area);
+    tailoring.batchUnitsPerUnit = {
+      ...parentUnits,
+      id: quantity / tailoring.quantity,
+    };
+    line.batchUnitsPerUnit = {...lineUnits, id: quantity / line.area};
+    tailoring.actualUnitCost = (oldCapital + rawCost) / tailoring.quantity;
+    cuttingOperations.add(
+      CuttingOperationModel(
+        id: id,
+        timestamp: DateTime.now(),
+        currency: source.currency,
+        sourceSection: 'workshop_replenishment',
+        outputItemIds: [tailoring.id],
+        inputTons: 1,
+        baseTonCost: rawCost,
+        cuttingFeePercentage: 0,
+        targetTypeName: tailoring.name,
+        targetGrade: line.grade,
+        thicknessCm: line.thicknessCm,
+        category: line.category,
+        totalOutputArea: quantity,
+        netCostPerUnit: source.netCostPerUnit,
+        estimatedUnitCost: line.estimatedCostPerMeter,
+        recommendedSalePrice: line.sellingPricePerMeter,
+        wasteValue: 0,
+        isGranite: tailoring.isGranite,
+      ),
+    );
+  }
+
+  bool _sameBatchUnits(Map<String, double> a, Map<String, double> b) =>
+      a.length == b.length &&
+      a.entries.every((e) => (b[e.key] ?? double.nan) == e.value);
+
+  double _batchTrackedUnits(String batchId) {
+    double count = 0;
+    double units(Map<String, double> map) => map[batchId] ?? 0;
+    for (final w in factoryWarehouse) {
+      count += w.availableQty * units(w.batchUnitsPerUnit);
+    }
+    for (final w in workshopStock) {
+      count += w.availableQty * units(w.batchUnitsPerUnit);
+    }
+    for (final t in [...simpleTailorings, ...complexTailorings]) {
+      count += t.quantity * units(t.batchUnitsPerUnit);
+    }
+    double active(
+      String module,
+      String id,
+      int index,
+      String itemId,
+      double quantity,
+    ) {
+      if (quantity <= 0) return 0;
+      final returned = adjustmentInvoices
+          .where(
+            (d) =>
+                d.kind == 'sales_return' &&
+                d.module == module &&
+                d.targetInvoiceId == id,
+          )
+          .expand((d) => d.lines)
+          .where(
+            (l) =>
+                l.itemIndex == index || (l.itemIndex < 0 && l.itemId == itemId),
+          )
+          .fold<double>(0, (sum, l) => sum + l.quantity);
+      return (1 - returned / quantity).clamp(0.0, 1.0);
+    }
+
+    for (final inv in factoryInvoices.where(
+      (i) => i.invoiceType == 'بيع_معتمد',
+    )) {
+      for (var n = 0; n < inv.items.length; n++) {
+        final item = inv.items[n];
+        count +=
+            item.calculatedArea *
+            units(item.batchUnitsPerUnit) *
+            active('factory', inv.id, n, item.itemId, item.quantity);
+      }
+    }
+    for (final inv in workshopInvoices) {
+      final lines = _workshopInvoiceLines(inv);
+      for (var n = 0; n < lines.length; n++) {
+        final item = lines[n];
+        count +=
+            item.quantity *
+            units(item.batchUnitsPerUnit) *
+            active('workshop', inv.id, n, item.sourceId, item.quantity);
+      }
+    }
+    for (final o in factoryOrders.where(
+      (o) => !o.isCompleted && !o.status.contains('ملغاة'),
+    )) {
+      for (final item in o.items) {
+        count += item.calculatedArea * units(item.batchUnitsPerUnit);
+      }
+    }
+    for (final o in workshopOrders.where(
+      (o) => !o.isCompleted && !o.status.contains('ملغاة'),
+    )) {
+      for (final item in o.items) {
+        count += item.quantity * units(item.batchUnitsPerUnit);
+      }
+    }
+    for (final scrap in scrapItems.where((sc) => !_hasInvoicedScrap(sc.id))) {
+      count += units(scrap.batchUnitsPerUnit);
+    }
+    for (final waste in wasteLogs) {
+      count += units(waste.batchUnitsPerUnit);
+    }
+    return count;
+  }
+
+  double actualCuttingExpensesForBatch(String batchId) => expenseRecords
+      .where(
+        (e) =>
+            e.cuttingBatchId == batchId &&
+            !e.isInformational &&
+            expenseTreatmentOf(e) == ExpenseRecordModel.manufacturing,
+      )
+      .fold(0.0, (sum, e) => sum + e.amount);
+
+  /// Reprices both remaining stock and delivered goods. A late cash invoice is
+  /// split between inventory and COGS, never added entirely to unsold goods.
+  void recalculateCuttingBatchCosts(String batchId) {
+    final batch = cuttingOperations.firstWhere((b) => b.id == batchId);
+    final total = actualCuttingExpensesForBatch(batchId);
+    final delta = total - batch.allocatedDirectExpenses;
+    if (delta.abs() < .000000001) return;
+    final rate = delta / batch.totalOutputArea;
+    double share(Map<String, double> units) => (units[batchId] ?? 0) * rate;
+    for (final w in factoryWarehouse) {
+      w.netCostPerUnit += share(w.batchUnitsPerUnit);
+    }
+    for (final w in workshopStock) {
+      w.netCostPerUnit += share(w.batchUnitsPerUnit);
+    }
+    for (final t in [...simpleTailorings, ...complexTailorings]) {
+      t.actualUnitCost =
+          t.costPerMeterAfterServices + share(t.batchUnitsPerUnit);
+      for (final line in t.lineItems) {
+        line.netCostPerMeter += share(line.batchUnitsPerUnit);
+      }
+    }
+    for (final sc in scrapItems) {
+      sc.baseCost += share(sc.batchUnitsPerUnit);
+    }
+    for (final waste in wasteLogs) {
+      waste.cost += share(waste.batchUnitsPerUnit);
+    }
+    for (final inv in factoryInvoices.where(
+      (i) => i.invoiceType == 'بيع_معتمد',
+    )) {
+      for (var n = 0; n < inv.items.length; n++) {
+        final item = inv.items[n];
+        final extra = share(item.batchUnitsPerUnit);
+        if (extra != 0)
+          inv.items[n] = item.copyWith(unitCost: item.unitCost + extra);
+      }
+    }
+    for (final inv in workshopInvoices) {
+      if (inv.items.isEmpty) {
+        inv.netCost +=
+            share(inv.batchUnitsPerUnit) *
+            (inv.sourceQuantity > 0 ? inv.sourceQuantity : 1);
+      } else {
+        for (var n = 0; n < inv.items.length; n++) {
+          final item = inv.items[n];
+          final extra = share(item.batchUnitsPerUnit) * item.quantity;
+          if (extra != 0)
+            inv.items[n] = item.copyWith(netCost: item.netCost + extra);
+        }
+        inv.netCost = inv.items.fold<double>(
+          0,
+          (sum, item) => sum + item.netCost,
+        );
+      }
+    }
+    for (final order in factoryOrders.where(
+      (o) => !o.isCompleted && !o.status.contains('ملغاة'),
+    )) {
+      for (var n = 0; n < order.items.length; n++) {
+        final item = order.items[n];
+        final extra = share(item.batchUnitsPerUnit);
+        if (extra != 0)
+          order.items[n] = item.copyWith(unitCost: item.unitCost + extra);
+      }
+    }
+    for (final order in workshopOrders.where(
+      (o) => !o.isCompleted && !o.status.contains('ملغاة'),
+    )) {
+      for (var n = 0; n < order.items.length; n++) {
+        final item = order.items[n];
+        final extra = share(item.batchUnitsPerUnit) * item.quantity;
+        if (extra != 0)
+          order.items[n] = item.copyWith(netCost: item.netCost + extra);
+      }
+    }
+    batch.allocatedDirectExpenses = total;
+  }
+
+  /// Workshop cutting uses the same operation catalog as factory cutting.
+  /// Service/labour quotes remain pricing estimates until paid through Expenses.
+  void syncCuttingBatchCatalog() {
+    ensureCuttingExpenseType();
+    // Upgrade only unambiguous old lots. Mixed historical lots are never guessed.
+    for (final batch in cuttingOperations.where(
+      (b) =>
+          b.sourceSection == 'factory' &&
+          b.outputItemIds.isEmpty &&
+          b.totalOutputArea > 0,
+    )) {
+      final related = cuttingOperations
+          .where(
+            (b) =>
+                b.sourceSection == 'factory' &&
+                b.targetTypeName == batch.targetTypeName &&
+                b.targetGrade == batch.targetGrade &&
+                b.thicknessCm == batch.thicknessCm &&
+                b.currency == batch.currency,
+          )
+          .length;
+      final candidates = factoryWarehouse
+          .where(
+            (w) =>
+                w.batchUnitsPerUnit.isEmpty &&
+                w.typeName == batch.targetTypeName &&
+                w.grade == batch.targetGrade &&
+                w.thicknessCm == batch.thicknessCm &&
+                w.currency == batch.currency &&
+                (w.netCostPerUnit - batch.netCostPerUnit).abs() < .000001,
+          )
+          .toList();
+      if (related == 1 && candidates.length == 1) {
+        final lot = candidates.single;
+        lot.batchUnitsPerUnit = {batch.id: 1};
+        lot.netCostPerUnit =
+            batch.inputTons * batch.baseTonCost / batch.totalOutputArea;
+        batch.outputItemIds = [lot.id];
+      }
+    }
+    for (final t in [...simpleTailorings, ...complexTailorings]) {
+      if (t.quantity <= 0 ||
+          cuttingOperations.any((b) => b.outputItemIds.contains(t.id)))
+        continue;
+      final id = 'workshop_' + t.id;
+      if (cuttingOperations.any((b) => b.id == id)) continue;
+      final estimate = t.estimatedTotalCost / t.quantity;
+      final rawCost = t.materialNetCost + t.linesMaterialCost;
+      final area = t.lineItems.fold<double>(0, (sum, l) => sum + l.area);
+      final inherited = t.lineItems.isEmpty
+          ? Map<String, double>.from(t.batchUnitsPerUnit)
+          : <String, double>{};
+      for (final line in t.lineItems) {
+        final stock = _firstOrNull(
+          workshopStock.where((w) => w.id == line.stockId),
+        );
+        final scrap = _firstOrNull(
+          scrapItems.where((w) => w.id == line.stockId),
+        );
+        final units = Map<String, double>.from(
+          line.batchUnitsPerUnit.isNotEmpty
+              ? line.batchUnitsPerUnit
+              : stock?.batchUnitsPerUnit ?? scrap?.batchUnitsPerUnit ?? {},
+        );
+        for (final entry in units.entries) {
+          inherited[entry.key] =
+              (inherited[entry.key] ?? 0) +
+              entry.value * line.area / t.quantity;
+        }
+        line.batchUnitsPerUnit = {
+          ...units,
+          id: area > 0 ? t.quantity / area : 0,
+        };
+      }
+      t.batchUnitsPerUnit = {...inherited, id: 1};
+      t.actualUnitCost = rawCost / t.quantity;
+      cuttingOperations.add(
+        CuttingOperationModel(
+          id: id,
+          timestamp: DateTime.now(),
+          currency: t.currency,
+          sourceSection: t.complexity == 'معقد'
+              ? 'workshop_complex'
+              : 'workshop_simple',
+          outputItemIds: [t.id],
+          inputTons: 1,
+          baseTonCost: rawCost,
+          cuttingFeePercentage: 0,
+          targetTypeName: t.name,
+          targetGrade: '',
+          thicknessCm: t.heightCm,
+          category: t.unitCategory,
+          totalOutputArea: t.quantity,
+          netCostPerUnit: rawCost / t.quantity,
+          estimatedUnitCost: estimate,
+          recommendedSalePrice: t.sellingPrice,
+          wasteValue: 0,
+          isGranite: t.isGranite,
+        ),
+      );
+    }
+  }
+
   void addExpenseRecord(ExpenseRecordModel expense, {String? box}) {
     if (!expense.amount.isFinite ||
         expense.amount <= 0 ||
@@ -2216,89 +2647,18 @@ class ERPProvider extends ChangeNotifier {
         'Supplier purchases and payments belong in their invoice and finance screens.',
       );
     }
-    String allocationId = '';
-    void Function()? capitalize;
+    CuttingOperationModel? batch;
     if (treatment == ExpenseRecordModel.manufacturing) {
-      final quantity = expense.manufacturingQuantity;
-      if (!quantity.isFinite || quantity <= 0)
-        throw ArgumentError('حدد كمية التصنيع وربط المخزون.');
-      final extraPerUnit = expense.amount / quantity;
-      allocationId = expense.inventoryId;
-      if (expense.inventorySource == 'block') {
-        final block = _firstOrNull(
-          factoryBlocks.where(
-            (b) =>
-                b.id == expense.inventoryId && b.currency == expense.currency,
-          ),
+      batch = _firstOrNull(
+        cuttingOperations.where((b) => b.id == expense.cuttingBatchId),
+      );
+      if (batch == null ||
+          batch.currency != expense.currency ||
+          batch.totalOutputArea <= 0 ||
+          batch.outputItemIds.isEmpty) {
+        throw ArgumentError(
+          'اختر عملية قص مرتبطة بمخرجات فعلية وبعملة المصروف.',
         );
-        if (block == null || quantity > block.weightTons + .000001)
-          throw ArgumentError('كمية البلوك أو عملة المصروف غير متطابقة.');
-        if ((quantity - block.weightTons).abs() < .000001) {
-          capitalize = () => block.tonCost += extraPerUnit;
-        } else {
-          allocationId = 'manufactured_' + expense.id;
-          final split = FactoryBlockModel.fromJson({
-            ...block.toJson(),
-            'id': allocationId,
-            'blockCode': block.blockCode + ' / تصنيع',
-            'weightTons': quantity,
-            'tonCost': block.tonCost + extraPerUnit,
-          });
-          capitalize = () {
-            block.weightTons -= quantity;
-            factoryBlocks.add(split);
-          };
-        }
-      } else if (expense.inventorySource == 'factory_warehouse') {
-        final item = _firstOrNull(
-          factoryWarehouse.where(
-            (w) =>
-                w.id == expense.inventoryId && w.currency == expense.currency,
-          ),
-        );
-        if (item == null || quantity > item.availableQty + .000001)
-          throw ArgumentError('كمية المستودع أو عملة المصروف غير متطابقة.');
-        if ((quantity - item.availableQty).abs() < .000001) {
-          capitalize = () => item.netCostPerUnit += extraPerUnit;
-        } else {
-          allocationId = 'manufactured_' + expense.id;
-          final split = FactoryWarehouseModel.fromJson({
-            ...item.toJson(),
-            'id': allocationId,
-            'availableQty': quantity,
-            'netCostPerUnit': item.netCostPerUnit + extraPerUnit,
-          });
-          capitalize = () {
-            item.availableQty -= quantity;
-            factoryWarehouse.add(split);
-          };
-        }
-      } else if (expense.inventorySource == 'workshop_stock') {
-        final item = _firstOrNull(
-          workshopStock.where(
-            (w) =>
-                w.id == expense.inventoryId && w.currency == expense.currency,
-          ),
-        );
-        if (item == null || quantity > item.availableQty + .000001)
-          throw ArgumentError('كمية المعمل أو عملة المصروف غير متطابقة.');
-        if ((quantity - item.availableQty).abs() < .000001) {
-          capitalize = () => item.netCostPerUnit += extraPerUnit;
-        } else {
-          allocationId = 'manufactured_' + expense.id;
-          final split = WorkshopStockModel.fromJson({
-            ...item.toJson(),
-            'id': allocationId,
-            'availableQty': quantity,
-            'netCostPerUnit': item.netCostPerUnit + extraPerUnit,
-          });
-          capitalize = () {
-            item.availableQty -= quantity;
-            workshopStock.add(split);
-          };
-        }
-      } else {
-        throw ArgumentError('يجب ربط مصروف التصنيع بمخزون محدد.');
       }
     }
     // All validation precedes cash, inventory and ledger mutations.
@@ -2310,11 +2670,11 @@ class ERPProvider extends ChangeNotifier {
             ...expense.toJson(),
             'cashBox': targetBox,
             'expenseType': treatment,
-            'capitalizedInventoryId': allocationId,
+            'capitalizedInventoryId': '',
           });
     takeCash(targetBox, expense.currency, expense.amount, allowNegative: true);
-    capitalize?.call();
     expenseRecords.add(record);
+    if (batch != null) recalculateCuttingBatchCosts(batch.id);
     refresh();
   }
 
@@ -2385,6 +2745,7 @@ class ERPProvider extends ChangeNotifier {
     return [
       WorkshopInvoiceItem(
         id: 'legacy_line',
+        batchUnitsPerUnit: Map.of(inv.batchUnitsPerUnit),
         sourceType: inv.sourceType,
         sourceId: inv.sourceId,
         description: inv.itemDescription,
@@ -2565,12 +2926,20 @@ class ERPProvider extends ChangeNotifier {
               w.typeName == typeName &&
               w.grade == grade &&
               (w.thicknessCm - thickness).abs() < 0.01 &&
-              w.category == category,
+              w.category == category &&
+              (item.batchUnitsPerUnit.isEmpty ||
+                  _sameBatchUnits(w.batchUnitsPerUnit, item.batchUnitsPerUnit)),
         )
         .toList();
     if (exact.isNotEmpty) return exact.first;
     final byNameAndCategory = factoryWarehouse
-        .where((w) => w.typeName == typeName && w.category == category)
+        .where(
+          (w) =>
+              w.typeName == typeName &&
+              w.category == category &&
+              (item.batchUnitsPerUnit.isEmpty ||
+                  _sameBatchUnits(w.batchUnitsPerUnit, item.batchUnitsPerUnit)),
+        )
         .toList();
     if (byNameAndCategory.isNotEmpty) return byNameAndCategory.first;
     return null;
@@ -2684,7 +3053,8 @@ class ERPProvider extends ChangeNotifier {
       if (module == 'factory') {
         final item = resolved.factoryItem!;
         final isDealerSales = original?.invoiceType == 'بيع_معتمد';
-        final isMeter = item.isMeterItem || isDealerSales;
+        final isMeter =
+            !item.isTailoringItem && (item.isMeterItem || isDealerSales);
         if (isMeter) {
           final warehouse = _matchFactoryWarehouse(item);
           if (warehouse == null) {
@@ -2774,6 +3144,19 @@ class ERPProvider extends ChangeNotifier {
                       resolved.workshopItem!.quantity,
             destructionVoucherNo: voucherNo,
             currency: currency,
+            batchUnitsPerUnit: {
+              for (final e
+                  in (resolved.factoryItem?.batchUnitsPerUnit ??
+                          resolved.workshopItem!.batchUnitsPerUnit)
+                      .entries)
+                e.key:
+                    e.value *
+                    (resolved.factoryItem != null
+                        ? resolved.factoryItem!.calculatedArea *
+                              resolved.line.quantity /
+                              resolved.factoryItem!.quantity
+                        : resolved.line.quantity),
+            },
             sourceSection: section,
             sourceItemId: resolved.line.itemId,
             unit: resolved.line.unit,
@@ -2788,7 +3171,10 @@ class ERPProvider extends ChangeNotifier {
           parent: original!,
         );
       } else {
-        _applyWorkshopReturnRouting(resolved: resolved);
+        _applyWorkshopReturnRouting(
+          resolved: resolved,
+          currency: workshopOriginal!.currency,
+        );
       }
     }
   }
@@ -2840,6 +3226,7 @@ class ERPProvider extends ChangeNotifier {
       factoryWarehouse.add(
         FactoryWarehouseModel(
           currency: parent.currency,
+          batchUnitsPerUnit: Map.of(item.batchUnitsPerUnit),
           id: 'fw_${DateTime.now().microsecondsSinceEpoch}_${factoryWarehouse.length}',
           typeName: typeName,
           grade: item.grade.isNotEmpty ? item.grade : 'درجة أولى',
@@ -2861,9 +3248,12 @@ class ERPProvider extends ChangeNotifier {
       // Detail products sold through the factory POS.
       final tailoring = _matchFactoryTailoring(item);
       if (tailoring != null) {
-        tailoring.quantity =
-            (tailoring.quantity + (purchase ? -line.quantity : returnedArea))
-                .clamp(0.0, double.infinity);
+        _consumeTailoringInventory(
+          tailoring,
+          purchase ? line.quantity : -returnedArea,
+          item.unitCost,
+          item.batchUnitsPerUnit,
+        );
         return;
       }
       if (purchase) return;
@@ -2882,7 +3272,9 @@ class ERPProvider extends ChangeNotifier {
           complexity: isComplex ? 'معقد' : 'بسيط',
           rawMaterialDescription: item.description,
           quantity: returnedArea,
-          materialNetCost: item.unitCost,
+          materialNetCost: returnedArea * item.unitCost,
+          actualUnitCost: item.unitCost,
+          batchUnitsPerUnit: Map.of(item.batchUnitsPerUnit),
           unitCategory: item.isCubicMeter ? 'متر مكعب' : 'متر مربع',
           sellingPrice: item.unitPrice,
           isGranite: item.isGranite,
@@ -2933,7 +3325,10 @@ class ERPProvider extends ChangeNotifier {
     );
   }
 
-  void _applyWorkshopReturnRouting({required _ResolvedReturnLine resolved}) {
+  void _applyWorkshopReturnRouting({
+    required _ResolvedReturnLine resolved,
+    required String currency,
+  }) {
     final item = resolved.workshopItem!;
     final quantity = resolved.line.quantity;
     final sourceType = item.sourceType;
@@ -2967,6 +3362,7 @@ class ERPProvider extends ChangeNotifier {
             complexity: 'بسيط',
             rawMaterialDescription: item.description,
             quantity: quantity,
+            batchUnitsPerUnit: Map.of(item.batchUnitsPerUnit),
             materialNetCost: item.netCost,
             unitCategory: category,
             sellingPrice: item.agreedPrice,
@@ -2977,9 +3373,11 @@ class ERPProvider extends ChangeNotifier {
         return;
       }
       final product = matches.first;
-      product.quantity = (product.quantity + quantity).clamp(
-        0.0,
-        double.infinity,
+      _consumeTailoringInventory(
+        product,
+        -quantity,
+        item.quantity > 0 ? item.netCost / item.quantity : 0,
+        item.batchUnitsPerUnit,
       );
       if (item.sourceLineItemId.isNotEmpty) {
         final lineItem = product.lineItems
@@ -3072,7 +3470,11 @@ class ERPProvider extends ChangeNotifier {
               : (category == 'متر مكعب' ? 10.0 : 2.0),
           category: category,
           availableQty: quantity,
-          netCostPerUnit: item.netCost,
+          netCostPerUnit: item.quantity > 0
+              ? item.netCost / item.quantity
+              : item.netCost,
+          currency: currency,
+          batchUnitsPerUnit: Map.of(item.batchUnitsPerUnit),
           recommendedSalePrice: item.unitPrice > 0
               ? item.unitPrice
               : item.agreedPrice,
@@ -4643,7 +5045,17 @@ class ERPProvider extends ChangeNotifier {
               t.name.contains('أجور القص'),
         )
         .toList();
-    if (matching.isNotEmpty) return matching.first;
+    if (matching.isNotEmpty) {
+      final old = matching.first;
+      if (old.name == 'مصروف قص وتصنيع مباشر') return old;
+      final canonical = ExpenseTypeModel(
+        id: old.id,
+        name: 'مصروف قص وتصنيع مباشر',
+        description: old.description,
+      );
+      expenseTypes[expenseTypes.indexOf(old)] = canonical;
+      return canonical;
+    }
     final newType = ExpenseTypeModel(
       id: cuttingExpenseTypeId,
       name: 'مصاريف القص والتصنيع (Cutting Expenses)',
@@ -4651,31 +5063,6 @@ class ERPProvider extends ChangeNotifier {
     );
     expenseTypes.add(newType);
     return newType;
-  }
-
-  void recordCuttingExpense({
-    required double amount,
-    required String currency,
-    required String typeName,
-    required String grade,
-    required double feePercent,
-    DateTime? date,
-  }) {
-    if (amount <= 0.0001) return;
-    final type = ensureCuttingExpenseType();
-    expenseRecords.add(
-      ExpenseRecordModel(
-        id: 'exp_cut_${DateTime.now().microsecondsSinceEpoch}',
-        typeId: type.id,
-        expenseType: ExpenseRecordModel.manufacturing,
-        amount: amount,
-        currency: AppCurrency.normalize(currency),
-        personName: 'قسم القص والتصنيع',
-        description:
-            'أجرة قص وتصنيع: $typeName ($grade) - نسبة ${(feePercent * 100).fmt}%',
-        date: date ?? DateTime.now(),
-      ),
-    );
   }
 
   double totalBlockPurchaseExpensesOf(String? currency) {
@@ -4827,11 +5214,33 @@ class ERPProvider extends ChangeNotifier {
         scrapItems
             .where((i) => !i.isSold && i.currency == c)
             .fold<double>(0, (s, i) => s + i.baseCost) +
-        (c == AppCurrency.usd
-            ? [...simpleTailorings, ...complexTailorings]
-                  .where((t) => t.quantity > 0)
-                  .fold<double>(0, (s, t) => s + t.totalNetCost)
-            : 0);
+        [...simpleTailorings, ...complexTailorings]
+            .where((t) => t.quantity > 0 && t.currency == c)
+            .fold<double>(0, (sum, t) => sum + t.totalNetCost) +
+        factoryOrders
+            .where(
+              (o) =>
+                  o.currency == c &&
+                  !o.isCompleted &&
+                  !o.status.contains('ملغاة'),
+            )
+            .fold<double>(
+              0,
+              (sum, o) =>
+                  sum + o.items.fold<double>(0, (s, i) => s + i.totalCost),
+            ) +
+        workshopOrders
+            .where(
+              (o) =>
+                  o.currency == c &&
+                  !o.isCompleted &&
+                  !o.status.contains('ملغاة'),
+            )
+            .fold<double>(
+              0,
+              (sum, o) =>
+                  sum + o.items.fold<double>(0, (s, i) => s + i.netCost),
+            );
   }
 
   double get currentInventoryValueUsd =>
@@ -5556,65 +5965,47 @@ class ERPProvider extends ChangeNotifier {
       }
       factoryBlocks.removeWhere((b) => b.weightTons <= .000001);
       final avgCost = inputCost / inputTons;
+      final batchId =
+          'cut_' +
+          now.microsecondsSinceEpoch.toString() +
+          '_' +
+          cuttingOperations.length.toString();
+      final outputIds = <String>[];
       double fee = 0, output = 0, capital = 0;
       for (final c in list) {
-        final cost = c.inputTons * avgCost * (1 + c.feePercent);
+        final cost = c.inputTons * avgCost;
         final unitCost = cost / c.outputQty;
         fee += c.inputTons * avgCost * c.feePercent;
         output += c.outputQty;
         capital += cost;
-        final existing = _firstOrNull(
-          factoryWarehouse.where(
-            (w) =>
-                w.typeName == c.typeName &&
-                w.grade == c.grade &&
-                w.thicknessCm == c.thicknessCm &&
-                w.category == c.category &&
-                w.currency == c.currency,
+        final outputId =
+            'fw_' +
+            now.microsecondsSinceEpoch.toString() +
+            '_' +
+            factoryWarehouse.length.toString();
+        outputIds.add(outputId);
+        factoryWarehouse.add(
+          FactoryWarehouseModel(
+            id: outputId,
+            currency: c.currency,
+            batchUnitsPerUnit: {batchId: 1},
+            typeName: c.typeName,
+            grade: c.grade,
+            thicknessCm: c.thicknessCm,
+            category: c.category,
+            availableQty: c.outputQty,
+            netCostPerUnit: unitCost,
+            recommendedSalePrice: c.salePrice,
+            isGranite: c.isGranite,
           ),
         );
-        if (existing == null) {
-          factoryWarehouse.add(
-            FactoryWarehouseModel(
-              id:
-                  'fw_' +
-                  now.microsecondsSinceEpoch.toString() +
-                  '_' +
-                  factoryWarehouse.length.toString(),
-              currency: c.currency,
-              typeName: c.typeName,
-              grade: c.grade,
-              thicknessCm: c.thicknessCm,
-              category: c.category,
-              availableQty: c.outputQty,
-              netCostPerUnit: unitCost,
-              recommendedSalePrice: c.salePrice,
-              isGranite: c.isGranite,
-            ),
-          );
-        } else {
-          existing.netCostPerUnit =
-              (existing.totalInventoryValue + cost) /
-              (existing.availableQty + c.outputQty);
-          existing.availableQty += c.outputQty;
-          if (c.salePrice > 0) existing.recommendedSalePrice = c.salePrice;
-        }
       }
-      recordCuttingExpense(
-        amount: fee,
-        currency: first.currency,
-        typeName: first.typeName,
-        grade: first.grade,
-        feePercent: list.first.feePercent,
-        date: now,
-      );
       cuttingOperations.add(
         CuttingOperationModel(
-          id:
-              'cut_' +
-              now.microsecondsSinceEpoch.toString() +
-              '_' +
-              cuttingOperations.length.toString(),
+          id: batchId,
+          currency: first.currency,
+          outputItemIds: outputIds,
+          estimatedUnitCost: (capital + fee) / output,
           timestamp: now,
           inputTons: inputTons,
           baseTonCost: avgCost,
@@ -5649,100 +6040,69 @@ class ERPProvider extends ChangeNotifier {
     required bool isGranite,
   }) {
     if (selectedBlocks.isEmpty ||
-        totalOutputArea <= 0 ||
         !totalOutputArea.isFinite ||
+        totalOutputArea <= 0 ||
         !cuttingFeePercent.isFinite ||
         cuttingFeePercent < 0)
-      return;
+      throw ArgumentError('بيانات القص غير صالحة.');
     final currency = selectedBlocks.first.currency;
-    if (selectedBlocks.any(
-      (b) =>
-          b.currency != currency ||
-          !factoryBlocks.contains(b) ||
-          b.weightTons <= 0,
-    ))
-      throw ArgumentError('كتل القص يجب أن تكون متاحة وبعملة واحدة.');
-
-    double totalTons = selectedBlocks.fold(0.0, (s, b) => s + b.weightTons);
-    double totalTonCostSum = selectedBlocks.fold(
-      0.0,
-      (s, b) => s + b.totalCost,
+    if (selectedBlocks.map((b) => b.id).toSet().length !=
+            selectedBlocks.length ||
+        selectedBlocks.any(
+          (b) =>
+              b.currency != currency ||
+              !factoryBlocks.contains(b) ||
+              b.weightTons <= 0,
+        ))
+      throw ArgumentError('اختر بلوكات متاحة بعملة واحدة.');
+    final tons = selectedBlocks.fold<double>(0, (sum, b) => sum + b.weightTons);
+    final rawCost = selectedBlocks.fold<double>(
+      0,
+      (sum, b) => sum + b.totalCost,
     );
-
-    double weightedAvgTonCost = totalTonCostSum / totalTons;
-    double netCostPerUnit =
-        (totalTonCostSum * (1.0 + cuttingFeePercent)) / totalOutputArea;
-
-    // Remove selected blocks from raw stock
-    for (var b in selectedBlocks) {
-      factoryBlocks.removeWhere((item) => item.id == b.id);
+    final now = DateTime.now();
+    final id = 'cut_' + now.microsecondsSinceEpoch.toString();
+    final outputId = 'fw_' + now.microsecondsSinceEpoch.toString();
+    for (final b in selectedBlocks) {
+      factoryBlocks.remove(b);
     }
-
-    // Add to Factory Warehouse
-    var existingWh = factoryWarehouse.firstWhere(
-      (w) =>
-          w.typeName == targetTypeName &&
-          w.grade == targetGrade &&
-          w.thicknessCm == thicknessCm &&
-          w.category == category &&
-          w.currency == currency,
-      orElse: () {
-        var newWh = FactoryWarehouseModel(
-          currency: currency,
-          id: 'fw_${DateTime.now().millisecondsSinceEpoch}',
-          typeName: targetTypeName,
-          grade: targetGrade,
-          thicknessCm: thicknessCm,
-          category: category,
-          availableQty: 0.0,
-          netCostPerUnit: netCostPerUnit,
-          recommendedSalePrice: recommendedSalePrice,
-          isGranite: isGranite,
-        );
-        factoryWarehouse.add(newWh);
-        return newWh;
-      },
-    );
-
-    existingWh.netCostPerUnit =
-        (existingWh.totalInventoryValue + totalOutputArea * netCostPerUnit) /
-        (existingWh.availableQty + totalOutputArea);
-    existingWh.availableQty += totalOutputArea;
-
-    final double cuttingFeeAmount = totalTonCostSum * cuttingFeePercent;
-    if (cuttingFeeAmount > 0) {
-      recordCuttingExpense(
-        amount: cuttingFeeAmount,
+    factoryWarehouse.add(
+      FactoryWarehouseModel(
+        id: outputId,
         currency: currency,
+        batchUnitsPerUnit: {id: 1},
         typeName: targetTypeName,
         grade: targetGrade,
-        feePercent: cuttingFeePercent,
-        date: DateTime.now(),
-      );
-    }
-
-    // Log cutting operation
+        thicknessCm: thicknessCm,
+        category: category,
+        availableQty: totalOutputArea,
+        netCostPerUnit: rawCost / totalOutputArea,
+        recommendedSalePrice: recommendedSalePrice,
+        isGranite: isGranite,
+      ),
+    );
     cuttingOperations.add(
       CuttingOperationModel(
-        id: 'cut_${DateTime.now().millisecondsSinceEpoch}',
-        timestamp: DateTime.now(),
-        inputTons: totalTons,
-        baseTonCost: weightedAvgTonCost,
+        id: id,
+        timestamp: now,
+        currency: currency,
+        outputItemIds: [outputId],
+        inputTons: tons,
+        baseTonCost: rawCost / tons,
         cuttingFeePercentage: cuttingFeePercent,
         targetTypeName: targetTypeName,
         targetGrade: targetGrade,
         thicknessCm: thicknessCm,
         category: category,
         totalOutputArea: totalOutputArea,
-        netCostPerUnit: netCostPerUnit,
+        netCostPerUnit: rawCost / totalOutputArea,
+        estimatedUnitCost: rawCost * (1 + cuttingFeePercent) / totalOutputArea,
         recommendedSalePrice: recommendedSalePrice,
         wasteValue: wasteValue,
         isGranite: isGranite,
       ),
     );
-
-    notifyListeners();
-    saveToDisk();
+    refresh();
   }
 
   // 5. Transfer Stock to Workshop Stock
@@ -5755,10 +6115,12 @@ class ERPProvider extends ChangeNotifier {
           ws.typeName == whItem.typeName &&
           ws.grade == whItem.grade &&
           ws.thicknessCm == whItem.thicknessCm &&
-          ws.currency == whItem.currency,
+          ws.currency == whItem.currency &&
+          _sameBatchUnits(ws.batchUnitsPerUnit, whItem.batchUnitsPerUnit),
       orElse: () {
         var newWs = WorkshopStockModel(
           currency: whItem.currency,
+          batchUnitsPerUnit: Map.of(whItem.batchUnitsPerUnit),
           id: 'ws_${DateTime.now().millisecondsSinceEpoch}',
           typeName: whItem.typeName,
           grade: whItem.grade,
@@ -5795,10 +6157,12 @@ class ERPProvider extends ChangeNotifier {
           wh.typeName == wsItem.typeName &&
           wh.grade == wsItem.grade &&
           wh.thicknessCm == wsItem.thicknessCm &&
-          wh.currency == wsItem.currency,
+          wh.currency == wsItem.currency &&
+          _sameBatchUnits(wh.batchUnitsPerUnit, wsItem.batchUnitsPerUnit),
       orElse: () {
         var newWh = FactoryWarehouseModel(
           currency: wsItem.currency,
+          batchUnitsPerUnit: Map.of(wsItem.batchUnitsPerUnit),
           id: 'wh_${DateTime.now().millisecondsSinceEpoch}',
           typeName: wsItem.typeName,
           grade: wsItem.grade,
@@ -5891,7 +6255,7 @@ class ERPProvider extends ChangeNotifier {
           }
         }
         if (tailoring == null ||
-            inv.currency != AppCurrency.usd ||
+            inv.currency != tailoring.currency ||
             !reserve('tailoring_' + tailoring.id, quantity, tailoring.quantity))
           return false;
         final t = tailoring;
@@ -5899,14 +6263,27 @@ class ERPProvider extends ChangeNotifier {
           final l = line;
           if (!reserve('line_' + l.id, item.quantity, l.quantity)) return false;
           pricedItems.add(
-            item.copyWith(unitCost: l.netCostPerMeterAfterServices),
+            item.copyWith(
+              unitCost: l.netCostPerMeterAfterServices,
+              batchUnitsPerUnit: Map.of(l.batchUnitsPerUnit),
+            ),
           );
           deductions.add(() {
-            t.quantity -= quantity;
+            _consumeTailoringInventory(
+              t,
+              quantity,
+              l.netCostPerMeterAfterServices,
+              l.batchUnitsPerUnit,
+            );
             l.quantity -= item.quantity;
           });
         } else {
-          pricedItems.add(item.copyWith(unitCost: t.costPerMeterAfterServices));
+          pricedItems.add(
+            item.copyWith(
+              unitCost: t.costPerMeterAfterServices,
+              batchUnitsPerUnit: Map.of(t.batchUnitsPerUnit),
+            ),
+          );
           deductions.add(() => t.quantity -= quantity);
         }
       } else if (item.itemCategory == 'block' &&
@@ -5938,7 +6315,12 @@ class ERPProvider extends ChangeNotifier {
               warehouse.availableQty,
             ))
           return false;
-        pricedItems.add(item.copyWith(unitCost: warehouse.netCostPerUnit));
+        pricedItems.add(
+          item.copyWith(
+            unitCost: warehouse.netCostPerUnit,
+            batchUnitsPerUnit: Map.of(warehouse.batchUnitsPerUnit),
+          ),
+        );
         deductions.add(() => warehouse.availableQty -= quantity);
       }
     }
@@ -5984,7 +6366,12 @@ class ERPProvider extends ChangeNotifier {
           .toList();
       if (matches.isNotEmpty) {
         final t = matches.first;
-        t.quantity = (t.quantity - item.quantity).clamp(0.0, double.infinity);
+        _consumeTailoringInventory(
+          t,
+          item.quantity,
+          item.quantity > 0 ? item.netCost / item.quantity : 0,
+          item.batchUnitsPerUnit,
+        );
         if (item.sourceLineItemId.isNotEmpty) {
           final liMatches = t.lineItems
               .where((li) => li.id == item.sourceLineItemId)
@@ -6158,6 +6545,9 @@ class ERPProvider extends ChangeNotifier {
   }
 
   void createWorkshopOrder(WorkshopOrderModel order) {
+    for (var n = 0; n < order.items.length; n++) {
+      order.items[n] = _priceWorkshopItem(order.items[n], order.currency);
+    }
     workshopOrders.add(order);
     if (order.depositAmount > 0) {
       // CRITICAL ACCOUNTING RULE: Down payment stored in isolated Order Cash Box
@@ -6199,7 +6589,11 @@ class ERPProvider extends ChangeNotifier {
         agreedPrice: order.agreedPrice,
         depositDeducted: order.depositAmount,
         cashPaidNow: cashPaidNow,
-        netCost: order.agreedPrice * 0.60,
+        netCost: order.items.fold<double>(0, (sum, item) => sum + item.netCost),
+        batchUnitsPerUnit: _combineBatchUnits(
+          order.items.map((item) => (item.batchUnitsPerUnit, item.quantity)),
+          1,
+        ),
         currency: order.currency,
       ),
     );
@@ -6412,7 +6806,10 @@ class ERPProvider extends ChangeNotifier {
         complexity: 'جاهزة',
         rawMaterialDescription: order.customDimensionsText,
         quantity: 1,
-        materialNetCost: order.agreedPrice * 0.60,
+        materialNetCost: order.items.fold<double>(
+          0,
+          (sum, item) => sum + item.netCost,
+        ),
         unitCategory: 'متر مربع',
         laborCostPerMeter: 0.0,
         photoPath: order.photoPath,
@@ -6522,22 +6919,7 @@ class ERPProvider extends ChangeNotifier {
       }
 
       for (var n = 0; n < inv.items.length; n++) {
-        final item = inv.items[n];
-        if ([
-          'بيع مواد خام من المعمل',
-          'مواد خام',
-          'raw_materials',
-        ].contains(item.sourceType)) {
-          final stock = _firstOrNull(
-            workshopStock.where(
-              (w) => w.id == item.sourceId && w.currency == inv.currency,
-            ),
-          );
-          if (stock != null)
-            inv.items[n] = item.copyWith(
-              netCost: stock.netCostPerUnit * item.quantity,
-            );
-        }
+        inv.items[n] = _priceWorkshopItem(inv.items[n], inv.currency);
       }
       inv.netCost = inv.items.fold<double>(
         0,
@@ -6553,9 +6935,11 @@ class ERPProvider extends ChangeNotifier {
               .toList();
           if (matches.isNotEmpty) {
             final t = matches.first;
-            t.quantity = (t.quantity - item.quantity).clamp(
-              0.0,
-              double.infinity,
+            _consumeTailoringInventory(
+              t,
+              item.quantity,
+              item.quantity > 0 ? item.netCost / item.quantity : 0,
+              item.batchUnitsPerUnit,
             );
             if (item.sourceLineItemId.isNotEmpty) {
               final liMatches = t.lineItems
@@ -6704,6 +7088,20 @@ class ERPProvider extends ChangeNotifier {
       return true;
     }
 
+    final source = _priceWorkshopItem(
+      WorkshopInvoiceItem(
+        id: inv.id,
+        sourceType: inv.sourceType,
+        sourceId: inv.sourceId,
+        description: inv.itemDescription,
+        quantity: inv.sourceQuantity > 0 ? inv.sourceQuantity : 1,
+        agreedPrice: inv.agreedPrice,
+        netCost: inv.netCost,
+      ),
+      inv.currency,
+    );
+    inv.netCost = source.netCost;
+    inv.batchUnitsPerUnit = Map.of(source.batchUnitsPerUnit);
     // Legacy single-item fallback
     WorkshopTailoringModel? tailoringItem;
     final isSimple =
@@ -6747,8 +7145,12 @@ class ERPProvider extends ChangeNotifier {
     }
     workshopInvoices.add(inv);
     if (tailoringItem != null) {
-      tailoringItem.quantity = (tailoringItem.quantity - inv.sourceQuantity)
-          .clamp(0.0, double.infinity);
+      _consumeTailoringInventory(
+        tailoringItem,
+        inv.sourceQuantity,
+        inv.sourceQuantity > 0 ? inv.netCost / inv.sourceQuantity : 0,
+        inv.batchUnitsPerUnit,
+      );
     }
     if (inv.sourceType == 'بيع قطع إضافية' || inv.sourceType == 'قطع زائدة') {
       if (inv.sourceId.isNotEmpty) {
@@ -6857,6 +7259,19 @@ class ERPProvider extends ChangeNotifier {
   }
 
   void createFactoryOrder(FactoryOrderModel order) {
+    for (var n = 0; n < order.items.length; n++) {
+      final item = order.items[n];
+      final stock = _firstOrNull(
+        factoryWarehouse.where(
+          (w) => w.id == item.itemId && w.currency == order.currency,
+        ),
+      );
+      if (stock != null)
+        order.items[n] = item.copyWith(
+          unitCost: stock.netCostPerUnit,
+          batchUnitsPerUnit: Map.of(stock.batchUnitsPerUnit),
+        );
+    }
     factoryOrders.add(order);
     if (order.depositAmount > 0) {
       addCash('order', order.currency, order.depositAmount);
@@ -7137,6 +7552,8 @@ class ERPProvider extends ChangeNotifier {
 
     String itemDesc = customDescription?.trim() ?? '';
     String unit = '';
+    Map<String, double> lineage = {};
+    var actualCost = cost;
 
     final sec = sourceSection.trim();
     if (sec == 'مواد المعمل' || sec == 'workshop_material') {
@@ -7150,6 +7567,11 @@ class ERPProvider extends ChangeNotifier {
           'الكمية المهدرة ($quantity) تتجاوز الرصيد المتاح (${stock.availableQty}) في مواد المعمل',
         );
       }
+      lineage = {
+        for (final e in stock.batchUnitsPerUnit.entries)
+          e.key: e.value * quantity,
+      };
+      if (lineage.isNotEmpty) actualCost = stock.netCostPerUnit * quantity;
       stock.availableQty = (stock.availableQty - quantity).clamp(
         0.0,
         double.infinity,
@@ -7173,6 +7595,12 @@ class ERPProvider extends ChangeNotifier {
           'الكمية المهدرة ($quantity) تتجاوز الرصيد المتاح (${tailoring.quantity}) في التفصيل البسيط',
         );
       }
+      lineage = {
+        for (final e in tailoring.batchUnitsPerUnit.entries)
+          e.key: e.value * quantity,
+      };
+      if (lineage.isNotEmpty)
+        actualCost = tailoring.costPerMeterAfterServices * quantity;
       tailoring.quantity = (tailoring.quantity - quantity).clamp(
         0.0,
         double.infinity,
@@ -7244,7 +7672,8 @@ class ERPProvider extends ChangeNotifier {
       wasteType: wasteType,
       itemDescription: itemDesc,
       quantity: quantity,
-      cost: cost,
+      cost: actualCost,
+      batchUnitsPerUnit: lineage,
       destructionVoucherNo: voucher,
       currency: AppCurrency.normalize(currency),
       sourceSection: sec,
@@ -7521,6 +7950,7 @@ class ERPProvider extends ChangeNotifier {
 
   /// Notifies listeners and persists (for direct list mutations from UI).
   void refresh() {
+    syncCuttingBatchCatalog();
     notifyListeners();
     saveToDisk();
   }
@@ -9195,6 +9625,7 @@ class ERPProvider extends ChangeNotifier {
         _applyOpeningStockToOperationalInventory();
         await saveToDisk();
       }
+      syncCuttingBatchCatalog();
       notifyListeners();
     } catch (_) {}
   }
@@ -9779,6 +10210,8 @@ class ERPProvider extends ChangeNotifier {
     _legacyFinancialHistory = (raw['periodArchives'] as List? ?? [])
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
+
+    syncCuttingBatchCatalog();
 
     // Persist to disk immediately
 

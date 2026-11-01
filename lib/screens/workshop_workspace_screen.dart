@@ -13,6 +13,8 @@ import '../widgets/workshop_order_dialogs.dart';
 import 'accounting_screens.dart';
 
 class _TailoringStockOption {
+  final String currency;
+  final Map<String, double> batchUnitsPerUnit;
   final String id;
   final String source; // 'factory' or 'workshop'
   final String typeName;
@@ -25,6 +27,8 @@ class _TailoringStockOption {
   final bool isGranite;
 
   _TailoringStockOption({
+    required this.currency,
+    required this.batchUnitsPerUnit,
     required this.id,
     required this.source,
     required this.typeName,
@@ -2127,7 +2131,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                 ),
                                               ),
                                               Text(
-                                                'تكلفة المتر بعد الخدمات: ${li.netCostPerMeterAfterServices.fmt} \$',
+                                                'تكلفة المتر التقديرية بعد الخدمات: ${li.estimatedCostPerMeter.fmt} \$',
                                                 style: const TextStyle(
                                                   fontSize: 12,
                                                   fontWeight: FontWeight.bold,
@@ -2935,6 +2939,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     return;
                   }
 
+                  if (currentWs.currency != t.currency) { setSt(() => formError = 'يجب أن تكون المواد بعملة التفصيل.'); return; }
+                  final oldParentQuantity = t.quantity;
+                  final oldParentCapital = t.totalNetCost;
                   // 1. Deduct from Workshop Stock (مواد المعمل)
                   currentWs.availableQty =
                       (currentWs.availableQty - deltaArea).clamp(
@@ -2957,6 +2964,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
 
                   // 3. Update tailoring quantity and recalculated weighted average selling price for complex tailoring only
                   t.quantity += deltaArea;
+                  erp.registerTailoringReplenishment(tailoring: t, line: li, source: currentWs, quantity: deltaArea,
+                    oldQuantity: oldParentQuantity, oldCapital: oldParentCapital, oldLineArea: oldLineArea);
                   if (t.complexity != 'بسيط') {
                     final double totalArea = t.lineItems.fold<double>(
                       0.0,
@@ -2972,8 +2981,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     }
                   }
 
-                  erp.saveToDisk();
-                  erp.notifyListeners();
+                  erp.refresh();
                   Navigator.pop(ctx);
 
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -3674,7 +3682,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
               .where((w) => w.availableQty > 0 || w.id == selectedStockId)
               .map(
                 (w) => _TailoringStockOption(
-                  id: w.id,
+                  currency: w.currency,
+                  batchUnitsPerUnit: Map.of(w.batchUnitsPerUnit),                  id: w.id,
                   source: 'workshop',
                   typeName: w.typeName,
                   grade: w.grade,
@@ -4442,6 +4451,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               draftLines.add(
                                 TailoringLineItem(
                                   id: 'tl_${DateTime.now().millisecondsSinceEpoch}_${draftLines.length}',
+                                  currency: stock.currency,
+                                  batchUnitsPerUnit: Map.of(stock.batchUnitsPerUnit),
                                   source: 'materials',
                                   stockId: stock.id,
                                   typeName: stock.typeName,
@@ -4489,6 +4500,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               draftLines.add(
                                 TailoringLineItem(
                                   id: 'tl_${DateTime.now().millisecondsSinceEpoch}_${draftLines.length}',
+                                  currency: captured.currency,
+                                  batchUnitsPerUnit: Map.of(captured.batchUnitsPerUnit),
                                   source: 'scrap',
                                   stockId: captured.id,
                                   typeName: captured.description,
@@ -4697,6 +4710,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           selling = 0.0;
                         }
 
+                        if (draftLines.any((l) => l.currency != draftLines.first.currency)) {
+                          setSt(() => formError = 'يجب أن تكون مواد عملية التصنيع بعملة واحدة.');
+                          return;
+                        }
                         // Commit stock: deduct materials from workshop stock (مواد المعمل).
                         for (final li in draftLines) {
                           if (erp.workshopStock.any((w) => w.id == li.stockId)) {
@@ -4741,7 +4758,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           (li) => li.typeName.contains('غرانيت'),
                         );
                         final model = WorkshopTailoringModel(
-                          id: '${complexity == 'بسيط' ? 'st' : 'ct'}_${DateTime.now().millisecondsSinceEpoch}',
+                          currency: draftLines.first.currency,                          id: '${complexity == 'بسيط' ? 'st' : 'ct'}_${DateTime.now().millisecondsSinceEpoch}',
                           name: nameCtrl.text,
                           complexity: complexity,
                           rawMaterialDescription: draftLines
