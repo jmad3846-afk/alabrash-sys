@@ -74,8 +74,7 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
 
       // 1. Pack 100% of the ERP system data
       final backupData = await erp.exportPortableBackupData();
-      final jsonString =
-          const JsonEncoder.withIndent('  ').convert(backupData);
+      final jsonString = const JsonEncoder.withIndent('  ').convert(backupData);
       final bytes = Uint8List.fromList(utf8.encode(jsonString));
 
       // 2. Open Save File Dialog via FilePicker
@@ -104,7 +103,9 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
           dialogTitle: 'اختر مجلد الفلاشة أو القرص لحفظ النسخة الاحتياطية',
         );
         if (dirPath != null) {
-          final target = File('$dirPath${Platform.pathSeparator}$suggestedFileName');
+          final target = File(
+            '$dirPath${Platform.pathSeparator}$suggestedFileName',
+          );
           await target.writeAsBytes(bytes, flush: true);
           savedPath = target.path;
         }
@@ -182,12 +183,15 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
       }
 
       // Quick validation for Abaad ERP backup
-      final hasFinancials = decoded.containsKey('financials') ||
+      final hasFinancials =
+          decoded.containsKey('financials') ||
           decoded.containsKey('mainCashBox');
       final hasFactory =
-          decoded.containsKey('factory') || decoded.containsKey('factoryBlocks');
+          decoded.containsKey('factory') ||
+          decoded.containsKey('factoryBlocks');
       final hasWorkshop =
-          decoded.containsKey('workshop') || decoded.containsKey('workshopStock');
+          decoded.containsKey('workshop') ||
+          decoded.containsKey('workshopStock');
 
       if (!hasFinancials && !hasFactory && !hasWorkshop) {
         throw 'هذا الملف لا يطابق بنية نسخ نظام أبعاد (Abaad ERP).';
@@ -354,8 +358,7 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
   // =========================================================================
 
   Widget _buildExportTab(BuildContext context, ERPProvider erp) {
-    final totalCashUsd =
-        erp.mainCashBox + erp.scrapCashBox + erp.orderCashBox;
+    final totalCashUsd = erp.mainCashBox + erp.scrapCashBox + erp.orderCashBox;
     final totalCashSyp =
         erp.mainCashBoxSyp + erp.scrapCashBoxSyp + erp.orderCashBoxSyp;
 
@@ -477,7 +480,7 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
               ),
               _buildSummaryItem(
                 icon: Icons.analytics_rounded,
-                title: 'أرشيف التقارير اليومية',
+                title: 'التقارير اليومية المحفوظة',
                 value: '${erp.dailyReports.length} تقرير يومي محفوظ',
                 color: const Color(0xFF0284C7),
               ),
@@ -527,8 +530,11 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.check_circle_rounded,
-                          color: Color(0xFF16A34A), size: 26),
+                      Icon(
+                        Icons.check_circle_rounded,
+                        color: Color(0xFF16A34A),
+                        size: 26,
+                      ),
                       SizedBox(width: 8),
                       Text(
                         'تم تصدير وحفظ النسخة الاحتياطية بنجاح تام! 🎉',
@@ -569,9 +575,12 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
                           side: const BorderSide(color: Color(0xFF16A34A)),
                         ),
                         onPressed: () {
-                          if (Platform.isWindows && _exportSuccessPath != null) {
-                            Process.run('explorer.exe',
-                                ['/select,', _exportSuccessPath!]);
+                          if (Platform.isWindows &&
+                              _exportSuccessPath != null) {
+                            Process.run('explorer.exe', [
+                              '/select,',
+                              _exportSuccessPath!,
+                            ]);
                           }
                         },
                         icon: const Icon(Icons.folder_open_rounded, size: 18),
@@ -592,7 +601,8 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 18),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
               elevation: 2,
             ),
             onPressed: _isExporting ? null : () => _handleExportToFile(erp),
@@ -610,10 +620,7 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
               _isExporting
                   ? 'جاري تجميع وتصدير النسخة الاحتياطية...'
                   : 'تصدير وحفظ النسخة الاحتياطية على فلاشة USB أو قرص خارجي',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -700,16 +707,16 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.file_open_rounded,
-                    color: Color(0xFF0D9488), size: 24),
+                : const Icon(
+                    Icons.file_open_rounded,
+                    color: Color(0xFF0D9488),
+                    size: 24,
+                  ),
             label: Text(
               _selectedFilePath != null
                   ? 'تم اختيار: ${_selectedFilePath!.split(Platform.pathSeparator).last} (انقر للتغيير)'
                   : '📂 استعراض واختيار ملف النسخة الاحتياطية (.json) من الفلاشة أو القرص',
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
           ),
           const SizedBox(height: 16),
@@ -851,7 +858,8 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
     final suppliersCount = (fac['suppliers'] as List?)?.length ?? 0;
     final staffCount = (stf['staffList'] as List?)?.length ?? 0;
     final projectsCount = (wrk['workshopProjects'] as List?)?.length ?? 0;
-    final dailyReportsCount = (ops['dailyReports'] as List?)?.length ??
+    final dailyReportsCount =
+        (ops['dailyReports'] as List?)?.length ??
         ((raw['dailyReports'] as List?)?.length ?? 0);
 
     final mainUsd = (fin['mainCashBox'] as num?)?.toDouble() ?? 0.0;
@@ -864,7 +872,9 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
     final orderSyp = (fin['orderCashBoxSyp'] as num?)?.toDouble() ?? 0.0;
     final totalSyp = mainSyp + scrapSyp + orderSyp;
 
-    final opening = fin['openingEntry'] is Map ? fin['openingEntry'] as Map : null;
+    final opening = fin['openingEntry'] is Map
+        ? fin['openingEntry'] as Map
+        : null;
     final openingLocked = opening?['isLocked'] == true;
     final fixedAssetsCount = (opening?['fixedAssets'] as List?)?.length ?? 0;
     final openingStockCount = (opening?['openingStock'] as List?)?.length ?? 0;
@@ -889,7 +899,11 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
         children: [
           Row(
             children: [
-              const Icon(Icons.verified_rounded, color: Color(0xFF0D9488), size: 22),
+              const Icon(
+                Icons.verified_rounded,
+                color: Color(0xFF0D9488),
+                size: 22,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -902,14 +916,20 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFE2E8F0),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   'تاريخ النسخة: $formattedDate',
-                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF334155)),
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: Color(0xFF334155),
+                  ),
                 ),
               ),
             ],
@@ -951,7 +971,8 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
               Expanded(
                 child: _buildDetailPill(
                   label: 'فواتير المصنع والمعمل',
-                  detail: '$facInvoices مصنع • $wrkInvoices معمل • $retInvoices مرتجع',
+                  detail:
+                      '$facInvoices مصنع • $wrkInvoices معمل • $retInvoices مرتجع',
                   icon: Icons.receipt_long_rounded,
                 ),
               ),
@@ -1002,7 +1023,7 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
             children: [
               Expanded(
                 child: _buildDetailPill(
-                  label: 'أرشيف التقارير اليومية',
+                  label: 'التقارير اليومية المحفوظة',
                   detail: '$dailyReportsCount تقرير يومي شامل',
                   icon: Icons.analytics_rounded,
                 ),
@@ -1036,7 +1057,10 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
               children: [
                 Text(
                   label,
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF64748B),
+                  ),
                 ),
                 Text(
                   detail,
@@ -1091,7 +1115,11 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
           const Text(
             'تمت استعادة وتوزيع كافة البيانات على 100% من أقسام وشاشات البرنامج (المصنع، المعمل، الحسابات، الذمم، العمال، والمشاريع). تم حفظ السجلات على القرص وتحديث واجهات النظام بالكامل فوراً.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.5),
+            style: TextStyle(
+              fontSize: 13,
+              color: Color(0xFF475569),
+              height: 1.5,
+            ),
           ),
           const SizedBox(height: 24),
 
@@ -1136,15 +1164,17 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
                 ),
                 const Divider(),
                 _buildMetricRow(
-                  'أرشيف التقارير اليومية:',
+                  'التقارير اليومية المحفوظة:',
                   '${_restoredMetrics?['dailyReports'] ?? 0} تقرير يومي مستعاد',
                 ),
                 const Divider(),
                 _buildMetricRow(
                   'إجمالي السيولة النقدية المستعادة:',
                   AppCurrency.dual(
-                    (_restoredMetrics?['totalCashUsd'] as num?)?.toDouble() ?? 0.0,
-                    (_restoredMetrics?['totalCashSyp'] as num?)?.toDouble() ?? 0.0,
+                    (_restoredMetrics?['totalCashUsd'] as num?)?.toDouble() ??
+                        0.0,
+                    (_restoredMetrics?['totalCashSyp'] as num?)?.toDouble() ??
+                        0.0,
                   ),
                 ),
               ],
@@ -1179,7 +1209,10 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
+          ),
           Text(
             value,
             style: const TextStyle(
@@ -1228,10 +1261,7 @@ class _BackupRestoreModalState extends State<BackupRestoreModal>
               children: [
                 Text(
                   title,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: Colors.grey.shade700,
-                  ),
+                  style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700),
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),

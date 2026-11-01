@@ -334,8 +334,32 @@ class ChartOfAccountsScreen extends StatelessWidget {
           ]),
           _accountGroup('حقوق الملكية', Icons.groups_2_outlined, [
             _accountLine(
-              'رأس المال الحالي',
-              '${erp.partners.fold<double>(0, (sum, partner) => sum + partner.injectedCapital).fmt} \$ • ${erp.partners.fold<double>(0, (sum, partner) => sum + partner.injectedCapitalSyp).fmt} ل.س',
+              'الأرباح المحتجزة المتاحة',
+              AppCurrency.dual(
+                erp.openingEntry.retainedEarnings,
+                erp.openingEntry.retainedEarningsSyp,
+              ),
+            ),
+            for (final partner in erp.partners)
+              TextButton.icon(
+                icon: const Icon(Icons.payments_outlined),
+                label: Text('سحب أرباح مدورة • ' + partner.name),
+                onPressed: () => _withdrawRetained(context, erp, partner.id),
+              ),
+            for (final voucher in erp.openingEntry.retainedWithdrawals)
+              _accountLine(
+                'سند سحب أرباح • ' + voucher['partnerId'].toString(),
+                AppCurrency.single(
+                  (voucher['amount'] as num).toDouble(),
+                  voucher['currency'] as String?,
+                ),
+              ),
+            _accountLine(
+              'رأس المال الحالي دون الأرباح المدورة',
+              AppCurrency.dual(
+                erp.openingEntry.capitalExcludingRetainedUsd,
+                erp.openingEntry.capitalExcludingRetainedSyp,
+              ),
             ),
             for (final partner in erp.partners)
               _accountLine(
@@ -412,13 +436,15 @@ class ChartOfAccountsScreen extends StatelessWidget {
               'خسائر بيع الأصول الثابتة',
               '${erp.assetSaleLosses.fmt} \$ • ${erp.assetSaleLossesSyp.fmt} ل.س',
             ),
-            for (final type in erp.expenseTypes.where((t) =>
-                t.id != ERPProvider.blockPurchaseExpenseTypeId &&
-                t.id != ERPProvider.cuttingExpenseTypeId &&
-                !t.name.contains('Block Purchase') &&
-                !t.name.contains('مشتريات البلوكات') &&
-                !t.name.contains('Cutting Expenses') &&
-                !t.name.contains('مصاريف القص والتصنيع')))
+            for (final type in erp.expenseTypes.where(
+              (t) =>
+                  t.id != ERPProvider.blockPurchaseExpenseTypeId &&
+                  t.id != ERPProvider.cuttingExpenseTypeId &&
+                  !t.name.contains('Block Purchase') &&
+                  !t.name.contains('مشتريات البلوكات') &&
+                  !t.name.contains('Cutting Expenses') &&
+                  !t.name.contains('مصاريف القص والتصنيع'),
+            ))
               _accountLine(
                 type.name,
                 erp.expenseRecords
@@ -454,6 +480,89 @@ class ChartOfAccountsScreen extends StatelessWidget {
     title: Text(title),
     subtitle: Text(value.isEmpty ? 'لا توجد أرصدة مسجلة' : value),
   );
+
+  Future<void> _withdrawRetained(
+    BuildContext context,
+    ERPProvider erp,
+    String partnerId,
+  ) async {
+    final amount = TextEditingController();
+    var currency = AppCurrency.usd;
+    var box = 'main';
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('سند سحب أرباح محتجزة'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'المتاح: ' +
+                    AppCurrency.dual(
+                      erp.openingEntry.retainedEarnings,
+                      erp.openingEntry.retainedEarningsSyp,
+                    ),
+              ),
+              DropdownButton<String>(
+                value: currency,
+                items: [AppCurrency.usd, AppCurrency.syp]
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (v) => update(() => currency = v!),
+              ),
+              DropdownButton<String>(
+                value: box,
+                items: const [
+                  DropdownMenuItem(value: 'main', child: Text('الرئيسي')),
+                  DropdownMenuItem(value: 'scrap', child: Text('الخردة')),
+                  DropdownMenuItem(value: 'order', child: Text('الطلبات')),
+                ],
+                onChanged: (v) => update(() => box = v!),
+              ),
+              TextField(
+                controller: amount,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(labelText: 'المبلغ'),
+              ),
+              if (error != null)
+                Text(error!, style: const TextStyle(color: Colors.red)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final value = double.tryParse(amount.text);
+                if (value != null &&
+                    erp.withdrawRetainedProfit(
+                      partnerId: partnerId,
+                      amount: value,
+                      currency: currency,
+                      cashBox: box,
+                    )) {
+                  Navigator.pop(dialogContext);
+                } else {
+                  update(
+                    () => error =
+                        'تحقق من المبلغ ورصيد الأرباح والصندوق وتفعيل الدورة.',
+                  );
+                }
+              },
+              child: const Text('اعتماد السند'),
+            ),
+          ],
+        ),
+      ),
+    );
+    amount.dispose();
+  }
 
   Widget _clickableLegacyLine(
     BuildContext context,
@@ -620,7 +729,8 @@ class BalanceSheetScreen extends StatelessWidget {
         (rowSum, item) => rowSum + item.quantity,
       );
       if (openingQuantity <= 0) return sum;
-      final averageUnitCost = openingRows.fold<double>(
+      final averageUnitCost =
+          openingRows.fold<double>(
             0,
             (rowSum, item) => rowSum + item.totalPrice,
           ) /
@@ -649,19 +759,19 @@ class BalanceSheetScreen extends StatelessWidget {
             : entry.totalOpeningStockOf(AppCurrency.usd));
     final inventorySyp = entry.totalOpeningStockOf(AppCurrency.syp);
     final historicalClientsUsd = entry.legacyFinancials
-            .where(
-              (record) =>
-                  record.category == 'clients' &&
-                  record.currency == AppCurrency.usd,
-            )
-            .fold<double>(0, (sum, record) => sum + record.amount);
+        .where(
+          (record) =>
+              record.category == 'clients' &&
+              record.currency == AppCurrency.usd,
+        )
+        .fold<double>(0, (sum, record) => sum + record.amount);
     final historicalClientsSyp = entry.legacyFinancials
-            .where(
-              (record) =>
-                  record.category == 'clients' &&
-                  record.currency == AppCurrency.syp,
-            )
-            .fold<double>(0, (sum, record) => sum + record.amount);
+        .where(
+          (record) =>
+              record.category == 'clients' &&
+              record.currency == AppCurrency.syp,
+        )
+        .fold<double>(0, (sum, record) => sum + record.amount);
     final hasHistoricalClients = entry.legacyFinancials.any(
       (record) => record.category == 'clients',
     );
@@ -686,19 +796,19 @@ class BalanceSheetScreen extends StatelessWidget {
         inventorySyp +
         clientsSyp;
     final historicalSuppliersUsd = entry.legacyFinancials
-            .where(
-              (record) =>
-                  record.category == 'suppliers' &&
-                  record.currency == AppCurrency.usd,
-            )
-            .fold<double>(0, (sum, record) => sum + record.amount);
+        .where(
+          (record) =>
+              record.category == 'suppliers' &&
+              record.currency == AppCurrency.usd,
+        )
+        .fold<double>(0, (sum, record) => sum + record.amount);
     final historicalSuppliersSyp = entry.legacyFinancials
-            .where(
-              (record) =>
-                  record.category == 'suppliers' &&
-                  record.currency == AppCurrency.syp,
-            )
-            .fold<double>(0, (sum, record) => sum + record.amount);
+        .where(
+          (record) =>
+              record.category == 'suppliers' &&
+              record.currency == AppCurrency.syp,
+        )
+        .fold<double>(0, (sum, record) => sum + record.amount);
     final hasHistoricalSuppliers = entry.legacyFinancials.any(
       (record) => record.category == 'suppliers',
     );
@@ -709,19 +819,19 @@ class BalanceSheetScreen extends StatelessWidget {
               : erp.suppliersTotalDebts);
     final suppliersSyp = historicalSuppliersSyp + erp.suppliersTotalDebtsSyp;
     final historicalWagesUsd = entry.legacyFinancials
-            .where(
-              (record) =>
-                  record.category == 'employees' &&
-                  record.currency == AppCurrency.usd,
-            )
-            .fold<double>(0, (sum, record) => sum + record.amount);
+        .where(
+          (record) =>
+              record.category == 'employees' &&
+              record.currency == AppCurrency.usd,
+        )
+        .fold<double>(0, (sum, record) => sum + record.amount);
     final historicalWagesSyp = entry.legacyFinancials
-            .where(
-              (record) =>
-                  record.category == 'employees' &&
-                  record.currency == AppCurrency.syp,
-            )
-            .fold<double>(0, (sum, record) => sum + record.amount);
+        .where(
+          (record) =>
+              record.category == 'employees' &&
+              record.currency == AppCurrency.syp,
+        )
+        .fold<double>(0, (sum, record) => sum + record.amount);
     final hasHistoricalWages = entry.legacyFinancials.any(
       (record) => record.category == 'employees',
     );
@@ -741,8 +851,16 @@ class BalanceSheetScreen extends StatelessWidget {
       0,
       (sum, partner) => sum + partner.injectedCapitalSyp,
     );
-    final retainedEarningsUsd = assetsUsd - liabilitiesUsd - capitalUsd;
-    final retainedEarningsSyp = assetsSyp - liabilitiesSyp - capitalSyp;
+    final retainedEarningsUsd =
+        assetsUsd -
+        liabilitiesUsd -
+        capitalUsd +
+        entry.retainedWithdrawnOf(AppCurrency.usd);
+    final retainedEarningsSyp =
+        assetsSyp -
+        liabilitiesSyp -
+        capitalSyp +
+        entry.retainedWithdrawnOf(AppCurrency.syp);
     final debitRows = <(String, double, double)>[
       ('الأصول الثابتة', fixedUsd, fixedSyp),
       ('الصندوق الرئيسي', erp.mainCashBox, erp.mainCashBoxSyp),
@@ -754,7 +872,20 @@ class BalanceSheetScreen extends StatelessWidget {
     final creditRows = <(String, double, double)>[
       ('ذمم الموردين', suppliersUsd, suppliersSyp),
       ('الأجور المستحقة', wagesUsd, wagesSyp),
-      ('رأس المال', capitalUsd, capitalSyp),
+      (
+        'رأس المال',
+        capitalUsd -
+            entry.retainedEarnings -
+            entry.retainedWithdrawnOf(AppCurrency.usd),
+        capitalSyp -
+            entry.retainedEarningsSyp -
+            entry.retainedWithdrawnOf(AppCurrency.syp),
+      ),
+      (
+        'الأرباح المدورة المحتجزة',
+        entry.retainedEarnings,
+        entry.retainedEarningsSyp,
+      ),
       ('الأرباح والخسائر المتراكمة', retainedEarningsUsd, retainedEarningsSyp),
     ];
     final rowCount = debitRows.length > creditRows.length
@@ -798,32 +929,46 @@ class BalanceSheetScreen extends StatelessWidget {
                   for (var index = 0; index < rowCount; index++)
                     DataRow(
                       cells: [
-                        DataCell(Text(
-                          index < debitRows.length ? debitRows[index].$1 : '',
-                        )),
-                        DataCell(Text(
-                          index < debitRows.length
-                              ? debitRows[index].$2.fmt
-                              : '',
-                        )),
-                        DataCell(Text(
-                          index < debitRows.length
-                              ? debitRows[index].$3.fmt
-                              : '',
-                        )),
-                        DataCell(Text(
-                          index < creditRows.length ? creditRows[index].$1 : '',
-                        )),
-                        DataCell(Text(
-                          index < creditRows.length
-                              ? creditRows[index].$2.fmt
-                              : '',
-                        )),
-                        DataCell(Text(
-                          index < creditRows.length
-                              ? creditRows[index].$3.fmt
-                              : '',
-                        )),
+                        DataCell(
+                          Text(
+                            index < debitRows.length ? debitRows[index].$1 : '',
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            index < debitRows.length
+                                ? debitRows[index].$2.fmt
+                                : '',
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            index < debitRows.length
+                                ? debitRows[index].$3.fmt
+                                : '',
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            index < creditRows.length
+                                ? creditRows[index].$1
+                                : '',
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            index < creditRows.length
+                                ? creditRows[index].$2.fmt
+                                : '',
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            index < creditRows.length
+                                ? creditRows[index].$3.fmt
+                                : '',
+                          ),
+                        ),
                       ],
                     ),
                 ],
@@ -836,9 +981,7 @@ class BalanceSheetScreen extends StatelessWidget {
                 'إجمالي المدين = إجمالي الدائن',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
-              subtitle: Text(
-                'USD: ${assetsUsd.fmt} • SYP: ${assetsSyp.fmt}',
-              ),
+              subtitle: Text('USD: ${assetsUsd.fmt} • SYP: ${assetsSyp.fmt}'),
               trailing: const Icon(
                 Icons.check_circle_outline,
                 color: AppColors.successGreen,
@@ -1041,13 +1184,13 @@ class _FixedAssetsManagementScreenState
                         record.isGain
                             ? Icons.trending_up_rounded
                             : (record.isLoss
-                                ? Icons.trending_down_rounded
-                                : Icons.check_circle_outline),
+                                  ? Icons.trending_down_rounded
+                                  : Icons.check_circle_outline),
                         color: record.isGain
                             ? AppColors.successGreen
                             : (record.isLoss
-                                ? AppColors.dangerWaste
-                                : Colors.blueGrey),
+                                  ? AppColors.dangerWaste
+                                  : Colors.blueGrey),
                       ),
                       title: Text('${record.assetName} • ${record.category}'),
                       subtitle: Text(
@@ -1062,31 +1205,31 @@ class _FixedAssetsManagementScreenState
                           color: record.isGain
                               ? AppColors.chipBgGreen
                               : (record.isLoss
-                                  ? AppColors.chipBgRed
-                                  : Colors.grey.shade100),
+                                    ? AppColors.chipBgRed
+                                    : Colors.grey.shade100),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
                             color: record.isGain
                                 ? AppColors.successGreen
                                 : (record.isLoss
-                                    ? AppColors.dangerWaste
-                                    : Colors.grey),
+                                      ? AppColors.dangerWaste
+                                      : Colors.grey),
                           ),
                         ),
                         child: Text(
                           record.isGain
                               ? '+${record.gain.fmt} ${AppCurrency.symbol(record.currency)} (أرباح)'
                               : (record.isLoss
-                                  ? '-${record.loss.fmt} ${AppCurrency.symbol(record.currency)} (خسائر)'
-                                  : '0.00 (تعادل)'),
+                                    ? '-${record.loss.fmt} ${AppCurrency.symbol(record.currency)} (خسائر)'
+                                    : '0.00 (تعادل)'),
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
                             color: record.isGain
                                 ? AppColors.successGreen
                                 : (record.isLoss
-                                    ? AppColors.dangerWaste
-                                    : Colors.black87),
+                                      ? AppColors.dangerWaste
+                                      : Colors.black87),
                           ),
                         ),
                       ),
@@ -1172,15 +1315,15 @@ class _FixedAssetsManagementScreenState
                         color: isHigher
                             ? AppColors.chipBgGreen
                             : (isLower
-                                ? AppColors.chipBgRed
-                                : AppColors.chipBgAmber),
+                                  ? AppColors.chipBgRed
+                                  : AppColors.chipBgAmber),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: isHigher
                               ? AppColors.successGreen
                               : (isLower
-                                  ? AppColors.dangerWaste
-                                  : Colors.amber.shade700),
+                                    ? AppColors.dangerWaste
+                                    : Colors.amber.shade700),
                         ),
                       ),
                       child: Column(
@@ -1192,30 +1335,30 @@ class _FixedAssetsManagementScreenState
                                 isHigher
                                     ? Icons.trending_up_rounded
                                     : (isLower
-                                        ? Icons.trending_down_rounded
-                                        : Icons.check_circle_outline),
+                                          ? Icons.trending_down_rounded
+                                          : Icons.check_circle_outline),
                                 size: 18,
                                 color: isHigher
                                     ? AppColors.successGreen
                                     : (isLower
-                                        ? AppColors.dangerWaste
-                                        : Colors.amber.shade900),
+                                          ? AppColors.dangerWaste
+                                          : Colors.amber.shade900),
                               ),
                               const SizedBox(width: 6),
                               Text(
                                 isHigher
                                     ? 'البيع بسعر أعلى من القيمة المسجلة (+أرباح):'
                                     : (isLower
-                                        ? 'البيع بسعر أقل من القيمة المسجلة (-خسائر):'
-                                        : 'البيع بنفس القيمة المسجلة تماماً:'),
+                                          ? 'البيع بسعر أقل من القيمة المسجلة (-خسائر):'
+                                          : 'البيع بنفس القيمة المسجلة تماماً:'),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 13,
                                   color: isHigher
                                       ? AppColors.successGreen
                                       : (isLower
-                                          ? AppColors.dangerWaste
-                                          : Colors.amber.shade900),
+                                            ? AppColors.dangerWaste
+                                            : Colors.amber.shade900),
                                 ),
                               ),
                             ],
@@ -1410,8 +1553,14 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                     initialValue: currency,
                     decoration: const InputDecoration(labelText: 'العملة'),
                     items: const [
-                      DropdownMenuItem(value: 'USD', child: Text('دولار (USD)')),
-                      DropdownMenuItem(value: 'SYP', child: Text('ليرة سورية (SYP)')),
+                      DropdownMenuItem(
+                        value: 'USD',
+                        child: Text('دولار (USD)'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'SYP',
+                        child: Text('ليرة سورية (SYP)'),
+                      ),
                     ],
                     onChanged: (value) =>
                         setDialogState(() => currency = value ?? 'USD'),
@@ -1419,19 +1568,27 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     initialValue: selectedBox,
-                    decoration: const InputDecoration(labelText: 'الصندوق / الخزينة المخصوم منها'),
+                    decoration: const InputDecoration(
+                      labelText: 'الصندوق / الخزينة المخصوم منها',
+                    ),
                     items: [
                       DropdownMenuItem(
                         value: 'main',
-                        child: Text('الصندوق الرئيسي (الخزينة) • المتوفر: ${erp.cashOf('main', currency).fmt} ${AppCurrency.symbol(currency)}'),
+                        child: Text(
+                          'الصندوق الرئيسي (الخزينة) • المتوفر: ${erp.cashOf('main', currency).fmt} ${AppCurrency.symbol(currency)}',
+                        ),
                       ),
                       DropdownMenuItem(
                         value: 'scrap',
-                        child: Text('صندوق الزيادات والسكراب • المتوفر: ${erp.cashOf('scrap', currency).fmt} ${AppCurrency.symbol(currency)}'),
+                        child: Text(
+                          'صندوق الزيادات والسكراب • المتوفر: ${erp.cashOf('scrap', currency).fmt} ${AppCurrency.symbol(currency)}',
+                        ),
                       ),
                       DropdownMenuItem(
                         value: 'order',
-                        child: Text('صندوق الطلبيات • المتوفر: ${erp.cashOf('order', currency).fmt} ${AppCurrency.symbol(currency)}'),
+                        child: Text(
+                          'صندوق الطلبيات • المتوفر: ${erp.cashOf('order', currency).fmt} ${AppCurrency.symbol(currency)}',
+                        ),
                       ),
                     ],
                     onChanged: (value) =>
@@ -1439,7 +1596,10 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                   ),
                   Container(
                     margin: const EdgeInsets.symmetric(vertical: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: erp.cashOf(selectedBox, currency) < 0
                           ? const Color(0xFFFEE2E2)
@@ -1561,7 +1721,9 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
               .addEarning(currency, share);
           erp.refresh();
         }
-        _message('تمت إضافة المصروف وخصم ${amount.fmt} ${AppCurrency.symbol(currency)} من الخزينة بنجاح.');
+        _message(
+          'تمت إضافة المصروف وخصم ${amount.fmt} ${AppCurrency.symbol(currency)} من الخزينة بنجاح.',
+        );
       }
     }
     amountController.dispose();
@@ -1643,8 +1805,9 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
     ExpenseTypeModel type,
     String query,
   ) {
-    final typeExpenses =
-        erp.expenseRecords.where((e) => e.typeId == type.id).toList();
+    final typeExpenses = erp.expenseRecords
+        .where((e) => e.typeId == type.id)
+        .toList();
     final totalUsd = typeExpenses
         .where((e) => AppCurrency.isUsd(e.currency))
         .fold<double>(0.0, (s, e) => s + e.amount);
@@ -1682,10 +1845,7 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
             ),
             const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 6,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: AppColors.chipBgBlue,
                 borderRadius: BorderRadius.circular(8),
@@ -1749,9 +1909,9 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
           for (final expense in erp.expenseRecords.where((expense) {
             if (expense.typeId != type.id) return false;
             if (query.isEmpty ||
-                '${type.name} ${type.description}'
-                    .toLowerCase()
-                    .contains(query)) {
+                '${type.name} ${type.description}'.toLowerCase().contains(
+                  query,
+                )) {
               return true;
             }
             return '${expense.amount} ${expense.currency} ${expense.personName} ${expense.description}'
@@ -1792,7 +1952,11 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                 ],
               ),
               subtitle: Text(
-                '${expense.description} • ${expense.personName.isEmpty ? 'دون مستفيد' : expense.personName}${expense.personShare > 0 ? ' • الحصة ${expense.personShare.fmt}' : ''}${expense.staffId != null ? ' • مسجل في القوى العاملة' : ''} • مخصوم من: ${expense.cashBox == 'scrap' ? 'صندوق الزيادات' : expense.cashBox == 'order' ? 'صندوق الطلبيات' : 'الخزينة الرئيسية'}',
+                '${expense.description} • ${expense.personName.isEmpty ? 'دون مستفيد' : expense.personName}${expense.personShare > 0 ? ' • الحصة ${expense.personShare.fmt}' : ''}${expense.staffId != null ? ' • مسجل في القوى العاملة' : ''} • مخصوم من: ${expense.cashBox == 'scrap'
+                    ? 'صندوق الزيادات'
+                    : expense.cashBox == 'order'
+                    ? 'صندوق الطلبيات'
+                    : 'الخزينة الرئيسية'}',
               ),
             ),
         ],
@@ -1883,7 +2047,10 @@ class _ReturnsAllowancesScreenState extends State<ReturnsAllowancesScreen> {
       final invNo = invoice.invoiceNo.toLowerCase();
       final party = invoice.partyName.toLowerCase();
       final desc = invoice.description.toLowerCase();
-      return invNo.contains(q) || targetNo.contains(q) || party.contains(q) || desc.contains(q);
+      return invNo.contains(q) ||
+          targetNo.contains(q) ||
+          party.contains(q) ||
+          desc.contains(q);
     }).toList();
 
     return Scaffold(
@@ -1929,7 +2096,8 @@ class _ReturnsAllowancesScreenState extends State<ReturnsAllowancesScreen> {
                   child: TextField(
                     controller: _searchCtrl,
                     decoration: InputDecoration(
-                      hintText: 'بحث برقم الفاتورة، أو رقم الفاتورة الأصلية، أو اسم الطرف...',
+                      hintText:
+                          'بحث برقم الفاتورة، أو رقم الفاتورة الأصلية، أو اسم الطرف...',
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
@@ -2062,10 +2230,12 @@ class _HistoricalFinancialsScreenState
 
   bool _matches(LegacyFinancialRecordModel record) {
     if (_currencyFilter != 'ALL') {
-      if (AppCurrency.isSyp(_currencyFilter) && !AppCurrency.isSyp(record.currency)) {
+      if (AppCurrency.isSyp(_currencyFilter) &&
+          !AppCurrency.isSyp(record.currency)) {
         return false;
       }
-      if (AppCurrency.isUsd(_currencyFilter) && !AppCurrency.isUsd(record.currency)) {
+      if (AppCurrency.isUsd(_currencyFilter) &&
+          !AppCurrency.isUsd(record.currency)) {
         return false;
       }
     }
@@ -2103,17 +2273,22 @@ class _HistoricalFinancialsScreenState
           onSearchChanged: (value) => setState(() => _searchQuery = value),
           selectedCurrency: _currencyFilter,
           onCurrencyChanged: (curr) => setState(() => _currencyFilter = curr),
-          hintText: 'بحث في الأرصدة السابقة بالاسم أو الهاتف أو الوصف أو المبلغ...',
+          hintText:
+              'بحث في الأرصدة السابقة بالاسم أو الهاتف أو الوصف أو المبلغ...',
           onClear: () => setState(() => _searchQuery = ''),
         ),
         const SizedBox(height: 16),
         for (final category in categories.entries) ...[
           () {
             final categoryMatches = records
-                .where((item) => item.category == category.key && _matches(item))
+                .where(
+                  (item) => item.category == category.key && _matches(item),
+                )
                 .toList();
             return Card(
-              key: ValueKey('legacy_${category.key}_${_searchQuery}_$_currencyFilter'),
+              key: ValueKey(
+                'legacy_${category.key}_${_searchQuery}_$_currencyFilter',
+              ),
               margin: const EdgeInsets.only(bottom: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -2129,7 +2304,10 @@ class _HistoricalFinancialsScreenState
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: categoryMatches.isNotEmpty
                             ? const Color(0xFF0F172A).withValues(alpha: 0.08)
@@ -2161,7 +2339,10 @@ class _HistoricalFinancialsScreenState
                       ),
                       trailing: record.amount == 0
                           ? const Chip(
-                              label: Text('مسدد', style: TextStyle(color: Colors.green)),
+                              label: Text(
+                                'مسدد',
+                                style: TextStyle(color: Colors.green),
+                              ),
                               backgroundColor: Color(0xFFDCFCE7),
                             )
                           : IconButton(
@@ -2170,8 +2351,10 @@ class _HistoricalFinancialsScreenState
                                   : 'دفع',
                               onPressed: () =>
                                   _settle(context, erp, record, category.key),
-                              icon: const Icon(Icons.payments_outlined,
-                                  color: Color(0xFF2563EB)),
+                              icon: const Icon(
+                                Icons.payments_outlined,
+                                color: Color(0xFF2563EB),
+                              ),
                             ),
                     ),
                   if (categoryMatches.isEmpty)

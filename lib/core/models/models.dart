@@ -86,6 +86,9 @@ class OpeningEntryModel {
   double adnanRatio;
   double abdelMoeenRatio;
 
+  double retainedEarnings;
+  double retainedEarningsSyp;
+  final List<Map<String, dynamic>> retainedWithdrawals;
   double? openingCapital;
   double? openingCapitalSyp;
 
@@ -115,12 +118,16 @@ class OpeningEntryModel {
     this.hassanRatio = 0.42,
     this.adnanRatio = 0.35,
     this.abdelMoeenRatio = 0.23,
+    this.retainedEarnings = 0,
+    this.retainedEarningsSyp = 0,
+    List<Map<String, dynamic>>? retainedWithdrawals,
     this.openingCapital,
     this.openingCapitalSyp,
     this.isLocked = true,
     this.lockedAt,
     this.openingStockApplied = false,
-  }) : fixedAssets = fixedAssets ?? [],
+  }) : retainedWithdrawals = retainedWithdrawals ?? [],
+       fixedAssets = fixedAssets ?? [],
        openingStock = openingStock ?? [],
        legacyFinancials = legacyFinancials ?? [];
 
@@ -188,6 +195,16 @@ class OpeningEntryModel {
   double get totalEquitySyp =>
       openingCapitalSyp ?? (totalAssetsSyp - totalLiabilitiesSyp);
 
+  double retainedWithdrawnOf(String currency) => retainedWithdrawals
+      .where((v) => v['currency'] == currency)
+      .fold(0.0, (s, v) => s + (v['amount'] as num).toDouble());
+  double get capitalExcludingRetainedUsd =>
+      totalEquity - retainedEarnings - retainedWithdrawnOf(AppCurrency.usd);
+  double get capitalExcludingRetainedSyp =>
+      totalEquitySyp -
+      retainedEarningsSyp -
+      retainedWithdrawnOf(AppCurrency.syp);
+
   double get hassanCapital => totalEquity * hassanRatio;
   double get adnanCapital => totalEquity * adnanRatio;
   double get abdelMoeenCapital => totalEquity * abdelMoeenRatio;
@@ -219,6 +236,9 @@ class OpeningEntryModel {
     'hassanRatio': hassanRatio,
     'adnanRatio': adnanRatio,
     'abdelMoeenRatio': abdelMoeenRatio,
+    'retainedEarnings': retainedEarnings,
+    'retainedEarningsSyp': retainedEarningsSyp,
+    'retainedWithdrawals': retainedWithdrawals,
     'openingCapital': openingCapital,
     'openingCapitalSyp': openingCapitalSyp,
     'isLocked': isLocked,
@@ -256,6 +276,11 @@ class OpeningEntryModel {
         hassanRatio: (json['hassanRatio'] ?? 0.42).toDouble(),
         adnanRatio: (json['adnanRatio'] ?? 0.35).toDouble(),
         abdelMoeenRatio: (json['abdelMoeenRatio'] ?? 0.23).toDouble(),
+        retainedEarnings: (json['retainedEarnings'] ?? 0).toDouble(),
+        retainedEarningsSyp: (json['retainedEarningsSyp'] ?? 0).toDouble(),
+        retainedWithdrawals: (json['retainedWithdrawals'] as List? ?? [])
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList(),
         openingCapital: json['openingCapital'] != null
             ? (json['openingCapital'] as num).toDouble()
             : null,
@@ -274,7 +299,7 @@ class FixedAssetModel {
   final String id;
   final String category;
   final String name;
-  final double amount;
+  double amount;
   final String description;
   final String currency;
   bool isSold;
@@ -320,8 +345,9 @@ class AssetSaleRecordModel {
   final String assetId;
   final String assetName;
   final String category;
-  final double registeredPrice; // Initial registered price in system (book value)
-  final double salePrice;       // Actual sale price collected to safe
+  final double
+  registeredPrice; // Initial registered price in system (book value)
+  final double salePrice; // Actual sale price collected to safe
   final String currency;
   final DateTime saleDate;
   final String description;
@@ -391,7 +417,7 @@ class OpeningStockItemModel {
   final double thicknessCm;
   final String supplierName;
   double quantity;
-  final double unitPrice;
+  double unitPrice;
   final double sellingPrice;
   final String description;
   final String currency;
@@ -587,7 +613,8 @@ class AdjustmentLineModel {
   final double amount; // quantity * unitPrice (rounded to 2 decimals)
   final String sourceType; // workshop source classification when applicable
   final String sourceLineItemId; // tailoring line item when applicable
-  final bool isDamaged; // Damaged return flag -> routes directly to Abnormal Waste Losses
+  final bool
+  isDamaged; // Damaged return flag -> routes directly to Abnormal Waste Losses
 
   AdjustmentLineModel({
     required this.itemId,
@@ -602,9 +629,14 @@ class AdjustmentLineModel {
     this.sourceType = '',
     this.sourceLineItemId = '',
     this.isDamaged = false,
-  }) : rawUnitPrice = rawUnitPrice ?? (discountRatio < 0.9999 && discountRatio > 0 ? unitPrice / discountRatio : unitPrice);
+  }) : rawUnitPrice =
+           rawUnitPrice ??
+           (discountRatio < 0.9999 && discountRatio > 0
+               ? unitPrice / discountRatio
+               : unitPrice);
 
-  double get discountShare => ((rawUnitPrice - unitPrice) * quantity).clamp(0.0, double.infinity);
+  double get discountShare =>
+      ((rawUnitPrice - unitPrice) * quantity).clamp(0.0, double.infinity);
 
   Map<String, dynamic> toJson() => {
     'itemId': itemId,
@@ -624,7 +656,8 @@ class AdjustmentLineModel {
   factory AdjustmentLineModel.fromJson(Map<String, dynamic> json) {
     final double uPrice = (json['unitPrice'] as num?)?.toDouble() ?? 0.0;
     final double ratio = (json['discountRatio'] as num?)?.toDouble() ?? 1.0;
-    final double rawPrice = (json['rawUnitPrice'] as num?)?.toDouble() ??
+    final double rawPrice =
+        (json['rawUnitPrice'] as num?)?.toDouble() ??
         (ratio < 0.9999 && ratio > 0 ? uPrice / ratio : uPrice);
     return AdjustmentLineModel(
       itemId: json['itemId'] ?? '',
@@ -660,17 +693,23 @@ class AdjustmentInvoiceModel {
   final String paymentAction;
   final String currency;
   final DateTime date;
+
   /// Every line of this document (multi-line returns). Legacy single-item
   /// records simply carry an empty list and use the scalar fields above.
   final List<AdjustmentLineModel> lines;
+
   /// Actual cash moved through the safe for this return (0 for credit adjustments).
   final double cashAmount;
+
   /// Whether the financial impact on Income Summary is deferred (Account Settlement).
   final bool isSettlementDeferred;
+
   /// Total amount deferred from Income Summary until actual payment/collection.
   final double deferredAmount;
+
   /// Portion of the deferred amount that has been formally realized in Income Summary.
   double realizedAmount;
+
   /// Multiplier/ratio from the parent invoice (Net Total / Gross Total).
   final double discountRatio;
 
@@ -698,7 +737,8 @@ class AdjustmentInvoiceModel {
     double? realizedAmount,
     this.discountRatio = 1.0,
   }) : date = date ?? DateTime.now(),
-       realizedAmount = realizedAmount ??
+       realizedAmount =
+           realizedAmount ??
            (isSettlementDeferred
                ? 0.0
                : (cashAmount > 0 ? cashAmount : amount));
@@ -707,12 +747,16 @@ class AdjustmentInvoiceModel {
   bool get isAllowance => !isReturn;
   bool get isPurchase => kind.startsWith('purchase');
   bool get isFullyRealized =>
-      realizedAmount >= (isSettlementDeferred ? deferredAmount - 0.0001 : amount - 0.0001);
-  double get pendingDeferredAmount =>
-      isSettlementDeferred ? (deferredAmount - realizedAmount).clamp(0.0, double.infinity) : 0.0;
+      realizedAmount >=
+      (isSettlementDeferred ? deferredAmount - 0.0001 : amount - 0.0001);
+  double get pendingDeferredAmount => isSettlementDeferred
+      ? (deferredAmount - realizedAmount).clamp(0.0, double.infinity)
+      : 0.0;
   bool get hasDiscount => discountRatio < 0.9999 && discountRatio > 0;
-  double get originalGrossAmount => hasDiscount ? (amount / discountRatio) : amount;
-  double get discountShare => (originalGrossAmount - amount).clamp(0.0, double.infinity);
+  double get originalGrossAmount =>
+      hasDiscount ? (amount / discountRatio) : amount;
+  double get discountShare =>
+      (originalGrossAmount - amount).clamp(0.0, double.infinity);
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -765,7 +809,8 @@ class AdjustmentInvoiceModel {
         cashAmount: (json['cashAmount'] as num?)?.toDouble() ?? 0.0,
         isSettlementDeferred: json['isSettlementDeferred'] as bool? ?? false,
         deferredAmount: (json['deferredAmount'] as num?)?.toDouble() ?? 0.0,
-        realizedAmount: (json['realizedAmount'] as num?)?.toDouble() ??
+        realizedAmount:
+            (json['realizedAmount'] as num?)?.toDouble() ??
             ((json['isSettlementDeferred'] == true)
                 ? 0.0
                 : ((json['amount'] as num?)?.toDouble() ?? 0.0)),
@@ -926,7 +971,11 @@ class SupplierModel {
     }
   }
 
-  void reduceDebt(String? currency, double amount, {bool allowNegative = true}) {
+  void reduceDebt(
+    String? currency,
+    double amount, {
+    bool allowNegative = true,
+  }) {
     if (AppCurrency.isSyp(currency)) {
       debtBalanceSyp = allowNegative
           ? debtBalanceSyp - amount
@@ -943,15 +992,14 @@ class SupplierModel {
   bool get hasDebt => debtBalance > 0.01 || debtBalanceSyp > 0.01;
   bool get hasCredit => debtBalance < -0.01 || debtBalanceSyp < -0.01;
 
-  double creditOf(String? currency) =>
-      AppCurrency.isSyp(currency)
-          ? (-debtBalanceSyp).clamp(0.0, double.infinity)
-          : (-debtBalance).clamp(0.0, double.infinity);
+  double creditOf(String? currency) => AppCurrency.isSyp(currency)
+      ? (-debtBalanceSyp).clamp(0.0, double.infinity)
+      : (-debtBalance).clamp(0.0, double.infinity);
 
   String get dualCredit => AppCurrency.dual(
-        (-debtBalance).clamp(0.0, double.infinity),
-        (-debtBalanceSyp).clamp(0.0, double.infinity),
-      );
+    (-debtBalance).clamp(0.0, double.infinity),
+    (-debtBalanceSyp).clamp(0.0, double.infinity),
+  );
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -993,15 +1041,19 @@ class ClientModel {
     this.debtBalance = 0.0,
     this.debtBalanceSyp = 0.0,
     String? currencyClassification,
-  }) : _currencyClassification = (currencyClassification != null && currencyClassification.isNotEmpty)
-            ? AppCurrency.normalize(currencyClassification)
-            : null;
+  }) : _currencyClassification =
+           (currencyClassification != null && currencyClassification.isNotEmpty)
+           ? AppCurrency.normalize(currencyClassification)
+           : null;
 
   String get currencyClassification {
-    if (_currencyClassification != null && _currencyClassification!.isNotEmpty) {
+    if (_currencyClassification != null &&
+        _currencyClassification!.isNotEmpty) {
       return _currencyClassification!;
     }
-    return debtBalanceSyp > 0.01 && debtBalance <= 0.01 ? AppCurrency.syp : AppCurrency.usd;
+    return debtBalanceSyp > 0.01 && debtBalance <= 0.01
+        ? AppCurrency.syp
+        : AppCurrency.usd;
   }
 
   set currencyClassification(String? value) {
@@ -1030,7 +1082,11 @@ class ClientModel {
     }
   }
 
-  void reduceDebt(String? currency, double amount, {bool allowNegative = true}) {
+  void reduceDebt(
+    String? currency,
+    double amount, {
+    bool allowNegative = true,
+  }) {
     if (AppCurrency.isSyp(currency)) {
       debtBalanceSyp = allowNegative
           ? debtBalanceSyp - amount
@@ -1047,15 +1103,14 @@ class ClientModel {
   bool get hasDebt => debtBalance > 0.01 || debtBalanceSyp > 0.01;
   bool get hasCredit => debtBalance < -0.01 || debtBalanceSyp < -0.01;
 
-  double creditOf(String? currency) =>
-      AppCurrency.isSyp(currency)
-          ? (-debtBalanceSyp).clamp(0.0, double.infinity)
-          : (-debtBalance).clamp(0.0, double.infinity);
+  double creditOf(String? currency) => AppCurrency.isSyp(currency)
+      ? (-debtBalanceSyp).clamp(0.0, double.infinity)
+      : (-debtBalance).clamp(0.0, double.infinity);
 
   String get dualCredit => AppCurrency.dual(
-        (-debtBalance).clamp(0.0, double.infinity),
-        (-debtBalanceSyp).clamp(0.0, double.infinity),
-      );
+    (-debtBalance).clamp(0.0, double.infinity),
+    (-debtBalanceSyp).clamp(0.0, double.infinity),
+  );
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -1395,7 +1450,11 @@ class FactoryInvoiceItem {
       itemId.startsWith('tailoring_');
 
   double get calculatedArea {
-    if (isCubicMeter || (heightCm > 0 && meterUnit != 'متر مربع' && meterUnit != 'متر طولي' && heightCm > 5.0)) {
+    if (isCubicMeter ||
+        (heightCm > 0 &&
+            meterUnit != 'متر مربع' &&
+            meterUnit != 'متر طولي' &&
+            heightCm > 5.0)) {
       // Volume m³: Length(m) * Width(m) * Height(m) * Quantity
       if (lengthCm > 0 && widthCm > 0 && heightCm > 0) {
         return (lengthCm / 100.0) *
@@ -1433,24 +1492,23 @@ class FactoryInvoiceItem {
     String? itemCategory,
     double? thicknessCm,
     String? meterUnit,
-  }) =>
-      FactoryInvoiceItem(
-        itemId: itemId ?? this.itemId,
-        description: description ?? this.description,
-        typeName: typeName ?? this.typeName,
-        grade: grade ?? this.grade,
-        lengthCm: lengthCm ?? this.lengthCm,
-        widthCm: widthCm ?? this.widthCm,
-        heightCm: heightCm ?? this.heightCm,
-        quantity: quantity ?? this.quantity,
-        unitPrice: unitPrice ?? this.unitPrice,
-        unitCost: unitCost ?? this.unitCost,
-        isGranite: isGranite ?? this.isGranite,
-        services: services ?? List.of(this.services),
-        itemCategory: itemCategory ?? this.itemCategory,
-        thicknessCm: thicknessCm ?? this.thicknessCm,
-        meterUnit: meterUnit ?? this.meterUnit,
-      );
+  }) => FactoryInvoiceItem(
+    itemId: itemId ?? this.itemId,
+    description: description ?? this.description,
+    typeName: typeName ?? this.typeName,
+    grade: grade ?? this.grade,
+    lengthCm: lengthCm ?? this.lengthCm,
+    widthCm: widthCm ?? this.widthCm,
+    heightCm: heightCm ?? this.heightCm,
+    quantity: quantity ?? this.quantity,
+    unitPrice: unitPrice ?? this.unitPrice,
+    unitCost: unitCost ?? this.unitCost,
+    isGranite: isGranite ?? this.isGranite,
+    services: services ?? List.of(this.services),
+    itemCategory: itemCategory ?? this.itemCategory,
+    thicknessCm: thicknessCm ?? this.thicknessCm,
+    meterUnit: meterUnit ?? this.meterUnit,
+  );
 
   Map<String, dynamic> toJson() => {
     'itemId': itemId,
@@ -1488,7 +1546,9 @@ class FactoryInvoiceItem {
                   .map((s) => ServiceAttachment.fromJson(s))
                   .toList()
             : [],
-        itemCategory: json['itemCategory'] ?? (json['isMeter'] == true ? 'meter' : 'block'),
+        itemCategory:
+            json['itemCategory'] ??
+            (json['isMeter'] == true ? 'meter' : 'block'),
         thicknessCm: (json['thicknessCm'] ?? 0.0).toDouble(),
         meterUnit: json['meterUnit'] ?? 'متر مربع',
       );
@@ -1569,10 +1629,7 @@ class FactoryInvoiceModel {
   double get servicesTotal => services.fold(0.0, (sum, s) => sum + s.price);
   double get grandTotal {
     if (invoiceType == 'شراء_مورد') {
-      return (subtotal +
-              itemsServicesTotal +
-              servicesTotal -
-              discountAmount)
+      return (subtotal + itemsServicesTotal + servicesTotal - discountAmount)
           .clamp(0.0, double.infinity);
     }
     return (subtotal +
@@ -1598,9 +1655,11 @@ class FactoryInvoiceModel {
 
   /// Whether this invoice has an earned discount (purchases) or allowed discount (sales)
   bool get hasDiscount => discountAmount > 0.0001;
+
   /// Net Remaining Balance = (Original Gross Total - Return Value) - (Paid Amount - Cash Refunded)
   double get remainingBalance =>
-      ((grandTotal - adjustmentsAmount + adjustmentsCashRefund) - advancePayment)
+      ((grandTotal - adjustmentsAmount + adjustmentsCashRefund) -
+              advancePayment)
           .clamp(0.0, double.infinity);
 
   /// Historical remaining balance at issuance / direct payments before subsequent adjustments/returns.
@@ -1668,7 +1727,8 @@ class FactoryInvoiceModel {
         advancePayment: (json['advancePayment'] ?? 0.0).toDouble(),
         discountAmount: (json['discountAmount'] ?? 0.0).toDouble(),
         adjustmentsAmount: (json['adjustmentsAmount'] ?? 0.0).toDouble(),
-        adjustmentsCashRefund: (json['adjustmentsCashRefund'] ?? 0.0).toDouble(),
+        adjustmentsCashRefund: (json['adjustmentsCashRefund'] ?? 0.0)
+            .toDouble(),
         photoUrl: json['photoUrl'] ?? '',
         isCashInvoice: json['isCashInvoice'] ?? false,
         paymentStatus: json['paymentStatus'] ?? 'تم الدفع',
@@ -1842,7 +1902,7 @@ class WorkshopTailoringModel {
   final String unitCategory;
   final double measurementCount;
   double quantity;
-  final double materialNetCost;
+  double materialNetCost;
   final double laborCostPerMeter;
   final List<ServiceAttachment> attachedServices;
   final List<TailoringLineItem> lineItems;
@@ -2131,7 +2191,8 @@ class WasteLogModel {
   final double cost;
   final String destructionVoucherNo; // سند إتلاف for unnatural waste
   final String currency; // AppCurrency.usd | AppCurrency.syp
-  final String sourceSection; // 'مواد المعمل' | 'قسم التفصيل البسيط' | 'قسم التفصيل المعقد' | 'قسم الزيادات'
+  final String
+  sourceSection; // 'مواد المعمل' | 'قسم التفصيل البسيط' | 'قسم التفصيل المعقد' | 'قسم الزيادات'
   final String sourceItemId;
   final String unit; // 'متر مربع' | 'متر مكعب' | 'قطعة'
 
@@ -2252,8 +2313,8 @@ class WorkshopOrderModel {
         currency: AppCurrency.normalize(json['currency']),
         items: json['items'] != null
             ? (json['items'] as List)
-                .map((i) => WorkshopInvoiceItem.fromJson(i))
-                .toList()
+                  .map((i) => WorkshopInvoiceItem.fromJson(i))
+                  .toList()
             : [],
       );
 }
@@ -2267,8 +2328,10 @@ class RawMaterialTailoringAssignment {
   final double quantity;
   final String unitCategory;
   final bool isSimpleTailoring; // true = simple, false = complex
-  final String? existingTailoringId; // if assigning to existing tailoring record
-  final String? newTailoringName; // if creating a new tailoring type/name on the fly
+  final String?
+  existingTailoringId; // if assigning to existing tailoring record
+  final String?
+  newTailoringName; // if creating a new tailoring type/name on the fly
   final double sellingPrice;
 
   const RawMaterialTailoringAssignment({
@@ -2289,9 +2352,11 @@ class RawMaterialTailoringAssignment {
 // ==========================================
 class WorkshopInvoiceItem {
   final String id;
-  final String sourceType; // 'طلب معمل' | 'بيع خياطة بسيطة' | 'بيع خياطة معقدة' | 'بيع قطع إضافية' | 'بيع مواد خام من المعمل'
+  final String
+  sourceType; // 'طلب معمل' | 'بيع خياطة بسيطة' | 'بيع خياطة معقدة' | 'بيع قطع إضافية' | 'بيع مواد خام من المعمل'
   final String sourceId; // order / tailoring / scrap / stock id
-  final String sourceLineItemId; // specific line item id inside tailoring if applicable
+  final String
+  sourceLineItemId; // specific line item id inside tailoring if applicable
   final String description;
   final double quantity;
   final String unitCategory; // 'متر مربع' | 'متر مكعب' | 'قطعة' | etc.
@@ -2300,7 +2365,8 @@ class WorkshopInvoiceItem {
   final double netCost;
   final double depositAmount; // deposit from order if applicable
   final bool isGranite;
-  final List<ServiceAttachment> services; // dedicated services for this line item
+  final List<ServiceAttachment>
+  services; // dedicated services for this line item
   final String photoPath;
   final double lengthCm;
   final double widthCm;
@@ -2391,27 +2457,26 @@ class WorkshopInvoiceItem {
     double? widthCm,
     double? heightCm,
     double? count,
-  }) =>
-      WorkshopInvoiceItem(
-        id: id ?? this.id,
-        sourceType: sourceType ?? this.sourceType,
-        sourceId: sourceId ?? this.sourceId,
-        sourceLineItemId: sourceLineItemId ?? this.sourceLineItemId,
-        description: description ?? this.description,
-        quantity: quantity ?? this.quantity,
-        unitCategory: unitCategory ?? this.unitCategory,
-        unitPrice: unitPrice ?? this.unitPrice,
-        agreedPrice: agreedPrice ?? this.agreedPrice,
-        netCost: netCost ?? this.netCost,
-        depositAmount: depositAmount ?? this.depositAmount,
-        isGranite: isGranite ?? this.isGranite,
-        services: services ?? this.services,
-        photoPath: photoPath ?? this.photoPath,
-        lengthCm: lengthCm ?? this.lengthCm,
-        widthCm: widthCm ?? this.widthCm,
-        heightCm: heightCm ?? this.heightCm,
-        count: count ?? this.count,
-      );
+  }) => WorkshopInvoiceItem(
+    id: id ?? this.id,
+    sourceType: sourceType ?? this.sourceType,
+    sourceId: sourceId ?? this.sourceId,
+    sourceLineItemId: sourceLineItemId ?? this.sourceLineItemId,
+    description: description ?? this.description,
+    quantity: quantity ?? this.quantity,
+    unitCategory: unitCategory ?? this.unitCategory,
+    unitPrice: unitPrice ?? this.unitPrice,
+    agreedPrice: agreedPrice ?? this.agreedPrice,
+    netCost: netCost ?? this.netCost,
+    depositAmount: depositAmount ?? this.depositAmount,
+    isGranite: isGranite ?? this.isGranite,
+    services: services ?? this.services,
+    photoPath: photoPath ?? this.photoPath,
+    lengthCm: lengthCm ?? this.lengthCm,
+    widthCm: widthCm ?? this.widthCm,
+    heightCm: heightCm ?? this.heightCm,
+    count: count ?? this.count,
+  );
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -2450,8 +2515,8 @@ class WorkshopInvoiceItem {
         isGranite: json['isGranite'] ?? false,
         services: json['services'] != null
             ? (json['services'] as List)
-                .map((s) => ServiceAttachment.fromJson(s))
-                .toList()
+                  .map((s) => ServiceAttachment.fromJson(s))
+                  .toList()
             : [],
         photoPath: json['photoPath'] ?? '',
         lengthCm: (json['lengthCm'] as num?)?.toDouble() ?? 0.0,
@@ -2471,9 +2536,11 @@ class WorkshopInvoiceModel {
   final DateTime date;
   final String clientName;
   final List<WorkshopInvoiceItem> items; // multiple items from multiple sources
-  final String sourceType; // 'طلبية معمل' | 'تفصيل بسيط' | 'تفصيل معقد' | 'قطع زائدة' | 'مواد خام' | 'مصادر متعددة'
+  final String
+  sourceType; // 'طلبية معمل' | 'تفصيل بسيط' | 'تفصيل معقد' | 'قطع زائدة' | 'مواد خام' | 'مصادر متعددة'
   final String sourceId; // order / tailoring / scrap / stock id when applicable
-  final String projectId; // workshop project id when the invoice belongs to a project
+  final String
+  projectId; // workshop project id when the invoice belongs to a project
   final String itemDescription;
   final double sourceQuantity;
   final String sourceUnitCategory;
@@ -2526,8 +2593,8 @@ class WorkshopInvoiceModel {
       ? items.fold(0.0, (s, e) => s + e.servicesTotal)
       : services.fold(0.0, (s, e) => s + e.price);
 
-  double get grandTotal =>
-      (itemsSubtotal + servicesTotal - salesDiscount).clamp(0.0, double.infinity);
+  double get grandTotal => (itemsSubtotal + servicesTotal - salesDiscount)
+      .clamp(0.0, double.infinity);
 
   /// Gross total before discount
   double get grossTotal => itemsSubtotal + servicesTotal;
@@ -2551,7 +2618,10 @@ class WorkshopInvoiceModel {
 
   /// Historical remaining balance at issuance / direct payments before subsequent adjustments/returns.
   double get historicalRemainingBalance =>
-      (grandTotal - (depositDeducted + cashPaidNow)).clamp(0.0, double.infinity);
+      (grandTotal - (depositDeducted + cashPaidNow)).clamp(
+        0.0,
+        double.infinity,
+      );
 
   /// Due (مستحق التحصيل) when any balance remains, otherwise Paid (مسددة).
   bool get isDue => remainingBalance > 0.01;
@@ -2593,8 +2663,8 @@ class WorkshopInvoiceModel {
     } else {
       final legacyServices = json['services'] != null
           ? (json['services'] as List)
-              .map((s) => ServiceAttachment.fromJson(s))
-              .toList()
+                .map((s) => ServiceAttachment.fromJson(s))
+                .toList()
           : <ServiceAttachment>[];
       parsedItems = [
         WorkshopInvoiceItem(
@@ -2611,14 +2681,14 @@ class WorkshopInvoiceModel {
           isGranite: json['isGranite'] ?? false,
           services: legacyServices,
           photoPath: json['photoPath'] ?? '',
-        )
+        ),
       ];
     }
 
     final rawServices = json['services'] != null
         ? (json['services'] as List)
-            .map((s) => ServiceAttachment.fromJson(s))
-            .toList()
+              .map((s) => ServiceAttachment.fromJson(s))
+              .toList()
         : parsedItems.expand((e) => e.services).toList();
 
     return WorkshopInvoiceModel(
@@ -2627,16 +2697,33 @@ class WorkshopInvoiceModel {
       date: DateTime.parse(json['date']),
       clientName: json['clientName'],
       items: parsedItems,
-      sourceType: json['sourceType'] ?? (parsedItems.isNotEmpty ? parsedItems.first.sourceType : 'طلبية معمل'),
-      sourceId: json['sourceId'] ?? (parsedItems.isNotEmpty ? parsedItems.first.sourceId : ''),
+      sourceType:
+          json['sourceType'] ??
+          (parsedItems.isNotEmpty
+              ? parsedItems.first.sourceType
+              : 'طلبية معمل'),
+      sourceId:
+          json['sourceId'] ??
+          (parsedItems.isNotEmpty ? parsedItems.first.sourceId : ''),
       projectId: json['projectId'] ?? '',
-      itemDescription: json['itemDescription'] ?? (parsedItems.map((e) => e.description).join(' + ')),
-      sourceQuantity: (json['sourceQuantity'] ?? (parsedItems.isNotEmpty ? parsedItems.fold(0.0, (s, e) => s + e.quantity) : 1.0)).toDouble(),
+      itemDescription:
+          json['itemDescription'] ??
+          (parsedItems.map((e) => e.description).join(' + ')),
+      sourceQuantity:
+          (json['sourceQuantity'] ??
+                  (parsedItems.isNotEmpty
+                      ? parsedItems.fold(0.0, (s, e) => s + e.quantity)
+                      : 1.0))
+              .toDouble(),
       sourceUnitCategory: json['sourceUnitCategory'] ?? 'متر مربع',
-      agreedPrice: (json['agreedPrice'] as num?)?.toDouble() ?? parsedItems.fold(0.0, (s, e) => s + e.agreedPrice),
+      agreedPrice:
+          (json['agreedPrice'] as num?)?.toDouble() ??
+          parsedItems.fold(0.0, (s, e) => s + e.agreedPrice),
       depositDeducted: (json['depositDeducted'] as num?)?.toDouble() ?? 0.0,
       cashPaidNow: (json['cashPaidNow'] as num?)?.toDouble() ?? 0.0,
-      netCost: (json['netCost'] as num?)?.toDouble() ?? parsedItems.fold(0.0, (s, e) => s + e.netCost),
+      netCost:
+          (json['netCost'] as num?)?.toDouble() ??
+          parsedItems.fold(0.0, (s, e) => s + e.netCost),
       salesDiscount: (json['salesDiscount'] ?? 0.0).toDouble(),
       adjustmentsAmount: (json['adjustmentsAmount'] ?? 0.0).toDouble(),
       adjustmentsCashRefund: (json['adjustmentsCashRefund'] ?? 0.0).toDouble(),
@@ -2716,7 +2803,8 @@ class FactoryOrderModel {
   final double discountAmount;
   final double depositAmount;
   final String photoPath;
-  String status; // 'قيد التنفيذ' | 'مكتملة ومرحلة' | 'ملغاة (مكتملة)' | 'ملغاة (غير مكتملة)' | 'ملغاة'
+  String
+  status; // 'قيد التنفيذ' | 'مكتملة ومرحلة' | 'ملغاة (مكتملة)' | 'ملغاة (غير مكتملة)' | 'ملغاة'
   bool isCompleted;
   bool isSpecialRefund;
   final String currency; // AppCurrency.usd | AppCurrency.syp
@@ -2754,7 +2842,9 @@ class FactoryOrderModel {
     double? agreedPrice,
   }) : items = List.of(items) {
     // If items were empty but legacy single-item fields were passed, populate items
-    if (this.items.isEmpty && (warehouseItemId != null && warehouseItemId.isNotEmpty || itemDescription != null && itemDescription.isNotEmpty)) {
+    if (this.items.isEmpty &&
+        (warehouseItemId != null && warehouseItemId.isNotEmpty ||
+            itemDescription != null && itemDescription.isNotEmpty)) {
       this.items.add(
         FactoryInvoiceItem(
           itemId: warehouseItemId ?? '',
@@ -2787,7 +2877,11 @@ class FactoryOrderModel {
   double get totalServices => services.fold(0.0, (sum, s) => sum + s.price);
 
   double get grandTotal =>
-      (subtotal + itemsServicesTotal + totalServices + shippingFee - discountAmount)
+      (subtotal +
+              itemsServicesTotal +
+              totalServices +
+              shippingFee -
+              discountAmount)
           .clamp(0.0, double.infinity);
 
   double get agreedPrice => grandTotal;
@@ -2857,15 +2951,20 @@ class FactoryOrderModel {
     return FactoryOrderModel(
       id: json['id'] ?? '',
       orderNo: json['orderNo'] ?? '',
-      date: json['date'] != null ? DateTime.parse(json['date']) : DateTime.now(),
+      date: json['date'] != null
+          ? DateTime.parse(json['date'])
+          : DateTime.now(),
       partyId: json['partyId'] ?? '',
       clientName: json['clientName'] ?? '',
       clientPhone: json['clientPhone'] ?? '',
       items: parsedItems,
       services: json['services'] != null
           ? (json['services'] as List)
-              .map((s) => ServiceAttachment.fromJson(Map<String, dynamic>.from(s)))
-              .toList()
+                .map(
+                  (s) =>
+                      ServiceAttachment.fromJson(Map<String, dynamic>.from(s)),
+                )
+                .toList()
           : [],
       shippingFee: (json['shippingFee'] as num?)?.toDouble() ?? 0.0,
       isGoodsDelivered: json['isGoodsDelivered'] ?? true,
@@ -2881,7 +2980,6 @@ class FactoryOrderModel {
     );
   }
 }
-
 
 // ==========================================
 // 14. SERVICES CENTER ITEM
@@ -3006,11 +3104,15 @@ class StaffModel {
 
   void reduceAdvance(String? currency, double amount) {
     if (AppCurrency.isSyp(currency)) {
-      cashAdvancesDisbursedSyp =
-          (cashAdvancesDisbursedSyp - amount).clamp(0.0, double.infinity);
+      cashAdvancesDisbursedSyp = (cashAdvancesDisbursedSyp - amount).clamp(
+        0.0,
+        double.infinity,
+      );
     } else {
-      cashAdvancesDisbursed =
-          (cashAdvancesDisbursed - amount).clamp(0.0, double.infinity);
+      cashAdvancesDisbursed = (cashAdvancesDisbursed - amount).clamp(
+        0.0,
+        double.infinity,
+      );
     }
   }
 
@@ -3086,19 +3188,20 @@ class AdvanceRepaymentModel {
     'note': note,
   };
 
-  factory AdvanceRepaymentModel.fromJson(Map<String, dynamic> json) => AdvanceRepaymentModel(
-    id: json['id'],
-    staffId: json['staffId'] ?? '',
-    staffName: json['staffName'] ?? '',
-    staffCategory: json['staffCategory'] ?? '',
-    originalCurrency: AppCurrency.normalize(json['originalCurrency']),
-    collectedCurrency: AppCurrency.normalize(json['collectedCurrency']),
-    collectedAmount: (json['collectedAmount'] as num).toDouble(),
-    deductedAmount: (json['deductedAmount'] as num).toDouble(),
-    exchangeRate: (json['exchangeRate'] as num?)?.toDouble() ?? 1.0,
-    date: DateTime.parse(json['date']),
-    note: json['note'] ?? '',
-  );
+  factory AdvanceRepaymentModel.fromJson(Map<String, dynamic> json) =>
+      AdvanceRepaymentModel(
+        id: json['id'],
+        staffId: json['staffId'] ?? '',
+        staffName: json['staffName'] ?? '',
+        staffCategory: json['staffCategory'] ?? '',
+        originalCurrency: AppCurrency.normalize(json['originalCurrency']),
+        collectedCurrency: AppCurrency.normalize(json['collectedCurrency']),
+        collectedAmount: (json['collectedAmount'] as num).toDouble(),
+        deductedAmount: (json['deductedAmount'] as num).toDouble(),
+        exchangeRate: (json['exchangeRate'] as num?)?.toDouble() ?? 1.0,
+        date: DateTime.parse(json['date']),
+        note: json['note'] ?? '',
+      );
 }
 
 class StaffAttendanceModel {
@@ -3204,12 +3307,16 @@ class ReturnInvoiceModel {
   /// Cash actually moved through the main safe for this document.
   /// `null` = legacy record (cash = full amount when settled in cash).
   final double? cashAmount;
+
   /// Whether Income Summary impact is deferred (Account Settlement).
   final bool isSettlementDeferred;
+
   /// Total amount deferred until actual payment/collection.
   final double deferredAmount;
+
   /// Portion of the return formally realized in Income Summary.
   double realizedAmount;
+
   /// Multiplier/ratio from the parent invoice (Net Total / Gross Total).
   final double discountRatio;
 
@@ -3232,20 +3339,25 @@ class ReturnInvoiceModel {
     this.deferredAmount = 0.0,
     double? realizedAmount,
     this.discountRatio = 1.0,
-  }) : realizedAmount = realizedAmount ??
-            (isSettlementDeferred
-                ? 0.0
-                : (cashAmount != null && cashAmount > 0
-                    ? cashAmount
-                    : refundAmount));
+  }) : realizedAmount =
+           realizedAmount ??
+           (isSettlementDeferred
+               ? 0.0
+               : (cashAmount != null && cashAmount > 0
+                     ? cashAmount
+                     : refundAmount));
 
   bool get isFullyRealized =>
-      realizedAmount >= (isSettlementDeferred ? deferredAmount - 0.0001 : refundAmount - 0.0001);
-  double get pendingDeferredAmount =>
-      isSettlementDeferred ? (deferredAmount - realizedAmount).clamp(0.0, double.infinity) : 0.0;
+      realizedAmount >=
+      (isSettlementDeferred ? deferredAmount - 0.0001 : refundAmount - 0.0001);
+  double get pendingDeferredAmount => isSettlementDeferred
+      ? (deferredAmount - realizedAmount).clamp(0.0, double.infinity)
+      : 0.0;
   bool get hasDiscount => discountRatio < 0.9999 && discountRatio > 0;
-  double get originalGrossAmount => hasDiscount ? (refundAmount / discountRatio) : refundAmount;
-  double get discountShare => (originalGrossAmount - refundAmount).clamp(0.0, double.infinity);
+  double get originalGrossAmount =>
+      hasDiscount ? (refundAmount / discountRatio) : refundAmount;
+  double get discountShare =>
+      (originalGrossAmount - refundAmount).clamp(0.0, double.infinity);
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -3286,7 +3398,8 @@ class ReturnInvoiceModel {
         cashAmount: (json['cashAmount'] as num?)?.toDouble(),
         isSettlementDeferred: json['isSettlementDeferred'] as bool? ?? false,
         deferredAmount: (json['deferredAmount'] as num?)?.toDouble() ?? 0.0,
-        realizedAmount: (json['realizedAmount'] as num?)?.toDouble() ??
+        realizedAmount:
+            (json['realizedAmount'] as num?)?.toDouble() ??
             ((json['isSettlementDeferred'] == true)
                 ? 0.0
                 : ((json['refundAmount'] as num?)?.toDouble() ?? 0.0)),
@@ -3385,34 +3498,37 @@ class CenterInfoModel {
     this.taxId = '300294819',
     this.logoPath = '',
     this.address = 'المنطقة الصناعية - ريف دمشق / سوريا',
-    this.slogan = 'لأعمال الرخام والجرانيت وحجر البناء وقص وتفصيل البلوكات وتوريد المستودعات',
+    this.slogan =
+        'لأعمال الرخام والجرانيت وحجر البناء وقص وتفصيل البلوكات وتوريد المستودعات',
   });
 
   Map<String, dynamic> toJson() => {
-        'centerName': centerName,
-        'ownerName': ownerName,
-        'phone1': phone1,
-        'phone2': phone2,
-        'commercialRegNo': commercialRegNo,
-        'taxId': taxId,
-        'logoPath': logoPath,
-        'address': address,
-        'slogan': slogan,
-      };
+    'centerName': centerName,
+    'ownerName': ownerName,
+    'phone1': phone1,
+    'phone2': phone2,
+    'commercialRegNo': commercialRegNo,
+    'taxId': taxId,
+    'logoPath': logoPath,
+    'address': address,
+    'slogan': slogan,
+  };
 
-  factory CenterInfoModel.fromJson(Map<String, dynamic> json) =>
-      CenterInfoModel(
-        centerName: json['centerName'] ?? 'مركز ومنشار الأبرش للرخام والجرانيت',
-        ownerName: json['ownerName'] ?? 'إدارة منشار الأبرش',
-        phone1: json['phone1'] ?? '+963 933 123 456',
-        phone2: json['phone2'] ?? '+963 11 456 7890',
-        commercialRegNo: json['commercialRegNo'] ?? '104820',
-        taxId: json['taxId'] ?? '300294819',
-        logoPath: json['logoPath'] ?? '',
-        address: json['address'] ?? 'المنطقة الصناعية - ريف دمشق / سوريا',
-        slogan: json['slogan'] ??
-            'لأعمال الرخام والجرانيت وحجر البناء وقص وتفصيل البلوكات وتوريد المستودعات',
-      );
+  factory CenterInfoModel.fromJson(
+    Map<String, dynamic> json,
+  ) => CenterInfoModel(
+    centerName: json['centerName'] ?? 'مركز ومنشار الأبرش للرخام والجرانيت',
+    ownerName: json['ownerName'] ?? 'إدارة منشار الأبرش',
+    phone1: json['phone1'] ?? '+963 933 123 456',
+    phone2: json['phone2'] ?? '+963 11 456 7890',
+    commercialRegNo: json['commercialRegNo'] ?? '104820',
+    taxId: json['taxId'] ?? '300294819',
+    logoPath: json['logoPath'] ?? '',
+    address: json['address'] ?? 'المنطقة الصناعية - ريف دمشق / سوريا',
+    slogan:
+        json['slogan'] ??
+        'لأعمال الرخام والجرانيت وحجر البناء وقص وتفصيل البلوكات وتوريد المستودعات',
+  );
 }
 
 /// Model for accountant profit withdrawals from the granite business.
@@ -3436,14 +3552,14 @@ class AccountantWithdrawalModel {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'date': date.toIso8601String(),
-        'amount': amount,
-        'currency': currency,
-        'cashBox': cashBox,
-        'notes': notes,
-        'recipient': recipient,
-      };
+    'id': id,
+    'date': date.toIso8601String(),
+    'amount': amount,
+    'currency': currency,
+    'cashBox': cashBox,
+    'notes': notes,
+    'recipient': recipient,
+  };
 
   factory AccountantWithdrawalModel.fromJson(Map<String, dynamic> json) =>
       AccountantWithdrawalModel(
@@ -3489,18 +3605,18 @@ class DailyReportInvoiceSummary {
   });
 
   Map<String, dynamic> toJson() => {
-        'invoiceNo': invoiceNo,
-        'module': module,
-        'type': type,
-        'paymentType': paymentType,
-        'partyName': partyName,
-        'totalAmount': totalAmount,
-        'paidAmount': paidAmount,
-        'remainingAmount': remainingAmount,
-        'currency': currency,
-        'itemsSummary': itemsSummary,
-        'time': time.toIso8601String(),
-      };
+    'invoiceNo': invoiceNo,
+    'module': module,
+    'type': type,
+    'paymentType': paymentType,
+    'partyName': partyName,
+    'totalAmount': totalAmount,
+    'paidAmount': paidAmount,
+    'remainingAmount': remainingAmount,
+    'currency': currency,
+    'itemsSummary': itemsSummary,
+    'time': time.toIso8601String(),
+  };
 
   factory DailyReportInvoiceSummary.fromJson(Map<String, dynamic> json) =>
       DailyReportInvoiceSummary(
@@ -3538,14 +3654,14 @@ class DailyReportExpenseSummary {
   });
 
   Map<String, dynamic> toJson() => {
-        'category': category,
-        'description': description,
-        'beneficiary': beneficiary,
-        'amount': amount,
-        'currency': currency,
-        'cashBox': cashBox,
-        'time': time.toIso8601String(),
-      };
+    'category': category,
+    'description': description,
+    'beneficiary': beneficiary,
+    'amount': amount,
+    'currency': currency,
+    'cashBox': cashBox,
+    'time': time.toIso8601String(),
+  };
 
   factory DailyReportExpenseSummary.fromJson(Map<String, dynamic> json) =>
       DailyReportExpenseSummary(
@@ -3560,7 +3676,8 @@ class DailyReportExpenseSummary {
 }
 
 class DailyReportCashMovementSummary {
-  final String type; // 'قبض مبيعات' | 'سداد مشتريات' | 'مصاريف' | 'سحب أرباح' | 'تحويل عملات' | 'استرداد مرتجع'
+  final String
+  type; // 'قبض مبيعات' | 'سداد مشتريات' | 'مصاريف' | 'سحب أرباح' | 'تحويل عملات' | 'استرداد مرتجع'
   final String description;
   final String cashBox;
   final double amount;
@@ -3577,13 +3694,13 @@ class DailyReportCashMovementSummary {
   });
 
   Map<String, dynamic> toJson() => {
-        'type': type,
-        'description': description,
-        'cashBox': cashBox,
-        'amount': amount,
-        'currency': currency,
-        'time': time.toIso8601String(),
-      };
+    'type': type,
+    'description': description,
+    'cashBox': cashBox,
+    'amount': amount,
+    'currency': currency,
+    'time': time.toIso8601String(),
+  };
 
   factory DailyReportCashMovementSummary.fromJson(Map<String, dynamic> json) =>
       DailyReportCashMovementSummary(
@@ -3669,329 +3786,92 @@ class DailyReportModel {
   double get netCashFlowSyp => totalCashInSyp - totalCashOutSyp;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'reportNo': reportNo,
-        'reportDate': reportDate.toIso8601String(),
-        'generatedAt': generatedAt.toIso8601String(),
-        'notes': notes,
-        'totalSalesUsd': totalSalesUsd,
-        'totalSalesSyp': totalSalesSyp,
-        'totalPurchasesUsd': totalPurchasesUsd,
-        'totalPurchasesSyp': totalPurchasesSyp,
-        'totalExpensesUsd': totalExpensesUsd,
-        'totalExpensesSyp': totalExpensesSyp,
-        'totalCashInUsd': totalCashInUsd,
-        'totalCashInSyp': totalCashInSyp,
-        'totalCashOutUsd': totalCashOutUsd,
-        'totalCashOutSyp': totalCashOutSyp,
-        'mainCashUsd': mainCashUsd,
-        'mainCashSyp': mainCashSyp,
-        'scrapCashUsd': scrapCashUsd,
-        'scrapCashSyp': scrapCashSyp,
-        'orderCashUsd': orderCashUsd,
-        'orderCashSyp': orderCashSyp,
-        'salesInvoices': salesInvoices.map((i) => i.toJson()).toList(),
-        'purchaseInvoices': purchaseInvoices.map((i) => i.toJson()).toList(),
-        'returnInvoices': returnInvoices.map((i) => i.toJson()).toList(),
-        'expenses': expenses.map((e) => e.toJson()).toList(),
-        'cashMovements': cashMovements.map((c) => c.toJson()).toList(),
-        'cuttingOperationsCount': cuttingOperationsCount,
-        'attendanceCount': attendanceCount,
-      };
-
-  factory DailyReportModel.fromJson(Map<String, dynamic> json) =>
-      DailyReportModel(
-        id: json['id'] ?? '',
-        reportNo: json['reportNo'] ?? '',
-        reportDate: DateTime.tryParse(json['reportDate'] ?? '') ?? DateTime.now(),
-        generatedAt: DateTime.tryParse(json['generatedAt'] ?? '') ?? DateTime.now(),
-        notes: json['notes'] ?? '',
-        totalSalesUsd: (json['totalSalesUsd'] as num?)?.toDouble() ?? 0.0,
-        totalSalesSyp: (json['totalSalesSyp'] as num?)?.toDouble() ?? 0.0,
-        totalPurchasesUsd: (json['totalPurchasesUsd'] as num?)?.toDouble() ?? 0.0,
-        totalPurchasesSyp: (json['totalPurchasesSyp'] as num?)?.toDouble() ?? 0.0,
-        totalExpensesUsd: (json['totalExpensesUsd'] as num?)?.toDouble() ?? 0.0,
-        totalExpensesSyp: (json['totalExpensesSyp'] as num?)?.toDouble() ?? 0.0,
-        totalCashInUsd: (json['totalCashInUsd'] as num?)?.toDouble() ?? 0.0,
-        totalCashInSyp: (json['totalCashInSyp'] as num?)?.toDouble() ?? 0.0,
-        totalCashOutUsd: (json['totalCashOutUsd'] as num?)?.toDouble() ?? 0.0,
-        totalCashOutSyp: (json['totalCashOutSyp'] as num?)?.toDouble() ?? 0.0,
-        mainCashUsd: (json['mainCashUsd'] as num?)?.toDouble() ?? 0.0,
-        mainCashSyp: (json['mainCashSyp'] as num?)?.toDouble() ?? 0.0,
-        scrapCashUsd: (json['scrapCashUsd'] as num?)?.toDouble() ?? 0.0,
-        scrapCashSyp: (json['scrapCashSyp'] as num?)?.toDouble() ?? 0.0,
-        orderCashUsd: (json['orderCashUsd'] as num?)?.toDouble() ?? 0.0,
-        orderCashSyp: (json['orderCashSyp'] as num?)?.toDouble() ?? 0.0,
-        salesInvoices: (json['salesInvoices'] as List? ?? [])
-            .map((i) => DailyReportInvoiceSummary.fromJson(
-                Map<String, dynamic>.from(i)))
-            .toList(),
-        purchaseInvoices: (json['purchaseInvoices'] as List? ?? [])
-            .map((i) => DailyReportInvoiceSummary.fromJson(
-                Map<String, dynamic>.from(i)))
-            .toList(),
-        returnInvoices: (json['returnInvoices'] as List? ?? [])
-            .map((i) => DailyReportInvoiceSummary.fromJson(
-                Map<String, dynamic>.from(i)))
-            .toList(),
-        expenses: (json['expenses'] as List? ?? [])
-            .map((e) => DailyReportExpenseSummary.fromJson(
-                Map<String, dynamic>.from(e)))
-            .toList(),
-        cashMovements: (json['cashMovements'] as List? ?? [])
-            .map((c) => DailyReportCashMovementSummary.fromJson(
-                Map<String, dynamic>.from(c)))
-            .toList(),
-        cuttingOperationsCount: json['cuttingOperationsCount'] ?? 0,
-        attendanceCount: json['attendanceCount'] ?? 0,
-      );
-}
-
-// ==========================================
-// 32. PERIOD ARCHIVE & TRIAL BALANCE VALIDATION
-// ==========================================
-
-class AccountingValidationResult {
-  final bool isValid;
-  final double totalAssetsUsd;
-  final double totalLiabilitiesUsd;
-  final double totalEquityUsd;
-  final double discrepancyUsd;
-  final double totalAssetsSyp;
-  final double totalLiabilitiesSyp;
-  final double totalEquitySyp;
-  final double discrepancySyp;
-  final String? errorMessage;
-
-  const AccountingValidationResult({
-    required this.isValid,
-    required this.totalAssetsUsd,
-    required this.totalLiabilitiesUsd,
-    required this.totalEquityUsd,
-    required this.discrepancyUsd,
-    required this.totalAssetsSyp,
-    required this.totalLiabilitiesSyp,
-    required this.totalEquitySyp,
-    required this.discrepancySyp,
-    this.errorMessage,
-  });
-
-  bool get isCleanBalanced => discrepancyUsd < 0.01 && discrepancySyp < 0.01;
-}
-
-class PeriodArchiveModel {
-  final String id;
-  final String archiveName;
-  final DateTime archivedAt;
-  final String notes;
-
-  // Closed period financial summary
-  final double totalRevenuesUsd;
-  final double totalRevenuesSyp;
-  final double totalExpensesUsd;
-  final double totalExpensesSyp;
-  final double netProfitUsd;
-  final double netProfitSyp;
-
-  // Trial balance snapshot
-  final double totalAssetsUsd;
-  final double totalLiabilitiesUsd;
-  final double totalEquityUsd;
-
-  // Safes snapshot
-  final double mainCashUsd;
-  final double scrapCashUsd;
-  final double orderCashUsd;
-  final double mainCashSyp;
-  final double scrapCashSyp;
-  final double orderCashSyp;
-
-  // Archived Operational Collections (Read-Only)
-  final List<FactoryInvoiceModel> factoryInvoices;
-  final List<WorkshopInvoiceModel> workshopInvoices;
-  final List<AdjustmentInvoiceModel> adjustmentInvoices;
-  final List<ReturnInvoiceModel> returnInvoices;
-  final List<FactoryOrderModel> factoryOrders;
-  final List<WorkshopOrderModel> workshopOrders;
-  final List<ExpenseRecordModel> expenseRecords;
-  final List<SurplusCostModel> surplusCosts;
-  final List<WorkdayEntryModel> workdayEntries;
-  final List<StaffAttendanceModel> staffAttendance;
-  final List<AdvanceRepaymentModel> advanceRepayments;
-  final List<DailyReportModel> dailyReports;
-  final List<AssetSaleRecordModel> assetSaleRecords;
-  final List<AccountantWithdrawalModel> accountantWithdrawals;
-
-  // Rolled-over Opening Entry generated for the new period
-  final OpeningEntryModel rolledOpeningEntry;
-
-  PeriodArchiveModel({
-    required this.id,
-    required this.archiveName,
-    required this.archivedAt,
-    this.notes = '',
-    required this.totalRevenuesUsd,
-    required this.totalRevenuesSyp,
-    required this.totalExpensesUsd,
-    required this.totalExpensesSyp,
-    required this.netProfitUsd,
-    required this.netProfitSyp,
-    required this.totalAssetsUsd,
-    required this.totalLiabilitiesUsd,
-    required this.totalEquityUsd,
-    required this.mainCashUsd,
-    required this.scrapCashUsd,
-    required this.orderCashUsd,
-    required this.mainCashSyp,
-    required this.scrapCashSyp,
-    required this.orderCashSyp,
-    List<FactoryInvoiceModel>? factoryInvoices,
-    List<WorkshopInvoiceModel>? workshopInvoices,
-    List<AdjustmentInvoiceModel>? adjustmentInvoices,
-    List<ReturnInvoiceModel>? returnInvoices,
-    List<FactoryOrderModel>? factoryOrders,
-    List<WorkshopOrderModel>? workshopOrders,
-    List<ExpenseRecordModel>? expenseRecords,
-    List<SurplusCostModel>? surplusCosts,
-    List<WorkdayEntryModel>? workdayEntries,
-    List<StaffAttendanceModel>? staffAttendance,
-    List<AdvanceRepaymentModel>? advanceRepayments,
-    List<DailyReportModel>? dailyReports,
-    List<AssetSaleRecordModel>? assetSaleRecords,
-    List<AccountantWithdrawalModel>? accountantWithdrawals,
-    required this.rolledOpeningEntry,
-  })  : factoryInvoices = factoryInvoices ?? [],
-        workshopInvoices = workshopInvoices ?? [],
-        adjustmentInvoices = adjustmentInvoices ?? [],
-        returnInvoices = returnInvoices ?? [],
-        factoryOrders = factoryOrders ?? [],
-        workshopOrders = workshopOrders ?? [],
-        expenseRecords = expenseRecords ?? [],
-        surplusCosts = surplusCosts ?? [],
-        workdayEntries = workdayEntries ?? [],
-        staffAttendance = staffAttendance ?? [],
-        advanceRepayments = advanceRepayments ?? [],
-        dailyReports = dailyReports ?? [],
-        assetSaleRecords = assetSaleRecords ?? [],
-        accountantWithdrawals = accountantWithdrawals ?? [];
-
-  int get totalInvoicesCount => factoryInvoices.length + workshopInvoices.length;
-  int get totalAdjustmentsCount => adjustmentInvoices.length + returnInvoices.length;
-  int get totalOrdersCount => factoryOrders.length + workshopOrders.length;
-  int get totalExpensesCount => expenseRecords.length + surplusCosts.length;
-
-  Map<String, dynamic> toJson() => {
     'id': id,
-    'archiveName': archiveName,
-    'archivedAt': archivedAt.toIso8601String(),
+    'reportNo': reportNo,
+    'reportDate': reportDate.toIso8601String(),
+    'generatedAt': generatedAt.toIso8601String(),
     'notes': notes,
-    'totalRevenuesUsd': totalRevenuesUsd,
-    'totalRevenuesSyp': totalRevenuesSyp,
+    'totalSalesUsd': totalSalesUsd,
+    'totalSalesSyp': totalSalesSyp,
+    'totalPurchasesUsd': totalPurchasesUsd,
+    'totalPurchasesSyp': totalPurchasesSyp,
     'totalExpensesUsd': totalExpensesUsd,
     'totalExpensesSyp': totalExpensesSyp,
-    'netProfitUsd': netProfitUsd,
-    'netProfitSyp': netProfitSyp,
-    'totalAssetsUsd': totalAssetsUsd,
-    'totalLiabilitiesUsd': totalLiabilitiesUsd,
-    'totalEquityUsd': totalEquityUsd,
+    'totalCashInUsd': totalCashInUsd,
+    'totalCashInSyp': totalCashInSyp,
+    'totalCashOutUsd': totalCashOutUsd,
+    'totalCashOutSyp': totalCashOutSyp,
     'mainCashUsd': mainCashUsd,
-    'scrapCashUsd': scrapCashUsd,
-    'orderCashUsd': orderCashUsd,
     'mainCashSyp': mainCashSyp,
+    'scrapCashUsd': scrapCashUsd,
     'scrapCashSyp': scrapCashSyp,
+    'orderCashUsd': orderCashUsd,
     'orderCashSyp': orderCashSyp,
-    'factoryInvoices': factoryInvoices.map((i) => i.toJson()).toList(),
-    'workshopInvoices': workshopInvoices.map((i) => i.toJson()).toList(),
-    'adjustmentInvoices': adjustmentInvoices.map((i) => i.toJson()).toList(),
+    'salesInvoices': salesInvoices.map((i) => i.toJson()).toList(),
+    'purchaseInvoices': purchaseInvoices.map((i) => i.toJson()).toList(),
     'returnInvoices': returnInvoices.map((i) => i.toJson()).toList(),
-    'factoryOrders': factoryOrders.map((o) => o.toJson()).toList(),
-    'workshopOrders': workshopOrders.map((o) => o.toJson()).toList(),
-    'expenseRecords': expenseRecords.map((e) => e.toJson()).toList(),
-    'surplusCosts': surplusCosts.map((s) => s.toJson()).toList(),
-    'workdayEntries': workdayEntries.map((w) => w.toJson()).toList(),
-    'staffAttendance': staffAttendance.map((a) => a.toJson()).toList(),
-    'advanceRepayments': advanceRepayments.map((a) => a.toJson()).toList(),
-    'dailyReports': dailyReports.map((d) => d.toJson()).toList(),
-    'assetSaleRecords': assetSaleRecords.map((a) => a.toJson()).toList(),
-    'accountantWithdrawals': accountantWithdrawals.map((w) => w.toJson()).toList(),
-    'rolledOpeningEntry': rolledOpeningEntry.toJson(),
+    'expenses': expenses.map((e) => e.toJson()).toList(),
+    'cashMovements': cashMovements.map((c) => c.toJson()).toList(),
+    'cuttingOperationsCount': cuttingOperationsCount,
+    'attendanceCount': attendanceCount,
   };
 
-  factory PeriodArchiveModel.fromJson(Map<String, dynamic> json) =>
-      PeriodArchiveModel(
-        id: json['id'] ?? '',
-        archiveName: json['archiveName'] ?? 'أرشيف غير مسمى',
-        archivedAt: json['archivedAt'] != null
-            ? DateTime.parse(json['archivedAt'])
-            : DateTime.now(),
-        notes: json['notes'] ?? '',
-        totalRevenuesUsd: (json['totalRevenuesUsd'] as num?)?.toDouble() ?? 0.0,
-        totalRevenuesSyp: (json['totalRevenuesSyp'] as num?)?.toDouble() ?? 0.0,
-        totalExpensesUsd: (json['totalExpensesUsd'] as num?)?.toDouble() ?? 0.0,
-        totalExpensesSyp: (json['totalExpensesSyp'] as num?)?.toDouble() ?? 0.0,
-        netProfitUsd: (json['netProfitUsd'] as num?)?.toDouble() ?? 0.0,
-        netProfitSyp: (json['netProfitSyp'] as num?)?.toDouble() ?? 0.0,
-        totalAssetsUsd: (json['totalAssetsUsd'] as num?)?.toDouble() ?? 0.0,
-        totalLiabilitiesUsd:
-            (json['totalLiabilitiesUsd'] as num?)?.toDouble() ?? 0.0,
-        totalEquityUsd: (json['totalEquityUsd'] as num?)?.toDouble() ?? 0.0,
-        mainCashUsd: (json['mainCashUsd'] as num?)?.toDouble() ?? 0.0,
-        scrapCashUsd: (json['scrapCashUsd'] as num?)?.toDouble() ?? 0.0,
-        orderCashUsd: (json['orderCashUsd'] as num?)?.toDouble() ?? 0.0,
-        mainCashSyp: (json['mainCashSyp'] as num?)?.toDouble() ?? 0.0,
-        scrapCashSyp: (json['scrapCashSyp'] as num?)?.toDouble() ?? 0.0,
-        orderCashSyp: (json['orderCashSyp'] as num?)?.toDouble() ?? 0.0,
-        factoryInvoices: (json['factoryInvoices'] as List? ?? [])
-            .map((i) => FactoryInvoiceModel.fromJson(Map<String, dynamic>.from(i)))
-            .toList(),
-        workshopInvoices: (json['workshopInvoices'] as List? ?? [])
-            .map((i) => WorkshopInvoiceModel.fromJson(Map<String, dynamic>.from(i)))
-            .toList(),
-        adjustmentInvoices: (json['adjustmentInvoices'] as List? ?? [])
-            .map((i) =>
-                AdjustmentInvoiceModel.fromJson(Map<String, dynamic>.from(i)))
-            .toList(),
-        returnInvoices: (json['returnInvoices'] as List? ?? [])
-            .map((i) => ReturnInvoiceModel.fromJson(Map<String, dynamic>.from(i)))
-            .toList(),
-        factoryOrders: (json['factoryOrders'] as List? ?? [])
-            .map((o) => FactoryOrderModel.fromJson(Map<String, dynamic>.from(o)))
-            .toList(),
-        workshopOrders: (json['workshopOrders'] as List? ?? [])
-            .map((o) => WorkshopOrderModel.fromJson(Map<String, dynamic>.from(o)))
-            .toList(),
-        expenseRecords: (json['expenseRecords'] as List? ?? [])
-            .map((e) => ExpenseRecordModel.fromJson(Map<String, dynamic>.from(e)))
-            .toList(),
-        surplusCosts: (json['surplusCosts'] as List? ?? [])
-            .map((s) => SurplusCostModel.fromJson(Map<String, dynamic>.from(s)))
-            .toList(),
-        workdayEntries: (json['workdayEntries'] as List? ?? [])
-            .map((w) => WorkdayEntryModel.fromJson(Map<String, dynamic>.from(w)))
-            .toList(),
-        staffAttendance: (json['staffAttendance'] as List? ?? [])
-            .map((a) => StaffAttendanceModel.fromJson(Map<String, dynamic>.from(a)))
-            .toList(),
-        advanceRepayments: (json['advanceRepayments'] as List? ?? [])
-            .map((a) =>
-                AdvanceRepaymentModel.fromJson(Map<String, dynamic>.from(a)))
-            .toList(),
-        dailyReports: (json['dailyReports'] as List? ?? [])
-            .map((d) => DailyReportModel.fromJson(Map<String, dynamic>.from(d)))
-            .toList(),
-        assetSaleRecords: (json['assetSaleRecords'] as List? ?? [])
-            .map((a) =>
-                AssetSaleRecordModel.fromJson(Map<String, dynamic>.from(a)))
-            .toList(),
-        accountantWithdrawals: (json['accountantWithdrawals'] as List? ?? [])
-            .map((w) => AccountantWithdrawalModel.fromJson(
-                Map<String, dynamic>.from(w)))
-            .toList(),
-        rolledOpeningEntry: json['rolledOpeningEntry'] != null
-            ? OpeningEntryModel.fromJson(
-                Map<String, dynamic>.from(json['rolledOpeningEntry']))
-            : OpeningEntryModel(),
-      );
+  factory DailyReportModel.fromJson(
+    Map<String, dynamic> json,
+  ) => DailyReportModel(
+    id: json['id'] ?? '',
+    reportNo: json['reportNo'] ?? '',
+    reportDate: DateTime.tryParse(json['reportDate'] ?? '') ?? DateTime.now(),
+    generatedAt: DateTime.tryParse(json['generatedAt'] ?? '') ?? DateTime.now(),
+    notes: json['notes'] ?? '',
+    totalSalesUsd: (json['totalSalesUsd'] as num?)?.toDouble() ?? 0.0,
+    totalSalesSyp: (json['totalSalesSyp'] as num?)?.toDouble() ?? 0.0,
+    totalPurchasesUsd: (json['totalPurchasesUsd'] as num?)?.toDouble() ?? 0.0,
+    totalPurchasesSyp: (json['totalPurchasesSyp'] as num?)?.toDouble() ?? 0.0,
+    totalExpensesUsd: (json['totalExpensesUsd'] as num?)?.toDouble() ?? 0.0,
+    totalExpensesSyp: (json['totalExpensesSyp'] as num?)?.toDouble() ?? 0.0,
+    totalCashInUsd: (json['totalCashInUsd'] as num?)?.toDouble() ?? 0.0,
+    totalCashInSyp: (json['totalCashInSyp'] as num?)?.toDouble() ?? 0.0,
+    totalCashOutUsd: (json['totalCashOutUsd'] as num?)?.toDouble() ?? 0.0,
+    totalCashOutSyp: (json['totalCashOutSyp'] as num?)?.toDouble() ?? 0.0,
+    mainCashUsd: (json['mainCashUsd'] as num?)?.toDouble() ?? 0.0,
+    mainCashSyp: (json['mainCashSyp'] as num?)?.toDouble() ?? 0.0,
+    scrapCashUsd: (json['scrapCashUsd'] as num?)?.toDouble() ?? 0.0,
+    scrapCashSyp: (json['scrapCashSyp'] as num?)?.toDouble() ?? 0.0,
+    orderCashUsd: (json['orderCashUsd'] as num?)?.toDouble() ?? 0.0,
+    orderCashSyp: (json['orderCashSyp'] as num?)?.toDouble() ?? 0.0,
+    salesInvoices: (json['salesInvoices'] as List? ?? [])
+        .map(
+          (i) =>
+              DailyReportInvoiceSummary.fromJson(Map<String, dynamic>.from(i)),
+        )
+        .toList(),
+    purchaseInvoices: (json['purchaseInvoices'] as List? ?? [])
+        .map(
+          (i) =>
+              DailyReportInvoiceSummary.fromJson(Map<String, dynamic>.from(i)),
+        )
+        .toList(),
+    returnInvoices: (json['returnInvoices'] as List? ?? [])
+        .map(
+          (i) =>
+              DailyReportInvoiceSummary.fromJson(Map<String, dynamic>.from(i)),
+        )
+        .toList(),
+    expenses: (json['expenses'] as List? ?? [])
+        .map(
+          (e) =>
+              DailyReportExpenseSummary.fromJson(Map<String, dynamic>.from(e)),
+        )
+        .toList(),
+    cashMovements: (json['cashMovements'] as List? ?? [])
+        .map(
+          (c) => DailyReportCashMovementSummary.fromJson(
+            Map<String, dynamic>.from(c),
+          ),
+        )
+        .toList(),
+    cuttingOperationsCount: json['cuttingOperationsCount'] ?? 0,
+    attendanceCount: json['attendanceCount'] ?? 0,
+  );
 }
-
-

@@ -11,7 +11,6 @@ import '../widgets/supplier_worker_debt_modal.dart';
 import '../widgets/partner_management_modal.dart';
 import '../widgets/system_reset_modal.dart';
 import '../widgets/backup_restore_modal.dart';
-import '../widgets/archive_and_close_period_modal.dart';
 import 'daily_reports_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
@@ -38,7 +37,9 @@ class DashboardScreen extends StatelessWidget {
                     children: [
                       Text(
                         'الشاشة الرئيسية (لوحة القيادة والمؤشرات)',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 22),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.titleLarge?.copyWith(fontSize: 22),
                       ),
                       const SizedBox(height: 4),
                       const Text(
@@ -49,7 +50,10 @@ class DashboardScreen extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
@@ -65,7 +69,11 @@ class DashboardScreen extends StatelessWidget {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.verified_rounded, size: 16, color: Color(0xFF0D9488)),
+                      Icon(
+                        Icons.verified_rounded,
+                        size: 16,
+                        color: Color(0xFF0D9488),
+                      ),
                       SizedBox(width: 8),
                       Text(
                         'منظومة أبعاد المتكاملة',
@@ -93,7 +101,11 @@ class DashboardScreen extends StatelessWidget {
             // SECTION 1: FACTORY & WORKSHOP ANALYTICS CARDS
             const Text(
               '1. تحليلات وذمم المصنع والمعمل',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.brandPrimaryText),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.brandPrimaryText,
+              ),
             ),
             const SizedBox(height: 12),
             GridView.count(
@@ -108,8 +120,9 @@ class DashboardScreen extends StatelessWidget {
                 MetricCard(
                   title: 'تحليلات المصنع • لنا من معتمدين',
                   value: AppCurrency.dual(
-                      erp.clientsApprovedDebtsOf(AppCurrency.usd),
-                      erp.clientsApprovedDebtsOf(AppCurrency.syp)),
+                    erp.clientsApprovedDebtsOf(AppCurrency.usd),
+                    erp.clientsApprovedDebtsOf(AppCurrency.syp),
+                  ),
                   subtitle: 'انقر لفتح القائمة التفصيلية للمعتمدين',
                   icon: Icons.factory_rounded,
                   iconColor: AppColors.accentPrimary,
@@ -117,7 +130,8 @@ class DashboardScreen extends StatelessWidget {
                   onTap: () {
                     showDialog(
                       context: context,
-                      builder: (_) => const ClientDebtModal(titleFilter: 'معتمد مصنع'),
+                      builder: (_) =>
+                          const ClientDebtModal(titleFilter: 'معتمد مصنع'),
                     );
                   },
                 ),
@@ -126,8 +140,9 @@ class DashboardScreen extends StatelessWidget {
                 MetricCard(
                   title: 'المستحقات • علينا عمال وموردين',
                   value: AppCurrency.dual(
-                      erp.suppliersTotalDebts + erp.workersTotalDebts,
-                      erp.suppliersTotalDebtsSyp + erp.workersTotalDebtsSyp),
+                    erp.suppliersTotalDebts + erp.workersTotalDebts,
+                    erp.suppliersTotalDebtsSyp + erp.workersTotalDebtsSyp,
+                  ),
                   subtitle: 'انقر لفتح تبويبات الموردين والعمالة',
                   icon: Icons.outbox_rounded,
                   iconColor: AppColors.dangerWaste,
@@ -144,7 +159,9 @@ class DashboardScreen extends StatelessWidget {
                 MetricCard(
                   title: 'تحليلات المعمل • لنا زبائن',
                   value: AppCurrency.dual(
-                      erp.clientsRetailDebts, erp.clientsRetailDebtsSyp),
+                    erp.clientsRetailDebts,
+                    erp.clientsRetailDebtsSyp,
+                  ),
                   subtitle: 'انقر لعرض ديون الزبائن الجزافية',
                   icon: Icons.storefront_rounded,
                   iconColor: AppColors.orderDepositBoxAccent,
@@ -152,7 +169,8 @@ class DashboardScreen extends StatelessWidget {
                   onTap: () {
                     showDialog(
                       context: context,
-                      builder: (_) => const ClientDebtModal(titleFilter: 'زبون معمل'),
+                      builder: (_) =>
+                          const ClientDebtModal(titleFilter: 'زبون معمل'),
                     );
                   },
                 ),
@@ -164,7 +182,11 @@ class DashboardScreen extends StatelessWidget {
             // SECTION 2: BOTTOM KEY FINANCIAL METRICS CARDS
             const Text(
               '2. المؤشرات المالية ورأس المال والأرباح الصافية',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.brandPrimaryText),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.brandPrimaryText,
+              ),
             ),
             const SizedBox(height: 12),
             GridView.count(
@@ -190,8 +212,10 @@ class DashboardScreen extends StatelessWidget {
                 // Metric 2: Net Operating Profit
                 MetricCard(
                   title: 'قيمة الأرباح الصافية',
-                  value: AppCurrency.dual(erp.netOperatingProfit,
-                      erp.netOperatingProfitSyp),
+                  value: AppCurrency.dual(
+                    erp.netOperatingProfit,
+                    erp.netOperatingProfitSyp,
+                  ),
                   icon: Icons.trending_up_rounded,
                   iconColor: AppColors.successGreen,
                   bgColor: AppColors.chipBgGreen,
@@ -199,9 +223,12 @@ class DashboardScreen extends StatelessWidget {
 
                 // Metric 3: Special Granite Profit (Accountant Share)
                 MetricCard(
-                  title: 'أرباح الغرانيت (${erp.graniteAccountantPercentage.fmt}%)',
-                  value: AppCurrency.dual(erp.accountantGraniteShare,
-                      erp.accountantGraniteShareSyp),
+                  title:
+                      'أرباح الغرانيت (${erp.graniteAccountantPercentage.fmt}%)',
+                  value: AppCurrency.dual(
+                    erp.accountantGraniteShare,
+                    erp.accountantGraniteShareSyp,
+                  ),
                   subtitle: 'مستحقات المحاسب المعتمدة',
                   icon: Icons.pie_chart_rounded,
                   iconColor: AppColors.accentPrimary,
@@ -211,14 +238,21 @@ class DashboardScreen extends StatelessWidget {
                 // Metric 4: Main Cash Box
                 Builder(
                   builder: (context) {
-                    final hasDeficit = erp.mainCashBox < -0.001 || erp.mainCashBoxSyp < -0.001;
+                    final hasDeficit =
+                        erp.mainCashBox < -0.001 || erp.mainCashBoxSyp < -0.001;
                     return MetricCard(
                       title: 'الصندوق الرئيسي',
                       value: erp.dualMainCash,
-                      subtitle: hasDeficit ? 'تنبيه: يوجد عجز في رصيد الصندوق' : '',
+                      subtitle: hasDeficit
+                          ? 'تنبيه: يوجد عجز في رصيد الصندوق'
+                          : '',
                       icon: Icons.payments_rounded,
-                      iconColor: hasDeficit ? AppColors.dangerWaste : AppColors.accentPrimary,
-                      bgColor: hasDeficit ? const Color(0xFFFEE2E2) : AppColors.chipBgBlue,
+                      iconColor: hasDeficit
+                          ? AppColors.dangerWaste
+                          : AppColors.accentPrimary,
+                      bgColor: hasDeficit
+                          ? const Color(0xFFFEE2E2)
+                          : AppColors.chipBgBlue,
                     );
                   },
                 ),
@@ -251,11 +285,17 @@ class DashboardScreen extends StatelessWidget {
                       children: [
                         const Text(
                           'توزيع الأرباح الصافية الحالي حسب نسب الشركاء الحالية:',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         Text(
                           'إجمالي صافي الأرباح القابلة للتوزيع: ${AppCurrency.dual(erp.netOperatingProfit, erp.netOperatingProfitSyp)}',
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.successGreen),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.successGreen,
+                          ),
                         ),
                       ],
                     ),
@@ -278,18 +318,36 @@ class DashboardScreen extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(partner.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                Text(
+                                  partner.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                                 const SizedBox(height: 6),
-                                Text('النسبة: ${(partner.ratio * 100).fmt}%', style: const TextStyle(fontSize: 12, color: AppColors.brandSecondaryText)),
+                                Text(
+                                  'النسبة: ${(partner.ratio * 100).fmt}%',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.brandSecondaryText,
+                                  ),
+                                ),
                                 const SizedBox(height: 6),
                                 Text(
                                   'رأس المال: ${AppCurrency.dual(partner.injectedCapital, partner.injectedCapitalSyp)}',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
                                   'المستحق الصافي: ${AppCurrency.dual(partnerProfit, partnerProfitSyp)}',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.partnersEquityAccent, fontSize: 13),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.partnersEquityAccent,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ],
                             ),
@@ -397,11 +455,13 @@ class DashboardScreen extends StatelessWidget {
                                 () => convertCurrencyChoice = AppCurrency.usd,
                               ),
                               child: Container(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
                                 decoration: BoxDecoration(
-                                  color:
-                                      isUsd ? Colors.white : Colors.transparent,
+                                  color: isUsd
+                                      ? Colors.white
+                                      : Colors.transparent,
                                   borderRadius: BorderRadius.circular(8),
                                   boxShadow: isUsd
                                       ? [
@@ -438,8 +498,9 @@ class DashboardScreen extends StatelessWidget {
                                 () => convertCurrencyChoice = AppCurrency.syp,
                               ),
                               child: Container(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
                                 decoration: BoxDecoration(
                                   color: !isUsd
                                       ? Colors.white
@@ -575,11 +636,11 @@ class DashboardScreen extends StatelessWidget {
                                 decoration: InputDecoration(
                                   labelText:
                                       'المبلغ المراد تصريفه ($fromSymbol)',
-                                  prefixIcon:
-                                      const Icon(Icons.payments_outlined),
+                                  prefixIcon: const Icon(
+                                    Icons.payments_outlined,
+                                  ),
                                 ),
-                                onChanged: (_) =>
-                                    setSt(() => formError = null),
+                                onChanged: (_) => setSt(() => formError = null),
                               ),
                               Align(
                                 alignment: AlignmentDirectional.centerStart,
@@ -601,16 +662,14 @@ class DashboardScreen extends StatelessWidget {
                         Expanded(
                           child: TextField(
                             controller: rateCtrl,
-                            keyboardType:
-                                const TextInputType.numberWithOptions(
-                                  decimal: true,
-                                ),
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
                             decoration: const InputDecoration(
                               labelText: 'سعر الصرف اليوم (1\$ = ... ل.س)',
                               prefixIcon: Icon(Icons.price_change_outlined),
                             ),
-                            onChanged: (_) =>
-                                setSt(() => formError = null),
+                            onChanged: (_) => setSt(() => formError = null),
                           ),
                         ),
                       ],
@@ -685,10 +744,7 @@ class DashboardScreen extends StatelessWidget {
                               color: Color(0xFF0F766E),
                             ),
                           ),
-                          const Divider(
-                            height: 16,
-                            color: Color(0xFF99F6E4),
-                          ),
+                          const Divider(height: 16, color: Color(0xFF99F6E4)),
                           Text(
                             '• سيتم خصم: ${amount.fmt} $fromSymbol من (${boxName(fromBox)})\n'
                             '• سيتم إيداع: ${convertedAmount.fmt} $toSymbol في (${boxName(targetBox)})',
@@ -731,14 +787,15 @@ class DashboardScreen extends StatelessWidget {
                 ),
                 onPressed: () {
                   if (amount <= 0) {
-                    setSt(() => formError = 'أدخل مبلغاً صحيحاً أكبر من الصفر.');
+                    setSt(
+                      () => formError = 'أدخل مبلغاً صحيحاً أكبر من الصفر.',
+                    );
                     return;
                   }
                   if (rate <= 0) {
                     setSt(
                       () =>
-                          formError =
-                              'أدخل سعر صرف صحيح اليوم أكبر من الصفر.',
+                          formError = 'أدخل سعر صرف صحيح اليوم أكبر من الصفر.',
                     );
                     return;
                   }
@@ -782,7 +839,6 @@ class DashboardScreen extends StatelessWidget {
       ),
     );
   }
-
 
   // -------------------------------------------------------------
   // ADD / EDIT CENTER INFORMATION MODAL
@@ -860,7 +916,8 @@ class DashboardScreen extends StatelessWidget {
                           child: TextField(
                             controller: nameCtrl,
                             decoration: const InputDecoration(
-                              labelText: 'اسم المركز / المنشأة / المنشار (Center Name) *',
+                              labelText:
+                                  'اسم المركز / المنشأة / المنشار (Center Name) *',
                               prefixIcon: Icon(Icons.domain_rounded),
                             ),
                           ),
@@ -888,7 +945,8 @@ class DashboardScreen extends StatelessWidget {
                             controller: phone1Ctrl,
                             keyboardType: TextInputType.phone,
                             decoration: const InputDecoration(
-                              labelText: 'رقم الهاتف الأول (First Contact Number) *',
+                              labelText:
+                                  'رقم الهاتف الأول (First Contact Number) *',
                               prefixIcon: Icon(Icons.phone_rounded),
                             ),
                           ),
@@ -899,7 +957,8 @@ class DashboardScreen extends StatelessWidget {
                             controller: phone2Ctrl,
                             keyboardType: TextInputType.phone,
                             decoration: const InputDecoration(
-                              labelText: 'رقم الهاتف الثاني (Second Contact Number)',
+                              labelText:
+                                  'رقم الهاتف الثاني (Second Contact Number)',
                               prefixIcon: Icon(Icons.phone_iphone_rounded),
                             ),
                           ),
@@ -915,7 +974,8 @@ class DashboardScreen extends StatelessWidget {
                           child: TextField(
                             controller: regNoCtrl,
                             decoration: const InputDecoration(
-                              labelText: 'رقم السجل التجاري (Commercial Reg Number)',
+                              labelText:
+                                  'رقم السجل التجاري (Commercial Reg Number)',
                               prefixIcon: Icon(Icons.badge_rounded),
                             ),
                           ),
@@ -925,7 +985,8 @@ class DashboardScreen extends StatelessWidget {
                           child: TextField(
                             controller: taxIdCtrl,
                             decoration: const InputDecoration(
-                              labelText: 'الرقم الضريبي (Tax Identification Number)',
+                              labelText:
+                                  'الرقم الضريبي (Tax Identification Number)',
                               prefixIcon: Icon(Icons.receipt_long_rounded),
                             ),
                           ),
@@ -953,7 +1014,8 @@ class DashboardScreen extends StatelessWidget {
                           child: TextField(
                             controller: sloganCtrl,
                             decoration: const InputDecoration(
-                              labelText: 'شعار لفظي / وصف النشاط (Slogan / Activity)',
+                              labelText:
+                                  'شعار لفظي / وصف النشاط (Slogan / Activity)',
                               prefixIcon: Icon(Icons.description_outlined),
                             ),
                           ),
@@ -998,7 +1060,8 @@ class DashboardScreen extends StatelessWidget {
                                 child: TextField(
                                   controller: logoPathCtrl,
                                   decoration: const InputDecoration(
-                                    labelText: 'مسار ملف الشعار أو رابطه (Logo File Path / URL)',
+                                    labelText:
+                                        'مسار ملف الشعار أو رابطه (Logo File Path / URL)',
                                     prefixIcon: Icon(Icons.link_rounded),
                                     isDense: true,
                                   ),
@@ -1017,28 +1080,32 @@ class DashboardScreen extends StatelessWidget {
                                 ),
                                 onPressed: () async {
                                   try {
-                                    final file =
-                                        await FilePicker.pickFile(
+                                    final file = await FilePicker.pickFile(
                                       type: FileType.image,
                                     );
-                                    if (file != null &&
-                                        file.path != null) {
+                                    if (file != null && file.path != null) {
                                       setSt(() {
-                                        logoPathCtrl.text =
-                                            file.path!;
+                                        logoPathCtrl.text = file.path!;
                                       });
                                     }
                                   } catch (e) {
                                     if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
-                                          content: Text('تعذر فتح منتقي الملفات: $e'),
+                                          content: Text(
+                                            'تعذر فتح منتقي الملفات: $e',
+                                          ),
                                         ),
                                       );
                                     }
                                   }
                                 },
-                                icon: const Icon(Icons.upload_file_rounded, size: 18),
+                                icon: const Icon(
+                                  Icons.upload_file_rounded,
+                                  size: 18,
+                                ),
                                 label: const Text('رفع الشعار'),
                               ),
                             ],
@@ -1065,18 +1132,18 @@ class DashboardScreen extends StatelessWidget {
                                             fit: BoxFit.contain,
                                             errorBuilder: (_, _, _) =>
                                                 const Icon(
-                                              Icons.broken_image,
-                                              color: Colors.grey,
-                                            ),
+                                                  Icons.broken_image,
+                                                  color: Colors.grey,
+                                                ),
                                           )
                                         : Image.file(
                                             File(logoPathCtrl.text),
                                             fit: BoxFit.contain,
                                             errorBuilder: (_, _, _) =>
                                                 const Icon(
-                                              Icons.broken_image,
-                                              color: Colors.grey,
-                                            ),
+                                                  Icons.broken_image,
+                                                  color: Colors.grey,
+                                                ),
                                           ),
                                   ),
                                 ),
@@ -1202,12 +1269,14 @@ class DashboardScreen extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color:
-                                const Color(0xFF0D9488).withValues(alpha: 0.15),
+                            color: const Color(
+                              0xFF0D9488,
+                            ).withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: const Color(0xFF0D9488)
-                                  .withValues(alpha: 0.5),
+                              color: const Color(
+                                0xFF0D9488,
+                              ).withValues(alpha: 0.5),
                             ),
                           ),
                           child: const Icon(
@@ -1292,12 +1361,10 @@ class DashboardScreen extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color:
-                            const Color(0xFF0D9488).withValues(alpha: 0.15),
+                        color: const Color(0xFF0D9488).withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: const Color(0xFF0D9488)
-                              .withValues(alpha: 0.5),
+                          color: const Color(0xFF0D9488).withValues(alpha: 0.5),
                         ),
                       ),
                       child: const Icon(
@@ -1375,29 +1442,6 @@ class DashboardScreen extends StatelessWidget {
                           color: const Color(0xFF2563EB),
                           tab: 1,
                         ),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFD97706),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 18,
-                              vertical: 13,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            elevation: 2,
-                          ),
-                          onPressed: () => _showArchiveAndClosePeriodDialog(context),
-                          icon: const Icon(Icons.inventory_2_rounded, size: 20),
-                          label: const Text(
-                            'ترحيل وجرد الفترة',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13.5,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ],
@@ -1419,9 +1463,7 @@ class DashboardScreen extends StatelessWidget {
         backgroundColor: color,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         elevation: 2,
       ),
       onPressed: () {
@@ -1518,9 +1560,7 @@ class DashboardScreen extends StatelessWidget {
             borderColor: const Color(0xFFA7F3D0),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const DailyReportsScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const DailyReportsScreen()),
               );
             },
           ),
@@ -1533,16 +1573,6 @@ class DashboardScreen extends StatelessWidget {
             bgColor: const Color(0xFFF8FAFC),
             borderColor: const Color(0xFFCBD5E1),
             onTap: () => _showCenterInfoDialog(context, erp),
-          ),
-
-          // Archive & Close Period (ترحيل وجرد)
-          _buildNavbarItem(
-            icon: Icons.inventory_2_rounded,
-            label: 'ترحيل وجرد',
-            primaryColor: const Color(0xFFD97706),
-            bgColor: const Color(0xFFFFFBEB),
-            borderColor: const Color(0xFFFDE68A),
-            onTap: () => _showArchiveAndClosePeriodDialog(context),
           ),
 
           // 5. Export Backup (تصدير نسخة احتياطية)
@@ -1645,16 +1675,6 @@ class DashboardScreen extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  void _showArchiveAndClosePeriodDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => ArchiveAndClosePeriodModal(
-        onNavigateToArchive: () => onNavigateToIndex?.call(14),
       ),
     );
   }

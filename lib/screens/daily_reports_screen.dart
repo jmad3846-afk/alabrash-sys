@@ -52,7 +52,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
   }
 
   static String formatArabicTime(DateTime time) {
-    final hour = time.hour > 12 ? time.hour - 12 : (time.hour == 0 ? 12 : time.hour);
+    final hour = time.hour > 12
+        ? time.hour - 12
+        : (time.hour == 0 ? 12 : time.hour);
     final period = time.hour >= 12 ? 'م' : 'ص';
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute $period';
@@ -92,7 +94,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
   }
 
   Future<void> _pickDateAndGenerate(
-      BuildContext context, ERPProvider erp) async {
+    BuildContext context,
+    ERPProvider erp,
+  ) async {
     final picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
@@ -122,7 +126,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
   }
 
   void _confirmDeleteReport(
-      BuildContext context, ERPProvider erp, DailyReportModel report) {
+    BuildContext context,
+    ERPProvider erp,
+    DailyReportModel report,
+  ) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -131,8 +138,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
           children: [
             Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626)),
             SizedBox(width: 10),
-            Text('حذف التقرير اليومي من الأرشيف',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(
+              'حذف التقرير اليومي',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
           ],
         ),
         content: Text(
@@ -149,14 +158,15 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
               backgroundColor: const Color(0xFFDC2626),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             onPressed: () {
               erp.deleteDailyReport(report.id);
               Navigator.of(ctx).pop();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('تم حذف التقرير من الأرشيف.'),
+                  content: Text('تم حذف التقرير.'),
                   backgroundColor: Color(0xFF475569),
                   behavior: SnackBarBehavior.floating,
                 ),
@@ -175,9 +185,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
     final allReports = erp.dailyReports;
 
     final todayReport = allReports.cast<DailyReportModel?>().firstWhere(
-          (r) => r != null && _isSameDay(r.reportDate, DateTime.now()),
-          orElse: () => null,
-        );
+      (r) => r != null && _isSameDay(r.reportDate, DateTime.now()),
+      orElse: () => null,
+    );
 
     // Filter reports
     final filteredReports = allReports.where((r) {
@@ -207,8 +217,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
             // MAIN CONTENT SCROLLABLE
             Expanded(
               child: SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -224,9 +236,13 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                     _buildFilterBar(),
                     const SizedBox(height: 16),
 
-                    // 4. ARCHIVED REPORTS LIST
-                    _buildArchivedReportsList(
-                        context, erp, filteredReports, allReports.length),
+                    // 4. SAVED REPORTS LIST
+                    _buildSavedReportsList(
+                      context,
+                      erp,
+                      filteredReports,
+                      allReports.length,
+                    ),
                   ],
                 ),
               ),
@@ -260,8 +276,11 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
           Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.arrow_forward_ios_rounded,
-                    color: Colors.white, size: 20),
+                icon: const Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
                 tooltip: 'العودة للشاشة الرئيسية',
                 onPressed: () => Navigator.of(context).pop(),
               ),
@@ -294,10 +313,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                   SizedBox(height: 2),
                   Text(
                     'توليد وتصدير تقرير شامل لكافة العمليات اليومية وحركة الصناديق للطباعة المعتمدة A4',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: Color(0xFF94A3B8),
-                    ),
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
                   ),
                 ],
               ),
@@ -312,8 +328,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF059669),
                   foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -323,10 +341,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                 icon: const Icon(Icons.post_add_rounded, size: 20),
                 label: const Text(
                   'تصدير وتحديث تقرير اليوم',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13.5,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
                 ),
               ),
               const SizedBox(width: 12),
@@ -336,8 +351,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF38BDF8),
                   side: const BorderSide(color: Color(0xFF38BDF8), width: 1.4),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -346,10 +363,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                 icon: const Icon(Icons.calendar_month_rounded, size: 18),
                 label: const Text(
                   'تقرير لتاريخ مخصص',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
               ),
             ],
@@ -427,7 +441,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                     const SizedBox(width: 10),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: hasReport
                             ? const Color(0xFFDCFCE7)
@@ -471,26 +487,38 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                     backgroundColor: const Color(0xFF0F172A),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  onPressed: () =>
-                      A4DailyReportPrintDialog.show(context, report: todayReport),
+                  onPressed: () => A4DailyReportPrintDialog.show(
+                    context,
+                    report: todayReport,
+                  ),
                   icon: const Icon(Icons.print_rounded, size: 18),
                   label: const Text(
                     'معاينة وطباعة A4',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12.5,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF059669),
-                    side: const BorderSide(color: Color(0xFF059669), width: 1.2),
+                    side: const BorderSide(
+                      color: Color(0xFF059669),
+                      width: 1.2,
+                    ),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -509,8 +537,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF059669),
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 12,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -645,10 +675,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
           const SizedBox(height: 2),
           Text(
             subtitle,
-            style: const TextStyle(
-              fontSize: 10,
-              color: Color(0xFF64748B),
-            ),
+            style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
           ),
         ],
       ),
@@ -679,12 +706,21 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
           Expanded(
             child: TextField(
               decoration: InputDecoration(
-                hintText: 'بحث برقم التقرير (DREP-...) أو الملاحظات أو التاريخ...',
-                hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                prefixIcon:
-                    const Icon(Icons.search_rounded, size: 20, color: Color(0xFF64748B)),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                hintText:
+                    'بحث برقم التقرير (DREP-...) أو الملاحظات أو التاريخ...',
+                hintStyle: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF94A3B8),
+                ),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  size: 20,
+                  color: Color(0xFF64748B),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 isDense: true,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -705,7 +741,8 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+                borderRadius: BorderRadius.circular(8),
+              ),
               side: BorderSide(
                 color: _selectedFilterDate != null
                     ? const Color(0xFF0284C7)
@@ -750,7 +787,11 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
           if (_selectedFilterDate != null) ...[
             const SizedBox(width: 8),
             IconButton(
-              icon: const Icon(Icons.clear_rounded, size: 20, color: Colors.grey),
+              icon: const Icon(
+                Icons.clear_rounded,
+                size: 20,
+                color: Colors.grey,
+              ),
               tooltip: 'إلغاء تصفية التاريخ',
               onPressed: () => setState(() => _selectedFilterDate = null),
             ),
@@ -761,9 +802,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
   }
 
   // =========================================================================
-  // ARCHIVED REPORTS LIST
+  // SAVED REPORTS LIST
   // =========================================================================
-  Widget _buildArchivedReportsList(
+  Widget _buildSavedReportsList(
     BuildContext context,
     ERPProvider erp,
     List<DailyReportModel> reports,
@@ -780,8 +821,11 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
         ),
         child: Column(
           children: [
-            const Icon(Icons.folder_open_rounded,
-                size: 54, color: Color(0xFFCBD5E1)),
+            const Icon(
+              Icons.folder_open_rounded,
+              size: 54,
+              color: Color(0xFFCBD5E1),
+            ),
             const SizedBox(height: 14),
             Text(
               totalCount == 0
@@ -819,7 +863,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
     final compiledTime = formatArabicDateTime(report.generatedAt);
 
     final totalInvoices =
-        report.salesInvoices.length + report.purchaseInvoices.length + report.returnInvoices.length;
+        report.salesInvoices.length +
+        report.purchaseInvoices.length +
+        report.returnInvoices.length;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -881,10 +927,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
             const SizedBox(width: 8),
             Text(
               'تصدير: $compiledTime',
-              style: const TextStyle(
-                fontSize: 10.5,
-                color: Color(0xFF64748B),
-              ),
+              style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
             ),
           ],
         ),
@@ -895,13 +938,31 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _buildMiniStat('مبيعات', AppCurrency.dual(report.totalSalesUsd, report.totalSalesSyp)),
-              _buildMiniStat('مشتريات', AppCurrency.dual(report.totalPurchasesUsd, report.totalPurchasesSyp)),
-              _buildMiniStat('مصاريف', AppCurrency.dual(report.totalExpensesUsd, report.totalExpensesSyp)),
-              _buildMiniStat('صافي التدفق', AppCurrency.dual(report.netCashFlowUsd, report.netCashFlowSyp),
-                  color: report.netCashFlowUsd >= 0
-                      ? const Color(0xFF059669)
-                      : const Color(0xFFDC2626)),
+              _buildMiniStat(
+                'مبيعات',
+                AppCurrency.dual(report.totalSalesUsd, report.totalSalesSyp),
+              ),
+              _buildMiniStat(
+                'مشتريات',
+                AppCurrency.dual(
+                  report.totalPurchasesUsd,
+                  report.totalPurchasesSyp,
+                ),
+              ),
+              _buildMiniStat(
+                'مصاريف',
+                AppCurrency.dual(
+                  report.totalExpensesUsd,
+                  report.totalExpensesSyp,
+                ),
+              ),
+              _buildMiniStat(
+                'صافي التدفق',
+                AppCurrency.dual(report.netCashFlowUsd, report.netCashFlowSyp),
+                color: report.netCashFlowUsd >= 0
+                    ? const Color(0xFF059669)
+                    : const Color(0xFFDC2626),
+              ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -911,7 +972,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                 ),
                 child: Text(
                   '$totalInvoices فاتورة • ${report.expenses.length} مصاريف • ${report.cashMovements.length} حركة سيولة',
-                  style: const TextStyle(fontSize: 10, color: Color(0xFF475569)),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Color(0xFF475569),
+                  ),
                 ),
               ),
             ],
@@ -983,7 +1047,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                       onPressed: () =>
                           _confirmDeleteReport(context, erp, report),
                       icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                      label: const Text('حذف من الأرشيف'),
+                      label: const Text('حذف التقرير'),
                     ),
                     const SizedBox(width: 12),
 
@@ -993,15 +1057,18 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                         foregroundColor: const Color(0xFF0F172A),
                         side: const BorderSide(color: Color(0xFFCBD5E1)),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                       onPressed: () {
-                        final updated =
-                            erp.compileDailyReportForDate(report.reportDate);
+                        final updated = erp.compileDailyReportForDate(
+                          report.reportDate,
+                        );
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                                'تم تحديث تقرير ${report.reportNo} ببيانات اللحظة.'),
+                              'تم تحديث تقرير ${report.reportNo} ببيانات اللحظة.',
+                            ),
                             backgroundColor: const Color(0xFF059669),
                           ),
                         );
@@ -1018,7 +1085,8 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                         backgroundColor: const Color(0xFF1E293B),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                       onPressed: () =>
                           _showReportDetailsModal(context, erp, report),
@@ -1033,10 +1101,13 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                         backgroundColor: const Color(0xFF059669),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
-                      onPressed: () =>
-                          A4DailyReportPrintDialog.show(context, report: report),
+                      onPressed: () => A4DailyReportPrintDialog.show(
+                        context,
+                        report: report,
+                      ),
                       icon: const Icon(Icons.print_rounded, size: 16),
                       label: const Text('معاينة وطباعة A4'),
                     ),
@@ -1106,7 +1177,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Text(
                 l,
-                style: const TextStyle(fontSize: 10.5, color: Color(0xFF334155)),
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  color: Color(0xFF334155),
+                ),
               ),
             ),
           ),
@@ -1147,8 +1221,11 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                           color: const Color(0xFF0F172A),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(Icons.analytics_rounded,
-                            color: Colors.white, size: 22),
+                        child: const Icon(
+                          Icons.analytics_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Column(
@@ -1165,7 +1242,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                           Text(
                             'تاريخ اليومية: ${intl.DateFormat('yyyy/MM/dd').format(report.reportDate)} • تم التصدير: ${formatArabicDateTime(report.generatedAt)}',
                             style: const TextStyle(
-                                fontSize: 11, color: Color(0xFF64748B)),
+                              fontSize: 11,
+                              color: Color(0xFF64748B),
+                            ),
                           ),
                         ],
                       ),
@@ -1180,7 +1259,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                         ),
                         onPressed: () {
                           Navigator.of(ctx).pop();
-                          A4DailyReportPrintDialog.show(context, report: report);
+                          A4DailyReportPrintDialog.show(
+                            context,
+                            report: report,
+                          );
                         },
                         icon: const Icon(Icons.print_rounded, size: 16),
                         label: const Text('طباعة كشف A4'),
@@ -1216,9 +1298,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                             text:
                                 'فواتير المشتريات (${report.purchaseInvoices.length})',
                           ),
-                          Tab(
-                            text: 'المصاريف (${report.expenses.length})',
-                          ),
+                          Tab(text: 'المصاريف (${report.expenses.length})'),
                           Tab(
                             text:
                                 'حركة السيولة (${report.cashMovements.length})',
@@ -1230,13 +1310,21 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                         child: TabBarView(
                           children: [
                             // 1. Sales Invoices
-                            _buildScrollableInvoiceTable(report.salesInvoices, isSales: true),
+                            _buildScrollableInvoiceTable(
+                              report.salesInvoices,
+                              isSales: true,
+                            ),
                             // 2. Purchase Invoices
-                            _buildScrollableInvoiceTable(report.purchaseInvoices, isSales: false),
+                            _buildScrollableInvoiceTable(
+                              report.purchaseInvoices,
+                              isSales: false,
+                            ),
                             // 3. Expenses
                             _buildScrollableExpenseTable(report.expenses),
                             // 4. Cash movements
-                            _buildScrollableMovementsTable(report.cashMovements),
+                            _buildScrollableMovementsTable(
+                              report.cashMovements,
+                            ),
                           ],
                         ),
                       ),
@@ -1256,9 +1344,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
     required bool isSales,
   }) {
     if (items.isEmpty) {
-      return const Center(
-        child: Text('لا توجد فواتير مسجلة في هذا القسم.'),
-      );
+      return const Center(child: Text('لا توجد فواتير مسجلة في هذا القسم.'));
     }
 
     return ListView.separated(
@@ -1274,16 +1360,19 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
               color: const Color(0xFFF1F5F9),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: Text('#${inv.invoiceNo}',
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 11)),
+            child: Text(
+              '#${inv.invoiceNo}',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+            ),
           ),
           title: Row(
             children: [
               Text(
                 inv.partyName,
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 12.5),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12.5,
+                ),
               ),
               const SizedBox(width: 8),
               Container(
@@ -1307,12 +1396,13 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
               Text(
                 AppCurrency.single(inv.totalAmount, inv.currency),
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 12),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
               ),
               Text(
                 'المدفوع: ${AppCurrency.single(inv.paidAmount, inv.currency)}',
-                style: const TextStyle(
-                    fontSize: 10, color: Color(0xFF059669)),
+                style: const TextStyle(fontSize: 10, color: Color(0xFF059669)),
               ),
             ],
           ),
@@ -1333,8 +1423,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
         final exp = items[idx];
         return ListTile(
           dense: true,
-          title: Text(exp.description,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+          title: Text(
+            exp.description,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+          ),
           subtitle: Text(
             'التصنيف: ${exp.category}  |  المستفيد: ${exp.beneficiary.isNotEmpty ? exp.beneficiary : "—"}  |  الصندوق: ${exp.cashBox}',
             style: const TextStyle(fontSize: 10.5, color: Color(0xFF475569)),
@@ -1353,7 +1445,8 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
   }
 
   Widget _buildScrollableMovementsTable(
-      List<DailyReportCashMovementSummary> items) {
+    List<DailyReportCashMovementSummary> items,
+  ) {
     if (items.isEmpty) {
       return const Center(child: Text('لا توجد حركات نقدية مسجلة.'));
     }
@@ -1363,19 +1456,20 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
       separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (_, idx) {
         final mov = items[idx];
-        final isInflow =
-            mov.type.contains('قبض') || mov.type.contains('وارد');
+        final isInflow = mov.type.contains('قبض') || mov.type.contains('وارد');
 
         return ListTile(
           dense: true,
-          title: Text(mov.type,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 12.5,
-                color: isInflow
-                    ? const Color(0xFF047857)
-                    : const Color(0xFFB91C1C),
-              )),
+          title: Text(
+            mov.type,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 12.5,
+              color: isInflow
+                  ? const Color(0xFF047857)
+                  : const Color(0xFFB91C1C),
+            ),
+          ),
           subtitle: Text(
             '${mov.description} • الصندوق: ${mov.cashBox}',
             style: const TextStyle(fontSize: 10.5, color: Color(0xFF475569)),

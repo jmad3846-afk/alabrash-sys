@@ -13,7 +13,6 @@ import 'workforce_screen.dart';
 import 'global_orders_screen.dart';
 import 'opening_entry_screen.dart';
 import 'accounting_screens.dart';
-import 'archive_screen.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -64,9 +63,9 @@ class _MainLayoutState extends State<MainLayout> {
                   // Screen Content
                   Expanded(
                     child: IndexedStack(
-                      // 0-14: sidebar screens, 15: cutting calculator (reached
+                      // 0-13: sidebar screens, 14: cutting calculator (reached
                       // via "Transfer to Cutting Process", not the sidebar).
-                      index: (_selectedIndex >= 0 && _selectedIndex <= 15)
+                      index: (_selectedIndex >= 0 && _selectedIndex <= 14)
                           ? _selectedIndex
                           : 0,
                       children: [
@@ -76,7 +75,7 @@ class _MainLayoutState extends State<MainLayout> {
                         FactoryWorkspaceScreen(
                           onNavigateToCutting: (idx) {
                             setState(() {
-                              _selectedIndex = 15; // Cutting Calculator Screen
+                              _selectedIndex = 14; // Cutting Calculator Screen
                             });
                           },
                         ), // 1: Factory Module
@@ -97,8 +96,7 @@ class _MainLayoutState extends State<MainLayout> {
                         const FixedAssetsManagementScreen(), // 11: Fixed assets
                         const ExpensesManagementScreen(), // 12: Expenses
                         const BalanceSheetScreen(), // 13: Balance Sheet
-                        const ArchiveScreen(), // 14: Archive Module
-                        const CuttingCalculatorScreen(), // 15: Special Cutting Calculator
+                        const CuttingCalculatorScreen(), // 14: Special Cutting Calculator
                       ],
                     ),
                   ),

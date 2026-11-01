@@ -75,7 +75,12 @@ class ERPProvider extends ChangeNotifier {
 
   /// Takes cash from a box fund when the balance covers it, or when [allowNegative]
   /// is true (strictly for Sidebar Expenses and Supplier Payments overdraft).
-  bool takeCash(String box, String? currency, double amount, {bool allowNegative = false}) {
+  bool takeCash(
+    String box,
+    String? currency,
+    double amount, {
+    bool allowNegative = false,
+  }) {
     if (amount <= 0) return false;
     final syp = AppCurrency.isSyp(currency);
     switch (box) {
@@ -141,8 +146,9 @@ class ERPProvider extends ChangeNotifier {
     required double exchangeRate,
   }) {
     if (amount <= 0 || exchangeRate <= 0) return false;
-    final toCurrency =
-        AppCurrency.isSyp(fromCurrency) ? AppCurrency.usd : AppCurrency.syp;
+    final toCurrency = AppCurrency.isSyp(fromCurrency)
+        ? AppCurrency.usd
+        : AppCurrency.syp;
     final double convertedAmount = AppCurrency.isSyp(fromCurrency)
         ? (amount / exchangeRate)
         : (amount * exchangeRate);
@@ -202,11 +208,11 @@ class ERPProvider extends ChangeNotifier {
   List<AdjustmentInvoiceModel> adjustmentInvoices = [];
   CenterInfoModel centerInfo = const CenterInfoModel();
 
-  // Daily Reports Archive
+  // Saved Daily Reports
   List<DailyReportModel> dailyReports = [];
 
-  // Closed Periods Archive
-  List<PeriodArchiveModel> periodArchives = [];
+  // Opaque historical backup payload retained for compatibility only.
+  List<Map<String, dynamic>> _legacyFinancialHistory = [];
 
   static const String blockPurchaseExpenseTypeId = 'block_purchases_expense';
   static const String cuttingExpenseTypeId = 'cutting_processing_expense';
@@ -774,7 +780,9 @@ class ERPProvider extends ChangeNotifier {
   /// Populates comprehensive test data across 100% of the software's interfaces
   /// including the Opening Entry (Fixed Assets, Opening Stock, Legacy Debts, Partners),
   /// Factory, Workshop, Accounting, Workforce, Operations, and Daily Reports.
-  Future<void> populateComprehensiveSeedData({bool lockOpeningEntry = true}) async {
+  Future<void> populateComprehensiveSeedData({
+    bool lockOpeningEntry = true,
+  }) async {
     _applyComprehensiveSeedData(lockOpeningEntry: lockOpeningEntry);
     await saveToDisk();
     notifyListeners();
@@ -1658,7 +1666,8 @@ class ERPProvider extends ChangeNotifier {
         name: 'مشروع فيلا يعفور السكنية',
         clientName: 'الدكتور طارق العلي',
         phone: '0944887766',
-        description: 'تفصيل وتوريد درج رخام كاردينال ومغاسل غرانيت أسود مع التركيب',
+        description:
+            'تفصيل وتوريد درج رخام كاردينال ومغاسل غرانيت أسود مع التركيب',
         createdAt: DateTime.now().subtract(const Duration(days: 10)),
       ),
       WorkshopProjectModel(
@@ -1945,7 +1954,7 @@ class ERPProvider extends ChangeNotifier {
       slogan: 'الجودة والدقة في كافة أعمال الرخام الطبيعي والغرانيت المستورد',
     );
 
-    // 13. Daily Reports Archive
+    // 13. Saved Daily Reports
     dailyReports = [
       compileDailyReportForDate(
         DateTime.now().subtract(const Duration(days: 2)),
@@ -1965,6 +1974,7 @@ class ERPProvider extends ChangeNotifier {
     if (capital > 0) return capital;
     return openingEntry.totalEquity;
   }
+
   double get totalCurrentEquitySyp {
     final capital = partners.fold<double>(
       0.0,
@@ -2284,7 +2294,8 @@ class ERPProvider extends ChangeNotifier {
       return 'قطعة';
     }
     final isDealerSales = parent?.invoiceType == 'بيع_معتمد';
-    final isCube = item.isCubicMeter ||
+    final isCube =
+        item.isCubicMeter ||
         item.meterUnit == 'متر مكعب' ||
         item.itemCategory == 'متر مكعب' ||
         item.thicknessCm > 5.0 ||
@@ -2303,8 +2314,7 @@ class ERPProvider extends ChangeNotifier {
   String factoryLineUnit(
     FactoryInvoiceItem item, {
     FactoryInvoiceModel? parent,
-  }) =>
-      _factoryLineUnit(item, parent: parent);
+  }) => _factoryLineUnit(item, parent: parent);
 
   static String _workshopLineUnit(WorkshopInvoiceItem item) {
     final st = item.sourceType;
@@ -2331,7 +2341,8 @@ class ERPProvider extends ChangeNotifier {
         st == 'قطع زائدة' ||
         st == 'scrap' ||
         st == 'surplus') {
-      if (item.unitCategory == 'متر مكعب' || item.isCubicMeter) return 'متر مكعب';
+      if (item.unitCategory == 'متر مكعب' || item.isCubicMeter)
+        return 'متر مكعب';
       if (item.unitCategory == 'قطعة') return 'قطعة';
       return 'متر مربع';
     }
@@ -2407,7 +2418,8 @@ class ERPProvider extends ChangeNotifier {
 
   // --- Inventory routing: matchers -----------------------------------
   FactoryWarehouseModel? _matchFactoryWarehouse(FactoryInvoiceItem item) {
-    final isCube = item.isCubicMeter ||
+    final isCube =
+        item.isCubicMeter ||
         item.meterUnit == 'متر مكعب' ||
         item.itemCategory == 'متر مكعب' ||
         item.thicknessCm > 5.0 ||
@@ -2422,13 +2434,19 @@ class ERPProvider extends ChangeNotifier {
           .where((w) => w.id == item.itemId && w.category == category)
           .toList();
       if (byId.isNotEmpty) return byId.first;
-      final anyById = factoryWarehouse.where((w) => w.id == item.itemId).toList();
+      final anyById = factoryWarehouse
+          .where((w) => w.id == item.itemId)
+          .toList();
       if (anyById.isNotEmpty) return anyById.first;
     }
-    final typeName = item.typeName.isNotEmpty ? item.typeName : item.description;
+    final typeName = item.typeName.isNotEmpty
+        ? item.typeName
+        : item.description;
     if (typeName.trim().isEmpty) return null;
     final grade = item.grade.isNotEmpty ? item.grade : 'درجة أولى';
-    final thickness = item.thicknessCm > 0 ? item.thicknessCm : (isCube ? 10.0 : 2.0);
+    final thickness = item.thicknessCm > 0
+        ? item.thicknessCm
+        : (isCube ? 10.0 : 2.0);
     final exact = factoryWarehouse
         .where(
           (w) =>
@@ -2451,7 +2469,9 @@ class ERPProvider extends ChangeNotifier {
     FactoryInvoiceItem item, {
     required bool strictSupplier,
   }) {
-    final typeName = item.typeName.isNotEmpty ? item.typeName : item.description;
+    final typeName = item.typeName.isNotEmpty
+        ? item.typeName
+        : item.description;
     final grade = item.grade.isNotEmpty ? item.grade : 'درجة أولى';
     if (strictSupplier) {
       return factoryBlocks
@@ -2509,7 +2529,9 @@ class ERPProvider extends ChangeNotifier {
           .where((w) => w.id == item.sourceId && w.category == category)
           .toList();
       if (byId.isNotEmpty) return byId.first;
-      final anyById = workshopStock.where((w) => w.id == item.sourceId).toList();
+      final anyById = workshopStock
+          .where((w) => w.id == item.sourceId)
+          .toList();
       if (anyById.isNotEmpty) return anyById.first;
     }
     if (item.description.trim().isEmpty) return null;
@@ -2614,7 +2636,8 @@ class ERPProvider extends ChangeNotifier {
     for (final resolved in lines) {
       if (resolved.line.isDamaged) {
         // Damaged goods bypass sellable inventory and route directly to Abnormal Waste/Losses (خسائر الهدر غير الطبيعي)
-        final invNo = original?.invoiceNo ?? workshopOriginal?.invoiceNo ?? 'مستند';
+        final invNo =
+            original?.invoiceNo ?? workshopOriginal?.invoiceNo ?? 'مستند';
         final voucherNo = 'إتلاف-مرتجع-$invNo';
         final section = module == 'factory'
             ? 'مستودع المصنع'
@@ -2627,7 +2650,8 @@ class ERPProvider extends ChangeNotifier {
             id: 'wl_ret_${DateTime.now().microsecondsSinceEpoch}_${wasteLogs.length}',
             date: DateTime.now(),
             wasteType: 'هدر غير طبيعي',
-            itemDescription: 'بند مرتجع تالف: ${resolved.line.description} (فاتورة $invNo)',
+            itemDescription:
+                'بند مرتجع تالف: ${resolved.line.description} (فاتورة $invNo)',
             quantity: resolved.line.quantity,
             cost: resolved.line.amount,
             destructionVoucherNo: voucherNo,
@@ -2680,7 +2704,8 @@ class ERPProvider extends ChangeNotifier {
           ? item.typeName
           : item.description;
       if (typeName.trim().isEmpty) return;
-      final isCube = item.isCubicMeter ||
+      final isCube =
+          item.isCubicMeter ||
           item.meterUnit == 'متر مكعب' ||
           item.itemCategory == 'متر مكعب' ||
           item.thicknessCm > 5.0 ||
@@ -2691,8 +2716,7 @@ class ERPProvider extends ChangeNotifier {
           item.typeName.contains('م³');
       factoryWarehouse.add(
         FactoryWarehouseModel(
-          id:
-              'fw_${DateTime.now().microsecondsSinceEpoch}_${factoryWarehouse.length}',
+          id: 'fw_${DateTime.now().microsecondsSinceEpoch}_${factoryWarehouse.length}',
           typeName: typeName,
           grade: item.grade.isNotEmpty ? item.grade : 'درجة أولى',
           thicknessCm: item.thicknessCm > 0
@@ -2713,9 +2737,9 @@ class ERPProvider extends ChangeNotifier {
       // Detail products sold through the factory POS.
       final tailoring = _matchFactoryTailoring(item);
       if (tailoring != null) {
-        tailoring.quantity = (tailoring.quantity + (purchase
-            ? -line.quantity
-            : returnedArea)).clamp(0.0, double.infinity);
+        tailoring.quantity =
+            (tailoring.quantity + (purchase ? -line.quantity : returnedArea))
+                .clamp(0.0, double.infinity);
         return;
       }
       if (purchase) return;
@@ -2764,12 +2788,13 @@ class ERPProvider extends ChangeNotifier {
       blocks.first.weightTons += line.quantity;
       return;
     }
-    final typeName = item.typeName.isNotEmpty ? item.typeName : item.description;
+    final typeName = item.typeName.isNotEmpty
+        ? item.typeName
+        : item.description;
     if (typeName.trim().isEmpty) return;
     factoryBlocks.add(
       FactoryBlockModel(
-        id:
-            'fb_${DateTime.now().microsecondsSinceEpoch}_${factoryBlocks.length}',
+        id: 'fb_${DateTime.now().microsecondsSinceEpoch}_${factoryBlocks.length}',
         blockCode: 'BLK-${factoryBlocks.length + 101}',
         typeName: typeName,
         grade: item.grade.isNotEmpty ? item.grade : 'درجة أولى',
@@ -2798,11 +2823,13 @@ class ERPProvider extends ChangeNotifier {
       final matches = item.sourceId.isNotEmpty
           ? simpleTailorings.where((t) => t.id == item.sourceId).toList()
           : simpleTailorings
-              .where((t) =>
-                  (t.name == item.description ||
-                      item.description.contains(t.name)) &&
-                  t.unitCategory == category)
-              .toList();
+                .where(
+                  (t) =>
+                      (t.name == item.description ||
+                          item.description.contains(t.name)) &&
+                      t.unitCategory == category,
+                )
+                .toList();
       if (matches.isEmpty) {
         simpleTailorings.add(
           WorkshopTailoringModel(
@@ -2837,14 +2864,14 @@ class ERPProvider extends ChangeNotifier {
           final pieceArea = (lineItem.lengthCm > 0 && lineItem.widthCm > 0)
               ? (lineItem.lengthCm / 100.0) *
                     (lineItem.widthCm / 100.0) *
-                    (lineItem.category == 'متر مكعب' &&
-                            lineItem.heightCm > 0
+                    (lineItem.category == 'متر مكعب' && lineItem.heightCm > 0
                         ? lineItem.heightCm / 100.0
                         : 1.0)
               : 0.0;
-          lineItem.quantity = (lineItem.quantity +
-                  (pieceArea > 0 ? quantity / pieceArea : quantity))
-              .clamp(0.0, double.infinity);
+          lineItem.quantity =
+              (lineItem.quantity +
+                      (pieceArea > 0 ? quantity / pieceArea : quantity))
+                  .clamp(0.0, double.infinity);
         }
       }
       return;
@@ -2857,10 +2884,12 @@ class ERPProvider extends ChangeNotifier {
       final matches = item.sourceId.isNotEmpty
           ? complexTailorings.where((t) => t.id == item.sourceId).toList()
           : complexTailorings
-              .where((t) =>
-                  t.name == item.description ||
-                  item.description.contains(t.name))
-              .toList();
+                .where(
+                  (t) =>
+                      t.name == item.description ||
+                      item.description.contains(t.name),
+                )
+                .toList();
       if (matches.isEmpty) {
         complexTailorings.add(
           WorkshopTailoringModel(
@@ -2919,8 +2948,9 @@ class ERPProvider extends ChangeNotifier {
           category: category,
           availableQty: quantity,
           netCostPerUnit: item.netCost,
-          recommendedSalePrice:
-              item.unitPrice > 0 ? item.unitPrice : item.agreedPrice,
+          recommendedSalePrice: item.unitPrice > 0
+              ? item.unitPrice
+              : item.agreedPrice,
           isGranite: item.isGranite,
         ),
       );
@@ -2935,9 +2965,8 @@ class ERPProvider extends ChangeNotifier {
       final matches = item.sourceId.isNotEmpty
           ? scrapItems.where((s) => s.id == item.sourceId).toList()
           : scrapItems
-              .where((s) =>
-                  s.description == item.description && s.isSold)
-              .toList();
+                .where((s) => s.description == item.description && s.isSold)
+                .toList();
       if (matches.isNotEmpty) {
         matches.first.isSold = false;
         return;
@@ -3044,8 +3073,7 @@ class ERPProvider extends ChangeNotifier {
     );
     if (invoice.currency != parentCurrency) return false;
 
-    final originalTotal =
-        original?.grandTotal ?? workshopOriginal!.grandTotal;
+    final originalTotal = original?.grandTotal ?? workshopOriginal!.grandTotal;
     final priorAmount = adjustmentInvoices
         .where(
           (doc) =>
@@ -3092,9 +3120,9 @@ class ERPProvider extends ChangeNotifier {
             index = -1;
             for (var i = 0; i < items.length; i++) {
               final item = items[i];
-              final idHit = raw.itemId.isNotEmpty &&
-                  item.itemId == raw.itemId;
-              final descHit = raw.description.isNotEmpty &&
+              final idHit = raw.itemId.isNotEmpty && item.itemId == raw.itemId;
+              final descHit =
+                  raw.description.isNotEmpty &&
                   item.description.trim() == raw.description.trim();
               if (idHit || descHit) {
                 index = i;
@@ -3107,16 +3135,24 @@ class ERPProvider extends ChangeNotifier {
               items[index].description.trim() != raw.description.trim()) {
             return false;
           }
-          resolved.add(_describeFactoryLine(original, index, raw.quantity, isDamaged: raw.isDamaged));
+          resolved.add(
+            _describeFactoryLine(
+              original,
+              index,
+              raw.quantity,
+              isDamaged: raw.isDamaged,
+            ),
+          );
         } else {
           var index = raw.itemIndex;
           if (index < 0 || index >= workshopLines.length) {
             index = -1;
             for (var i = 0; i < workshopLines.length; i++) {
               final item = workshopLines[i];
-              final idHit = raw.itemId.isNotEmpty &&
-                  item.sourceId == raw.itemId;
-              final descHit = raw.description.isNotEmpty &&
+              final idHit =
+                  raw.itemId.isNotEmpty && item.sourceId == raw.itemId;
+              final descHit =
+                  raw.description.isNotEmpty &&
                   item.description.trim() == raw.description.trim();
               if (idHit || descHit) {
                 index = i;
@@ -3130,7 +3166,15 @@ class ERPProvider extends ChangeNotifier {
                   raw.description.trim()) {
             return false;
           }
-          resolved.add(_describeWorkshopLine(workshopLines, index, raw.quantity, isDamaged: raw.isDamaged, discountRatio: workshopOriginal!.discountRatio));
+          resolved.add(
+            _describeWorkshopLine(
+              workshopLines,
+              index,
+              raw.quantity,
+              isDamaged: raw.isDamaged,
+              discountRatio: workshopOriginal!.discountRatio,
+            ),
+          );
         }
       }
 
@@ -3175,8 +3219,7 @@ class ERPProvider extends ChangeNotifier {
         final invoicedQuantity = isFactory
             ? entry.factoryItem!.quantity
             : entry.workshopItem!.quantity;
-        if (invoicedQuantity - alreadyReturned + 0.0001 <
-            entry.line.quantity) {
+        if (invoicedQuantity - alreadyReturned + 0.0001 < entry.line.quantity) {
           return false;
         }
         if (entry.line.amount < 0) return false;
@@ -3196,7 +3239,14 @@ class ERPProvider extends ChangeNotifier {
       } else {
         final lines = _workshopInvoiceLines(workshopOriginal!);
         for (var i = 0; i < lines.length; i++) {
-          resolved.add(_describeWorkshopLine(lines, i, 0, discountRatio: workshopOriginal.discountRatio));
+          resolved.add(
+            _describeWorkshopLine(
+              lines,
+              i,
+              0,
+              discountRatio: workshopOriginal.discountRatio,
+            ),
+          );
         }
       }
     }
@@ -3219,8 +3269,15 @@ class ERPProvider extends ChangeNotifier {
     const cashAction = 'استرداد نقدي للصندوق الرئيسي';
     const debtAction = 'تخفيض دين';
     final action = invoice.paymentAction;
-    final isCash = action == cashAction || action.contains('نقدي') || action.contains('صندوق');
-    final isDebt = action == debtAction || action.contains('دين') || action.contains('ذمة') || action.contains('دائن');
+    final isCash =
+        action == cashAction ||
+        action.contains('نقدي') ||
+        action.contains('صندوق');
+    final isDebt =
+        action == debtAction ||
+        action.contains('دين') ||
+        action.contains('ذمة') ||
+        action.contains('دائن');
     if (!isCash && !isDebt) return false;
 
     // Actual cash deposit/payment made against this specific invoice
@@ -3230,14 +3287,16 @@ class ERPProvider extends ChangeNotifier {
 
     // Any cash already refunded on prior returns for this specific invoice
     final double priorRefundedCash = adjustmentInvoices
-        .where((doc) =>
-            doc.module == invoice.module &&
-            doc.targetInvoiceId == invoice.targetInvoiceId &&
-            doc.isReturn)
+        .where(
+          (doc) =>
+              doc.module == invoice.module &&
+              doc.targetInvoiceId == invoice.targetInvoiceId &&
+              doc.isReturn,
+        )
         .fold<double>(0.0, (sum, doc) => sum + doc.cashAmount);
 
-    final double availablePaidDeposit =
-        (paidOnTarget - priorRefundedCash).clamp(0.0, double.infinity);
+    final double availablePaidDeposit = (paidOnTarget - priorRefundedCash)
+        .clamp(0.0, double.infinity);
 
     var debtPortion = 0.0;
     var cashPortion = 0.0;
@@ -3251,9 +3310,12 @@ class ERPProvider extends ChangeNotifier {
       cashPortion = 0.0;
     }
 
-    final bool isSettlementDeferred = isReturn && (isDebt || debtPortion > 0.0001);
+    final bool isSettlementDeferred =
+        isReturn && (isDebt || debtPortion > 0.0001);
     final double deferredAmount = isSettlementDeferred ? debtPortion : 0.0;
-    final double realizedAmount = isSettlementDeferred ? cashPortion : totalAmount;
+    final double realizedAmount = isSettlementDeferred
+        ? cashPortion
+        : totalAmount;
 
     if (cashPortion > 0) {
       if (purchase) {
@@ -3318,7 +3380,7 @@ class ERPProvider extends ChangeNotifier {
                 .map((entry) => entry.line.description)
                 .where((text) => text.trim().isNotEmpty)
                 .join(' + ')
-            : invoice.itemDescription,
+          : invoice.itemDescription,
       itemIndex: resolved.isNotEmpty ? resolved.first.line.itemIndex : -1,
       partyName: partyName,
       description: invoice.description,
@@ -3332,7 +3394,8 @@ class ERPProvider extends ChangeNotifier {
       isSettlementDeferred: isSettlementDeferred,
       deferredAmount: deferredAmount,
       realizedAmount: realizedAmount,
-      discountRatio: original?.discountRatio ?? workshopOriginal?.discountRatio ?? 1.0,
+      discountRatio:
+          original?.discountRatio ?? workshopOriginal?.discountRatio ?? 1.0,
     );
     adjustmentInvoices.add(stored);
 
@@ -3369,7 +3432,8 @@ class ERPProvider extends ChangeNotifier {
           isSettlementDeferred: isSettlementDeferred,
           deferredAmount: deferredAmount,
           realizedAmount: realizedAmount,
-          discountRatio: original?.discountRatio ?? workshopOriginal?.discountRatio ?? 1.0,
+          discountRatio:
+              original?.discountRatio ?? workshopOriginal?.discountRatio ?? 1.0,
         ),
       );
     }
@@ -3389,11 +3453,7 @@ class ERPProvider extends ChangeNotifier {
   }) => _alreadyReturnedQty(
     module: module,
     targetInvoiceId: targetInvoiceId,
-    keys: _lineKeys(
-      index: lineIndex,
-      itemId: itemId,
-      description: description,
-    ),
+    keys: _lineKeys(index: lineIndex, itemId: itemId, description: description),
   );
 
   /// Outstanding balance of a party (supplier or client) used by the returns
@@ -3434,10 +3494,12 @@ class ERPProvider extends ChangeNotifier {
   }) {
     final paid = invoicePaidAmount(module: module, invoiceId: invoiceId);
     final priorRefunded = adjustmentInvoices
-        .where((doc) =>
-            doc.module == module &&
-            doc.targetInvoiceId == invoiceId &&
-            doc.isReturn)
+        .where(
+          (doc) =>
+              doc.module == module &&
+              doc.targetInvoiceId == invoiceId &&
+              doc.isReturn,
+        )
         .fold<double>(0.0, (sum, doc) => sum + doc.cashAmount);
     return (paid - priorRefunded).clamp(0.0, double.infinity);
   }
@@ -3446,7 +3508,6 @@ class ERPProvider extends ChangeNotifier {
   /// their data in the scalar fields instead of an items list).
   List<WorkshopInvoiceItem> workshopInvoiceLines(WorkshopInvoiceModel inv) =>
       _workshopInvoiceLines(inv);
-
 
   double _adjustmentDebtBalance({
     required bool supplier,
@@ -3490,11 +3551,13 @@ class ERPProvider extends ChangeNotifier {
   }) {
     var remaining = amount;
     if (supplier) {
-      final accounts = suppliers.where(
-        (item) =>
-            (partyId.isNotEmpty && item.id == partyId) ||
-            item.name == partyName,
-      ).toList();
+      final accounts = suppliers
+          .where(
+            (item) =>
+                (partyId.isNotEmpty && item.id == partyId) ||
+                item.name == partyName,
+          )
+          .toList();
       for (final account in accounts) {
         if (remaining <= 0) break;
         final curDebt = account.debtOf(currency);
@@ -3525,11 +3588,13 @@ class ERPProvider extends ChangeNotifier {
         remaining = 0;
       }
     } else {
-      final accounts = clients.where(
-        (item) =>
-            (partyId.isNotEmpty && item.id == partyId) ||
-            item.name == partyName,
-      ).toList();
+      final accounts = clients
+          .where(
+            (item) =>
+                (partyId.isNotEmpty && item.id == partyId) ||
+                item.name == partyName,
+          )
+          .toList();
       for (final account in accounts) {
         if (remaining <= 0) break;
         final curDebt = account.debtOf(currency);
@@ -3700,7 +3765,11 @@ class ERPProvider extends ChangeNotifier {
       (item) => item.id == recordId,
       orElse: () => throw StateError('Historical balance was not found.'),
     );
-    if (amount <= 0 || amount > record.amount) return false;
+    if (!amount.isFinite ||
+        amount <= 0 ||
+        amount > record.amount ||
+        !{'main', 'scrap', 'order'}.contains(cashBox))
+      return false;
     if (record.category == 'clients') {
       addCash(cashBox, record.currency, amount);
     } else if (!takeCash(cashBox, record.currency, amount)) {
@@ -3743,20 +3812,38 @@ class ERPProvider extends ChangeNotifier {
       .fold(0.0, (s, c) => s + c.debtOf(currency));
 
   // Granite returns reverse the original line margin without posting cash.
-  ({double revenue, double cost}) _graniteAmounts(String? currency, {bool returned = false, String? invoiceId, String? module}) {
+  ({double revenue, double cost}) _graniteAmounts(
+    String? currency, {
+    bool returned = false,
+    String? invoiceId,
+    String? module,
+  }) {
     final c = AppCurrency.normalize(currency);
     double revenue = 0, cost = 0;
     double fraction(String id, String source, int index, double quantity) {
       if (!returned) return 1;
       if (quantity <= 0) return 0;
       final returnedQuantity = adjustmentInvoices
-          .where((doc) => doc.kind == 'sales_return' && doc.module == source && doc.targetInvoiceId == id && doc.currency == c)
+          .where(
+            (doc) =>
+                doc.kind == 'sales_return' &&
+                doc.module == source &&
+                doc.targetInvoiceId == id &&
+                doc.currency == c,
+          )
           .expand((doc) => doc.lines)
           .where((line) => line.itemIndex == index)
           .fold<double>(0, (sum, line) => sum + line.quantity);
       return (returnedQuantity / quantity).clamp(0.0, 1.0);
     }
-    for (final inv in factoryInvoices.where((i) => i.currency == c && i.invoiceType == 'بيع_معتمد' && (invoiceId == null || i.id == invoiceId) && (module == null || module == 'factory'))) {
+
+    for (final inv in factoryInvoices.where(
+      (i) =>
+          i.currency == c &&
+          i.invoiceType == 'بيع_معتمد' &&
+          (invoiceId == null || i.id == invoiceId) &&
+          (module == null || module == 'factory'),
+    )) {
       for (var index = 0; index < inv.items.length; index++) {
         final item = inv.items[index];
         if (!item.isGranite) continue;
@@ -3765,7 +3852,12 @@ class ERPProvider extends ChangeNotifier {
         cost += item.totalCost * ratio;
       }
     }
-    for (final inv in workshopInvoices.where((i) => i.currency == c && (invoiceId == null || i.id == invoiceId) && (module == null || module == 'workshop'))) {
+    for (final inv in workshopInvoices.where(
+      (i) =>
+          i.currency == c &&
+          (invoiceId == null || i.id == invoiceId) &&
+          (module == null || module == 'workshop'),
+    )) {
       final lines = _workshopInvoiceLines(inv);
       for (var index = 0; index < lines.length; index++) {
         final item = lines[index];
@@ -3779,19 +3871,28 @@ class ERPProvider extends ChangeNotifier {
   }
 
   double graniteTotalRevenueOf(String? currency) =>
-      _graniteAmounts(currency).revenue - _graniteAmounts(currency, returned: true).revenue;
+      _graniteAmounts(currency).revenue -
+      _graniteAmounts(currency, returned: true).revenue;
   double graniteTotalCOGSOf(String? currency) =>
-      _graniteAmounts(currency).cost - _graniteAmounts(currency, returned: true).cost;
+      _graniteAmounts(currency).cost -
+      _graniteAmounts(currency, returned: true).cost;
 
   double graniteReturnAccountantRevenueOf(String? currency) {
     final amounts = _graniteAmounts(currency, returned: true);
-    return (amounts.revenue - amounts.cost).clamp(0.0, double.infinity) * (graniteAccountantPercentage / 100.0);
+    return (amounts.revenue - amounts.cost).clamp(0.0, double.infinity) *
+        (graniteAccountantPercentage / 100.0);
   }
 
   double graniteInvoiceProfitOf(String id, String module, String currency) {
     final original = _graniteAmounts(currency, invoiceId: id, module: module);
-    final returned = _graniteAmounts(currency, returned: true, invoiceId: id, module: module);
-    return (original.revenue - original.cost - returned.revenue + returned.cost).clamp(0.0, double.infinity);
+    final returned = _graniteAmounts(
+      currency,
+      returned: true,
+      invoiceId: id,
+      module: module,
+    );
+    return (original.revenue - original.cost - returned.revenue + returned.cost)
+        .clamp(0.0, double.infinity);
   }
 
   double get graniteTotalRevenue => graniteTotalRevenueOf(AppCurrency.usd);
@@ -3901,11 +4002,7 @@ class ERPProvider extends ChangeNotifier {
   double totalFactoryRevenueOf(String? currency) {
     final c = AppCurrency.normalize(currency);
     final invoiceCollections = factoryInvoices
-        .where(
-          (i) =>
-              i.invoiceType == 'بيع_معتمد' &&
-              i.currency == c,
-        )
+        .where((i) => i.invoiceType == 'بيع_معتمد' && i.currency == c)
         .fold(0.0, (s, i) => s + i.advancePayment.clamp(0.0, i.grandTotal));
     final unallocated = c == AppCurrency.usd
         ? unallocatedFactoryCollectionsUsd
@@ -3920,8 +4017,7 @@ class ERPProvider extends ChangeNotifier {
         .fold(
           0.0,
           (s, i) =>
-              s +
-              (i.depositDeducted + i.cashPaidNow).clamp(0.0, i.grandTotal),
+              s + (i.depositDeducted + i.cashPaidNow).clamp(0.0, i.grandTotal),
         );
     final unallocated = c == AppCurrency.usd
         ? unallocatedWorkshopCollectionsUsd
@@ -3929,8 +4025,23 @@ class ERPProvider extends ChangeNotifier {
     return invoiceCollections + unallocated;
   }
 
+  bool _previouslyRecognized(
+    String collection,
+    String id, {
+    bool soldOnly = false,
+  }) => _legacyFinancialHistory.any(
+    (a) => ((a['closingSnapshot'] as Map?)?[collection] as List? ?? []).any(
+      (r) => r['id'] == id && (!soldOnly || r['isSold'] == true),
+    ),
+  );
+
   double totalScrapRevenueOf(String? currency) => scrapItems
-      .where((i) => i.isSold && i.currency == AppCurrency.normalize(currency))
+      .where(
+        (i) =>
+            i.isSold &&
+            i.currency == AppCurrency.normalize(currency) &&
+            !_previouslyRecognized('scrapItems', i.id, soldOnly: true),
+      )
       .fold(0.0, (s, i) => s + i.sellingPrice);
   double totalKeptDepositsRevenueOf(String? currency) => workshopOrders
       .where(
@@ -3962,42 +4073,36 @@ class ERPProvider extends ChangeNotifier {
     return factoryInvoices
         .where(
           (invoice) =>
-              invoice.invoiceType == 'بيع_معتمد' &&
-              invoice.currency == c,
+              invoice.invoiceType == 'بيع_معتمد' && invoice.currency == c,
         )
-        .fold<double>(
-          0.0,
-          (sum, invoice) {
-            final services =
-                invoice.servicesTotal + invoice.itemsServicesTotal;
-            if (services <= 0) return sum;
-            final ratio = invoice.grandTotal > 0.0001
-                ? (invoice.advancePayment.clamp(0.0, invoice.grandTotal) /
+        .fold<double>(0.0, (sum, invoice) {
+          final services = invoice.servicesTotal + invoice.itemsServicesTotal;
+          if (services <= 0) return sum;
+          final ratio = invoice.grandTotal > 0.0001
+              ? (invoice.advancePayment.clamp(0.0, invoice.grandTotal) /
                         invoice.grandTotal)
                     .clamp(0.0, 1.0)
-                : 0.0;
-            return sum + (services * ratio);
-          },
-        );
+              : 0.0;
+          return sum + (services * ratio);
+        });
   }
 
   double workshopServiceRevenueOf(String? currency) {
     final c = AppCurrency.normalize(currency);
     return workshopInvoices
         .where((invoice) => invoice.currency == c)
-        .fold<double>(
-          0.0,
-          (sum, invoice) {
-            final services = invoice.servicesTotal;
-            if (services <= 0) return sum;
-            final paid = (invoice.depositDeducted + invoice.cashPaidNow)
-                .clamp(0.0, invoice.grandTotal);
-            final ratio = invoice.grandTotal > 0.0001
-                ? (paid / invoice.grandTotal).clamp(0.0, 1.0)
-                : 0.0;
-            return sum + (services * ratio);
-          },
-        );
+        .fold<double>(0.0, (sum, invoice) {
+          final services = invoice.servicesTotal;
+          if (services <= 0) return sum;
+          final paid = (invoice.depositDeducted + invoice.cashPaidNow).clamp(
+            0.0,
+            invoice.grandTotal,
+          );
+          final ratio = invoice.grandTotal > 0.0001
+              ? (paid / invoice.grandTotal).clamp(0.0, 1.0)
+              : 0.0;
+          return sum + (services * ratio);
+        });
   }
 
   double factorySalesDiscountOf(String? currency) {
@@ -4005,72 +4110,72 @@ class ERPProvider extends ChangeNotifier {
     return factoryInvoices
         .where(
           (invoice) =>
-              invoice.invoiceType == 'بيع_معتمد' &&
-              invoice.currency == c,
+              invoice.invoiceType == 'بيع_معتمد' && invoice.currency == c,
         )
-        .fold<double>(
-          0.0,
-          (sum, invoice) {
-            final discount = invoice.discountAmount;
-            if (discount <= 0) return sum;
-            // Proportion of invoice that remains active (not returned)
-            final activeRatio = invoice.grandTotal > 0.0001
-                ? ((invoice.grandTotal - invoice.adjustmentsAmount) /
+        .fold<double>(0.0, (sum, invoice) {
+          final discount = invoice.discountAmount;
+          if (discount <= 0) return sum;
+          // Proportion of invoice that remains active (not returned)
+          final activeRatio = invoice.grandTotal > 0.0001
+              ? ((invoice.grandTotal - invoice.adjustmentsAmount) /
                         invoice.grandTotal)
                     .clamp(0.0, 1.0)
-                : 0.0;
-            final activeDiscount = discount * activeRatio;
-            if (activeDiscount <= 0) return sum;
+              : 0.0;
+          final activeDiscount = discount * activeRatio;
+          if (activeDiscount <= 0) return sum;
 
-            final paidNet = (invoice.advancePayment - invoice.adjustmentsCashRefund)
-                .clamp(0.0, double.infinity);
-            final remainingNet = (invoice.grandTotal - invoice.adjustmentsAmount)
-                .clamp(0.0, double.infinity);
+          final paidNet =
+              (invoice.advancePayment - invoice.adjustmentsCashRefund).clamp(
+                0.0,
+                double.infinity,
+              );
+          final remainingNet = (invoice.grandTotal - invoice.adjustmentsAmount)
+              .clamp(0.0, double.infinity);
 
-            final collectionRatio = remainingNet > 0.0001
-                ? (paidNet / remainingNet).clamp(0.0, 1.0)
-                : (invoice.grandTotal > 0.0001
-                    ? (invoice.advancePayment / invoice.grandTotal).clamp(0.0, 1.0)
+          final collectionRatio = remainingNet > 0.0001
+              ? (paidNet / remainingNet).clamp(0.0, 1.0)
+              : (invoice.grandTotal > 0.0001
+                    ? (invoice.advancePayment / invoice.grandTotal).clamp(
+                        0.0,
+                        1.0,
+                      )
                     : 0.0);
-            return sum + (activeDiscount * collectionRatio);
-          },
-        );
+          return sum + (activeDiscount * collectionRatio);
+        });
   }
 
   double workshopSalesDiscountOf(String? currency) {
     final c = AppCurrency.normalize(currency);
     return workshopInvoices
         .where((invoice) => invoice.currency == c)
-        .fold<double>(
-          0.0,
-          (sum, invoice) {
-            final discount = invoice.salesDiscount;
-            if (discount <= 0) return sum;
-            // Proportion of invoice that remains active (not returned)
-            final activeRatio = invoice.grandTotal > 0.0001
-                ? ((invoice.grandTotal - invoice.adjustmentsAmount) /
+        .fold<double>(0.0, (sum, invoice) {
+          final discount = invoice.salesDiscount;
+          if (discount <= 0) return sum;
+          // Proportion of invoice that remains active (not returned)
+          final activeRatio = invoice.grandTotal > 0.0001
+              ? ((invoice.grandTotal - invoice.adjustmentsAmount) /
                         invoice.grandTotal)
                     .clamp(0.0, 1.0)
-                : 0.0;
-            final activeDiscount = discount * activeRatio;
-            if (activeDiscount <= 0) return sum;
+              : 0.0;
+          final activeDiscount = discount * activeRatio;
+          if (activeDiscount <= 0) return sum;
 
-            final paidNet = ((invoice.depositDeducted + invoice.cashPaidNow) -
-                    invoice.adjustmentsCashRefund)
-                .clamp(0.0, double.infinity);
-            final remainingNet = (invoice.grandTotal - invoice.adjustmentsAmount)
-                .clamp(0.0, double.infinity);
+          final paidNet =
+              ((invoice.depositDeducted + invoice.cashPaidNow) -
+                      invoice.adjustmentsCashRefund)
+                  .clamp(0.0, double.infinity);
+          final remainingNet = (invoice.grandTotal - invoice.adjustmentsAmount)
+              .clamp(0.0, double.infinity);
 
-            final collectionRatio = remainingNet > 0.0001
-                ? (paidNet / remainingNet).clamp(0.0, 1.0)
-                : (invoice.grandTotal > 0.0001
+          final collectionRatio = remainingNet > 0.0001
+              ? (paidNet / remainingNet).clamp(0.0, 1.0)
+              : (invoice.grandTotal > 0.0001
                     ? ((invoice.depositDeducted + invoice.cashPaidNow) /
-                            invoice.grandTotal)
-                        .clamp(0.0, 1.0)
+                              invoice.grandTotal)
+                          .clamp(0.0, 1.0)
                     : 0.0);
-            return sum + (activeDiscount * collectionRatio);
-          },
-        );
+          return sum + (activeDiscount * collectionRatio);
+        });
   }
 
   double get salesDiscounts => salesDiscountsOf(AppCurrency.usd);
@@ -4098,7 +4203,10 @@ class ERPProvider extends ChangeNotifier {
         .fold<double>(0.0, (sum, i) {
           if (i.discountAmount <= 0) return sum;
           final activeRatio = i.grandTotal > 0.0001
-              ? ((i.grandTotal - i.adjustmentsAmount) / i.grandTotal).clamp(0.0, 1.0)
+              ? ((i.grandTotal - i.adjustmentsAmount) / i.grandTotal).clamp(
+                  0.0,
+                  1.0,
+                )
               : 0.0;
           return sum + (i.discountAmount * activeRatio);
         });
@@ -4107,7 +4215,10 @@ class ERPProvider extends ChangeNotifier {
         .fold<double>(0.0, (sum, i) {
           if (i.salesDiscount <= 0) return sum;
           final activeRatio = i.grandTotal > 0.0001
-              ? ((i.grandTotal - i.adjustmentsAmount) / i.grandTotal).clamp(0.0, 1.0)
+              ? ((i.grandTotal - i.adjustmentsAmount) / i.grandTotal).clamp(
+                  0.0,
+                  1.0,
+                )
               : 0.0;
           return sum + (i.salesDiscount * activeRatio);
         });
@@ -4153,7 +4264,10 @@ class ERPProvider extends ChangeNotifier {
                 invoice.currency == AppCurrency.normalize(currency) &&
                 invoice.isSettlementDeferred,
           )
-          .fold<double>(0, (sum, invoice) => sum + invoice.pendingDeferredAmount);
+          .fold<double>(
+            0,
+            (sum, invoice) => sum + invoice.pendingDeferredAmount,
+          );
 
   double get purchaseReturnsAndAllowances =>
       adjustmentTotalOf('purchase_return', AppCurrency.usd) +
@@ -4169,7 +4283,8 @@ class ERPProvider extends ChangeNotifier {
       adjustmentTotalOf('sales_allowance', AppCurrency.syp);
 
   /// Active non-returned earned discount on supplier purchase invoices (General Ledger).
-  double supplierDiscountsOf(String? currency) => activeSupplierDiscountsOf(currency);
+  double supplierDiscountsOf(String? currency) =>
+      activeSupplierDiscountsOf(currency);
 
   /// Total active non-returned earned discounts on supplier purchase invoices.
   double activeSupplierDiscountsOf(String? currency) => factoryInvoices
@@ -4178,20 +4293,17 @@ class ERPProvider extends ChangeNotifier {
             invoice.invoiceType == 'شراء_مورد' &&
             invoice.currency == AppCurrency.normalize(currency),
       )
-      .fold<double>(
-        0,
-        (sum, invoice) {
-          final discount = invoice.discountAmount;
-          if (discount <= 0) return sum;
-          // Active non-returned ratio of the purchase invoice:
-          final activeRatio = invoice.grandTotal > 0.0001
-              ? ((invoice.grandTotal - invoice.adjustmentsAmount) /
+      .fold<double>(0, (sum, invoice) {
+        final discount = invoice.discountAmount;
+        if (discount <= 0) return sum;
+        // Active non-returned ratio of the purchase invoice:
+        final activeRatio = invoice.grandTotal > 0.0001
+            ? ((invoice.grandTotal - invoice.adjustmentsAmount) /
                       invoice.grandTotal)
                   .clamp(0.0, 1.0)
-              : 0.0;
-          return sum + (discount * activeRatio);
-        },
-      );
+            : 0.0;
+        return sum + (discount * activeRatio);
+      });
 
   /// Total nominal gross earned discounts on purchase invoices before returns.
   double nominalSupplierDiscountsOf(String? currency) => factoryInvoices
@@ -4204,23 +4316,18 @@ class ERPProvider extends ChangeNotifier {
 
   /// Total earned discount reversed due to purchase returns.
   double returnedSupplierDiscountsOf(String? currency) =>
-      (nominalSupplierDiscountsOf(currency) - activeSupplierDiscountsOf(currency))
+      (nominalSupplierDiscountsOf(currency) -
+              activeSupplierDiscountsOf(currency))
           .clamp(0.0, double.infinity);
 
   double assetSaleGainsOf(String? currency) => assetSaleRecords
-      .where(
-        (record) =>
-            record.currency == AppCurrency.normalize(currency),
-      )
+      .where((record) => record.currency == AppCurrency.normalize(currency))
       .fold<double>(0, (sum, record) => sum + record.gain);
   double get assetSaleGains => assetSaleGainsOf(AppCurrency.usd);
   double get assetSaleGainsSyp => assetSaleGainsOf(AppCurrency.syp);
 
   double assetSaleLossesOf(String? currency) => assetSaleRecords
-      .where(
-        (record) =>
-            record.currency == AppCurrency.normalize(currency),
-      )
+      .where((record) => record.currency == AppCurrency.normalize(currency))
       .fold<double>(0, (sum, record) => sum + record.loss);
   double get assetSaleLosses => assetSaleLossesOf(AppCurrency.usd);
   double get assetSaleLossesSyp => assetSaleLossesOf(AppCurrency.syp);
@@ -4228,14 +4335,12 @@ class ERPProvider extends ChangeNotifier {
   double assetSaleRevenueOf(String? currency) => assetSaleGainsOf(currency);
 
   double expenseRecordsTotalOf(String? currency) => expenseRecords
-      .where((expense) =>
-          expense.currency == AppCurrency.normalize(currency))
+      .where((expense) => expense.currency == AppCurrency.normalize(currency))
       .fold<double>(0, (sum, expense) => sum + expense.amount);
 
-  double totalAdvanceRepaymentsRevenueOf(String? currency) =>
-      advanceRepayments
-          .where((r) => r.collectedCurrency == AppCurrency.normalize(currency))
-          .fold<double>(0.0, (sum, r) => sum + r.collectedAmount);
+  double totalAdvanceRepaymentsRevenueOf(String? currency) => advanceRepayments
+      .where((r) => r.collectedCurrency == AppCurrency.normalize(currency))
+      .fold<double>(0.0, (sum, r) => sum + r.collectedAmount);
   double get totalAdvanceRepaymentsRevenue =>
       totalAdvanceRepaymentsRevenueOf(AppCurrency.usd);
   double get totalAdvanceRepaymentsRevenueSyp =>
@@ -4278,6 +4383,7 @@ class ERPProvider extends ChangeNotifier {
       .where(
         (w) =>
             w.wasteType == 'هدر غير طبيعي' &&
+            !_previouslyRecognized('wasteLogs', w.id) &&
             w.currency == AppCurrency.normalize(currency),
       )
       .fold(0.0, (s, w) => s + w.cost);
@@ -4308,7 +4414,11 @@ class ERPProvider extends ChangeNotifier {
   /// Sum of initial prices across all surplus items (incurred cost).
   /// 0/empty initial price => 100% margin item (no cost rows required).
   double totalSurplusInitialCostOf(String? currency) => scrapItems
-      .where((i) => i.currency == AppCurrency.normalize(currency))
+      .where(
+        (i) =>
+            i.currency == AppCurrency.normalize(currency) &&
+            !_previouslyRecognized('scrapItems', i.id),
+      )
       .fold(0.0, (s, i) => s + i.baseCost);
   double get totalSurplusInitialCost =>
       totalSurplusInitialCostOf(AppCurrency.usd);
@@ -4549,8 +4659,7 @@ class ERPProvider extends ChangeNotifier {
     return totalDirectExpensesOf(c);
   }
 
-  double get incomeSummaryExpenses =>
-      incomeSummaryExpensesOf(AppCurrency.usd);
+  double get incomeSummaryExpenses => incomeSummaryExpensesOf(AppCurrency.usd);
   double get incomeSummaryExpensesSyp =>
       incomeSummaryExpensesOf(AppCurrency.syp);
 
@@ -4592,7 +4701,9 @@ class ERPProvider extends ChangeNotifier {
 
   void lockOpeningEntry() {
     if (!partnersRatiosValid) {
-      throw StateError('يجب أن يكون مجموع نسب الشركاء 100% قبل اعتماد القيد الافتتاحي.');
+      throw StateError(
+        'يجب أن يكون مجموع نسب الشركاء 100% قبل اعتماد القيد الافتتاحي.',
+      );
     }
     _applyOpeningStockToOperationalInventory();
     openingEntry.isLocked = true;
@@ -4613,7 +4724,7 @@ class ERPProvider extends ChangeNotifier {
   }
 
   // -------------------------------------------------------------
-  // SEMI-ANNUAL ARCHIVING & OPENING BALANCE ROLL-OVER ENGINE
+  // CURRENT PHYSICAL INVENTORY VALUATION
   // -------------------------------------------------------------
 
   /// Current total active physical inventory cost in USD.
@@ -4628,11 +4739,13 @@ class ERPProvider extends ChangeNotifier {
     for (final s in workshopStock) {
       total += s.availableQty * s.netCostPerUnit;
     }
-    for (final sc in scrapItems.where((i) => !i.isSold && i.currency == AppCurrency.usd)) {
+    for (final sc in scrapItems.where(
+      (i) => !i.isSold && i.currency == AppCurrency.usd,
+    )) {
       total += sc.baseCost;
     }
-    if (total <= 0.01 && openingEntry.inventoryValue > 0.01) {
-      total = openingEntry.inventoryValue;
+    for (final t in [...simpleTailorings, ...complexTailorings]) {
+      if (t.quantity > 0) total += t.totalNetCost;
     }
     return total;
   }
@@ -4640,359 +4753,53 @@ class ERPProvider extends ChangeNotifier {
   /// Current total active physical inventory cost in SYP.
   double get currentInventoryValueSyp {
     double total = 0.0;
-    for (final sc in scrapItems.where((i) => !i.isSold && i.currency == AppCurrency.syp)) {
+    for (final sc in scrapItems.where(
+      (i) => !i.isSold && i.currency == AppCurrency.syp,
+    )) {
       total += sc.baseCost;
     }
-    if (total <= 0.01 && openingEntry.totalOpeningStockOf(AppCurrency.syp) > 0.01) {
-      total = openingEntry.totalOpeningStockOf(AppCurrency.syp);
-    }
+
     return total;
   }
 
-  /// Converts active inventory into Opening Stock items for the new opening entry.
-  List<OpeningStockItemModel> _generateOpeningStockFromCurrentInventory() {
-    final list = <OpeningStockItemModel>[];
-    for (final b in factoryBlocks) {
-      list.add(OpeningStockItemModel(
-        id: 'op_blk_${b.id}',
-        category: 'بلوكات خام المصنع',
-        typeName: b.typeName,
-        grade: b.grade,
-        isGranite: b.isGranite,
-        supplierName: b.supplierName,
-        quantity: b.weightTons,
-        unitPrice: b.tonCost,
-        sellingPrice: b.tonSellingPrice,
-        currency: AppCurrency.usd,
-        description: 'بلوك مدور من الدورة السابقة: ${b.blockCode}',
-      ));
-    }
-    for (final w in factoryWarehouse) {
-      list.add(OpeningStockItemModel(
-        id: 'op_wh_${w.id}',
-        category: 'أمتار المصنع',
-        typeName: w.typeName,
-        grade: w.grade,
-        isGranite: w.isGranite,
-        thicknessCm: w.thicknessCm,
-        quantity: w.availableQty,
-        unitPrice: w.netCostPerUnit,
-        sellingPrice: w.recommendedSalePrice,
-        currency: AppCurrency.usd,
-        description: 'مخزون مستودع مصنع مدور: ${w.category}',
-      ));
-    }
-    for (final s in workshopStock) {
-      list.add(OpeningStockItemModel(
-        id: 'op_ws_${s.id}',
-        category: 'أمتار المعمل',
-        typeName: s.typeName,
-        grade: s.grade,
-        isGranite: s.isGranite,
-        thicknessCm: s.thicknessCm,
-        quantity: s.availableQty,
-        unitPrice: s.netCostPerUnit,
-        sellingPrice: s.recommendedSalePrice,
-        currency: AppCurrency.usd,
-        description: 'مخزون معمل مدور: ${s.category}',
-      ));
-    }
-    return list;
-  }
-
-  /// Converts current active debtor/creditor balances into Legacy Financial records.
-  List<LegacyFinancialRecordModel> _generateRolledLegacyFinancials() {
-    final list = <LegacyFinancialRecordModel>[];
-    for (final c in clients) {
-      if (c.debtBalance > 0.01) {
-        list.add(LegacyFinancialRecordModel(
-          id: 'leg_cli_${c.id}_usd',
-          category: 'clients',
-          name: c.name,
-          phone: c.phone,
-          currency: AppCurrency.usd,
-          amount: c.debtBalance,
-          description: 'رصيد عميل مدور من الدورة السابقة',
-        ));
-      }
-      if (c.debtBalanceSyp > 0.01) {
-        list.add(LegacyFinancialRecordModel(
-          id: 'leg_cli_${c.id}_syp',
-          category: 'clients',
-          name: c.name,
-          phone: c.phone,
-          currency: AppCurrency.syp,
-          amount: c.debtBalanceSyp,
-          description: 'رصيد عميل مدور بالليرة من الدورة السابقة',
-        ));
-      }
-    }
-    for (final s in suppliers) {
-      if (s.debtBalance > 0.01) {
-        list.add(LegacyFinancialRecordModel(
-          id: 'leg_sup_${s.id}_usd',
-          category: 'suppliers',
-          name: s.name,
-          phone: s.phone,
-          currency: AppCurrency.usd,
-          amount: s.debtBalance,
-          description: 'رصيد مورد مدور من الدورة السابقة',
-        ));
-      }
-      if (s.debtBalanceSyp > 0.01) {
-        list.add(LegacyFinancialRecordModel(
-          id: 'leg_sup_${s.id}_syp',
-          category: 'suppliers',
-          name: s.name,
-          phone: s.phone,
-          currency: AppCurrency.syp,
-          amount: s.debtBalanceSyp,
-          description: 'رصيد مورد مدور بالليرة من الدورة السابقة',
-        ));
-      }
-    }
-    for (final stf in staffList) {
-      if (stf.netRemainingBalance > 0.01) {
-        list.add(LegacyFinancialRecordModel(
-          id: 'leg_stf_${stf.id}_usd',
-          category: 'employees',
-          name: stf.name,
-          phone: stf.phone,
-          currency: AppCurrency.usd,
-          amount: stf.netRemainingBalance,
-          description: 'أجور مدورة مستحقة للعامل',
-        ));
-      }
-      if (stf.netRemainingBalanceSyp > 0.01) {
-        list.add(LegacyFinancialRecordModel(
-          id: 'leg_stf_${stf.id}_syp',
-          category: 'employees',
-          name: stf.name,
-          phone: stf.phone,
-          currency: AppCurrency.syp,
-          amount: stf.netRemainingBalanceSyp,
-          description: 'أجور مدورة بالليرة مستحقة للعامل',
-        ));
-      }
-    }
-    return list;
-  }
-
-  /// Previews the automated Opening Journal Entry for the new period.
-  OpeningEntryModel previewNextPeriodOpeningEntry() {
-    final rolledAssets = openingEntry.fixedAssets
-        .where((a) => !a.isSold)
-        .map((a) => FixedAssetModel(
-              id: a.id,
-              category: a.category,
-              name: a.name,
-              amount: a.amount,
-              description: a.description,
-              currency: a.currency,
-              isSold: false,
-              saleAmount: 0.0,
-            ))
-        .toList();
-
-    final legacy = _generateRolledLegacyFinancials();
-    final invValUsd = currentInventoryValueUsd;
-    final clientsDebtsUsd = clientsTotalDebts;
-    final suppliersDebtsUsd = suppliersTotalDebts;
-    final workersDebtsUsd = workersTotalDebts;
-
-    final fixedAssetsUsd = rolledAssets
-        .where((a) => a.currency == AppCurrency.usd)
-        .fold(0.0, (sum, a) => sum + a.amount);
-    final calculatedAssetsUsd = fixedAssetsUsd +
-        mainCashBox +
-        scrapCashBox +
-        orderCashBox +
-        invValUsd +
-        clientsDebtsUsd;
-    final calculatedLiabilitiesUsd = suppliersDebtsUsd + workersDebtsUsd;
-    final calculatedEquityUsd = calculatedAssetsUsd - calculatedLiabilitiesUsd;
-
-    final fixedAssetsSyp = rolledAssets
-        .where((a) => a.currency == AppCurrency.syp)
-        .fold(0.0, (sum, a) => sum + a.amount);
-    final stockSyp = _generateOpeningStockFromCurrentInventory()
-        .where((i) => i.currency == AppCurrency.syp)
-        .fold(0.0, (sum, i) => sum + i.totalPrice);
-    final clientDebtsSyp = legacy
-        .where((r) => r.category == 'clients' && r.currency == AppCurrency.syp)
-        .fold(0.0, (sum, r) => sum + r.amount);
-    final calculatedAssetsSyp = fixedAssetsSyp +
-        mainCashBoxSyp +
-        scrapCashBoxSyp +
-        orderCashBoxSyp +
-        stockSyp +
-        clientDebtsSyp;
-    final liabilitiesSyp = legacy
-        .where((r) =>
-            (r.category == 'suppliers' || r.category == 'employees') &&
-            r.currency == AppCurrency.syp)
-        .fold(0.0, (sum, r) => sum + r.amount);
-    final calculatedEquitySyp = calculatedAssetsSyp - liabilitiesSyp;
-
-    return OpeningEntryModel(
-      landValue: 0.0,
-      buildingsValue: 0.0,
-      machineryValue: 0.0,
-      vehiclesValue: 0.0,
-      furnitureValue: 0.0,
-      mainCashValue: mainCashBox,
-      scrapCashValue: scrapCashBox,
-      orderCashValue: orderCashBox,
-      mainCashValueSyp: mainCashBoxSyp,
-      scrapCashValueSyp: scrapCashBoxSyp,
-      orderCashValueSyp: orderCashBoxSyp,
-      inventoryValue: invValUsd,
-      customerDebtsValue: clientsDebtsUsd,
-      supplierPayablesValue: suppliersDebtsUsd,
-      workerSalariesValue: workersDebtsUsd,
-      fixedAssets: rolledAssets,
-      openingStock: _generateOpeningStockFromCurrentInventory(),
-      legacyFinancials: legacy,
-      hassanRatio: openingEntry.hassanRatio,
-      adnanRatio: openingEntry.adnanRatio,
-      abdelMoeenRatio: openingEntry.abdelMoeenRatio,
-      openingCapital: calculatedEquityUsd,
-      openingCapitalSyp: calculatedEquitySyp,
-      isLocked: true,
-      lockedAt: DateTime.now(),
-      openingStockApplied: true,
-    );
-  }
-
-  /// Mathematically validates Trial Balance integrity:
-  /// Total Assets + Receivables == Total Liabilities + Payables + Opening Capital/Retained Earnings.
-  AccountingValidationResult validateTrialBalanceIntegrity({
-    required OpeningEntryModel proposedEntry,
+  /// Distribution from equity only; never enters operational P&L.
+  bool withdrawRetainedProfit({
+    required String partnerId,
+    required double amount,
+    required String currency,
+    String cashBox = 'main',
   }) {
-    final assetsUsd = proposedEntry.totalAssets;
-    final liabilitiesUsd = proposedEntry.totalLiabilities;
-    final equityUsd = proposedEntry.totalEquity;
-    final diffUsd = (assetsUsd - (liabilitiesUsd + equityUsd)).abs();
-
-    final assetsSyp = proposedEntry.totalAssetsSyp;
-    final liabilitiesSyp = proposedEntry.totalLiabilitiesSyp;
-    final equitySyp = proposedEntry.totalEquitySyp;
-    final diffSyp = (assetsSyp - (liabilitiesSyp + equitySyp)).abs();
-
-    final isValid = diffUsd < 0.01 && diffSyp < 0.01;
-    return AccountingValidationResult(
-      isValid: isValid,
-      totalAssetsUsd: assetsUsd,
-      totalLiabilitiesUsd: liabilitiesUsd,
-      totalEquityUsd: equityUsd,
-      discrepancyUsd: diffUsd,
-      totalAssetsSyp: assetsSyp,
-      totalLiabilitiesSyp: liabilitiesSyp,
-      totalEquitySyp: equitySyp,
-      discrepancySyp: diffSyp,
-      errorMessage: isValid
-          ? null
-          : 'اختلال في توازن ميزان المراجعة (Trial Balance Discrepancy): إجمالي الأصول ($assetsUsd USD) لا يتطابق مع مجموع الخصوم وحقوق الملكية (${liabilitiesUsd + equityUsd} USD). الفرق: $diffUsd USD.',
-    );
-  }
-
-  /// Executes the Archive & Close Period workflow:
-  /// - Validates Trial Balance mathematically
-  /// - Archives completed/historical operational records
-  /// - Resets temporary revenue & expense counters to 0
-  /// - Rolls over net profit into Retained Earnings & partner capitals
-  /// - Generates & locks the balanced Opening Journal Entry for the new period.
-  AccountingValidationResult archiveAndClosePeriod({
-    required String archiveName,
-    String notes = '',
-  }) {
-    final proposedEntry = previewNextPeriodOpeningEntry();
-    final validation = validateTrialBalanceIntegrity(proposedEntry: proposedEntry);
-
-    if (!validation.isValid) {
-      return validation;
+    if (!isOpeningEntryCompleted ||
+        !openingEntry.isLocked ||
+        !amount.isFinite ||
+        amount <= 0 ||
+        !partners.any((p) => p.id == partnerId) ||
+        !{AppCurrency.usd, AppCurrency.syp}.contains(currency) ||
+        !{'main', 'scrap', 'order'}.contains(cashBox))
+      return false;
+    final balance = AppCurrency.isSyp(currency)
+        ? openingEntry.retainedEarningsSyp
+        : openingEntry.retainedEarnings;
+    if (amount > balance || !takeCash(cashBox, currency, amount)) return false;
+    if (AppCurrency.isSyp(currency)) {
+      openingEntry.retainedEarningsSyp -= amount;
+    } else {
+      openingEntry.retainedEarnings -= amount;
     }
-
-    final revUsd = totalRevenuesOf(AppCurrency.usd);
-    final revSyp = totalRevenuesOf(AppCurrency.syp);
-    final expUsd = totalDirectExpensesOf(AppCurrency.usd);
-    final expSyp = totalDirectExpensesOf(AppCurrency.syp);
-    final profitUsd = netOperatingProfitOf(AppCurrency.usd);
-    final profitSyp = netOperatingProfitOf(AppCurrency.syp);
-
-    final archiveRecord = PeriodArchiveModel(
-      id: 'arch_${DateTime.now().millisecondsSinceEpoch}',
-      archiveName: archiveName.trim().isEmpty
-          ? 'أرشيف ${DateTime.now().year}/${DateTime.now().month}'
-          : archiveName.trim(),
-      archivedAt: DateTime.now(),
-      notes: notes,
-      totalRevenuesUsd: revUsd,
-      totalRevenuesSyp: revSyp,
-      totalExpensesUsd: expUsd,
-      totalExpensesSyp: expSyp,
-      netProfitUsd: profitUsd,
-      netProfitSyp: profitSyp,
-      totalAssetsUsd: validation.totalAssetsUsd,
-      totalLiabilitiesUsd: validation.totalLiabilitiesUsd,
-      totalEquityUsd: validation.totalEquityUsd,
-      mainCashUsd: mainCashBox,
-      scrapCashUsd: scrapCashBox,
-      orderCashUsd: orderCashBox,
-      mainCashSyp: mainCashBoxSyp,
-      scrapCashSyp: scrapCashBoxSyp,
-      orderCashSyp: orderCashBoxSyp,
-      factoryInvoices: List<FactoryInvoiceModel>.from(factoryInvoices),
-      workshopInvoices: List<WorkshopInvoiceModel>.from(workshopInvoices),
-      adjustmentInvoices: List<AdjustmentInvoiceModel>.from(adjustmentInvoices),
-      returnInvoices: List<ReturnInvoiceModel>.from(returnInvoices),
-      factoryOrders: List<FactoryOrderModel>.from(factoryOrders),
-      workshopOrders: List<WorkshopOrderModel>.from(workshopOrders),
-      expenseRecords: List<ExpenseRecordModel>.from(expenseRecords),
-      surplusCosts: List<SurplusCostModel>.from(surplusCosts),
-      workdayEntries: List<WorkdayEntryModel>.from(workdayEntries),
-      staffAttendance: List<StaffAttendanceModel>.from(staffAttendance),
-      advanceRepayments: List<AdvanceRepaymentModel>.from(advanceRepayments),
-      dailyReports: List<DailyReportModel>.from(dailyReports),
-      assetSaleRecords: List<AssetSaleRecordModel>.from(assetSaleRecords),
-      accountantWithdrawals: List<AccountantWithdrawalModel>.from(accountantWithdrawals),
-      rolledOpeningEntry: proposedEntry,
-    );
-
-    // 1. Clear operational lists for the new clean period
-    factoryInvoices.clear();
-    workshopInvoices.clear();
-    adjustmentInvoices.clear();
-    returnInvoices.clear();
-    factoryOrders.removeWhere((o) => o.status == 'منجزة' || o.status == 'ملغاة');
-    workshopOrders.removeWhere((o) => o.status == 'منجزة' || o.status == 'مسلّمة' || o.status == 'ملغاة');
-    dailyReports.clear();
-    workdayEntries.clear();
-    staffAttendance.clear();
-    advanceRepayments.clear();
-    expenseRecords.clear();
-    surplusCosts.clear();
-    assetSaleRecords.clear();
-    accountantWithdrawals.clear();
-    unallocatedFactoryCollectionsUsd = 0.0;
-    unallocatedFactoryCollectionsSyp = 0.0;
-    unallocatedWorkshopCollectionsUsd = 0.0;
-    unallocatedWorkshopCollectionsSyp = 0.0;
-
-    // 2. Set new Opening Entry & roll net profit into partner equity
-    openingEntry = proposedEntry;
-    for (final partner in partners) {
-      partner.injectedCapital = proposedEntry.totalEquity * partner.ratio;
-      partner.injectedCapitalSyp = proposedEntry.totalEquitySyp * partner.ratio;
-    }
-
-    // 3. Add to archive records
-    periodArchives.add(archiveRecord);
-
+    openingEntry.retainedWithdrawals.add({
+      'id': 'retained_${DateTime.now().microsecondsSinceEpoch}',
+      'partnerId': partnerId,
+      'partnerName': partners.firstWhere((p) => p.id == partnerId).name,
+      'amount': amount,
+      'currency': currency,
+      'cashBox': cashBox,
+      'date': DateTime.now().toIso8601String(),
+      'debit': 'retained_earnings',
+      'credit': cashBox,
+    });
     notifyListeners();
     saveToDisk();
-
-    return validation;
+    return true;
   }
 
   void _applyOpeningStockToOperationalInventory() {
@@ -5109,7 +4916,8 @@ class ERPProvider extends ChangeNotifier {
               ? _firstOrNull(
                   blockTypes.where(
                     (candidate) =>
-                        (item.typeId.isNotEmpty && candidate.id == item.typeId) ||
+                        (item.typeId.isNotEmpty &&
+                            candidate.id == item.typeId) ||
                         candidate.typeName == item.typeName,
                   ),
                 )
@@ -5120,13 +4928,16 @@ class ERPProvider extends ChangeNotifier {
           final grade = item.grade.isNotEmpty
               ? item.grade
               : (meterType?.grade ?? blockType?.grade ?? 'درجة أولى');
-          final isGranite = item.isGranite || (meterType?.isGranite ?? blockType?.isGranite ?? false);
+          final isGranite =
+              item.isGranite ||
+              (meterType?.isGranite ?? blockType?.isGranite ?? false);
           final thickness = item.thicknessCm > 0
               ? item.thicknessCm
               : (meterType?.thicknessCm ?? 2.0);
           final category = thickness <= 5 ? 'متر مربع' : 'متر مكعب';
-          final salePrice =
-              item.sellingPrice > 0 ? item.sellingPrice : item.unitPrice;
+          final salePrice = item.sellingPrice > 0
+              ? item.sellingPrice
+              : item.unitPrice;
           if (item.category == 'أمتار المصنع') {
             factoryWarehouse.add(
               FactoryWarehouseModel(
@@ -5180,8 +4991,9 @@ class ERPProvider extends ChangeNotifier {
               id: item.id,
               description: item.typeName,
               baseCost: item.totalPrice,
-              sellingPrice:
-                  item.sellingPrice > 0 ? item.sellingPrice : item.unitPrice,
+              sellingPrice: item.sellingPrice > 0
+                  ? item.sellingPrice
+                  : item.unitPrice,
               currency: item.currency,
             ),
           );
@@ -5236,8 +5048,9 @@ class ERPProvider extends ChangeNotifier {
 
     // If monetary shares have not been initialized, backfill from opening equity
     if (oldTotalCapital <= 0) {
-      final equity =
-          isSyp ? openingEntry.totalEquitySyp : openingEntry.totalEquity;
+      final equity = isSyp
+          ? openingEntry.totalEquitySyp
+          : openingEntry.totalEquity;
       if (equity > 0) {
         for (final p in partners) {
           if (isSyp) {
@@ -5250,8 +5063,9 @@ class ERPProvider extends ChangeNotifier {
       }
     }
 
-    final double oldPartnerShare =
-        isSyp ? partner.injectedCapitalSyp : partner.injectedCapital;
+    final double oldPartnerShare = isSyp
+        ? partner.injectedCapitalSyp
+        : partner.injectedCapital;
     final double oldRatio = partner.ratio;
 
     // 1. Calculate New Total Capital: C_new = C_old + A
@@ -5263,8 +5077,9 @@ class ERPProvider extends ChangeNotifier {
     } else {
       partner.injectedCapital += amount;
     }
-    final double newPartnerShare =
-        isSyp ? partner.injectedCapitalSyp : partner.injectedCapital;
+    final double newPartnerShare = isSyp
+        ? partner.injectedCapitalSyp
+        : partner.injectedCapital;
 
     // 3. Recalculate all partners' ownership percentages (dilution for non-contributing partners)
     if (newTotalCapital > 0) {
@@ -5275,8 +5090,10 @@ class ERPProvider extends ChangeNotifier {
     }
 
     // Floating-point validation: ensure sum of ratios is exactly 1.0
-    final double ratioSum =
-        partners.fold<double>(0.0, (sum, p) => sum + p.ratio);
+    final double ratioSum = partners.fold<double>(
+      0.0,
+      (sum, p) => sum + p.ratio,
+    );
     if (ratioSum > 0 && (ratioSum - 1.0).abs() > 0.000001) {
       partner.ratio += (1.0 - ratioSum);
     }
@@ -5397,10 +5214,13 @@ class ERPProvider extends ChangeNotifier {
   bool addSupplierPurchaseInvoice(FactoryInvoiceModel inv) {
     if (inv.invoiceType != 'شراء_مورد' ||
         factoryInvoices.any((existing) => existing.id == inv.id) ||
-        !inv.shippingFee.isFinite || inv.shippingFee < 0 ||
+        !inv.shippingFee.isFinite ||
+        inv.shippingFee < 0 ||
         !inv.advancePayment.isFinite ||
-        cashOf('main', inv.currency) + 0.0001 < inv.advancePayment + inv.shippingFee ||
-        inv.advancePayment < 0 || inv.advancePayment > inv.grandTotal + 0.001) {
+        cashOf('main', inv.currency) + 0.0001 <
+            inv.advancePayment + inv.shippingFee ||
+        inv.advancePayment < 0 ||
+        inv.advancePayment > inv.grandTotal + 0.001) {
       return false;
     }
     if (inv.isCashInvoice &&
@@ -5497,8 +5317,9 @@ class ERPProvider extends ChangeNotifier {
         final category = item.meterUnit.isNotEmpty
             ? item.meterUnit
             : (item.thicknessCm > 5 ? 'متر مكعب' : 'متر مربع');
-        final targetTypeName =
-            item.typeName.isNotEmpty ? item.typeName : item.description;
+        final targetTypeName = item.typeName.isNotEmpty
+            ? item.typeName
+            : item.description;
         final targetGrade = item.grade.isNotEmpty ? item.grade : 'درجة أولى';
         final targetThickness = item.thicknessCm > 0 ? item.thicknessCm : 2.0;
 
@@ -5517,16 +5338,15 @@ class ERPProvider extends ChangeNotifier {
           final double mergedQty = w.availableQty + item.quantity;
           final double mergedCost = mergedQty > 0
               ? ((w.availableQty * w.netCostPerUnit) +
-                    (item.quantity * effectiveUnitCost)) /
-                mergedQty
+                        (item.quantity * effectiveUnitCost)) /
+                    mergedQty
               : effectiveUnitCost;
           w.availableQty = mergedQty;
           w.netCostPerUnit = mergedCost;
         } else {
           factoryWarehouse.add(
             FactoryWarehouseModel(
-              id:
-                  'fw_${DateTime.now().millisecondsSinceEpoch}_${factoryWarehouse.length}',
+              id: 'fw_${DateTime.now().millisecondsSinceEpoch}_${factoryWarehouse.length}',
               typeName: targetTypeName,
               grade: targetGrade,
               thicknessCm: targetThickness,
@@ -5541,11 +5361,11 @@ class ERPProvider extends ChangeNotifier {
       } else {
         factoryBlocks.add(
           FactoryBlockModel(
-            id:
-                'fb_${DateTime.now().millisecondsSinceEpoch}_${factoryBlocks.length}',
+            id: 'fb_${DateTime.now().millisecondsSinceEpoch}_${factoryBlocks.length}',
             blockCode: 'BLK-${factoryBlocks.length + 101}',
-            typeName:
-                item.typeName.isNotEmpty ? item.typeName : item.description,
+            typeName: item.typeName.isNotEmpty
+                ? item.typeName
+                : item.description,
             grade: item.grade.isNotEmpty ? item.grade : 'درجة أولى',
             supplierId: inv.partyId,
             supplierName: inv.partyName,
@@ -5828,8 +5648,10 @@ class ERPProvider extends ChangeNotifier {
   // Transfer Stock back from Workshop to Factory
   bool transferWorkshopToFactory(WorkshopStockModel wsItem, double qty) {
     if (qty <= 0 || wsItem.availableQty + 0.0001 < qty) return false;
-    wsItem.availableQty =
-        (wsItem.availableQty - qty).clamp(0.0, double.infinity);
+    wsItem.availableQty = (wsItem.availableQty - qty).clamp(
+      0.0,
+      double.infinity,
+    );
 
     var existingWh = factoryWarehouse.firstWhere(
       (wh) =>
@@ -5891,10 +5713,14 @@ class ERPProvider extends ChangeNotifier {
     }
 
     if (clients.isNotEmpty) {
-      final clientMatches = clients.where(
-        (c) => c.id == inv.partyId || c.name.trim() == inv.partyName.trim(),
-      ).toList();
-      final client = clientMatches.isNotEmpty ? clientMatches.first : clients.first;
+      final clientMatches = clients
+          .where(
+            (c) => c.id == inv.partyId || c.name.trim() == inv.partyName.trim(),
+          )
+          .toList();
+      final client = clientMatches.isNotEmpty
+          ? clientMatches.first
+          : clients.first;
       client.currencyClassification = inv.currency;
       if (inv.remainingBalance > 0) {
         client.addDebt(inv.currency, inv.remainingBalance);
@@ -5903,13 +5729,15 @@ class ERPProvider extends ChangeNotifier {
 
     // Deduct stock from Factory Warehouse or Tailoring
     for (var item in inv.items) {
-      if (item.itemCategory == 'tailoring' || item.itemId.startsWith('tailoring_')) {
+      if (item.itemCategory == 'tailoring' ||
+          item.itemId.startsWith('tailoring_')) {
         final allTailorings = [...simpleTailorings, ...complexTailorings];
         WorkshopTailoringModel? tailoring;
         TailoringLineItem? lineItem;
         for (final t in allTailorings) {
           for (final li in t.lineItems) {
-            if (item.itemId == 'tailoring_${t.id}_${li.id}' || item.itemId == li.id) {
+            if (item.itemId == 'tailoring_${t.id}_${li.id}' ||
+                item.itemId == li.id) {
               tailoring = t;
               lineItem = li;
               break;
@@ -5961,39 +5789,68 @@ class ERPProvider extends ChangeNotifier {
   // The order carries its currency (SYP/$); the invoice created from it
   // inherits that currency directly.
   void _deductWorkshopOrderItemStock(WorkshopInvoiceItem item) {
-    if (item.sourceType == 'بيع خياطة بسيطة' || item.sourceType == 'تفصيل بسيط') {
-      final matches = simpleTailorings.where((t) => t.id == item.sourceId).toList();
+    if (item.sourceType == 'بيع خياطة بسيطة' ||
+        item.sourceType == 'تفصيل بسيط') {
+      final matches = simpleTailorings
+          .where((t) => t.id == item.sourceId)
+          .toList();
       if (matches.isNotEmpty) {
         final t = matches.first;
         t.quantity = (t.quantity - item.quantity).clamp(0.0, double.infinity);
         if (item.sourceLineItemId.isNotEmpty) {
-          final liMatches = t.lineItems.where((li) => li.id == item.sourceLineItemId).toList();
+          final liMatches = t.lineItems
+              .where((li) => li.id == item.sourceLineItemId)
+              .toList();
           if (liMatches.isNotEmpty) {
             final li = liMatches.first;
             final pieceArea = (li.lengthCm > 0 && li.widthCm > 0)
-                ? (li.lengthCm / 100.0) * (li.widthCm / 100.0) * (li.category == 'متر مكعب' && li.heightCm > 0 ? li.heightCm / 100.0 : 1.0)
+                ? (li.lengthCm / 100.0) *
+                      (li.widthCm / 100.0) *
+                      (li.category == 'متر مكعب' && li.heightCm > 0
+                          ? li.heightCm / 100.0
+                          : 1.0)
                 : 0.0;
             if (pieceArea > 0) {
-              li.quantity = (li.quantity - (item.quantity / pieceArea)).clamp(0.0, double.infinity);
+              li.quantity = (li.quantity - (item.quantity / pieceArea)).clamp(
+                0.0,
+                double.infinity,
+              );
             } else {
-              li.quantity = (li.quantity - item.quantity).clamp(0.0, double.infinity);
+              li.quantity = (li.quantity - item.quantity).clamp(
+                0.0,
+                double.infinity,
+              );
             }
           }
         }
       }
-    } else if (item.sourceType == 'بيع خياطة معقدة' || item.sourceType == 'تفصيل معقد') {
-      final matches = complexTailorings.where((t) => t.id == item.sourceId).toList();
+    } else if (item.sourceType == 'بيع خياطة معقدة' ||
+        item.sourceType == 'تفصيل معقد') {
+      final matches = complexTailorings
+          .where((t) => t.id == item.sourceId)
+          .toList();
       if (matches.isNotEmpty) {
-        matches.first.quantity = (matches.first.quantity - item.quantity).clamp(0.0, double.infinity);
+        matches.first.quantity = (matches.first.quantity - item.quantity).clamp(
+          0.0,
+          double.infinity,
+        );
       }
-    } else if (item.sourceType == 'بيع مواد خام من المعمل' || item.sourceType == 'مواد خام') {
+    } else if (item.sourceType == 'بيع مواد خام من المعمل' ||
+        item.sourceType == 'مواد خام') {
       if (item.sourceId.isNotEmpty) {
-        final matches = workshopStock.where((w) => w.id == item.sourceId).toList();
+        final matches = workshopStock
+            .where((w) => w.id == item.sourceId)
+            .toList();
         if (matches.isNotEmpty) {
-          matches.first.availableQty = (matches.first.availableQty - item.quantity).clamp(0.0, double.infinity);
+          matches.first.availableQty =
+              (matches.first.availableQty - item.quantity).clamp(
+                0.0,
+                double.infinity,
+              );
         }
       }
-    } else if (item.sourceType == 'بيع قطع إضافية' || item.sourceType == 'قطع زائدة') {
+    } else if (item.sourceType == 'بيع قطع إضافية' ||
+        item.sourceType == 'قطع زائدة') {
       if (item.sourceId.isNotEmpty) {
         final matches = scrapItems.where((s) => s.id == item.sourceId).toList();
         if (matches.isNotEmpty) matches.first.isSold = true;
@@ -6002,17 +5859,26 @@ class ERPProvider extends ChangeNotifier {
   }
 
   void _restoreWorkshopOrderItemStock(WorkshopInvoiceItem item) {
-    if (item.sourceType == 'بيع خياطة بسيطة' || item.sourceType == 'تفصيل بسيط') {
-      final matches = simpleTailorings.where((t) => t.id == item.sourceId).toList();
+    if (item.sourceType == 'بيع خياطة بسيطة' ||
+        item.sourceType == 'تفصيل بسيط') {
+      final matches = simpleTailorings
+          .where((t) => t.id == item.sourceId)
+          .toList();
       if (matches.isNotEmpty) {
         final t = matches.first;
         t.quantity += item.quantity;
         if (item.sourceLineItemId.isNotEmpty) {
-          final liMatches = t.lineItems.where((li) => li.id == item.sourceLineItemId).toList();
+          final liMatches = t.lineItems
+              .where((li) => li.id == item.sourceLineItemId)
+              .toList();
           if (liMatches.isNotEmpty) {
             final li = liMatches.first;
             final pieceArea = (li.lengthCm > 0 && li.widthCm > 0)
-                ? (li.lengthCm / 100.0) * (li.widthCm / 100.0) * (li.category == 'متر مكعب' && li.heightCm > 0 ? li.heightCm / 100.0 : 1.0)
+                ? (li.lengthCm / 100.0) *
+                      (li.widthCm / 100.0) *
+                      (li.category == 'متر مكعب' && li.heightCm > 0
+                          ? li.heightCm / 100.0
+                          : 1.0)
                 : 0.0;
             if (pieceArea > 0) {
               li.quantity += (item.quantity / pieceArea);
@@ -6024,7 +5890,9 @@ class ERPProvider extends ChangeNotifier {
       } else {
         simpleTailorings.add(
           WorkshopTailoringModel(
-            id: item.sourceId.isNotEmpty ? item.sourceId : 'st_${DateTime.now().microsecondsSinceEpoch}',
+            id: item.sourceId.isNotEmpty
+                ? item.sourceId
+                : 'st_${DateTime.now().microsecondsSinceEpoch}',
             name: item.description,
             complexity: 'بسيط',
             rawMaterialDescription: item.description,
@@ -6037,14 +5905,19 @@ class ERPProvider extends ChangeNotifier {
           ),
         );
       }
-    } else if (item.sourceType == 'بيع خياطة معقدة' || item.sourceType == 'تفصيل معقد') {
-      final matches = complexTailorings.where((t) => t.id == item.sourceId).toList();
+    } else if (item.sourceType == 'بيع خياطة معقدة' ||
+        item.sourceType == 'تفصيل معقد') {
+      final matches = complexTailorings
+          .where((t) => t.id == item.sourceId)
+          .toList();
       if (matches.isNotEmpty) {
         matches.first.quantity += item.quantity;
       } else {
         complexTailorings.add(
           WorkshopTailoringModel(
-            id: item.sourceId.isNotEmpty ? item.sourceId : 'ct_${DateTime.now().microsecondsSinceEpoch}',
+            id: item.sourceId.isNotEmpty
+                ? item.sourceId
+                : 'ct_${DateTime.now().microsecondsSinceEpoch}',
             name: item.description,
             complexity: 'معقد',
             rawMaterialDescription: item.description,
@@ -6057,26 +5930,34 @@ class ERPProvider extends ChangeNotifier {
           ),
         );
       }
-    } else if (item.sourceType == 'بيع مواد خام من المعمل' || item.sourceType == 'مواد خام') {
-      final matches = workshopStock.where((w) => w.id == item.sourceId).toList();
+    } else if (item.sourceType == 'بيع مواد خام من المعمل' ||
+        item.sourceType == 'مواد خام') {
+      final matches = workshopStock
+          .where((w) => w.id == item.sourceId)
+          .toList();
       if (matches.isNotEmpty) {
         matches.first.availableQty += item.quantity;
       } else {
-        final byName = workshopStock.where((w) => item.description.contains(w.typeName)).toList();
+        final byName = workshopStock
+            .where((w) => item.description.contains(w.typeName))
+            .toList();
         if (byName.isNotEmpty) {
           byName.first.availableQty += item.quantity;
         } else if (workshopStock.isNotEmpty) {
           workshopStock.first.availableQty += item.quantity;
         }
       }
-    } else if (item.sourceType == 'بيع قطع إضافية' || item.sourceType == 'قطع زائدة') {
+    } else if (item.sourceType == 'بيع قطع إضافية' ||
+        item.sourceType == 'قطع زائدة') {
       final matches = scrapItems.where((s) => s.id == item.sourceId).toList();
       if (matches.isNotEmpty) {
         matches.first.isSold = false;
       } else {
         scrapItems.add(
           ScrapItemModel(
-            id: item.sourceId.isNotEmpty ? item.sourceId : 'sc_${DateTime.now().microsecondsSinceEpoch}',
+            id: item.sourceId.isNotEmpty
+                ? item.sourceId
+                : 'sc_${DateTime.now().microsecondsSinceEpoch}',
             description: item.description,
             baseCost: item.netCost,
             sellingPrice: item.agreedPrice,
@@ -6135,12 +6016,15 @@ class ERPProvider extends ChangeNotifier {
       ),
     );
 
-    final remaining = (order.agreedPrice - order.depositAmount - cashPaidNow).clamp(0.0, double.infinity);
+    final remaining = (order.agreedPrice - order.depositAmount - cashPaidNow)
+        .clamp(0.0, double.infinity);
     if (order.clientName.trim().isNotEmpty) {
       final existingClient = clients
-          .where((c) =>
-              c.name.trim() == order.clientName.trim() &&
-              c.clientType == 'زبون معمل')
+          .where(
+            (c) =>
+                c.name.trim() == order.clientName.trim() &&
+                c.clientType == 'زبون معمل',
+          )
           .firstOrNull;
       final ClientModel client;
       if (existingClient == null) {
@@ -6211,18 +6095,23 @@ class ERPProvider extends ChangeNotifier {
         convertCancelledOrderToTailoring(order);
       } else {
         for (final item in order.items) {
-          final isRaw = item.sourceType == 'بيع مواد خام من المعمل' || item.sourceType == 'مواد خام';
+          final isRaw =
+              item.sourceType == 'بيع مواد خام من المعمل' ||
+              item.sourceType == 'مواد خام';
           if (!isRaw) {
             // Standard line items (Simple Tailoring, Complex Tailoring, Extras)
             _restoreWorkshopOrderItemStock(item);
           } else {
             // Raw Material line items: Must convert to tailored stock instead of returning as raw material
-            final assign = rawMaterialAssignments?.where(
-              (a) =>
-                  a.itemId == item.id ||
-                  a.itemId == item.sourceId ||
-                  (a.rawMaterialName == item.description && a.quantity == item.quantity),
-            ).firstOrNull;
+            final assign = rawMaterialAssignments
+                ?.where(
+                  (a) =>
+                      a.itemId == item.id ||
+                      a.itemId == item.sourceId ||
+                      (a.rawMaterialName == item.description &&
+                          a.quantity == item.quantity),
+                )
+                .firstOrNull;
 
             final toSimple = assign?.isSimpleTailoring ?? true;
             final existingId = assign?.existingTailoringId;
@@ -6231,7 +6120,9 @@ class ERPProvider extends ChangeNotifier {
             if (toSimple) {
               WorkshopTailoringModel? target;
               if (existingId != null && existingId.isNotEmpty) {
-                target = simpleTailorings.where((t) => t.id == existingId).firstOrNull;
+                target = simpleTailorings
+                    .where((t) => t.id == existingId)
+                    .firstOrNull;
               }
               if (target != null) {
                 target.quantity += item.quantity;
@@ -6248,14 +6139,20 @@ class ERPProvider extends ChangeNotifier {
                     lengthCm: item.lengthCm,
                     widthCm: item.widthCm,
                     heightCm: item.heightCm,
-                    unitCategory: item.unitCategory.isNotEmpty ? item.unitCategory : 'متر مربع',
+                    unitCategory: item.unitCategory.isNotEmpty
+                        ? item.unitCategory
+                        : 'متر مربع',
                     quantity: item.quantity,
                     materialNetCost: item.netCost,
                     laborCostPerMeter: 0.0,
-                    photoPath: item.photoPath.isNotEmpty ? item.photoPath : order.photoPath,
+                    photoPath: item.photoPath.isNotEmpty
+                        ? item.photoPath
+                        : order.photoPath,
                     sellingPrice: (assign != null && assign.sellingPrice > 0)
                         ? assign.sellingPrice
-                        : (item.agreedPrice > 0 ? item.agreedPrice : item.unitPrice),
+                        : (item.agreedPrice > 0
+                              ? item.agreedPrice
+                              : item.unitPrice),
                     isGranite: item.isGranite,
                   ),
                 );
@@ -6264,7 +6161,9 @@ class ERPProvider extends ChangeNotifier {
               // Assign to Complex Tailoring
               WorkshopTailoringModel? target;
               if (existingId != null && existingId.isNotEmpty) {
-                target = complexTailorings.where((t) => t.id == existingId).firstOrNull;
+                target = complexTailorings
+                    .where((t) => t.id == existingId)
+                    .firstOrNull;
               }
               if (target != null) {
                 target.quantity += item.quantity;
@@ -6281,14 +6180,20 @@ class ERPProvider extends ChangeNotifier {
                     lengthCm: item.lengthCm,
                     widthCm: item.widthCm,
                     heightCm: item.heightCm,
-                    unitCategory: item.unitCategory.isNotEmpty ? item.unitCategory : 'متر مربع',
+                    unitCategory: item.unitCategory.isNotEmpty
+                        ? item.unitCategory
+                        : 'متر مربع',
                     quantity: item.quantity,
                     materialNetCost: item.netCost,
                     laborCostPerMeter: 0.0,
-                    photoPath: item.photoPath.isNotEmpty ? item.photoPath : order.photoPath,
+                    photoPath: item.photoPath.isNotEmpty
+                        ? item.photoPath
+                        : order.photoPath,
                     sellingPrice: (assign != null && assign.sellingPrice > 0)
                         ? assign.sellingPrice
-                        : (item.agreedPrice > 0 ? item.agreedPrice : item.unitPrice),
+                        : (item.agreedPrice > 0
+                              ? item.agreedPrice
+                              : item.unitPrice),
                     isGranite: item.isGranite,
                   ),
                 );
@@ -6304,10 +6209,7 @@ class ERPProvider extends ChangeNotifier {
   }
 
   void cancelWorkshopOrder(WorkshopOrderModel order, bool isSpecialRefund) {
-    cancelWorkshopOrderWorkflow(
-      order: order,
-      isCompleted: !isSpecialRefund,
-    );
+    cancelWorkshopOrderWorkflow(order: order, isCompleted: !isSpecialRefund);
     order.status = 'ملغاة';
   }
 
@@ -6352,7 +6254,9 @@ class ERPProvider extends ChangeNotifier {
     // Multi-item path
     if (inv.items.isNotEmpty) {
       final linkedOrders = inv.sourceId.isNotEmpty
-          ? workshopOrders.where((o) => o.id == inv.sourceId && o.status == 'قيد التنفيذ').toList()
+          ? workshopOrders
+                .where((o) => o.id == inv.sourceId && o.status == 'قيد التنفيذ')
+                .toList()
           : <WorkshopOrderModel>[];
       if (linkedOrders.isNotEmpty) {
         for (final it in linkedOrders.first.items) {
@@ -6366,7 +6270,9 @@ class ERPProvider extends ChangeNotifier {
             item.sourceType == 'تفصيل بسيط' ||
             item.sourceType == 'بيع خياطة معقدة' ||
             item.sourceType == 'تفصيل معقد') {
-          final isSimple = item.sourceType == 'بيع خياطة بسيطة' || item.sourceType == 'تفصيل بسيط';
+          final isSimple =
+              item.sourceType == 'بيع خياطة بسيطة' ||
+              item.sourceType == 'تفصيل بسيط';
           final category = isSimple ? 'تفصيل بسيط' : 'تفصيل معقد';
           final isOpeningStockItem = openingEntry.openingStock.any(
             (o) => o.category == category && o.typeId == item.sourceId,
@@ -6382,7 +6288,9 @@ class ERPProvider extends ChangeNotifier {
           }
           final items = isSimple ? simpleTailorings : complexTailorings;
           final matches = items.where((t) => t.id == item.sourceId).toList();
-          if (matches.isEmpty || item.quantity <= 0 || matches.first.quantity + 0.0001 < item.quantity) {
+          if (matches.isEmpty ||
+              item.quantity <= 0 ||
+              matches.first.quantity + 0.0001 < item.quantity) {
             if (linkedOrders.isNotEmpty) {
               for (final it in linkedOrders.first.items) {
                 _deductWorkshopOrderItemStock(it);
@@ -6390,10 +6298,14 @@ class ERPProvider extends ChangeNotifier {
             }
             return false;
           }
-        } else if (item.sourceType == 'بيع مواد خام من المعمل' || item.sourceType == 'مواد خام') {
+        } else if (item.sourceType == 'بيع مواد خام من المعمل' ||
+            item.sourceType == 'مواد خام') {
           if (item.sourceId.isNotEmpty) {
-            final stock = workshopStock.where((w) => w.id == item.sourceId).toList();
-            if (stock.isEmpty || stock.first.availableQty + 0.0001 < item.quantity) {
+            final stock = workshopStock
+                .where((w) => w.id == item.sourceId)
+                .toList();
+            if (stock.isEmpty ||
+                stock.first.availableQty + 0.0001 < item.quantity) {
               if (linkedOrders.isNotEmpty) {
                 for (final it in linkedOrders.first.items) {
                   _deductWorkshopOrderItemStock(it);
@@ -6402,10 +6314,14 @@ class ERPProvider extends ChangeNotifier {
               return false;
             }
           }
-        } else if (item.sourceType == 'طلب معمل' || item.sourceType == 'طلبية معمل') {
+        } else if (item.sourceType == 'طلب معمل' ||
+            item.sourceType == 'طلبية معمل') {
           if (item.depositAmount > 0 && item.sourceId.isNotEmpty) {
-            final orders = workshopOrders.where((o) => o.id == item.sourceId).toList();
-            if (orders.isNotEmpty && cashOf('order', inv.currency) + 0.0001 < item.depositAmount) {
+            final orders = workshopOrders
+                .where((o) => o.id == item.sourceId)
+                .toList();
+            if (orders.isNotEmpty &&
+                cashOf('order', inv.currency) + 0.0001 < item.depositAmount) {
               if (linkedOrders.isNotEmpty) {
                 for (final it in linkedOrders.first.items) {
                   _deductWorkshopOrderItemStock(it);
@@ -6420,47 +6336,80 @@ class ERPProvider extends ChangeNotifier {
       // 2. Perform deductions and status updates
       double totalScrapValue = 0.0;
       for (final item in inv.items) {
-        if (item.sourceType == 'بيع خياطة بسيطة' || item.sourceType == 'تفصيل بسيط') {
-          final matches = simpleTailorings.where((t) => t.id == item.sourceId).toList();
+        if (item.sourceType == 'بيع خياطة بسيطة' ||
+            item.sourceType == 'تفصيل بسيط') {
+          final matches = simpleTailorings
+              .where((t) => t.id == item.sourceId)
+              .toList();
           if (matches.isNotEmpty) {
             final t = matches.first;
-            t.quantity = (t.quantity - item.quantity).clamp(0.0, double.infinity);
+            t.quantity = (t.quantity - item.quantity).clamp(
+              0.0,
+              double.infinity,
+            );
             if (item.sourceLineItemId.isNotEmpty) {
-              final liMatches = t.lineItems.where((li) => li.id == item.sourceLineItemId).toList();
+              final liMatches = t.lineItems
+                  .where((li) => li.id == item.sourceLineItemId)
+                  .toList();
               if (liMatches.isNotEmpty) {
                 final li = liMatches.first;
                 final pieceArea = (li.lengthCm > 0 && li.widthCm > 0)
-                    ? (li.lengthCm / 100.0) * (li.widthCm / 100.0) * (li.category == 'متر مكعب' && li.heightCm > 0 ? li.heightCm / 100.0 : 1.0)
+                    ? (li.lengthCm / 100.0) *
+                          (li.widthCm / 100.0) *
+                          (li.category == 'متر مكعب' && li.heightCm > 0
+                              ? li.heightCm / 100.0
+                              : 1.0)
                     : 0.0;
                 if (pieceArea > 0) {
-                  li.quantity = (li.quantity - (item.quantity / pieceArea)).clamp(0.0, double.infinity);
+                  li.quantity = (li.quantity - (item.quantity / pieceArea))
+                      .clamp(0.0, double.infinity);
                 } else {
-                  li.quantity = (li.quantity - item.quantity).clamp(0.0, double.infinity);
+                  li.quantity = (li.quantity - item.quantity).clamp(
+                    0.0,
+                    double.infinity,
+                  );
                 }
               }
             }
           }
-        } else if (item.sourceType == 'بيع خياطة معقدة' || item.sourceType == 'تفصيل معقد') {
-          final matches = complexTailorings.where((t) => t.id == item.sourceId).toList();
+        } else if (item.sourceType == 'بيع خياطة معقدة' ||
+            item.sourceType == 'تفصيل معقد') {
+          final matches = complexTailorings
+              .where((t) => t.id == item.sourceId)
+              .toList();
           if (matches.isNotEmpty) {
-            matches.first.quantity = (matches.first.quantity - item.quantity).clamp(0.0, double.infinity);
+            matches.first.quantity = (matches.first.quantity - item.quantity)
+                .clamp(0.0, double.infinity);
           }
-        } else if (item.sourceType == 'بيع مواد خام من المعمل' || item.sourceType == 'مواد خام') {
+        } else if (item.sourceType == 'بيع مواد خام من المعمل' ||
+            item.sourceType == 'مواد خام') {
           if (item.sourceId.isNotEmpty) {
-            final matches = workshopStock.where((w) => w.id == item.sourceId).toList();
+            final matches = workshopStock
+                .where((w) => w.id == item.sourceId)
+                .toList();
             if (matches.isNotEmpty) {
-              matches.first.availableQty = (matches.first.availableQty - item.quantity).clamp(0.0, double.infinity);
+              matches.first.availableQty =
+                  (matches.first.availableQty - item.quantity).clamp(
+                    0.0,
+                    double.infinity,
+                  );
             }
           }
-        } else if (item.sourceType == 'بيع قطع إضافية' || item.sourceType == 'قطع زائدة') {
+        } else if (item.sourceType == 'بيع قطع إضافية' ||
+            item.sourceType == 'قطع زائدة') {
           if (item.sourceId.isNotEmpty) {
-            final matches = scrapItems.where((s) => s.id == item.sourceId).toList();
+            final matches = scrapItems
+                .where((s) => s.id == item.sourceId)
+                .toList();
             if (matches.isNotEmpty) matches.first.isSold = true;
           }
           totalScrapValue += item.grandTotal;
-        } else if (item.sourceType == 'طلب معمل' || item.sourceType == 'طلبية معمل') {
+        } else if (item.sourceType == 'طلب معمل' ||
+            item.sourceType == 'طلبية معمل') {
           if (item.sourceId.isNotEmpty) {
-            final orders = workshopOrders.where((o) => o.id == item.sourceId).toList();
+            final orders = workshopOrders
+                .where((o) => o.id == item.sourceId)
+                .toList();
             if (orders.isNotEmpty) {
               orders.first.status = 'مكتملة ومرحلة';
             }
@@ -6470,7 +6419,9 @@ class ERPProvider extends ChangeNotifier {
 
       // Complete any associated order linked via inv.sourceId or by client
       if (inv.sourceId.isNotEmpty) {
-        final orders = workshopOrders.where((o) => o.id == inv.sourceId).toList();
+        final orders = workshopOrders
+            .where((o) => o.id == inv.sourceId)
+            .toList();
         if (orders.isNotEmpty) {
           orders.first.status = 'مكتملة ومرحلة';
         }
@@ -6483,9 +6434,12 @@ class ERPProvider extends ChangeNotifier {
       }
 
       if (deductStockId.isNotEmpty && deductQty > 0) {
-        final matches = workshopStock.where((w) => w.id == deductStockId).toList();
+        final matches = workshopStock
+            .where((w) => w.id == deductStockId)
+            .toList();
         if (matches.isNotEmpty) {
-          matches.first.availableQty = (matches.first.availableQty - deductQty).clamp(0.0, double.infinity);
+          matches.first.availableQty = (matches.first.availableQty - deductQty)
+              .clamp(0.0, double.infinity);
         }
       }
 
@@ -6494,7 +6448,10 @@ class ERPProvider extends ChangeNotifier {
       // Route cash
       if (totalScrapValue > 0) {
         final scrapTake = inv.cashPaidNow.clamp(0.0, totalScrapValue);
-        final mainTake = (inv.cashPaidNow - scrapTake).clamp(0.0, double.infinity);
+        final mainTake = (inv.cashPaidNow - scrapTake).clamp(
+          0.0,
+          double.infinity,
+        );
         if (scrapTake > 0) addCash('scrap', inv.currency, scrapTake);
         if (mainTake > 0) addCash('main', inv.currency, mainTake);
       } else {
@@ -6504,9 +6461,11 @@ class ERPProvider extends ChangeNotifier {
       // Ensure client account appears in Financials under Factory Financials - Customers
       if (inv.clientName.trim().isNotEmpty) {
         final existingClient = clients
-            .where((c) =>
-                c.name.trim() == inv.clientName.trim() &&
-                c.clientType == 'زبون معمل')
+            .where(
+              (c) =>
+                  c.name.trim() == inv.clientName.trim() &&
+                  c.clientType == 'زبون معمل',
+            )
             .firstOrNull;
         final ClientModel client;
         if (existingClient == null) {
@@ -6537,8 +6496,10 @@ class ERPProvider extends ChangeNotifier {
 
     // Legacy single-item fallback
     WorkshopTailoringModel? tailoringItem;
-    final isSimple = inv.sourceType == 'بيع خياطة بسيطة' || inv.sourceType == 'تفصيل بسيط';
-    final isComplex = inv.sourceType == 'بيع خياطة معقدة' || inv.sourceType == 'تفصيل معقد';
+    final isSimple =
+        inv.sourceType == 'بيع خياطة بسيطة' || inv.sourceType == 'تفصيل بسيط';
+    final isComplex =
+        inv.sourceType == 'بيع خياطة معقدة' || inv.sourceType == 'تفصيل معقد';
     if (inv.sourceId.isNotEmpty && (isSimple || isComplex)) {
       final category = isSimple ? 'تفصيل بسيط' : 'تفصيل معقد';
       final isOpeningStockItem = openingEntry.openingStock.any(
@@ -6563,10 +6524,9 @@ class ERPProvider extends ChangeNotifier {
           .toList();
       if (stock.isEmpty || stock.first.availableQty < deductQty) return false;
     }
-    final isOrd = inv.sourceType == 'طلب معمل' || inv.sourceType == 'طلبية معمل';
-    if (isOrd &&
-        inv.depositDeducted > 0 &&
-        inv.sourceId.isNotEmpty) {
+    final isOrd =
+        inv.sourceType == 'طلب معمل' || inv.sourceType == 'طلبية معمل';
+    if (isOrd && inv.depositDeducted > 0 && inv.sourceId.isNotEmpty) {
       final orders = workshopOrders
           .where((order) => order.id == inv.sourceId)
           .toList();
@@ -6577,7 +6537,8 @@ class ERPProvider extends ChangeNotifier {
     }
     workshopInvoices.add(inv);
     if (tailoringItem != null) {
-      tailoringItem.quantity = (tailoringItem.quantity - inv.sourceQuantity).clamp(0.0, double.infinity);
+      tailoringItem.quantity = (tailoringItem.quantity - inv.sourceQuantity)
+          .clamp(0.0, double.infinity);
     }
     if (inv.sourceType == 'بيع قطع إضافية' || inv.sourceType == 'قطع زائدة') {
       if (inv.sourceId.isNotEmpty) {
@@ -6612,9 +6573,11 @@ class ERPProvider extends ChangeNotifier {
 
     if (inv.clientName.trim().isNotEmpty) {
       final existingClient = clients
-          .where((c) =>
-              c.name.trim() == inv.clientName.trim() &&
-              c.clientType == 'زبون معمل')
+          .where(
+            (c) =>
+                c.name.trim() == inv.clientName.trim() &&
+                c.clientType == 'زبون معمل',
+          )
           .firstOrNull;
       final ClientModel client;
       if (existingClient == null) {
@@ -6948,7 +6911,8 @@ class ERPProvider extends ChangeNotifier {
   /// and logs an abnormal waste entry so that its financial cost is routed
   /// to the Income Summary under "Abnormal Waste Losses" (خسائر الهدر غير الطبيعي).
   bool recordWorkshopWaste({
-    required String sourceSection, // 'مواد المعمل' | 'قسم التفصيل البسيط' | 'قسم التفصيل المعقد' | 'قسم الزيادات' | 'يدوي'
+    required String
+    sourceSection, // 'مواد المعمل' | 'قسم التفصيل البسيط' | 'قسم التفصيل المعقد' | 'قسم الزيادات' | 'يدوي'
     required String sourceItemId,
     required double quantity,
     required double cost,
@@ -6972,49 +6936,76 @@ class ERPProvider extends ChangeNotifier {
       }
       final stock = matches.first;
       if (quantity > stock.availableQty) {
-        throw ArgumentError('الكمية المهدرة ($quantity) تتجاوز الرصيد المتاح (${stock.availableQty}) في مواد المعمل');
+        throw ArgumentError(
+          'الكمية المهدرة ($quantity) تتجاوز الرصيد المتاح (${stock.availableQty}) في مواد المعمل',
+        );
       }
-      stock.availableQty = (stock.availableQty - quantity).clamp(0.0, double.infinity);
+      stock.availableQty = (stock.availableQty - quantity).clamp(
+        0.0,
+        double.infinity,
+      );
       unit = stock.category;
       if (itemDesc.isEmpty) {
         itemDesc = '${stock.typeName} (${stock.grade}) - مواد المعمل';
       }
-    } else if (sec == 'قسم التفصيل البسيط' || sec == 'simple_tailoring' || sec == 'تفصيل بسيط') {
-      final matches = simpleTailorings.where((t) => t.id == sourceItemId).toList();
+    } else if (sec == 'قسم التفصيل البسيط' ||
+        sec == 'simple_tailoring' ||
+        sec == 'تفصيل بسيط') {
+      final matches = simpleTailorings
+          .where((t) => t.id == sourceItemId)
+          .toList();
       if (matches.isEmpty) {
         throw ArgumentError('البند المحدد غير موجود في قسم التفصيل البسيط');
       }
       final tailoring = matches.first;
       if (quantity > tailoring.quantity) {
-        throw ArgumentError('الكمية المهدرة ($quantity) تتجاوز الرصيد المتاح (${tailoring.quantity}) في التفصيل البسيط');
+        throw ArgumentError(
+          'الكمية المهدرة ($quantity) تتجاوز الرصيد المتاح (${tailoring.quantity}) في التفصيل البسيط',
+        );
       }
-      tailoring.quantity = (tailoring.quantity - quantity).clamp(0.0, double.infinity);
+      tailoring.quantity = (tailoring.quantity - quantity).clamp(
+        0.0,
+        double.infinity,
+      );
       unit = tailoring.unitSymbol;
       if (itemDesc.isEmpty) {
         itemDesc = '${tailoring.name} - قسم التفصيل البسيط';
       }
-    } else if (sec == 'قسم التفصيل المعقد' || sec == 'complex_tailoring' || sec == 'تفصيل معقد') {
-      final matches = complexTailorings.where((t) => t.id == sourceItemId).toList();
+    } else if (sec == 'قسم التفصيل المعقد' ||
+        sec == 'complex_tailoring' ||
+        sec == 'تفصيل معقد') {
+      final matches = complexTailorings
+          .where((t) => t.id == sourceItemId)
+          .toList();
       if (matches.isEmpty) {
         throw ArgumentError('البند المحدد غير موجود في قسم التفصيل المعقد');
       }
       final tailoring = matches.first;
       if (quantity > tailoring.quantity) {
-        throw ArgumentError('الكمية المهدرة ($quantity) تتجاوز عدد القطع المتاحة (${tailoring.quantity.toInt()}) في التفصيل المعقد');
+        throw ArgumentError(
+          'الكمية المهدرة ($quantity) تتجاوز عدد القطع المتاحة (${tailoring.quantity.toInt()}) في التفصيل المعقد',
+        );
       }
-      tailoring.quantity = (tailoring.quantity - quantity).clamp(0.0, double.infinity);
+      tailoring.quantity = (tailoring.quantity - quantity).clamp(
+        0.0,
+        double.infinity,
+      );
       unit = 'قطعة';
       if (itemDesc.isEmpty) {
         itemDesc = '${tailoring.name} - قسم التفصيل المعقد';
       }
-    } else if (sec == 'قسم الزيادات' || sec == 'scrap_item' || sec == 'الزيادات') {
+    } else if (sec == 'قسم الزيادات' ||
+        sec == 'scrap_item' ||
+        sec == 'الزيادات') {
       final matches = scrapItems.where((s) => s.id == sourceItemId).toList();
       if (matches.isEmpty) {
         throw ArgumentError('القطعة الزائدة غير موجودة في قسم الزيادات');
       }
       final scrap = matches.first;
       if (scrap.isSold || quantity > scrap.quantity) {
-        throw ArgumentError('الكمية المهدرة ($quantity) تتجاوز الرصيد المتاح (${scrap.quantity}) في قسم الزيادات');
+        throw ArgumentError(
+          'الكمية المهدرة ($quantity) تتجاوز الرصيد المتاح (${scrap.quantity}) في قسم الزيادات',
+        );
       }
       scrap.quantity = (scrap.quantity - quantity).clamp(0.0, double.infinity);
       if (scrap.quantity <= 0.0001) {
@@ -7072,22 +7063,36 @@ class ERPProvider extends ChangeNotifier {
     if (log.sourceSection.isEmpty || log.sourceItemId.isEmpty) return;
     final sec = log.sourceSection.trim();
     if (sec == 'مواد المعمل' || sec == 'workshop_material') {
-      final matches = workshopStock.where((w) => w.id == log.sourceItemId).toList();
+      final matches = workshopStock
+          .where((w) => w.id == log.sourceItemId)
+          .toList();
       if (matches.isNotEmpty) {
         matches.first.availableQty += log.quantity;
       }
-    } else if (sec == 'قسم التفصيل البسيط' || sec == 'simple_tailoring' || sec == 'تفصيل بسيط') {
-      final matches = simpleTailorings.where((t) => t.id == log.sourceItemId).toList();
+    } else if (sec == 'قسم التفصيل البسيط' ||
+        sec == 'simple_tailoring' ||
+        sec == 'تفصيل بسيط') {
+      final matches = simpleTailorings
+          .where((t) => t.id == log.sourceItemId)
+          .toList();
       if (matches.isNotEmpty) {
         matches.first.quantity += log.quantity;
       }
-    } else if (sec == 'قسم التفصيل المعقد' || sec == 'complex_tailoring' || sec == 'تفصيل معقد') {
-      final matches = complexTailorings.where((t) => t.id == log.sourceItemId).toList();
+    } else if (sec == 'قسم التفصيل المعقد' ||
+        sec == 'complex_tailoring' ||
+        sec == 'تفصيل معقد') {
+      final matches = complexTailorings
+          .where((t) => t.id == log.sourceItemId)
+          .toList();
       if (matches.isNotEmpty) {
         matches.first.quantity += log.quantity;
       }
-    } else if (sec == 'قسم الزيادات' || sec == 'scrap_item' || sec == 'الزيادات') {
-      final matches = scrapItems.where((s) => s.id == log.sourceItemId).toList();
+    } else if (sec == 'قسم الزيادات' ||
+        sec == 'scrap_item' ||
+        sec == 'الزيادات') {
+      final matches = scrapItems
+          .where((s) => s.id == log.sourceItemId)
+          .toList();
       if (matches.isNotEmpty) {
         final sc = matches.first;
         sc.quantity += log.quantity;
@@ -7170,8 +7175,7 @@ class ERPProvider extends ChangeNotifier {
     } else {
       final attendanceEntries = existing.toList();
       if (attendanceEntries.any(
-        (entry) =>
-            staff.netOf(entry.currency) + 0.0001 < entry.dailyRate,
+        (entry) => staff.netOf(entry.currency) + 0.0001 < entry.dailyRate,
       )) {
         return false;
       }
@@ -7348,11 +7352,13 @@ class ERPProvider extends ChangeNotifier {
 
     for (final inv in openInvs) {
       if (remainingToSettle <= 0.001) break;
-      final settlePart =
-          remainingToSettle.clamp(0.0, inv.remainingBalance).toDouble();
+      final settlePart = remainingToSettle
+          .clamp(0.0, inv.remainingBalance)
+          .toDouble();
       inv.advancePayment += settlePart;
-      inv.paymentStatus =
-          inv.remainingBalance > 0.01 ? 'مستحق الدفع' : 'مدفوعة';
+      inv.paymentStatus = inv.remainingBalance > 0.01
+          ? 'مستحق الدفع'
+          : 'مدفوعة';
       remainingToSettle -= settlePart;
     }
 
@@ -7457,20 +7463,21 @@ class ERPProvider extends ChangeNotifier {
     var remainingToRelease = amount;
     var totalReleased = 0.0;
 
-    final candidates = adjustmentInvoices
-        .where(
-          (doc) =>
-              doc.kind == kind &&
-              doc.currency == c &&
-              doc.isSettlementDeferred &&
-              doc.pendingDeferredAmount > 0.0001 &&
-              (doc.partyName.trim().toLowerCase() == targetName ||
-                  (partyId.isNotEmpty && doc.itemId == partyId) ||
-                  doc.partyName.trim().toLowerCase().contains(targetName) ||
-                  targetName.contains(doc.partyName.trim().toLowerCase())),
-        )
-        .toList()
-      ..sort((a, b) => a.date.compareTo(b.date));
+    final candidates =
+        adjustmentInvoices
+            .where(
+              (doc) =>
+                  doc.kind == kind &&
+                  doc.currency == c &&
+                  doc.isSettlementDeferred &&
+                  doc.pendingDeferredAmount > 0.0001 &&
+                  (doc.partyName.trim().toLowerCase() == targetName ||
+                      (partyId.isNotEmpty && doc.itemId == partyId) ||
+                      doc.partyName.trim().toLowerCase().contains(targetName) ||
+                      targetName.contains(doc.partyName.trim().toLowerCase())),
+            )
+            .toList()
+          ..sort((a, b) => a.date.compareTo(b.date));
 
     for (final doc in candidates) {
       if (remainingToRelease <= 0.0001) break;
@@ -7518,18 +7525,19 @@ class ERPProvider extends ChangeNotifier {
     if (adj.kind == 'purchase_return') {
       // Collection from supplier into main safe
       addCash('main', c, releaseAmount);
-      final supplier = suppliers.where(
-        (s) => s.name.trim() == adj.partyName.trim(),
-      ).firstOrNull;
+      final supplier = suppliers
+          .where((s) => s.name.trim() == adj.partyName.trim())
+          .firstOrNull;
       if (supplier != null && supplier.creditOf(c) > 0.0001) {
         supplier.addDebt(c, math.min(releaseAmount, supplier.creditOf(c)));
       }
     } else if (adj.kind == 'sales_return') {
       // Payment to customer from main safe
-      if (!takeCash('main', c, releaseAmount, allowNegative: true)) return false;
-      final client = clients.where(
-        (cl) => cl.name.trim() == adj.partyName.trim(),
-      ).firstOrNull;
+      if (!takeCash('main', c, releaseAmount, allowNegative: true))
+        return false;
+      final client = clients
+          .where((cl) => cl.name.trim() == adj.partyName.trim())
+          .firstOrNull;
       if (client != null && client.creditOf(c) > 0.0001) {
         client.addDebt(c, math.min(releaseAmount, client.creditOf(c)));
       }
@@ -7539,7 +7547,8 @@ class ERPProvider extends ChangeNotifier {
 
     adj.realizedAmount = _money(adj.realizedAmount + releaseAmount);
     for (final ret in returnInvoices) {
-      if (ret.returnNo == adj.invoiceNo || ret.parentInvoiceId == adj.targetInvoiceId) {
+      if (ret.returnNo == adj.invoiceNo ||
+          ret.parentInvoiceId == adj.targetInvoiceId) {
         ret.realizedAmount = adj.realizedAmount;
       }
     }
@@ -7632,7 +7641,13 @@ class ERPProvider extends ChangeNotifier {
         currency: old.currency,
       );
     }
-    final client = clients.where((c) => c.name.trim() == inv.clientName.trim() && c.clientType == 'زبون معمل').firstOrNull;
+    final client = clients
+        .where(
+          (c) =>
+              c.name.trim() == inv.clientName.trim() &&
+              c.clientType == 'زبون معمل',
+        )
+        .firstOrNull;
     if (client != null) {
       client.reduceDebt(inv.currency, take);
     }
@@ -7713,11 +7728,13 @@ class ERPProvider extends ChangeNotifier {
 
       for (final inv in agentInvs) {
         if (remainingToSettle <= 0.001) break;
-        final settlePart =
-            remainingToSettle.clamp(0.0, inv.remainingBalance).toDouble();
+        final settlePart = remainingToSettle
+            .clamp(0.0, inv.remainingBalance)
+            .toDouble();
         inv.advancePayment += settlePart;
-        inv.paymentStatus =
-            inv.remainingBalance > 0.01 ? 'مستحق الدفع' : 'مدفوعة';
+        inv.paymentStatus = inv.remainingBalance > 0.01
+            ? 'مستحق الدفع'
+            : 'مدفوعة';
         remainingToSettle -= settlePart;
       }
       if (remainingToSettle > 0.001) {
@@ -7744,8 +7761,9 @@ class ERPProvider extends ChangeNotifier {
 
       for (final inv in retailInvs) {
         if (remainingToSettle <= 0.001) break;
-        final settlePart =
-            remainingToSettle.clamp(0.0, inv.remainingBalance).toDouble();
+        final settlePart = remainingToSettle
+            .clamp(0.0, inv.remainingBalance)
+            .toDouble();
         final idx = workshopInvoices.indexWhere((x) => x.id == inv.id);
         if (idx >= 0) {
           final old = workshopInvoices[idx];
@@ -7820,8 +7838,9 @@ class ERPProvider extends ChangeNotifier {
 
     for (final inv in projInvs) {
       if (remainingToSettle <= 0.001) break;
-      final settlePart =
-          remainingToSettle.clamp(0.0, inv.remainingBalance).toDouble();
+      final settlePart = remainingToSettle
+          .clamp(0.0, inv.remainingBalance)
+          .toDouble();
       final hasOnlyScrap = inv.items.isNotEmpty
           ? inv.items.every((i) => i.sourceType == 'قطع زائدة')
           : inv.sourceType == 'قطع زائدة';
@@ -8154,7 +8173,9 @@ class ERPProvider extends ChangeNotifier {
   bool isPersonNameExists(String name) {
     final clean = name.trim().toLowerCase();
     if (clean.isEmpty) return false;
-    final inSuppliers = suppliers.any((s) => s.name.trim().toLowerCase() == clean);
+    final inSuppliers = suppliers.any(
+      (s) => s.name.trim().toLowerCase() == clean,
+    );
     final inClients = clients.any((c) => c.name.trim().toLowerCase() == clean);
     return inSuppliers || inClients;
   }
@@ -8194,7 +8215,8 @@ class ERPProvider extends ChangeNotifier {
     // Cascade name/grade/granite changes to blocks in stock
     for (var i = 0; i < factoryBlocks.length; i++) {
       final block = factoryBlocks[i];
-      if (block.typeName == previous.typeName && block.grade == previous.grade) {
+      if (block.typeName == previous.typeName &&
+          block.grade == previous.grade) {
         factoryBlocks[i] = FactoryBlockModel(
           id: block.id,
           blockCode: block.blockCode,
@@ -8211,8 +8233,9 @@ class ERPProvider extends ChangeNotifier {
     }
 
     // Also cascade to matching meterTypes entry if exists
-    final meterIdx = meterTypes.indexWhere((mt) =>
-        mt.typeName == previous.typeName && mt.grade == previous.grade);
+    final meterIdx = meterTypes.indexWhere(
+      (mt) => mt.typeName == previous.typeName && mt.grade == previous.grade,
+    );
     if (meterIdx >= 0) {
       final prevMt = meterTypes[meterIdx];
       meterTypes[meterIdx] = MeterTypeModel(
@@ -8279,6 +8302,22 @@ class ERPProvider extends ChangeNotifier {
     services.add(srv);
     notifyListeners();
     saveToDisk();
+  }
+
+  bool updateServicePrice(String serviceId, double unitRate) {
+    if (!unitRate.isFinite || unitRate < 0) return false;
+    final index = services.indexWhere((service) => service.id == serviceId);
+    if (index < 0) return false;
+    final service = services[index];
+    services[index] = ServiceItemModel(
+      id: service.id,
+      name: service.name,
+      description: service.description,
+      unitRate: unitRate,
+    );
+    notifyListeners();
+    saveToDisk();
+    return true;
   }
 
   void addStaff(StaffModel stf) {
@@ -8389,6 +8428,8 @@ class ERPProvider extends ChangeNotifier {
       lockedAt: null,
     );
     isOpeningEntryCompleted = false;
+
+    _legacyFinancialHistory.clear();
 
     // 5. Purge all cached local persistence.
     try {
@@ -8560,10 +8601,7 @@ class ERPProvider extends ChangeNotifier {
         'adjustmentInvoices',
         jsonEncode(adjustmentInvoices.map((e) => e.toJson()).toList()),
       );
-      await prefs.setString(
-        'centerInfo',
-        jsonEncode(centerInfo.toJson()),
-      );
+      await prefs.setString('centerInfo', jsonEncode(centerInfo.toJson()));
       await prefs.setDouble(
         'graniteAccountantPercentage',
         graniteAccountantPercentage,
@@ -8584,10 +8622,14 @@ class ERPProvider extends ChangeNotifier {
         'dailyReports',
         jsonEncode(dailyReports.map((r) => r.toJson()).toList()),
       );
-      await prefs.setString(
-        'periodArchives',
-        jsonEncode(periodArchives.map((a) => a.toJson()).toList()),
-      );
+      if (_legacyFinancialHistory.isNotEmpty) {
+        await prefs.setString(
+          'periodArchives',
+          jsonEncode(_legacyFinancialHistory),
+        );
+      } else {
+        await prefs.remove('periodArchives');
+      }
       await prefs.setDouble(
         'unallocatedFactoryCollectionsUsd',
         unallocatedFactoryCollectionsUsd,
@@ -8687,7 +8729,11 @@ class ERPProvider extends ChangeNotifier {
       // Sync customer currency classifications from invoices if not explicitly stored
       for (final client in clients) {
         final facInvs = factoryInvoices
-            .where((i) => i.partyId == client.id || i.partyName.trim() == client.name.trim())
+            .where(
+              (i) =>
+                  i.partyId == client.id ||
+                  i.partyName.trim() == client.name.trim(),
+            )
             .toList();
         final wrkInvs = workshopInvoices
             .where((i) => i.clientName.trim() == client.name.trim())
@@ -8792,7 +8838,9 @@ class ERPProvider extends ChangeNotifier {
               .toList();
         } catch (_) {}
       }
-      final soldLegacy = openingEntry.fixedAssets.where((a) => a.isSold).toList();
+      final soldLegacy = openingEntry.fixedAssets
+          .where((a) => a.isSold)
+          .toList();
       for (final a in soldLegacy) {
         if (!assetSaleRecords.any((r) => r.assetId == a.id)) {
           assetSaleRecords.add(
@@ -8919,17 +8967,19 @@ class ERPProvider extends ChangeNotifier {
       if (dailyReportsJson != null) {
         try {
           dailyReports = (jsonDecode(dailyReportsJson) as List)
-              .map((item) => DailyReportModel.fromJson(Map<String, dynamic>.from(item)))
+              .map(
+                (item) =>
+                    DailyReportModel.fromJson(Map<String, dynamic>.from(item)),
+              )
               .toList();
         } catch (_) {}
       }
 
-      final archivesJson = prefs.getString('periodArchives');
-      if (archivesJson != null) {
+      final historicalJson = prefs.getString('periodArchives');
+      if (historicalJson != null) {
         try {
-          periodArchives = (jsonDecode(archivesJson) as List)
-              .map((item) =>
-                  PeriodArchiveModel.fromJson(Map<String, dynamic>.from(item)))
+          _legacyFinancialHistory = (jsonDecode(historicalJson) as List)
+              .map((item) => Map<String, dynamic>.from(item))
               .toList();
         } catch (_) {}
       }
@@ -9024,7 +9074,8 @@ class ERPProvider extends ChangeNotifier {
         'dailyReports': dailyReports.map((d) => d.toJson()).toList(),
       },
       'centerInfo': centerInfo.toJson(),
-      'periodArchives': periodArchives.map((a) => a.toJson()).toList(),
+      if (_legacyFinancialHistory.isNotEmpty)
+        'periodArchives': jsonDecode(jsonEncode(_legacyFinancialHistory)),
     };
   }
 
@@ -9102,10 +9153,12 @@ class ERPProvider extends ChangeNotifier {
     for (final section in previous.keys.where((key) => key != 'metadata')) {
       final template = previous[section];
       final input = data[section];
-      if (template is List && input is! List) throw FormatException('Invalid collection: $section');
+      if (template is List && input is! List)
+        throw FormatException('Invalid collection: $section');
       if (template is Map && input is Map) {
         for (final key in template.keys) {
-          if (template[key] is List && input[key] is! List) throw FormatException('Invalid collection: $key');
+          if (template[key] is List && input[key] is! List)
+            throw FormatException('Invalid collection: $key');
         }
       }
     }
@@ -9114,24 +9167,39 @@ class ERPProvider extends ChangeNotifier {
       await _applyBackupData(data);
       final attachments = data.remove('attachments');
       if (attachments != null) {
-        final directory = await Directory.systemTemp.createTemp('erp_restored_');
+        final directory = await Directory.systemTemp.createTemp(
+          'erp_restored_',
+        );
         final paths = <String, String>{};
         for (final entry in (attachments as Map).entries) {
           final extension = (entry.key as String).split('.').last;
-          final suffix = RegExp(r'^[a-zA-Z0-9]{1,8}$').hasMatch(extension) ? extension : 'bin';
+          final suffix = RegExp(r'^[a-zA-Z0-9]{1,8}$').hasMatch(extension)
+              ? extension
+              : 'bin';
           final file = File('${directory.path}/${paths.length}.$suffix');
-          await file.writeAsBytes(base64Decode(entry.value as String), flush: true);
+          await file.writeAsBytes(
+            base64Decode(entry.value as String),
+            flush: true,
+          );
           paths[entry.key as String] = file.path;
         }
         void rewrite(dynamic value) {
           if (value is Map) {
             for (final key in value.keys.toList()) {
-              if (const ['photoPath', 'photoUrl', 'logoPath'].contains(key) && paths.containsKey(value[key])) {
+              if (const ['photoPath', 'photoUrl', 'logoPath'].contains(key) &&
+                  paths.containsKey(value[key])) {
                 value[key] = paths[value[key]];
-              } else { rewrite(value[key]); }
+              } else {
+                rewrite(value[key]);
+              }
             }
-          } else if (value is List) { for (final item in value) { rewrite(item); } }
+          } else if (value is List) {
+            for (final item in value) {
+              rewrite(item);
+            }
+          }
         }
+
         rewrite(data);
       }
       metrics = await _applyBackupData(data);
@@ -9178,12 +9246,11 @@ class ERPProvider extends ChangeNotifier {
 
     // Financials
     if (fin['openingEntry'] != null) {
-        openingEntry = OpeningEntryModel.fromJson(
-          Map<String, dynamic>.from(fin['openingEntry']),
-        );
-        isOpeningEntryCompleted =
-            fin['isOpeningEntryCompleted'] as bool? ?? openingEntry.isLocked;
-
+      openingEntry = OpeningEntryModel.fromJson(
+        Map<String, dynamic>.from(fin['openingEntry']),
+      );
+      isOpeningEntryCompleted =
+          fin['isOpeningEntryCompleted'] as bool? ?? openingEntry.isLocked;
     }
     if (fin['partners'] is List) {
       partners = (fin['partners'] as List)
@@ -9421,8 +9488,7 @@ class ERPProvider extends ChangeNotifier {
           .toList();
     }
     if (stf['activeWorkweekStart'] != null) {
-        activeWorkweekStart = DateTime.parse(stf['activeWorkweekStart']);
-
+      activeWorkweekStart = DateTime.parse(stf['activeWorkweekStart']);
     }
 
     // Operations
@@ -9500,21 +9566,14 @@ class ERPProvider extends ChangeNotifier {
 
     // Settings
     if (raw['centerInfo'] != null) {
-        centerInfo = CenterInfoModel.fromJson(
-          Map<String, dynamic>.from(raw['centerInfo']),
-        );
-
+      centerInfo = CenterInfoModel.fromJson(
+        Map<String, dynamic>.from(raw['centerInfo']),
+      );
     }
 
-    if (raw['periodArchives'] is List) {
-        periodArchives = (raw['periodArchives'] as List)
-            .map(
-              (item) =>
-                  PeriodArchiveModel.fromJson(Map<String, dynamic>.from(item)),
-            )
-            .toList();
-
-    }
+    _legacyFinancialHistory = (raw['periodArchives'] as List? ?? [])
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
 
     // Persist to disk immediately
 
@@ -9532,7 +9591,6 @@ class ERPProvider extends ChangeNotifier {
       'workshopProjects': workshopProjects.length,
       'staffList': staffList.length,
       'dailyReports': dailyReports.length,
-      'periodArchives': periodArchives.length,
       'totalCashUsd': mainCashBox + scrapCashBox + orderCashBox,
       'totalCashSyp': mainCashBoxSyp + scrapCashBoxSyp + orderCashBoxSyp,
       'openingEntryStatus': openingEntry.isLocked ? 'معتمد ومرحل' : 'مسودة',
@@ -9547,7 +9605,10 @@ class ERPProvider extends ChangeNotifier {
 
   /// Compiles all transactions, invoices, expenses, cash movements, and stats
   /// for a specific target day into a comprehensive [DailyReportModel].
-  DailyReportModel compileDailyReportForDate(DateTime targetDate, {String? notes}) {
+  DailyReportModel compileDailyReportForDate(
+    DateTime targetDate, {
+    String? notes,
+  }) {
     bool sameDay(DateTime d) =>
         d.year == targetDate.year &&
         d.month == targetDate.month &&
@@ -9606,14 +9667,16 @@ class ERPProvider extends ChangeNotifier {
           totalCashInUsd += inv.advancePayment;
         }
         if (inv.advancePayment > 0) {
-          movements.add(DailyReportCashMovementSummary(
-            type: 'قبض مبيعات مصنع',
-            description: 'فاتورة #${inv.invoiceNo} - ${entry.partyName}',
-            cashBox: 'main',
-            amount: inv.advancePayment,
-            currency: inv.currency,
-            time: inv.date,
-          ));
+          movements.add(
+            DailyReportCashMovementSummary(
+              type: 'قبض مبيعات مصنع',
+              description: 'فاتورة #${inv.invoiceNo} - ${entry.partyName}',
+              cashBox: 'main',
+              amount: inv.advancePayment,
+              currency: inv.currency,
+              time: inv.date,
+            ),
+          );
         }
       } else {
         purchases.add(entry);
@@ -9625,14 +9688,17 @@ class ERPProvider extends ChangeNotifier {
           totalCashOutUsd += inv.advancePayment;
         }
         if (inv.advancePayment > 0) {
-          movements.add(DailyReportCashMovementSummary(
-            type: 'سداد مشتريات مصنع',
-            description: 'فاتورة توريد #${inv.invoiceNo} - ${entry.partyName}',
-            cashBox: 'main',
-            amount: inv.advancePayment,
-            currency: inv.currency,
-            time: inv.date,
-          ));
+          movements.add(
+            DailyReportCashMovementSummary(
+              type: 'سداد مشتريات مصنع',
+              description:
+                  'فاتورة توريد #${inv.invoiceNo} - ${entry.partyName}',
+              cashBox: 'main',
+              amount: inv.advancePayment,
+              currency: inv.currency,
+              time: inv.date,
+            ),
+          );
         }
       }
     }
@@ -9642,11 +9708,14 @@ class ERPProvider extends ChangeNotifier {
       final isSyp = AppCurrency.isSyp(inv.currency);
       final itemsSummary = inv.items.isNotEmpty
           ? inv.items
-              .map((it) => '${it.description} (${it.quantity.fmt} ${it.unitCategory})')
-              .join(' • ')
+                .map(
+                  (it) =>
+                      '${it.description} (${it.quantity.fmt} ${it.unitCategory})',
+                )
+                .join(' • ')
           : (inv.itemDescription.isNotEmpty
-              ? '${inv.itemDescription} (${inv.sourceQuantity.fmt} ${inv.sourceUnitCategory})'
-              : 'أعمال تفصيل وطلبيات');
+                ? '${inv.itemDescription} (${inv.sourceQuantity.fmt} ${inv.sourceUnitCategory})'
+                : 'أعمال تفصيل وطلبيات');
 
       final paidAmt = inv.depositDeducted + inv.cashPaidNow;
 
@@ -9673,14 +9742,16 @@ class ERPProvider extends ChangeNotifier {
         totalCashInUsd += paidAmt;
       }
       if (paidAmt > 0) {
-        movements.add(DailyReportCashMovementSummary(
-          type: 'قبض مبيعات معمل',
-          description: 'فاتورة معمل #${inv.invoiceNo} - ${inv.clientName}',
-          cashBox: 'order',
-          amount: paidAmt,
-          currency: inv.currency,
-          time: inv.date,
-        ));
+        movements.add(
+          DailyReportCashMovementSummary(
+            type: 'قبض مبيعات معمل',
+            description: 'فاتورة معمل #${inv.invoiceNo} - ${inv.clientName}',
+            cashBox: 'order',
+            amount: paidAmt,
+            currency: inv.currency,
+            time: inv.date,
+          ),
+        );
       }
     }
 
@@ -9706,8 +9777,7 @@ class ERPProvider extends ChangeNotifier {
       // Only cash-settled returns move money. A supplier purchase return
       // brings cash IN to the main safe, a sales return pays cash OUT.
       // Account settlements (تسوية حساب) never touch the cash boxes.
-      final cashSettled =
-          ret.paymentAction == 'استرداد نقدي للصندوق الرئيسي';
+      final cashSettled = ret.paymentAction == 'استرداد نقدي للصندوق الرئيسي';
       final cashMoved =
           ret.cashAmount ?? (cashSettled ? ret.refundAmount : 0.0);
       if (cashMoved > 0) {
@@ -9723,36 +9793,44 @@ class ERPProvider extends ChangeNotifier {
         } else {
           totalCashOutUsd += cashMoved;
         }
-        movements.add(DailyReportCashMovementSummary(
-          type: purchaseReturn
-              ? 'استرداد مرتجع مشتريات'
-              : 'استرداد مرتجع مبيعات',
-          description: 'مرتجع #${ret.returnNo} - ${ret.partyName}',
-          cashBox: 'main',
-          amount: cashMoved,
-          currency: ret.currency,
-          time: ret.date,
-        ));
+        movements.add(
+          DailyReportCashMovementSummary(
+            type: purchaseReturn
+                ? 'استرداد مرتجع مشتريات'
+                : 'استرداد مرتجع مبيعات',
+            description: 'مرتجع #${ret.returnNo} - ${ret.partyName}',
+            cashBox: 'main',
+            amount: cashMoved,
+            currency: ret.currency,
+            time: ret.date,
+          ),
+        );
       }
     }
 
     // 4. Expense Records
-    for (final exp in expenseRecords.where((e) => sameDay(e.date) && !e.isInformational)) {
+    for (final exp in expenseRecords.where(
+      (e) => sameDay(e.date) && !e.isInformational,
+    )) {
       final isSyp = AppCurrency.isSyp(exp.currency);
       final catName = expenseTypes
-          .firstWhere((t) => t.id == exp.typeId,
-              orElse: () => ExpenseTypeModel(id: '', name: 'مصاريف تشغيلية'))
+          .firstWhere(
+            (t) => t.id == exp.typeId,
+            orElse: () => ExpenseTypeModel(id: '', name: 'مصاريف تشغيلية'),
+          )
           .name;
 
-      exps.add(DailyReportExpenseSummary(
-        category: catName,
-        description: exp.description,
-        beneficiary: exp.personName,
-        amount: exp.amount,
-        currency: exp.currency,
-        cashBox: 'main',
-        time: exp.date,
-      ));
+      exps.add(
+        DailyReportExpenseSummary(
+          category: catName,
+          description: exp.description,
+          beneficiary: exp.personName,
+          amount: exp.amount,
+          currency: exp.currency,
+          cashBox: 'main',
+          time: exp.date,
+        ),
+      );
       if (isSyp) {
         totalExpensesSyp += exp.amount;
         totalCashOutSyp += exp.amount;
@@ -9760,14 +9838,16 @@ class ERPProvider extends ChangeNotifier {
         totalExpensesUsd += exp.amount;
         totalCashOutUsd += exp.amount;
       }
-      movements.add(DailyReportCashMovementSummary(
-        type: 'مصاريف تشغيلية',
-        description: '$catName: ${exp.description}',
-        cashBox: 'main',
-        amount: exp.amount,
-        currency: exp.currency,
-        time: exp.date,
-      ));
+      movements.add(
+        DailyReportCashMovementSummary(
+          type: 'مصاريف تشغيلية',
+          description: '$catName: ${exp.description}',
+          cashBox: 'main',
+          amount: exp.amount,
+          currency: exp.currency,
+          time: exp.date,
+        ),
+      );
     }
 
     // 5. Accountant Profit Withdrawals
@@ -9778,28 +9858,34 @@ class ERPProvider extends ChangeNotifier {
       } else {
         totalCashOutUsd += w.amount;
       }
-      movements.add(DailyReportCashMovementSummary(
-        type: 'سحب أرباح محاسب الجرانيت',
-        description: w.notes.isNotEmpty ? w.notes : 'سحب أرباح المحاسب',
-        cashBox: w.cashBox,
-        amount: w.amount,
-        currency: w.currency,
-        time: w.date,
-      ));
+      movements.add(
+        DailyReportCashMovementSummary(
+          type: 'سحب أرباح محاسب الجرانيت',
+          description: w.notes.isNotEmpty ? w.notes : 'سحب أرباح المحاسب',
+          cashBox: w.cashBox,
+          amount: w.amount,
+          currency: w.currency,
+          time: w.date,
+        ),
+      );
     }
 
     // 6. Surplus Costs (Settled worker wages / general surplus expenses)
-    for (final sc in surplusCosts.where((c) => sameDay(c.date) && c.amountPaid > 0)) {
+    for (final sc in surplusCosts.where(
+      (c) => sameDay(c.date) && c.amountPaid > 0,
+    )) {
       final isSyp = AppCurrency.isSyp(sc.currency);
-      exps.add(DailyReportExpenseSummary(
-        category: sc.kind == 'worker' ? 'أجور عمال الفائض' : 'مصاريف الفائض',
-        description: '${sc.surplusDescription} - ${sc.beneficiaryName}',
-        beneficiary: sc.beneficiaryName,
-        amount: sc.amountPaid,
-        currency: sc.currency,
-        cashBox: 'scrap',
-        time: sc.date,
-      ));
+      exps.add(
+        DailyReportExpenseSummary(
+          category: sc.kind == 'worker' ? 'أجور عمال الفائض' : 'مصاريف الفائض',
+          description: '${sc.surplusDescription} - ${sc.beneficiaryName}',
+          beneficiary: sc.beneficiaryName,
+          amount: sc.amountPaid,
+          currency: sc.currency,
+          cashBox: 'scrap',
+          time: sc.date,
+        ),
+      );
       if (isSyp) {
         totalExpensesSyp += sc.amountPaid;
         totalCashOutSyp += sc.amountPaid;
@@ -9807,21 +9893,25 @@ class ERPProvider extends ChangeNotifier {
         totalExpensesUsd += sc.amountPaid;
         totalCashOutUsd += sc.amountPaid;
       }
-      movements.add(DailyReportCashMovementSummary(
-        type: sc.kind == 'worker' ? 'صرف أجور عمال فائض' : 'مصاريف صندوق الفائض',
-        description: '${sc.surplusDescription} - ${sc.beneficiaryName}',
-        cashBox: 'scrap',
-        amount: sc.amountPaid,
-        currency: sc.currency,
-        time: sc.date,
-      ));
+      movements.add(
+        DailyReportCashMovementSummary(
+          type: sc.kind == 'worker'
+              ? 'صرف أجور عمال فائض'
+              : 'مصاريف صندوق الفائض',
+          description: '${sc.surplusDescription} - ${sc.beneficiaryName}',
+          cashBox: 'scrap',
+          amount: sc.amountPaid,
+          currency: sc.currency,
+          time: sc.date,
+        ),
+      );
     }
 
     // 7. Operational Stats
-    final cuttingCount =
-        cuttingOperations.where((c) => sameDay(c.timestamp)).length;
-    final attCount =
-        staffAttendance.where((a) => sameDay(a.date)).length;
+    final cuttingCount = cuttingOperations
+        .where((c) => sameDay(c.timestamp))
+        .length;
+    final attCount = staffAttendance.where((a) => sameDay(a.date)).length;
 
     final report = DailyReportModel(
       id: 'report_${DateTime.now().microsecondsSinceEpoch}',
