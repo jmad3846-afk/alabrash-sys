@@ -10,8 +10,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  group('Direct Expense & Cash-Basis Expense Recognition Model Tests', () {
-    test('1. Block purchase payment immediately routes to Block Purchase Expense', () {
+  group('Inventory capitalization and accrual recognition', () {
+    test('1. Block purchase payment does not create a P&L expense', () {
       final erp = ERPProvider();
       final initialBlockExpense = erp.totalBlockPurchaseExpenses;
       final initialProfit = erp.netOperatingProfit;
@@ -20,7 +20,6 @@ void main() {
       final supplier = erp.suppliers.first;
       const paymentAmount = 2000.0;
 
-      // Add cash/advance purchase invoice
       final invoice = FactoryInvoiceModel(
         id: 'test_fi_pur',
         invoiceNo: 'PUR-TEST-001',
@@ -47,17 +46,14 @@ void main() {
       final ok = erp.addSupplierPurchaseInvoice(invoice);
       expect(ok, isTrue);
 
-      // Verify physical block inventory is tracked
       expect(erp.factoryBlocks.length, initialBlocksCount + 1);
 
-      // Verify immediate expense routing
-      expect(erp.totalBlockPurchaseExpenses - initialBlockExpense, paymentAmount);
+      expect(erp.totalBlockPurchaseExpenses - initialBlockExpense, 0);
 
-      // Verify Net Profit decreases by the direct expense without waiting for sales
-      expect(erp.netOperatingProfit, closeTo(initialProfit - paymentAmount, 0.01));
+      expect(erp.netOperatingProfit, closeTo(initialProfit, 0.01));
     });
 
-    test('2. Supplier debt payment immediately routes to Block Purchase Expense', () {
+    test('2. Supplier debt payment does not create a P&L expense', () {
       final erp = ERPProvider();
       final supplier = erp.suppliers.first;
       supplier.debtBalance = 3000.0;
@@ -73,19 +69,16 @@ void main() {
       );
       expect(ok, isTrue);
 
-      // Verify immediate expense routing in ledger
-      expect(erp.totalBlockPurchaseExpenses - initialBlockExpense, payAmount);
+      expect(erp.totalBlockPurchaseExpenses - initialBlockExpense, 0);
 
-      // Verify net profit updates instantly
-      expect(erp.netOperatingProfit, closeTo(initialProfit - payAmount, 0.01));
+      expect(erp.netOperatingProfit, closeTo(initialProfit, 0.01));
     });
 
-    test('3. Block cutting fee (7%, 8%, 9%) routes immediately to Cutting Expenses', () {
+    test('3. Block cutting fee (7%, 8%, 9%) is capitalized in inventory', () {
       final erp = ERPProvider();
       final initialCuttingExpense = erp.totalCuttingExpenses;
       final initialProfit = erp.netOperatingProfit;
 
-      // Ensure raw block exists
       erp.factoryBlocks.add(
         FactoryBlockModel(
           id: 'test_blk_cut',
@@ -99,7 +92,6 @@ void main() {
         ),
       );
 
-      // Execute staged cutting at 8% cutting fee
       const feePercent = 0.08;
       const inputTons = 10.0;
       const avgTonCost = 200.0;
@@ -124,13 +116,10 @@ void main() {
         wasteValue: 0.0,
       );
 
-      // Verify Cutting Expense increased immediately by exact percentage of ton price
       expect(erp.totalCuttingExpenses - initialCuttingExpense, closeTo(expectedFee, 0.01));
 
-      // Verify Net Profit reduced immediately by cutting fee without waiting for sales
-      expect(erp.netOperatingProfit, closeTo(initialProfit - expectedFee, 0.01));
+      expect(erp.netOperatingProfit, closeTo(initialProfit, 0.01));
 
-      // Verify warehouse physical inventory is updated
       final whMatches = erp.factoryWarehouse.where((w) => w.typeName == 'رخام تركي');
       expect(whMatches.isNotEmpty, isTrue);
       expect(whMatches.first.availableQty, greaterThanOrEqualTo(80.0));
@@ -172,12 +161,11 @@ void main() {
       expect(erp.totalCuttingExpenses - initialCuttingExpense, closeTo(expectedFee, 0.01));
     });
 
-    test('5. Decoupled COGS: Sales accumulate revenue without deferred inventory locking', () {
+    test('5. Decoupled COGS: Sales recognize revenue less delivered inventory cost', () {
       final erp = ERPProvider();
       final initialProfit = erp.netOperatingProfit;
       final initialRevenues = erp.totalRevenues;
 
-      // Sell meters to client
       const saleQuantity = 20.0;
       const saleUnitPrice = 45.0; // Total revenue = 900 USD
       const unitCost = 25.0; // Old COGS = 500 USD
@@ -203,14 +191,10 @@ void main() {
         ),
       );
 
-      // Verify Revenue increases by full sale amount (900 USD)
       expect(erp.totalRevenues - initialRevenues, closeTo(900.0, 0.01));
 
-      // Under Direct Expense model, Net Profit increases by the full revenue from sale (900 USD)
-      // because block cost was recognized at purchase/payment and cutting fee at cutting time.
-      expect(erp.netOperatingProfit - initialProfit, closeTo(900.0, 0.01));
+      expect(erp.netOperatingProfit - initialProfit, closeTo(400.0, 0.01));
 
-      // Verify Net Profit Formula: Net Profit = Total Revenues - Total Direct Expenses
       expect(
         erp.netOperatingProfit,
         closeTo(erp.totalRevenues - erp.totalDirectExpenses, 0.01),

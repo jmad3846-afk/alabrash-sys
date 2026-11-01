@@ -199,7 +199,7 @@ void main() {
       // 2. Add expense under block purchase expense type via sidebar -> deducts from safe
       erp.addExpenseRecord(ExpenseRecordModel(
         id: 'exp_c2',
-        typeId: ERPProvider.blockPurchaseExpenseTypeId,
+        typeId: 'overhead_maintenance',
         amount: 300.0,
         currency: AppCurrency.usd,
       ));
@@ -208,7 +208,7 @@ void main() {
       // 3. Add expense under cutting expense type via sidebar -> deducts from safe
       erp.addExpenseRecord(ExpenseRecordModel(
         id: 'exp_c3',
-        typeId: ERPProvider.cuttingExpenseTypeId,
+        typeId: 'overhead_utilities',
         amount: 150.0,
         currency: AppCurrency.usd,
       ));

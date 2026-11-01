@@ -10,8 +10,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  group('Deferred Income Summary Impact for Return Invoices with Account Settlement', () {
-    test('1. Purchase Return with Account Settlement strictly defers Income Summary until cash collection', () {
+  group('Accrual returns and separate cash settlement', () {
+    test('1. Purchase return collection never becomes sales income', () {
       final erp = ERPProvider();
       erp.mainCashBox = 5000.0;
       final initialSafe = erp.mainCashBox;
@@ -98,7 +98,6 @@ void main() {
       final ok = erp.addAdjustmentInvoice(returnDoc);
       expect(ok, isTrue);
 
-      // Rule 1: Party account balance is updated ($600 debt wiped, flips to -$100 credit)
       expect(supplier.debtBalance, -100.0);
       expect(supplier.hasCredit, isTrue);
       expect(supplier.creditOf(AppCurrency.usd), 100.0);
@@ -106,7 +105,6 @@ void main() {
       // Safe was untouched
       expect(erp.mainCashBox, initialSafe);
 
-      // Rule 1: Strictly prevent Income Summary impact at return time!
       expect(erp.purchaseReturnsAndAllowances, 0.0);
       expect(erp.totalRevenuesOf(AppCurrency.usd), initialRevenues);
       expect(erp.deferredAdjustmentTotalOf('purchase_return', AppCurrency.usd), 700.0);
@@ -118,7 +116,6 @@ void main() {
       expect(storedAdj.isFullyRealized, isFalse);
       expect(storedAdj.pendingDeferredAmount, 700.0);
 
-      // Rule 2: Execute cash collection from supplier credit ($100)
       final collectOk = erp.collectFromSupplierCredit(
         supplier: supplier,
         amount: 100.0,
@@ -130,14 +127,13 @@ void main() {
       expect(erp.mainCashBox, initialSafe + 100.0);
       expect(supplier.debtBalance, 0.0);
 
-      // Rule 2: Cash collection formally releases the deferred purchase return into Income Summary!
       expect(erp.purchaseReturnsAndAllowances, 100.0);
-      expect(erp.totalRevenuesOf(AppCurrency.usd), initialRevenues + 100.0);
+      expect(erp.totalRevenuesOf(AppCurrency.usd), initialRevenues);
       expect(storedAdj.realizedAmount, 100.0);
       expect(storedAdj.pendingDeferredAmount, 600.0);
     });
 
-    test('2. Sales Return with Account Settlement strictly defers Income Summary until cash payout', () {
+    test('2. Sales returns reverse revenue and COGS before cash payout', () {
       final erp = ERPProvider();
       erp.mainCashBox = 2000.0;
       final initialSafe = erp.mainCashBox;
@@ -212,7 +208,6 @@ void main() {
       final ok = erp.addAdjustmentInvoice(returnDoc);
       expect(ok, isTrue);
 
-      // Rule 1: Client account balance is updated ($600 debt cleared, flips to -$400 credit)
       expect(client.debtBalance, -400.0);
       expect(client.hasCredit, isTrue);
       expect(client.creditOf(AppCurrency.usd), 400.0);
@@ -220,10 +215,9 @@ void main() {
       // Safe untouched
       expect(erp.mainCashBox, initialSafe);
 
-      // Rule 1: Strictly prevent Income Summary impact at return time!
-      expect(erp.salesReturnsAndAllowancesOf(AppCurrency.usd), 0.0);
-      expect(erp.incomeSummaryExpensesOf(AppCurrency.usd), initialExpenses);
-      expect(erp.incomeSummaryNetProfitOf(AppCurrency.usd), initialNetProfit);
+      expect(erp.salesReturnsAndAllowancesOf(AppCurrency.usd), 1000.0);
+      expect(erp.incomeSummaryExpensesOf(AppCurrency.usd), initialExpenses + 400.0);
+      expect(erp.incomeSummaryNetProfitOf(AppCurrency.usd), initialNetProfit - 400.0);
       expect(erp.deferredAdjustmentTotalOf('sales_return', AppCurrency.usd), 1000.0);
 
       final storedAdj = erp.adjustmentInvoices.firstWhere((a) => a.id == returnDoc.id);
@@ -231,7 +225,6 @@ void main() {
       expect(storedAdj.deferredAmount, 1000.0);
       expect(storedAdj.realizedAmount, 0.0);
 
-      // Rule 2: Execute cash payout to customer for credit balance ($400)
       final payOk = erp.payCustomerCredit(
         client: client,
         amount: 400.0,
@@ -243,8 +236,7 @@ void main() {
       expect(erp.mainCashBox, initialSafe - 400.0);
       expect(client.debtBalance, 0.0);
 
-      // Rule 2: Cash payout formally releases $400 into Income Summary!
-      expect(erp.salesReturnsAndAllowancesOf(AppCurrency.usd), 400.0);
+      expect(erp.salesReturnsAndAllowancesOf(AppCurrency.usd), 1000.0);
       expect(erp.incomeSummaryExpensesOf(AppCurrency.usd), initialExpenses + 400.0);
       expect(erp.incomeSummaryNetProfitOf(AppCurrency.usd), initialNetProfit - 400.0);
       expect(storedAdj.realizedAmount, 400.0);
@@ -325,7 +317,7 @@ void main() {
 
       // Reflected immediately in Income Summary
       expect(erp.salesReturnsAndAllowancesOf(AppCurrency.usd), 200.0);
-      expect(erp.incomeSummaryExpensesOf(AppCurrency.usd), initialExpenses + 200.0);
+      expect(erp.incomeSummaryExpensesOf(AppCurrency.usd), initialExpenses + 80.0);
 
       final storedAdj = erp.adjustmentInvoices.firstWhere((a) => a.id == returnDoc.id);
       expect(storedAdj.isSettlementDeferred, isFalse);

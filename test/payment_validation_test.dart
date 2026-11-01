@@ -1,3 +1,4 @@
+import 'support/stocked_factory_invoice.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:abaad/core/database/erp_provider.dart';
@@ -45,7 +46,7 @@ void main() {
         advancePayment: 1200.0, // Exceeds 1000
         currency: AppCurrency.usd,
       );
-      expect(erp.addFactoryPOSInvoice(overpaidInvoice), isFalse);
+      expect(postStockedFactoryInvoice(erp, overpaidInvoice), isFalse);
       expect(erp.factoryInvoices.any((i) => i.id == 'fi_overpaid_1'), isFalse);
 
       // B: Negative payment attempt -> MUST BE REJECTED
@@ -60,7 +61,7 @@ void main() {
         advancePayment: -50.0,
         currency: AppCurrency.usd,
       );
-      expect(erp.addFactoryPOSInvoice(negativeInvoice), isFalse);
+      expect(postStockedFactoryInvoice(erp, negativeInvoice), isFalse);
 
       // C: Exact / partial payment -> MUST SUCCEED
       final validInvoice = FactoryInvoiceModel(
@@ -74,7 +75,7 @@ void main() {
         advancePayment: 600.0, // Valid partial
         currency: AppCurrency.usd,
       );
-      expect(erp.addFactoryPOSInvoice(validInvoice), isTrue);
+      expect(postStockedFactoryInvoice(erp, validInvoice), isTrue);
       expect(erp.factoryInvoices.any((i) => i.id == 'fi_valid_1'), isTrue);
     });
 
@@ -151,6 +152,9 @@ void main() {
         unitCost: 30.0,
       );
 
+      erp.factoryWarehouse.add(FactoryWarehouseModel(id: orderItem.itemId, typeName: orderItem.description,
+        grade: '', thicknessCm: 2, category: 'متر مربع', availableQty: 100, netCostPerUnit: orderItem.unitCost,
+        recommendedSalePrice: orderItem.unitPrice));
       final order = FactoryOrderModel(
         id: 'fo_test_1',
         orderNo: 'FORD-TEST-1',
@@ -313,7 +317,7 @@ void main() {
         advancePayment: 400.0,
         currency: AppCurrency.usd,
       );
-      expect(erp.addFactoryPOSInvoice(invoice), isTrue);
+      expect(postStockedFactoryInvoice(erp, invoice), isTrue);
       expect(invoice.remainingBalance, 600.0);
       expect(invoice.paymentStatus, 'مستحق الدفع');
 

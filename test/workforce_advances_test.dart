@@ -263,6 +263,7 @@ void main() {
 
       final sypSafeBefore = erp.cashOf('main', AppCurrency.syp);
       final sypRevBefore = erp.totalAdvanceRepaymentsRevenueOf(AppCurrency.syp);
+      final pnlRevenueBefore = erp.totalRevenuesSyp;
 
       // Repay in SYP: 1,400,000 SYP at daily exchange rate 14000
       // Field 1 (Amount): 1,400,000 SYP
@@ -291,8 +292,8 @@ void main() {
         erp.totalAdvanceRepaymentsRevenueOf(AppCurrency.syp),
         sypRevBefore + 1400000,
       );
-      // Included in totalRevenues
-      expect(erp.totalRevenuesSyp >= sypRevBefore + 1400000, isTrue);
+      // Repayment settles an advance and is not new earned revenue.
+      expect(erp.totalRevenuesSyp, pnlRevenueBefore);
     });
   });
 }

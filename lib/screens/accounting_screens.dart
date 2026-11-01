@@ -39,16 +39,7 @@ class ChartOfAccountsScreen extends StatelessWidget {
     final erp = context.watch<ERPProvider>();
     final allAssets = erp.openingEntry.fixedAssets;
     final assets = allAssets.where((a) => !a.isSold).toList();
-    final currentStockValue =
-        erp.factoryBlocks.fold<double>(0, (sum, item) => sum + item.totalCost) +
-        erp.factoryWarehouse.fold<double>(
-          0,
-          (sum, item) => sum + item.totalInventoryValue,
-        ) +
-        erp.workshopStock.fold<double>(
-          0,
-          (sum, item) => sum + item.availableQty * item.netCostPerUnit,
-        );
+    final currentStockValue = erp.currentInventoryValueUsd;
     final historical = erp.openingEntry.legacyFinancials;
     final suppliers = historical
         .where((r) => r.category == 'suppliers')
@@ -80,10 +71,14 @@ class ChartOfAccountsScreen extends StatelessWidget {
         .fold<double>(0, (sum, item) => sum + item.totalPrice);
     final stockUsd =
         currentStockValue +
-        openingStockUsd +
-        (erp.openingEntry.openingStock.isEmpty
-            ? erp.openingEntry.inventoryValue
-            : 0);
+        (erp.openingEntry.openingStockApplied
+            ? 0
+            : (erp.openingEntry.openingStock.isEmpty
+                  ? erp.openingEntry.inventoryValue
+                  : openingStockUsd));
+    final stockSyp =
+        erp.currentInventoryValueSyp +
+        (erp.openingEntry.openingStockApplied ? 0 : openingStockSyp);
     final historicalClientsUsd = customers
         .where((record) => record.currency == AppCurrency.usd)
         .fold<double>(0, (sum, record) => sum + record.amount);
@@ -136,15 +131,19 @@ class ChartOfAccountsScreen extends StatelessWidget {
         erp.mainCashBoxSyp +
         erp.scrapCashBoxSyp +
         erp.orderCashBoxSyp +
-        openingStockSyp +
+        stockSyp +
         clientsSyp;
     final liabilitiesUsdNow = suppliersUsd + employeesUsd;
     final liabilitiesSypNow = suppliersSyp + employeesSyp;
     final expenseUsd = erp.expenseRecords
-        .where((e) => e.currency == AppCurrency.usd)
+        .where(
+          (e) => erp.isOperatingExpense(e) && e.currency == AppCurrency.usd,
+        )
         .fold<double>(0, (sum, e) => sum + e.amount);
     final expenseSyp = erp.expenseRecords
-        .where((e) => e.currency == AppCurrency.syp)
+        .where(
+          (e) => erp.isOperatingExpense(e) && e.currency == AppCurrency.syp,
+        )
         .fold<double>(0, (sum, e) => sum + e.amount);
     double adjustmentAmount(String kind, String currency) => erp
         .adjustmentInvoices
@@ -409,12 +408,8 @@ class ChartOfAccountsScreen extends StatelessWidget {
           ]),
           _accountGroup('المصروفات المباشرة والتشغيلية', Icons.trending_down, [
             _accountLine(
-              'مشتريات ودفوعات البلوكات المباشرة',
-              '${erp.totalBlockPurchaseExpensesOf(AppCurrency.usd).fmt} \$ • ${erp.totalBlockPurchaseExpensesOf(AppCurrency.syp).fmt} ل.س',
-            ),
-            _accountLine(
-              'مصاريف القص والتصنيع المباشرة',
-              '${erp.totalCuttingExpensesOf(AppCurrency.usd).fmt} \$ • ${erp.totalCuttingExpensesOf(AppCurrency.syp).fmt} ل.س',
+              'تكلفة البضاعة المباعة',
+              AppCurrency.dual(erp.totalCOGS, erp.totalCOGSSyp),
             ),
             _accountLine(
               'مرتجعات ومسموحات المبيعات',
@@ -714,50 +709,18 @@ class BalanceSheetScreen extends StatelessWidget {
     final entry = erp.openingEntry;
     final fixedUsd = entry.totalFixedAssetsOf(AppCurrency.usd);
     final fixedSyp = entry.totalFixedAssetsOf(AppCurrency.syp);
-    double openingTailoredInventoryValue(
-      List<WorkshopTailoringModel> products,
-      String category,
-    ) => products.fold<double>(0, (sum, product) {
-      final openingRows = entry.openingStock
-          .where(
-            (item) => item.category == category && item.typeId == product.id,
-          )
-          .toList();
-      if (openingRows.isEmpty) return sum;
-      final openingQuantity = openingRows.fold<double>(
-        0,
-        (rowSum, item) => rowSum + item.quantity,
-      );
-      if (openingQuantity <= 0) return sum;
-      final averageUnitCost =
-          openingRows.fold<double>(
-            0,
-            (rowSum, item) => rowSum + item.totalPrice,
-          ) /
-          openingQuantity;
-      return sum + (product.quantity * averageUnitCost);
-    });
     final inventoryUsd =
-        erp.factoryBlocks.fold<double>(0, (sum, item) => sum + item.totalCost) +
-        erp.factoryWarehouse.fold<double>(
-          0,
-          (sum, item) => sum + item.totalInventoryValue,
-        ) +
-        erp.workshopStock.fold<double>(
-          0,
-          (sum, item) => sum + item.availableQty * item.netCostPerUnit,
-        ) +
-        erp.scrapItems
-            .where((item) => !item.isSold && item.currency == AppCurrency.usd)
-            .fold<double>(0, (sum, item) => sum + item.baseCost) +
-        openingTailoredInventoryValue(erp.simpleTailorings, 'تفصيل بسيط') +
-        openingTailoredInventoryValue(erp.complexTailorings, 'تفصيل معقد') +
+        erp.currentInventoryValueUsd +
         (entry.openingStockApplied
             ? 0
-            : entry.openingStock.isEmpty
-            ? entry.inventoryValue
-            : entry.totalOpeningStockOf(AppCurrency.usd));
-    final inventorySyp = entry.totalOpeningStockOf(AppCurrency.syp);
+            : (entry.openingStock.isEmpty
+                  ? entry.inventoryValue
+                  : entry.totalOpeningStockOf(AppCurrency.usd)));
+    final inventorySyp =
+        erp.currentInventoryValueSyp +
+        (entry.openingStockApplied
+            ? 0
+            : entry.totalOpeningStockOf(AppCurrency.syp));
     final historicalClientsUsd = entry.legacyFinancials
         .where(
           (record) =>
@@ -1520,216 +1483,316 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
   }
 
   Future<void> _addExpense(ERPProvider erp, ExpenseTypeModel type) async {
-    final amountController = TextEditingController();
-    final shareController = TextEditingController();
-    final descriptionController = TextEditingController();
-    final personController = TextEditingController();
+    final amount = TextEditingController();
+    final share = TextEditingController();
+    final description = TextEditingController();
+    final person = TextEditingController();
+    final quantity = TextEditingController();
     var currency = AppCurrency.usd;
-    var selectedBox = 'main';
+    var box = 'main';
     String? staffId;
-    final shouldAdd = await showDialog<bool>(
+    String? classification;
+    String? inventoryKey;
+    String? error;
+    final route = DialogRoute<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text('مصروف جديد • ${type.name}'),
-          content: SizedBox(
-            width: 460,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: amountController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: const InputDecoration(
-                      labelText: 'مبلغ المصروف',
-                      prefixIcon: Icon(Icons.money_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: currency,
-                    decoration: const InputDecoration(labelText: 'العملة'),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'USD',
-                        child: Text('دولار (USD)'),
+        builder: (context, update) {
+          final choices = <String, String>{
+            for (final b in erp.factoryBlocks.where(
+              (b) => b.weightTons > 0 && b.currency == currency,
+            ))
+              'block:' + b.id:
+                  b.blockCode +
+                  ' • ' +
+                  b.typeName +
+                  ' • ' +
+                  b.weightTons.fmt +
+                  ' طن',
+            for (final w in erp.factoryWarehouse.where(
+              (w) => w.availableQty > 0 && w.currency == currency,
+            ))
+              'factory_warehouse:' + w.id:
+                  'مستودع المصنع • ' +
+                  w.typeName +
+                  ' • ' +
+                  w.availableQty.fmt +
+                  ' ' +
+                  w.category +
+                  ' • ' +
+                  w.id,
+            for (final w in erp.workshopStock.where(
+              (w) => w.availableQty > 0 && w.currency == currency,
+            ))
+              'workshop_stock:' + w.id:
+                  'مخزون المعمل • ' +
+                  w.typeName +
+                  ' • ' +
+                  w.availableQty.fmt +
+                  ' ' +
+                  w.category +
+                  ' • ' +
+                  w.id,
+          };
+          return AlertDialog(
+            title: Text('مصروف جديد • ' + type.name),
+            content: SizedBox(
+              width: 500,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: classification,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'نوع المصروف *',
                       ),
-                      DropdownMenuItem(
-                        value: 'SYP',
-                        child: Text('ليرة سورية (SYP)'),
-                      ),
-                    ],
-                    onChanged: (value) =>
-                        setDialogState(() => currency = value ?? 'USD'),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedBox,
-                    decoration: const InputDecoration(
-                      labelText: 'الصندوق / الخزينة المخصوم منها',
-                    ),
-                    items: [
-                      DropdownMenuItem(
-                        value: 'main',
-                        child: Text(
-                          'الصندوق الرئيسي (الخزينة) • المتوفر: ${erp.cashOf('main', currency).fmt} ${AppCurrency.symbol(currency)}',
+                      items: const [
+                        DropdownMenuItem(
+                          value: ExpenseRecordModel.operational,
+                          child: Text('مصروف تشغيلي'),
                         ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'scrap',
-                        child: Text(
-                          'صندوق الزيادات والسكراب • المتوفر: ${erp.cashOf('scrap', currency).fmt} ${AppCurrency.symbol(currency)}',
-                        ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'order',
-                        child: Text(
-                          'صندوق الطلبيات • المتوفر: ${erp.cashOf('order', currency).fmt} ${AppCurrency.symbol(currency)}',
-                        ),
-                      ),
-                    ],
-                    onChanged: (value) =>
-                        setDialogState(() => selectedBox = value ?? 'main'),
-                  ),
-                  Container(
-                    margin: const EdgeInsets.symmetric(vertical: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: erp.cashOf(selectedBox, currency) < 0
-                          ? const Color(0xFFFEE2E2)
-                          : const Color(0xFFF0FDF4),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: erp.cashOf(selectedBox, currency) < 0
-                            ? const Color(0xFFFCA5A5)
-                            : const Color(0xFFBBF7D0),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'رصيد الخزينة المحدد:',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        Text(
-                          '${erp.cashOf(selectedBox, currency).fmt} ${AppCurrency.symbol(currency)} (يخصم منه فوراً ومسموح بالسالب)',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            color: erp.cashOf(selectedBox, currency) < 0
-                                ? AppColors.dangerWaste
-                                : AppColors.successGreen,
-                          ),
+                        DropdownMenuItem(
+                          value: ExpenseRecordModel.manufacturing,
+                          child: Text('مصروف قص وتصنيع مباشر'),
                         ),
                       ],
+                      onChanged: (value) => update(() {
+                        classification = value;
+                        error = null;
+                      }),
                     ),
-                  ),
-                  DropdownButtonFormField<String?>(
-                    initialValue: staffId,
-                    decoration: const InputDecoration(
-                      labelText: 'موظف داخلي (اختياري)',
-                    ),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('لا يوجد موظف داخلي'),
+                    TextField(
+                      controller: amount,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
                       ),
-                      for (final staff in erp.staffList)
-                        DropdownMenuItem<String?>(
-                          value: staff.id,
-                          child: Text(staff.name),
+                      decoration: const InputDecoration(
+                        labelText: 'مبلغ المصروف',
+                      ),
+                    ),
+                    DropdownButtonFormField<String>(
+                      initialValue: currency,
+                      decoration: const InputDecoration(labelText: 'العملة'),
+                      items: const [
+                        DropdownMenuItem(
+                          value: AppCurrency.usd,
+                          child: Text('دولار (USD)'),
                         ),
+                        DropdownMenuItem(
+                          value: AppCurrency.syp,
+                          child: Text('ليرة سورية (SYP)'),
+                        ),
+                      ],
+                      onChanged: (v) => update(() {
+                        currency = v!;
+                        inventoryKey = null;
+                      }),
+                    ),
+                    if (classification == ExpenseRecordModel.manufacturing) ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'تضاف التكلفة للمخزون المحدد وتدخل تكلفة البضاعة المباعة عند البيع فقط.',
+                      ),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey(currency),
+                        initialValue: inventoryKey,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'البلوك / دفعة المخزون *',
+                        ),
+                        items: choices.entries
+                            .map(
+                              (e) => DropdownMenuItem(
+                                value: e.key,
+                                child: Text(
+                                  e.value,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => update(() => inventoryKey = v),
+                      ),
+                      TextField(
+                        controller: quantity,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: inventoryKey?.startsWith('block:') == true
+                              ? 'عدد الطونات *'
+                              : 'الكمية المصنعة (بوحدة المخزون) *',
+                        ),
+                      ),
+                      if (choices.isEmpty)
+                        const Text('لا يوجد مخزون متاح بهذه العملة.'),
                     ],
-                    onChanged: (value) => setDialogState(() {
-                      staffId = value;
-                      if (value != null) {
-                        personController.text = erp.staffList
-                            .firstWhere((s) => s.id == value)
-                            .name;
-                      }
-                    }),
-                  ),
-                  TextField(
-                    controller: personController,
-                    enabled: staffId == null,
-                    decoration: const InputDecoration(
-                      labelText: 'شخص خارجي / مستفيد (اختياري)',
+                    DropdownButtonFormField<String>(
+                      initialValue: box,
+                      decoration: const InputDecoration(
+                        labelText: 'الصندوق / الخزينة المخصوم منها',
+                      ),
+                      items: ['main', 'scrap', 'order']
+                          .map(
+                            (key) => DropdownMenuItem(
+                              value: key,
+                              child: Text(
+                                (key == 'main'
+                                        ? 'الصندوق الرئيسي'
+                                        : key == 'scrap'
+                                        ? 'صندوق الزيادات والسكراب'
+                                        : 'صندوق الطلبيات') +
+                                    ' • ' +
+                                    AppCurrency.single(
+                                      erp.cashOf(key, currency),
+                                      currency,
+                                    ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => update(() => box = v!),
                     ),
-                  ),
-                  TextField(
-                    controller: shareController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
+                    DropdownButtonFormField<String?>(
+                      initialValue: staffId,
+                      decoration: const InputDecoration(
+                        labelText: 'موظف داخلي (اختياري)',
+                      ),
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('لا يوجد موظف داخلي'),
+                        ),
+                        for (final staff in erp.staffList)
+                          DropdownMenuItem<String?>(
+                            value: staff.id,
+                            child: Text(staff.name),
+                          ),
+                      ],
+                      onChanged: (v) => update(() {
+                        staffId = v;
+                        if (v != null)
+                          person.text = erp.staffList
+                              .firstWhere((s) => s.id == v)
+                              .name;
+                      }),
                     ),
-                    decoration: const InputDecoration(labelText: 'حصة الشخص'),
-                  ),
-                  TextField(
-                    controller: descriptionController,
-                    decoration: const InputDecoration(labelText: 'الوصف'),
-                  ),
-                ],
+                    TextField(
+                      controller: person,
+                      enabled: staffId == null,
+                      decoration: const InputDecoration(
+                        labelText: 'شخص خارجي / مستفيد (اختياري)',
+                      ),
+                    ),
+                    TextField(
+                      controller: share,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(labelText: 'حصة الشخص'),
+                    ),
+                    TextField(
+                      controller: description,
+                      decoration: const InputDecoration(labelText: 'الوصف'),
+                    ),
+                    if (error != null)
+                      Text(error!, style: const TextStyle(color: Colors.red)),
+                  ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton.icon(
-              icon: const Icon(Icons.check_circle_outline, size: 18),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              label: const Text('إضافة المصروف وخصم قيمته'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton.icon(
+                icon: const Icon(Icons.check_circle_outline, size: 18),
+                label: const Text('إضافة المصروف وخصم قيمته'),
+                onPressed: () {
+                  double? parse(TextEditingController c) =>
+                      double.tryParse(c.text.trim().replaceAll(',', '.'));
+                  final value = parse(amount);
+                  final personShare = share.text.trim().isEmpty
+                      ? 0.0
+                      : parse(share);
+                  final tons =
+                      classification == ExpenseRecordModel.manufacturing
+                      ? parse(quantity)
+                      : 0.0;
+                  if (classification == null ||
+                      value == null ||
+                      !value.isFinite ||
+                      value <= 0 ||
+                      personShare == null ||
+                      !personShare.isFinite ||
+                      personShare < 0 ||
+                      personShare > value ||
+                      (personShare > 0 && person.text.trim().isEmpty) ||
+                      (classification == ExpenseRecordModel.manufacturing &&
+                          (inventoryKey == null ||
+                              tons == null ||
+                              !tons.isFinite ||
+                              tons <= 0))) {
+                    update(
+                      () => error =
+                          'حدد نوع المصروف وتحقق من المبلغ والكمية والمستفيد وحصته.',
+                    );
+                    return;
+                  }
+                  final separator = inventoryKey?.indexOf(':') ?? -1;
+                  try {
+                    erp.addExpenseRecord(
+                      ExpenseRecordModel(
+                        id:
+                            'expense_' +
+                            DateTime.now().microsecondsSinceEpoch.toString(),
+                        typeId: type.id,
+                        expenseType: classification,
+                        amount: value,
+                        currency: currency,
+                        personName: person.text.trim(),
+                        staffId: staffId,
+                        personShare: personShare,
+                        description: description.text.trim(),
+                        cashBox: box,
+                        inventorySource: separator >= 0
+                            ? inventoryKey!.substring(0, separator)
+                            : '',
+                        inventoryId: separator >= 0
+                            ? inventoryKey!.substring(separator + 1)
+                            : '',
+                        manufacturingQuantity: tons ?? 0,
+                      ),
+                    );
+                    if (staffId != null && personShare > 0) {
+                      erp.staffList
+                          .firstWhere((s) => s.id == staffId)
+                          .addEarning(currency, personShare);
+                      erp.refresh();
+                    }
+                    Navigator.pop(dialogContext, true);
+                  } on ArgumentError catch (e) {
+                    update(() => error = e.message.toString());
+                  }
+                },
+              ),
+            ],
+          );
+        },
       ),
     );
-    if (shouldAdd == true) {
-      final cleanAmountText = amountController.text.trim().replaceAll(',', '.');
-      final amount = double.tryParse(cleanAmountText) ?? 0;
-      final cleanShareText = shareController.text.trim().replaceAll(',', '.');
-      final share = double.tryParse(cleanShareText) ?? 0;
-      if (amount <= 0 ||
-          share < 0 ||
-          share > amount ||
-          (share > 0 && personController.text.trim().isEmpty)) {
-        _message('تحقق من المبلغ واسم المستفيد وحصته.');
-      } else {
-        final expense = ExpenseRecordModel(
-          id: 'expense_${DateTime.now().microsecondsSinceEpoch}',
-          typeId: type.id,
-          amount: amount,
-          currency: currency,
-          personName: personController.text.trim(),
-          staffId: staffId,
-          personShare: share,
-          description: descriptionController.text.trim(),
-          cashBox: selectedBox,
-        );
-        erp.addExpenseRecord(expense, box: selectedBox);
-        if (staffId != null && share > 0) {
-          erp.staffList
-              .firstWhere((staff) => staff.id == staffId)
-              .addEarning(currency, share);
-          erp.refresh();
-        }
-        _message(
-          'تمت إضافة المصروف وخصم ${amount.fmt} ${AppCurrency.symbol(currency)} من الخزينة بنجاح.',
-        );
-      }
-    }
-    amountController.dispose();
-    shareController.dispose();
-    descriptionController.dispose();
-    personController.dispose();
+    final added = await Navigator.of(context, rootNavigator: true).push(route);
+    if (added == true && mounted)
+      _message('تم تسجيل المصروف وخصم قيمته وفق التصنيف المحدد.');
+    await route.completed;
+    amount.dispose();
+    share.dispose();
+    description.dispose();
+    person.dispose();
+    quantity.dispose();
   }
 
   void _message(String value) => ScaffoldMessenger.of(
@@ -1952,7 +2015,11 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                 ],
               ),
               subtitle: Text(
-                '${expense.description} • ${expense.personName.isEmpty ? 'دون مستفيد' : expense.personName}${expense.personShare > 0 ? ' • الحصة ${expense.personShare.fmt}' : ''}${expense.staffId != null ? ' • مسجل في القوى العاملة' : ''} • مخصوم من: ${expense.cashBox == 'scrap'
+                '${erp.expenseTreatmentOf(expense) == ExpenseRecordModel.manufacturing
+                    ? 'قص وتصنيع مرسمل • كمية ${expense.manufacturingQuantity.fmt}'
+                    : erp.isOperatingExpense(expense)
+                    ? 'مصروف تشغيلي'
+                    : 'حركة رأسمالية / تسوية'} • ${expense.description} • ${expense.personName.isEmpty ? 'دون مستفيد' : expense.personName}${expense.personShare > 0 ? ' • الحصة ${expense.personShare.fmt}' : ''}${expense.staffId != null ? ' • مسجل في القوى العاملة' : ''} • مخصوم من: ${expense.cashBox == 'scrap'
                     ? 'صندوق الزيادات'
                     : expense.cashBox == 'order'
                     ? 'صندوق الطلبيات'

@@ -403,7 +403,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   Widget _buildSubTab2BlockStock(ERPProvider erp) {
     final Map<String, List<FactoryBlockModel>> groups = {};
     for (final b in erp.factoryBlocks) {
-      groups.putIfAbsent('${b.typeName}||${b.grade}', () => []).add(b);
+      groups.putIfAbsent('${b.typeName}||${b.grade}||${b.currency}', () => []).add(b);
     }
     final double grandTons = erp.factoryBlocks.fold(
       0.0,

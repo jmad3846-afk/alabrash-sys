@@ -119,7 +119,7 @@ void main() {
     final shipExp = erp.expenseRecords.where((e) => e.typeId == 'shipping_transport_costs').toList();
     expect(shipExp, isNotEmpty);
     expect(shipExp.last.amount, 230.0);
-    expect(erp.expenseRecordsTotalOf('USD'), 1230.0); // Direct expense from advance payment; informational shipping (230) excluded
+    expect(erp.expenseRecordsTotalOf('USD'), 0.0); // Direct expense from advance payment; informational shipping (230) excluded
   });
 
   test('fully paid purchase lands in Paid section', () async {
@@ -685,6 +685,6 @@ void main() {
     expect(exp.isInformational, isFalse);
 
     // 5. Informational record does NOT count as an operational expense deducting from operating profit
-    expect(erp.expenseRecordsTotalOf('USD'), 500.0);
+    expect(erp.expenseRecordsTotalOf('USD'), 0.0);
   });
 }

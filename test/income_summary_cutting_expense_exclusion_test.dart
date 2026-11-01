@@ -6,7 +6,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   for (final currency in [AppCurrency.usd, AppCurrency.syp]) {
     for (final delivered in [true, false]) {
-      test('freight posts cash and expenses independently ($currency, delivered=$delivered)', () async {
+      test('freight posts cash and inventory independently ($currency, delivered=$delivered)', () async {
         final erp = ERPProvider();
         await erp.loadFuture;
         erp.mainCashBox = 1000;
@@ -19,9 +19,9 @@ void main() {
         expect(erp.addSupplierPurchaseInvoice(inv), isTrue);
         expect(erp.cashOf('main', currency), 870);
         expect(supplier.debtOf(currency), debt + 100);
-        expect(erp.expenseRecords.length, records + 2);
+        expect(erp.expenseRecords.length, records + 1);
         expect(erp.expenseRecords.last.isInformational, isFalse);
-        expect(erp.incomeSummaryExpensesOf(currency), expenses + 130);
+        expect(erp.incomeSummaryExpensesOf(currency), expenses);
         expect(erp.factoryBlocks.last.tonCost, 115);
         expect(erp.addSupplierPurchaseInvoice(inv), isFalse);
         expect(erp.cashOf('main', currency), 870);
@@ -39,12 +39,12 @@ void main() {
     expect(erp.mainCashBox, 20);
     erp.dispose();
   });
-  test('all expense page records including cutting and legacy entries enter P&L', () async {
+  test('capitalized cutting and informational entries stay outside P&L', () async {
     final erp = ERPProvider(); await erp.loadFuture;
     final before = erp.incomeSummaryExpenses;
     erp.expenseRecords.add(ExpenseRecordModel(id: 'cut', typeId: ERPProvider.cuttingExpenseTypeId, amount: 40, currency: AppCurrency.usd, personName: '', description: '', date: DateTime.now()));
     erp.expenseRecords.add(ExpenseRecordModel(id: 'legacy', typeId: 'other', amount: 10, currency: AppCurrency.usd, personName: '', description: '', date: DateTime.now(), isInformational: true));
-    expect(erp.incomeSummaryExpenses, before + 50);
+    expect(erp.incomeSummaryExpenses, before);
     expect(erp.incomeSummaryExpenses, erp.totalDirectExpenses);
     erp.dispose();
   });

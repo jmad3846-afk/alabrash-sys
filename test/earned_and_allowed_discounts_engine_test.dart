@@ -1,3 +1,4 @@
+import 'support/stocked_factory_invoice.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:abaad/core/database/erp_provider.dart';
@@ -362,20 +363,18 @@ void main() {
       expect(saleInvoice.grandTotal, 900.0);
       expect(saleInvoice.discountRatio, closeTo(0.9, 0.0001));
 
-      final added = erp.addFactoryPOSInvoice(saleInvoice);
+      final added = postStockedFactoryInvoice(erp, saleInvoice);
       expect(added, isTrue);
 
       // Remaining receivable from client: 900 - 450 = 450
       expect(client.debtOf(AppCurrency.usd), 450.0);
 
-      // Cash collected revenue = 450
-      expect(erp.totalFactoryRevenueOf(AppCurrency.usd), 450.0);
+      expect(erp.totalFactoryRevenueOf(AppCurrency.usd), 900.0);
 
       // Allowed discount ledger records 100 active
       expect(erp.activeSalesDiscountsOf(AppCurrency.usd), 100.0);
 
-      // Realized allowed discount proportional to 50% cash collected: 100 * 50% = 50
-      expect(erp.factorySalesDiscountOf(AppCurrency.usd), 50.0);
+      expect(erp.factorySalesDiscountOf(AppCurrency.usd), 100.0);
     });
 
     test('4b. Unpaid credit sales invoice produces ZERO safe movement and records allowed discount immediately in ledger', () {
@@ -413,7 +412,7 @@ void main() {
         currency: AppCurrency.usd,
       );
 
-      final added = erp.addFactoryPOSInvoice(saleInvoice);
+      final added = postStockedFactoryInvoice(erp, saleInvoice);
       expect(added, isTrue);
 
       // 1. Safe Isolation: ZERO safe movement on unpaid sale with discount
@@ -428,7 +427,7 @@ void main() {
       expect(erp.returnedSalesDiscountsOf(AppCurrency.usd), 0.0);
 
       // 4. Zero cash collected revenue on unpaid sale
-      expect(erp.totalFactoryRevenueOf(AppCurrency.usd), 0.0);
+      expect(erp.totalFactoryRevenueOf(AppCurrency.usd), 850.0);
     });
 
     test('5. Sales return with allowed discount strictly uses net effective price to prevent financial leakage', () {
@@ -467,7 +466,7 @@ void main() {
         advancePayment: 800.0, // Paid in full
         currency: AppCurrency.usd,
       );
-      erp.addFactoryPOSInvoice(saleInvoice);
+      postStockedFactoryInvoice(erp, saleInvoice);
       expect(client.debtOf(AppCurrency.usd), 0.0);
 
       // Customer returns 4 m² (gross was 4 * 100 = $400).
@@ -514,7 +513,6 @@ void main() {
       // Total discount was $200.
       // Return was 320 / 800 = 40% of the sale.
       // Active non-returned sale: 60%.
-      // Realized allowed discount must now be: 200 * 60% = $120 (the $80 share on returned goods is reversed!)
       expect(erp.factorySalesDiscountOf(AppCurrency.usd), 120.0);
       expect(erp.activeSalesDiscountsOf(AppCurrency.usd), 120.0);
       expect(erp.returnedSalesDiscountsOf(AppCurrency.usd), 80.0);
@@ -646,7 +644,7 @@ void main() {
         advancePayment: 900.0,
         currency: AppCurrency.usd,
       );
-      erp.addFactoryPOSInvoice(saleInvoice);
+      postStockedFactoryInvoice(erp, saleInvoice);
 
       // Return 2 m² from Line 1 (raw $50 -> net $45) and 4 m² from Line 2 (raw $25 -> net $22.50)
       // Line 1 return amount: 2 * 45 = 90
@@ -730,7 +728,7 @@ void main() {
         advancePayment: 0.0, // Unpaid
         currency: AppCurrency.usd,
       );
-      erp.addFactoryPOSInvoice(saleInvoice);
+      postStockedFactoryInvoice(erp, saleInvoice);
       expect(erp.mainCashBox, 500.0);
       expect(client.debtOf(AppCurrency.usd), 800.0);
 

@@ -551,7 +551,7 @@ class _CuttingCalculatorScreenState extends State<CuttingCalculatorScreen> {
                             0.0;
                         if (meters <= 0) continue;
                         conversions.add(StagedCutConversion(
-                          typeName: plan.batch.typeName,
+                          currency: plan.batch.currency,                          typeName: plan.batch.typeName,
                           grade: plan.batch.grade,
                           isGranite: plan.batch.isGranite,
                           inputTons: c.tons,

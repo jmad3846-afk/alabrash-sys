@@ -148,10 +148,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         Flexible(
                           child: Text(
                             'قسم أرباح محاسب الغرانيت (${erp.graniteAccountantPercentage.fmt}%)',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(fontSize: 20),
+                            style: Theme.of(
+                              context,
+                            ).textTheme.titleLarge?.copyWith(fontSize: 20),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -211,7 +210,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    onPressed: () => _showEditProfitPercentageDialog(context, erp),
+                    onPressed: () =>
+                        _showEditProfitPercentageDialog(context, erp),
                     icon: const Icon(Icons.tune_rounded, size: 18),
                     label: Text(
                       'تعديل نسبة الأرباح (${erp.graniteAccountantPercentage.fmt}%)',
@@ -231,7 +231,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    onPressed: () => _showWithdrawAccountantProfitDialog(context, erp),
+                    onPressed: () =>
+                        _showWithdrawAccountantProfitDialog(context, erp),
                     icon: const Icon(Icons.payments_rounded, size: 19),
                     label: const Text(
                       'سحب أرباح المحاسب',
@@ -274,10 +275,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
               children: [
                 _buildSummaryCard(
                   'صافي أرباح الغرانيت الكلية (100%)',
-                  fmtGranite(
-                    erp.netGraniteProfit,
-                    erp.netGraniteProfitSyp,
-                  ),
+                  fmtGranite(erp.netGraniteProfit, erp.netGraniteProfitSyp),
                   AppColors.accentPrimary,
                   AppColors.chipBgBlue,
                   expanded: true,
@@ -307,10 +305,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 const SizedBox(width: 14),
                 _buildSummaryCard(
                   'الرصيد المتبقي المتاح للسحب',
-                  fmtGranite(
-                    availableUsd,
-                    availableSyp,
-                  ),
+                  fmtGranite(availableUsd, availableSyp),
                   availableUsd > 0.01 || availableSyp > 0.01
                       ? AppColors.successGreen
                       : const Color(0xFF64748B),
@@ -421,7 +416,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
               ),
               if (_graniteSubView == 0 && erp.accountantWithdrawals.isNotEmpty)
                 TextButton.icon(
-                  onPressed: () => _showWithdrawAccountantProfitDialog(context, erp),
+                  onPressed: () =>
+                      _showWithdrawAccountantProfitDialog(context, erp),
                   icon: const Icon(Icons.add_rounded, size: 18),
                   label: const Text('تسجيل سحب جديد'),
                 ),
@@ -441,8 +437,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
 
   Widget _buildAccountantWithdrawalsTable(ERPProvider erp) {
     final withdrawals = erp.accountantWithdrawals.where((w) {
-      if (_graniteCurrency == AppCurrency.usd) return AppCurrency.isUsd(w.currency);
-      if (_graniteCurrency == AppCurrency.syp) return AppCurrency.isSyp(w.currency);
+      if (_graniteCurrency == AppCurrency.usd)
+        return AppCurrency.isUsd(w.currency);
+      if (_graniteCurrency == AppCurrency.syp)
+        return AppCurrency.isSyp(w.currency);
       return true;
     }).toList();
 
@@ -483,7 +481,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   backgroundColor: AppColors.successGreen,
                   foregroundColor: Colors.white,
                 ),
-                onPressed: () => _showWithdrawAccountantProfitDialog(context, erp),
+                onPressed: () =>
+                    _showWithdrawAccountantProfitDialog(context, erp),
                 icon: const Icon(Icons.payments_rounded, size: 18),
                 label: const Text('سحب دفعة الآن'),
               ),
@@ -532,7 +531,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: AppCurrency.isSyp(w.currency)
                         ? const Color(0xFFFEF3C7)
@@ -553,7 +555,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 const SizedBox(width: 8),
                 Text(
                   '• الصندوق: $boxLabel',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF64748B),
+                  ),
                 ),
               ],
             ),
@@ -563,7 +568,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
               style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
             ),
             trailing: IconButton(
-              icon: const Icon(Icons.delete_outline_rounded, color: AppColors.dangerWaste),
+              icon: const Icon(
+                Icons.delete_outline_rounded,
+                color: AppColors.dangerWaste,
+              ),
               tooltip: 'حذف وإلغاء السحب (إعادة المبلغ للصندوق)',
               onPressed: () {
                 showDialog(
@@ -589,7 +597,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('تم حذف حركة السحب واسترجاع المبلغ بنجاح.'),
+                              content: Text(
+                                'تم حذف حركة السحب واسترجاع المبلغ بنجاح.',
+                              ),
                               backgroundColor: AppColors.successGreen,
                             ),
                           );
@@ -610,14 +620,18 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   Widget _buildGraniteInvoicesTable(ERPProvider erp) {
     final graniteFactoryInvoices = erp.factoryInvoices.where((i) {
       if (!i.containsGranite) return false;
-      if (_graniteCurrency == AppCurrency.usd) return AppCurrency.isUsd(i.currency);
-      if (_graniteCurrency == AppCurrency.syp) return AppCurrency.isSyp(i.currency);
+      if (_graniteCurrency == AppCurrency.usd)
+        return AppCurrency.isUsd(i.currency);
+      if (_graniteCurrency == AppCurrency.syp)
+        return AppCurrency.isSyp(i.currency);
       return true;
     }).toList();
     final graniteWorkshopInvoices = erp.workshopInvoices.where((i) {
       if (!i.isGranite) return false;
-      if (_graniteCurrency == AppCurrency.usd) return AppCurrency.isUsd(i.currency);
-      if (_graniteCurrency == AppCurrency.syp) return AppCurrency.isSyp(i.currency);
+      if (_graniteCurrency == AppCurrency.usd)
+        return AppCurrency.isUsd(i.currency);
+      if (_graniteCurrency == AppCurrency.syp)
+        return AppCurrency.isSyp(i.currency);
       return true;
     }).toList();
 
@@ -662,7 +676,11 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 graniteCogs += item.totalCost;
               }
             }
-            final profit = erp.graniteInvoiceProfitOf(inv.id, 'factory', inv.currency);
+            final profit = erp.graniteInvoiceProfitOf(
+              inv.id,
+              'factory',
+              inv.currency,
+            );
             final accShare = profit * (erp.graniteAccountantPercentage / 100.0);
 
             return ListTile(
@@ -707,7 +725,11 @@ class _FinancialsScreenState extends State<FinancialsScreen>
             );
           }),
           ...graniteWorkshopInvoices.map((inv) {
-            final profit = erp.graniteInvoiceProfitOf(inv.id, 'workshop', inv.currency);
+            final profit = erp.graniteInvoiceProfitOf(
+              inv.id,
+              'workshop',
+              inv.currency,
+            );
             final accShare = profit * (erp.graniteAccountantPercentage / 100.0);
 
             return ListTile(
@@ -757,7 +779,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   }
 
   void _showEditProfitPercentageDialog(BuildContext context, ERPProvider erp) {
-    final ctrl = TextEditingController(text: erp.graniteAccountantPercentage.fmt);
+    final ctrl = TextEditingController(
+      text: erp.graniteAccountantPercentage.fmt,
+    );
     double currentPct = erp.graniteAccountantPercentage;
 
     showDialog(
@@ -770,7 +794,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
           final previewShareSyp = erp.netGraniteProfitSyp * (parsed / 100.0);
 
           return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
             title: Row(
               children: const [
                 Icon(Icons.tune_rounded, color: AppColors.accentPrimary),
@@ -786,7 +812,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 children: [
                   const Text(
                     'حدد النسبة المئوية التي يستحقها المحاسب من صافي أرباح مبيعات أصناف الغرانيت. يتم تطبيق النسبة وإعادة احتساب الأرباح والقيود المحاسبية فورياً.',
-                    style: TextStyle(fontSize: 12, color: AppColors.brandSecondaryText),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.brandSecondaryText,
+                    ),
                   ),
                   const SizedBox(height: 14),
 
@@ -803,7 +832,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
-                    children: [25.0, 30.0, 33.3, 40.0, 50.0, 60.0, 75.0].map((preset) {
+                    children: [25.0, 30.0, 33.3, 40.0, 50.0, 60.0, 75.0].map((
+                      preset,
+                    ) {
                       final isSelected = (parsed - preset).abs() < 0.05;
                       return ChoiceChip(
                         label: Text('${preset.fmt}%'),
@@ -820,13 +851,19 @@ class _FinancialsScreenState extends State<FinancialsScreen>
 
                   TextField(
                     controller: ctrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'النسبة المئوية (%)',
                       hintText: 'مثال: 50 أو 35.5',
                       suffixText: '%',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      errorText: valid ? null : 'النسبة يجب أن تكون بين 0 و 100',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      errorText: valid
+                          ? null
+                          : 'النسبة يجب أن تكون بين 0 و 100',
                     ),
                     onChanged: (_) => setDialogState(() {}),
                   ),
@@ -933,15 +970,20 @@ class _FinancialsScreenState extends State<FinancialsScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final availableBalance = erp.accountantAvailableBalanceOf(selectedCurrency);
-          final double enteredAmount = double.tryParse(amountCtrl.text.trim()) ?? 0.0;
+          final availableBalance = erp.accountantAvailableBalanceOf(
+            selectedCurrency,
+          );
+          final double enteredAmount =
+              double.tryParse(amountCtrl.text.trim()) ?? 0.0;
           final boxBalance = selectedCashBox == 'direct'
               ? double.infinity
               : erp.cashOf(selectedCashBox, selectedCurrency);
           final bool exceedsProfit = enteredAmount > availableBalance + 0.0001;
           final bool exceedsCash =
-              selectedCashBox != 'direct' && enteredAmount > boxBalance + 0.0001;
-          final bool isValid = enteredAmount > 0 && !exceedsProfit && !exceedsCash;
+              selectedCashBox != 'direct' &&
+              enteredAmount > boxBalance + 0.0001;
+          final bool isValid =
+              enteredAmount > 0 && !exceedsProfit && !exceedsCash;
 
           String? warningText;
           if (enteredAmount > 0) {
@@ -955,7 +997,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
           }
 
           return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
             title: Row(
               children: const [
                 Icon(Icons.payments_rounded, color: AppColors.successGreen),
@@ -1038,8 +1082,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     // Amount input with quick buttons
                     TextField(
                       controller: amountCtrl,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       decoration: InputDecoration(
                         labelText:
                             'مبلغ السحب (${AppCurrency.symbol(selectedCurrency)})',
@@ -1056,8 +1101,13 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       children: [
                         if (availableBalance > 0)
                           ActionChip(
-                            avatar: const Icon(Icons.all_inclusive_rounded, size: 14),
-                            label: Text('كامل الرصيد (${availableBalance.fmt})'),
+                            avatar: const Icon(
+                              Icons.all_inclusive_rounded,
+                              size: 14,
+                            ),
+                            label: Text(
+                              'كامل الرصيد (${availableBalance.fmt})',
+                            ),
                             onPressed: () {
                               setDialogState(() {
                                 amountCtrl.text = availableBalance.fmt;
@@ -1066,8 +1116,13 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                           ),
                         if (availableBalance > 0)
                           ActionChip(
-                            avatar: const Icon(Icons.pie_chart_outline_rounded, size: 14),
-                            label: Text('نصف الرصيد (${(availableBalance / 2).fmt})'),
+                            avatar: const Icon(
+                              Icons.pie_chart_outline_rounded,
+                              size: 14,
+                            ),
+                            label: Text(
+                              'نصف الرصيد (${(availableBalance / 2).fmt})',
+                            ),
                             onPressed: () {
                               setDialogState(() {
                                 amountCtrl.text = (availableBalance / 2).fmt;
@@ -1108,7 +1163,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         ),
                         const DropdownMenuItem(
                           value: 'direct',
-                          child: Text('تسوية دفترية مباشرة (سحب خارجي بدون خصم من صندوق)'),
+                          child: Text(
+                            'تسوية دفترية مباشرة (سحب خارجي بدون خصم من صندوق)',
+                          ),
                         ),
                       ],
                       onChanged: (val) {
@@ -1136,7 +1193,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       controller: notesCtrl,
                       decoration: InputDecoration(
                         labelText: 'بيان / ملاحظات السحب (اختياري)',
-                        hintText: 'مثال: سحب دفعة نقدية من عمولة مبيعات الغرانيت',
+                        hintText:
+                            'مثال: سحب دفعة نقدية من عمولة مبيعات الغرانيت',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -1483,8 +1541,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
       icon: const Icon(Icons.payment_rounded, size: 16),
-      label: const Text('دفع للمورد',
-          style: TextStyle(fontWeight: FontWeight.bold)),
+      label: const Text(
+        'دفع للمورد',
+        style: TextStyle(fontWeight: FontWeight.bold),
+      ),
       onPressed: () => _showSupplierPaymentDialog(erp, supplier),
     );
   }
@@ -1494,8 +1554,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
     final hasSyp = supplier.debtBalanceSyp > 0.01;
     String selectedCurrency = hasUsd ? AppCurrency.usd : AppCurrency.syp;
     double currentDue = supplier.debtOf(selectedCurrency);
-    final ctrl =
-        TextEditingController(text: currentDue > 0 ? currentDue.fmt : '');
+    final ctrl = TextEditingController(
+      text: currentDue > 0 ? currentDue.fmt : '',
+    );
     String? errorMsg;
 
     showDialog(
@@ -1507,8 +1568,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
           final boxCash = erp.cashOf('main', selectedCurrency);
 
           return AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             title: Row(
               children: [
                 Container(
@@ -1531,15 +1593,18 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       Text(
                         'دفع للمورد: ${supplier.name}',
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
                         'المستحق الكلي: ${supplier.dualDebt}',
                         style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.brandSecondaryText),
+                          fontSize: 12,
+                          color: AppColors.brandSecondaryText,
+                        ),
                       ),
                     ],
                   ),
@@ -1561,7 +1626,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       const Text(
                         'اختر عملة الدفع:',
                         style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 13),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Row(
@@ -1573,7 +1640,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                               dense: true,
                               contentPadding: EdgeInsets.zero,
                               title: Text(
-                                  'دولار (${supplier.debtBalance.fmt}\$)'),
+                                'دولار (${supplier.debtBalance.fmt}\$)',
+                              ),
                               onChanged: (v) {
                                 if (v != null) {
                                   setSt(() {
@@ -1595,7 +1663,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                               dense: true,
                               contentPadding: EdgeInsets.zero,
                               title: Text(
-                                  'ليرة (${supplier.debtBalanceSyp.fmt} ل.س)'),
+                                'ليرة (${supplier.debtBalanceSyp.fmt} ل.س)',
+                              ),
                               onChanged: (v) {
                                 if (v != null) {
                                   setSt(() {
@@ -1626,8 +1695,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('المستحق في هذه العملة:',
-                                  style: TextStyle(fontSize: 12)),
+                              const Text(
+                                'المستحق في هذه العملة:',
+                                style: TextStyle(fontSize: 12),
+                              ),
                               Text(
                                 '${currentDue.fmt} $sym',
                                 style: const TextStyle(
@@ -1642,8 +1713,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('الرصيد المتوفر بالصندوق الرئيسي:',
-                                  style: TextStyle(fontSize: 12)),
+                              const Text(
+                                'الرصيد المتوفر بالصندوق الرئيسي:',
+                                style: TextStyle(fontSize: 12),
+                              ),
                               Text(
                                 '${boxCash.fmt} $sym',
                                 style: TextStyle(
@@ -1661,8 +1734,13 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                             const Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('حالة السحب:',
-                                    style: TextStyle(fontSize: 11, color: AppColors.brandSecondaryText)),
+                                Text(
+                                  'حالة السحب:',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.brandSecondaryText,
+                                  ),
+                                ),
                                 Text(
                                   'مسموح بالسالب (سحب على المكشوف)',
                                   style: TextStyle(
@@ -1681,11 +1759,13 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     TextField(
                       controller: ctrl,
                       keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true),
+                        decimal: true,
+                      ),
                       decoration: InputDecoration(
                         labelText: 'مبلغ الدفع ($sym)',
                         prefixIcon: const Icon(Icons.money_off_rounded),
-                        helperText: 'الحد الأقصى المسموح: ${currentDue.fmt} $sym',
+                        helperText:
+                            'الحد الأقصى المسموح: ${currentDue.fmt} $sym',
                         suffixIcon: currentDue > 0
                             ? TextButton(
                                 onPressed: () {
@@ -1694,8 +1774,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                                     errorMsg = null;
                                   });
                                 },
-                                child: const Text('كامل المستحق',
-                                    style: TextStyle(fontSize: 12)),
+                                child: const Text(
+                                  'كامل المستحق',
+                                  style: TextStyle(fontSize: 12),
+                                ),
                               )
                             : null,
                       ),
@@ -1705,7 +1787,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       const SizedBox(height: 10),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFEE2E2),
                           borderRadius: BorderRadius.circular(6),
@@ -1735,21 +1819,28 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   backgroundColor: AppColors.dangerWaste,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 18, vertical: 10),
+                    horizontal: 18,
+                    vertical: 10,
+                  ),
                 ),
                 icon: const Icon(Icons.check_circle_rounded, size: 18),
-                label: const Text('تأكيد الدفع',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                label: const Text(
+                  'تأكيد الدفع',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 onPressed: () {
                   final amount = double.tryParse(ctrl.text.trim()) ?? 0.0;
                   if (amount <= 0) {
                     setSt(
-                        () => errorMsg = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.');
+                      () => errorMsg = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.',
+                    );
                     return;
                   }
                   if (amount > currentDue + 0.001) {
-                    setSt(() => errorMsg =
-                        'لا يمكن دفع مبلغ أكبر من المستحق المطلوب للمورد (${currentDue.fmt} $sym)!');
+                    setSt(
+                      () => errorMsg =
+                          'لا يمكن دفع مبلغ أكبر من المستحق المطلوب للمورد (${currentDue.fmt} $sym)!',
+                    );
                     return;
                   }
 
@@ -1765,12 +1856,15 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       SnackBar(
                         backgroundColor: AppColors.successGreen,
                         content: Text(
-                            'تم دفع ${amount.fmt} $sym للمورد ${supplier.name} بنجاح.'),
+                          'تم دفع ${amount.fmt} $sym للمورد ${supplier.name} بنجاح.',
+                        ),
                       ),
                     );
                   } else {
-                    setSt(() => errorMsg =
-                        'تعذر تنفيذ عملية الدفع. تحقق من المدخلات.');
+                    setSt(
+                      () => errorMsg =
+                          'تعذر تنفيذ عملية الدفع. تحقق من المدخلات.',
+                    );
                   }
                 },
               ),
@@ -1799,11 +1893,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
           isAgent ? 'دفع للمعتمد' : 'دفع للزبون',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        onPressed: () => CustomerCreditPayoutDialog.show(
-          context,
-          client: client,
-          erp: erp,
-        ),
+        onPressed: () =>
+            CustomerCreditPayoutDialog.show(context, client: client, erp: erp),
       );
     }
     final hasDebt = client.debtBalance > 0.01 || client.debtBalanceSyp > 0.01;
@@ -1813,15 +1904,11 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         backgroundColor: AppColors.successGreen,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       ),
-      onPressed: () => CustomerCollectionDialog.show(
-        context,
-        client: client,
-        erp: erp,
-      ),
+      onPressed: () =>
+          CustomerCollectionDialog.show(context, client: client, erp: erp),
       child: const Text('تحصيل', style: TextStyle(fontWeight: FontWeight.bold)),
     );
   }
-
 
   // -------------------------------------------------------------
   // TAB 3: FACTORY SUPPLIERS FINANCIALS (outstanding only)
@@ -1836,19 +1923,20 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         .fold<double>(0.0, (s, x) => s + x.debtBalance);
     final totalDueSyp = erp.suppliers
         .where((s) => s.debtBalanceSyp > 0.01)
-        .fold<double>(
-          0.0,
-          (s, x) => s + x.debtBalanceSyp,
-        );
+        .fold<double>(0.0, (s, x) => s + x.debtBalanceSyp);
 
     final q = _supplierQuery.trim();
     final allSuppliers = erp.suppliers;
     final filteredSuppliers = allSuppliers.where((s) {
       if (_supplierCurrency != 'ALL') {
-        if (_supplierCurrency == AppCurrency.usd && s.debtBalance.abs() <= 0.01 && s.debtBalanceSyp.abs() > 0.01) {
+        if (_supplierCurrency == AppCurrency.usd &&
+            s.debtBalance.abs() <= 0.01 &&
+            s.debtBalanceSyp.abs() > 0.01) {
           return false;
         }
-        if (_supplierCurrency == AppCurrency.syp && s.debtBalanceSyp.abs() <= 0.01 && s.debtBalance.abs() > 0.01) {
+        if (_supplierCurrency == AppCurrency.syp &&
+            s.debtBalanceSyp.abs() <= 0.01 &&
+            s.debtBalance.abs() > 0.01) {
           return false;
         }
       }
@@ -1856,8 +1944,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         final hasBalance = _supplierCurrency == AppCurrency.usd
             ? s.debtBalance.abs() > 0.01
             : _supplierCurrency == AppCurrency.syp
-                ? s.debtBalanceSyp.abs() > 0.01
-                : (s.hasDebt || s.hasCredit);
+            ? s.debtBalanceSyp.abs() > 0.01
+            : (s.hasDebt || s.hasCredit);
         if (!hasBalance) return false;
       }
       if (q.isEmpty) return true;
@@ -1918,8 +2006,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       _supplierCurrency == AppCurrency.usd
                           ? '${totalDue.fmt} \$'
                           : _supplierCurrency == AppCurrency.syp
-                              ? '${totalDueSyp.fmt} ل.س'
-                              : AppCurrency.dual(totalDue, totalDueSyp),
+                          ? '${totalDueSyp.fmt} ل.س'
+                          : AppCurrency.dual(totalDue, totalDueSyp),
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -1986,9 +2074,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(
-                  child: Text(
-                    'لا يوجد موردون مطابقون للبحث أو الفلتر المحدد.',
-                  ),
+                  child: Text('لا يوجد موردون مطابقون للبحث أو الفلتر المحدد.'),
                 ),
               ),
             ),
@@ -2037,10 +2123,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      icon: const Icon(
-                        Icons.picture_as_pdf_rounded,
-                        size: 16,
-                      ),
+                      icon: const Icon(Icons.picture_as_pdf_rounded, size: 16),
                       label: const Text(
                         'معاينة كشف الحساب قبل الطباعة',
                         style: TextStyle(
@@ -2066,7 +2149,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       : 'المتبقي علينا: ${s.dualDebt} • الفواتير: ${invs.length}',
                   style: TextStyle(
                     color: s.hasCredit ? AppColors.successGreen : null,
-                    fontWeight: s.hasCredit ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: s.hasCredit
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                   ),
                 ),
                 trailing: _buildSupplierPayButton(erp, s),
@@ -2170,9 +2255,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   Widget _buildFactoryClientsTab(ERPProvider erp) {
     final debtors = erp.clients
         .where(
-          (c) =>
-              c.clientType == 'معتمد مصنع' &&
-              (c.hasDebt || c.hasCredit),
+          (c) => c.clientType == 'معتمد مصنع' && (c.hasDebt || c.hasCredit),
         )
         .toList();
     final totalDue = erp.clients
@@ -2180,10 +2263,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         .fold<double>(0.0, (s, x) => s + x.debtBalance);
     final totalDueSyp = erp.clients
         .where((c) => c.clientType == 'معتمد مصنع' && c.debtBalanceSyp > 0.01)
-        .fold<double>(
-          0.0,
-          (s, x) => s + x.debtBalanceSyp,
-        );
+        .fold<double>(0.0, (s, x) => s + x.debtBalanceSyp);
 
     final q = _agentQuery.trim();
     final allAgents = erp.clients
@@ -2191,10 +2271,14 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         .toList();
     final filteredAgents = allAgents.where((c) {
       if (_agentCurrency != 'ALL') {
-        if (_agentCurrency == AppCurrency.usd && c.isSypCustomer && c.debtBalance.abs() <= 0.01) {
+        if (_agentCurrency == AppCurrency.usd &&
+            c.isSypCustomer &&
+            c.debtBalance.abs() <= 0.01) {
           return false;
         }
-        if (_agentCurrency == AppCurrency.syp && c.isUsdCustomer && c.debtBalanceSyp.abs() <= 0.01) {
+        if (_agentCurrency == AppCurrency.syp &&
+            c.isUsdCustomer &&
+            c.debtBalanceSyp.abs() <= 0.01) {
           return false;
         }
       }
@@ -2202,8 +2286,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         final hasBalance = _agentCurrency == AppCurrency.usd
             ? c.debtBalance.abs() > 0.01
             : _agentCurrency == AppCurrency.syp
-                ? c.debtBalanceSyp.abs() > 0.01
-                : (c.hasDebt || c.hasCredit);
+            ? c.debtBalanceSyp.abs() > 0.01
+            : (c.hasDebt || c.hasCredit);
         if (!hasBalance) return false;
       }
       if (q.isEmpty) return true;
@@ -2264,8 +2348,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       _agentCurrency == AppCurrency.usd
                           ? '${totalDue.fmt} \$'
                           : _agentCurrency == AppCurrency.syp
-                              ? '${totalDueSyp.fmt} ل.س'
-                              : AppCurrency.dual(totalDue, totalDueSyp),
+                          ? '${totalDueSyp.fmt} ل.س'
+                          : AppCurrency.dual(totalDue, totalDueSyp),
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -2332,7 +2416,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(
-                  child: Text('لا يوجد معتمدون مطابقون للبحث أو الفلتر المحدد.'),
+                  child: Text(
+                    'لا يوجد معتمدون مطابقون للبحث أو الفلتر المحدد.',
+                  ),
                 ),
               ),
             ),
@@ -2389,10 +2475,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      icon: const Icon(
-                        Icons.picture_as_pdf_rounded,
-                        size: 16,
-                      ),
+                      icon: const Icon(Icons.picture_as_pdf_rounded, size: 16),
                       label: const Text(
                         'معاينة كشف الحساب قبل الطباعة',
                         style: TextStyle(
@@ -2418,7 +2501,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       : 'المتبقي عليه: ${c.dualDebt} • الفواتير: ${invs.length}',
                   style: TextStyle(
                     color: c.hasCredit ? AppColors.dangerWaste : null,
-                    fontWeight: c.hasCredit ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: c.hasCredit
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                   ),
                 ),
                 trailing: _buildCustomerCollectButton(erp, c),
@@ -2601,14 +2686,19 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   Widget _buildRetailFinances(ERPProvider erp) {
     final q = _retailQuery.trim();
     final clients = erp.clients.where((c) {
-      final isWorkshopClient = c.clientType == 'زبون معمل' ||
+      final isWorkshopClient =
+          c.clientType == 'زبون معمل' ||
           erp.workshopInvoices.any((i) => i.clientName.trim() == c.name.trim());
       if (!isWorkshopClient) return false;
       if (_retailCurrency != 'ALL') {
-        if (_retailCurrency == AppCurrency.usd && c.isSypCustomer && c.debtBalance <= 0.01) {
+        if (_retailCurrency == AppCurrency.usd &&
+            c.isSypCustomer &&
+            c.debtBalance <= 0.01) {
           return false;
         }
-        if (_retailCurrency == AppCurrency.syp && c.isUsdCustomer && c.debtBalanceSyp <= 0.01) {
+        if (_retailCurrency == AppCurrency.syp &&
+            c.isUsdCustomer &&
+            c.debtBalanceSyp <= 0.01) {
           return false;
         }
       }
@@ -2651,9 +2741,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
       return arabicFuzzyMatch(hay, q);
     }
 
-    final invs = erp.workshopInvoices
-        .where((i) => matchesInv(i))
-        .toList();
+    final invs = erp.workshopInvoices.where((i) => matchesInv(i)).toList();
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -2715,304 +2803,328 @@ class _FinancialsScreenState extends State<FinancialsScreen>
           Expanded(
             child: _retailSubView == 0
                 ? (clients.isEmpty
-                    ? const Card(
-                        child: Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(24),
-                            child: Text('لا توجد حسابات زبائن معمل مطابقة.'),
+                      ? const Card(
+                          child: Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Text('لا توجد حسابات زبائن معمل مطابقة.'),
+                            ),
                           ),
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: clients.length,
-                        itemBuilder: (_, idx) {
-                          final c = clients[idx];
-                          final clientInvs = erp.workshopInvoices
-                              .where((i) => i.clientName.trim() == c.name.trim())
-                              .toList();
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: ExpansionTile(
-                              leading: CircleAvatar(
-                                backgroundColor: AppColors.chipBgBlue,
-                                child: Text(
-                                  c.name.isEmpty ? '؟' : c.name[0],
-                                  style: const TextStyle(
-                                    color: AppColors.accentPrimary,
-                                    fontWeight: FontWeight.bold,
+                        )
+                      : ListView.builder(
+                          itemCount: clients.length,
+                          itemBuilder: (_, idx) {
+                            final c = clients[idx];
+                            final clientInvs = erp.workshopInvoices
+                                .where(
+                                  (i) => i.clientName.trim() == c.name.trim(),
+                                )
+                                .toList();
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              child: ExpansionTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: AppColors.chipBgBlue,
+                                  child: Text(
+                                    c.name.isEmpty ? '؟' : c.name[0],
+                                    style: const TextStyle(
+                                      color: AppColors.accentPrimary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              title: Row(
-                                children: [
-                                  Expanded(
-                                    child: Row(
-                                      children: [
-                                        Flexible(
-                                          child: Text(
-                                            'الزبون: ${c.name}',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 15,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        CustomerClassificationBadge(client: c),
-                                      ],
-                                    ),
-                                  ),
-                                  ElevatedButton.icon(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF2563EB),
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 7,
-                                      ),
-                                      elevation: 1,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                    ),
-                                    icon: const Icon(
-                                      Icons.picture_as_pdf_rounded,
-                                      size: 16,
-                                    ),
-                                    label: const Text(
-                                      'معاينة كشف الحساب قبل الطباعة',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    onPressed: () {
-                                      A4StatementPrintDialog.show(
-                                        context,
-                                        statementData:
-                                            A4StatementData.fromCustomer(
-                                          client: c,
-                                          erp: erp,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ],
-                              ),
-                              subtitle: Text(
-                                c.hasCredit
-                                    ? 'رصيد دائن للزبون (أمانة بذمتنا): ${c.dualCredit} • الفواتير: ${clientInvs.length}${c.phone.isNotEmpty ? " • الهاتف: ${c.phone}" : ""}'
-                                    : 'الرصيد المتبقي عليه: ${c.dualDebt} • الفواتير: ${clientInvs.length}${c.phone.isNotEmpty ? " • الهاتف: ${c.phone}" : ""}',
-                                style: TextStyle(
-                                  color: c.hasCredit ? AppColors.dangerWaste : null,
-                                  fontWeight: c.hasCredit ? FontWeight.bold : FontWeight.normal,
-                                ),
-                              ),
-                              trailing: _buildCustomerCollectButton(erp, c),
-                              children: [
-                                if (clientInvs.isEmpty)
-                                  const Padding(
-                                    padding: EdgeInsets.all(12),
-                                    child: Text('لا توجد فواتير مسجلة لهذا الزبون.'),
-                                  )
-                                else
-                                  ...clientInvs.map(
-                                    (inv) => ExpansionTile(
-                                      leading: CurrencyBadge(currency: inv.currency),
-                                      title: Text(
-                                        '${inv.invoiceNo} — الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                      subtitle: Text(
-                                        'التاريخ: ${inv.date.toString().substring(0, 10)}${inv.depositDeducted > 0 ? " • عربون مخصوم: ${inv.depositDeducted.fmt}${inv.currencySymbol}" : ""} • مدفوع نقداً: ${inv.cashPaidNow.fmt}${inv.currencySymbol}',
-                                      ),
-                                      trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
+                                title: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Row(
                                         children: [
-                                          IconButton(
-                                            tooltip: 'معاينة طباعة A4',
-                                            icon: const Icon(
-                                              Icons.picture_as_pdf_rounded,
-                                              color: Color(0xFF2563EB),
-                                              size: 20,
-                                            ),
-                                            onPressed: () {
-                                              A4InvoicePrintDialog.show(
-                                                context,
-                                                invoiceData:
-                                                    A4InvoiceData.fromWorkshopInvoice(inv),
-                                              );
-                                            },
-                                          ),
-                                          const SizedBox(width: 4),
-                                          inv.remainingBalance > 0.01
-                                              ? const Chip(
-                                                  label: Text(
-                                                    'متبقي',
-                                                    style: TextStyle(
-                                                      color:
-                                                          AppColors.dangerWaste,
-                                                      fontSize: 11,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                )
-                                              : const Chip(
-                                                  label: Text(
-                                                    'خالصة',
-                                                    style: TextStyle(
-                                                      color:
-                                                          AppColors.successGreen,
-                                                      fontSize: 11,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                ),
-                                        ],
-                                      ),
-                                      children: [
-                                        if (inv.items.isNotEmpty)
-                                          ...inv.items.map(
-                                            (it) => ListTile(
-                                              dense: true,
-                                              title: Text(it.description),
-                                              subtitle: Text(
-                                                'الكمية: ${it.quantity.fmt} ${it.unitCategory} • سعر الوحدة: ${it.unitPrice.fmt}${inv.currencySymbol} • الإجمالي: ${it.agreedPrice.fmt}${inv.currencySymbol}',
+                                          Flexible(
+                                            child: Text(
+                                              'الزبون: ${c.name}',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 15,
                                               ),
                                             ),
                                           ),
-                                        ...inv.services.map(
-                                          (s) => ListTile(
-                                            dense: true,
-                                            title: Text('خدمة: ${s.serviceName}'),
-                                            trailing: Text(
-                                              '${s.price}\$',
-                                              style: const TextStyle(
+                                          const SizedBox(width: 8),
+                                          CustomerClassificationBadge(
+                                            client: c,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFF2563EB,
+                                        ),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 7,
+                                        ),
+                                        elevation: 1,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                      ),
+                                      icon: const Icon(
+                                        Icons.picture_as_pdf_rounded,
+                                        size: 16,
+                                      ),
+                                      label: const Text(
+                                        'معاينة كشف الحساب قبل الطباعة',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      onPressed: () {
+                                        A4StatementPrintDialog.show(
+                                          context,
+                                          statementData:
+                                              A4StatementData.fromCustomer(
+                                                client: c,
+                                                erp: erp,
+                                              ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                subtitle: Text(
+                                  c.hasCredit
+                                      ? 'رصيد دائن للزبون (أمانة بذمتنا): ${c.dualCredit} • الفواتير: ${clientInvs.length}${c.phone.isNotEmpty ? " • الهاتف: ${c.phone}" : ""}'
+                                      : 'الرصيد المتبقي عليه: ${c.dualDebt} • الفواتير: ${clientInvs.length}${c.phone.isNotEmpty ? " • الهاتف: ${c.phone}" : ""}',
+                                  style: TextStyle(
+                                    color: c.hasCredit
+                                        ? AppColors.dangerWaste
+                                        : null,
+                                    fontWeight: c.hasCredit
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                                trailing: _buildCustomerCollectButton(erp, c),
+                                children: [
+                                  if (clientInvs.isEmpty)
+                                    const Padding(
+                                      padding: EdgeInsets.all(12),
+                                      child: Text(
+                                        'لا توجد فواتير مسجلة لهذا الزبون.',
+                                      ),
+                                    )
+                                  else
+                                    ...clientInvs.map(
+                                      (inv) => ExpansionTile(
+                                        leading: CurrencyBadge(
+                                          currency: inv.currency,
+                                        ),
+                                        title: Text(
+                                          '${inv.invoiceNo} — الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          'التاريخ: ${inv.date.toString().substring(0, 10)}${inv.depositDeducted > 0 ? " • عربون مخصوم: ${inv.depositDeducted.fmt}${inv.currencySymbol}" : ""} • مدفوع نقداً: ${inv.cashPaidNow.fmt}${inv.currencySymbol}',
+                                        ),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              tooltip: 'معاينة طباعة A4',
+                                              icon: const Icon(
+                                                Icons.picture_as_pdf_rounded,
+                                                color: Color(0xFF2563EB),
+                                                size: 20,
+                                              ),
+                                              onPressed: () {
+                                                A4InvoicePrintDialog.show(
+                                                  context,
+                                                  invoiceData:
+                                                      A4InvoiceData.fromWorkshopInvoice(
+                                                        inv,
+                                                      ),
+                                                );
+                                              },
+                                            ),
+                                            const SizedBox(width: 4),
+                                            inv.remainingBalance > 0.01
+                                                ? const Chip(
+                                                    label: Text(
+                                                      'متبقي',
+                                                      style: TextStyle(
+                                                        color: AppColors
+                                                            .dangerWaste,
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  )
+                                                : const Chip(
+                                                    label: Text(
+                                                      'خالصة',
+                                                      style: TextStyle(
+                                                        color: AppColors
+                                                            .successGreen,
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ),
+                                          ],
+                                        ),
+                                        children: [
+                                          if (inv.items.isNotEmpty)
+                                            ...inv.items.map(
+                                              (it) => ListTile(
+                                                dense: true,
+                                                title: Text(it.description),
+                                                subtitle: Text(
+                                                  'الكمية: ${it.quantity.fmt} ${it.unitCategory} • سعر الوحدة: ${it.unitPrice.fmt}${inv.currencySymbol} • الإجمالي: ${it.agreedPrice.fmt}${inv.currencySymbol}',
+                                                ),
+                                              ),
+                                            ),
+                                          ...inv.services.map(
+                                            (s) => ListTile(
+                                              dense: true,
+                                              title: Text(
+                                                'خدمة: ${s.serviceName}',
+                                              ),
+                                              trailing: Text(
+                                                '${s.price}\$',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          },
+                        ))
+                : (invs.isEmpty
+                      ? const Card(
+                          child: Center(child: Text('لا توجد فواتير مطابقة.')),
+                        )
+                      : Card(
+                          child: ListView.separated(
+                            itemCount: invs.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            itemBuilder: (_, idx) {
+                              final inv = invs[idx];
+                              return ExpansionTile(
+                                leading: CurrencyBadge(currency: inv.currency),
+                                title: Text(
+                                  '${inv.invoiceNo} • ${inv.clientName}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  '${inv.itemDescription} • الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المتبقي للتحصيل: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      tooltip:
+                                          'معاينة طباعة A4 (Print Preview)',
+                                      icon: const Icon(
+                                        Icons.picture_as_pdf_rounded,
+                                        color: Color(0xFF2563EB),
+                                      ),
+                                      onPressed: () {
+                                        A4InvoicePrintDialog.show(
+                                          context,
+                                          invoiceData:
+                                              A4InvoiceData.fromWorkshopInvoice(
+                                                inv,
+                                              ),
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(width: 4),
+                                    inv.remainingBalance > 0.01
+                                        ? const Chip(
+                                            label: Text(
+                                              'متبقي',
+                                              style: TextStyle(
+                                                color: AppColors.dangerWaste,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          )
+                                        : const Chip(
+                                            label: Text(
+                                              'خالصة',
+                                              style: TextStyle(
+                                                color: AppColors.successGreen,
+                                                fontSize: 11,
                                                 fontWeight: FontWeight.bold,
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          );
-                        },
-                      ))
-                : (invs.isEmpty
-                    ? const Card(
-                        child: Center(child: Text('لا توجد فواتير مطابقة.')),
-                      )
-                    : Card(
-                        child: ListView.separated(
-                          itemCount: invs.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (_, idx) {
-                            final inv = invs[idx];
-                            return ExpansionTile(
-                              leading: CurrencyBadge(currency: inv.currency),
-                              title: Text(
-                                '${inv.invoiceNo} • ${inv.clientName}',
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              subtitle: Text(
-                                '${inv.itemDescription} • الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المتبقي للتحصيل: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    tooltip: 'معاينة طباعة A4 (Print Preview)',
-                                    icon: const Icon(
-                                      Icons.picture_as_pdf_rounded,
-                                      color: Color(0xFF2563EB),
-                                    ),
-                                    onPressed: () {
-                                      A4InvoicePrintDialog.show(
-                                        context,
-                                        invoiceData:
-                                            A4InvoiceData.fromWorkshopInvoice(inv),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 4),
-                                  inv.remainingBalance > 0.01
-                                      ? const Chip(
-                                          label: Text(
-                                            'متبقي',
-                                            style: TextStyle(
-                                              color: AppColors.dangerWaste,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        )
-                                      : const Chip(
-                                          label: Text(
-                                            'خالصة',
-                                            style: TextStyle(
-                                              color: AppColors.successGreen,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                ],
-                              ),
-                              children: [
-                                if (inv.photoPath.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 4,
-                                    ),
-                                    child: AppImagePreviewCard(
-                                      imagePath: inv.photoPath,
-                                      title:
-                                          'صورة الفاتورة المرفقة (${inv.invoiceNo})',
-                                    ),
-                                  ),
-                                if (inv.items.isNotEmpty)
-                                  ...inv.items.map(
-                                    (it) => ListTile(
-                                      dense: true,
-                                      title: Text(it.description),
-                                      subtitle: Text(
-                                        'الكمية: ${it.quantity.fmt} ${it.unitCategory} • سعر الوحدة: ${it.unitPrice.fmt}${inv.currencySymbol} • الإجمالي: ${it.agreedPrice.fmt}${inv.currencySymbol}',
-                                      ),
-                                    ),
-                                  ),
-                                ...inv.services.map(
-                                  (s) => ListTile(
-                                    dense: true,
-                                    title: Text('خدمة: ${s.serviceName}'),
-                                    trailing: Text(
-                                      '${s.price}\$',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
+                                  ],
                                 ),
-                              ],
-                            );
-                          },
-                        ),
-                      )),
+                                children: [
+                                  if (inv.photoPath.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 4,
+                                      ),
+                                      child: AppImagePreviewCard(
+                                        imagePath: inv.photoPath,
+                                        title:
+                                            'صورة الفاتورة المرفقة (${inv.invoiceNo})',
+                                      ),
+                                    ),
+                                  if (inv.items.isNotEmpty)
+                                    ...inv.items.map(
+                                      (it) => ListTile(
+                                        dense: true,
+                                        title: Text(it.description),
+                                        subtitle: Text(
+                                          'الكمية: ${it.quantity.fmt} ${it.unitCategory} • سعر الوحدة: ${it.unitPrice.fmt}${inv.currencySymbol} • الإجمالي: ${it.agreedPrice.fmt}${inv.currencySymbol}',
+                                        ),
+                                      ),
+                                    ),
+                                  ...inv.services.map(
+                                    (s) => ListTile(
+                                      dense: true,
+                                      title: Text('خدمة: ${s.serviceName}'),
+                                      trailing: Text(
+                                        '${s.price}\$',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        )),
           ),
         ],
       ),
     );
   }
-
-
 
   // -------------------------------------------------------------
   // TAB 7: SURPLUS FINANCIALS (مالية الزيادات)
@@ -3587,7 +3699,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'المعادلة المحاسبية المباشرة: صافي الأرباح التشغيلية = إجمالي الإيرادات - إجمالي المصروفات المباشرة (دفعات البلوكات + المصاريف التشغيلية)',
+                      'صافي الربح = المبيعات النقدية والآجلة - تكلفة البضاعة المباعة - المصروفات التشغيلية. المشتريات وتكاليف تصنيع المخزون غير المباع أصول رأسمالية.',
                       style: TextStyle(color: AppColors.brandSecondaryText),
                     ),
                   ],
@@ -3622,10 +3734,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         } else if (_pnlCurrency == AppCurrency.syp) {
                           return '${netProfitSyp.fmt} ل.س';
                         } else {
-                          return AppCurrency.dual(
-                            netProfitUsd,
-                            netProfitSyp,
-                          );
+                          return AppCurrency.dual(netProfitUsd, netProfitSyp);
                         }
                       }(),
                       style: const TextStyle(
@@ -3671,7 +3780,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ),
                   const Divider(height: 20),
                   _buildPlLine(
-                    'إجمالي مبيعات المصنع المحصلة (قبل الخصم):',
+                    'إجمالي مبيعات المصنع النقدية والآجلة (قبل الخصم):',
                     erp.totalFactoryRevenue -
                         erp.factoryServiceRevenueOf(AppCurrency.usd) +
                         erp.factorySalesDiscountOf(AppCurrency.usd),
@@ -3681,12 +3790,12 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         erp.factorySalesDiscountOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
-                    'خدمات المصنع المحصلة:',
+                    'خدمات المصنع النقدية والآجلة:',
                     erp.factoryServiceRevenueOf(AppCurrency.usd),
                     syp: erp.factoryServiceRevenueOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
-                    'إجمالي مبيعات وتفصيل المعمل المحصلة (قبل الخصم):',
+                    'إجمالي مبيعات وتفصيل المعمل النقدية والآجلة (قبل الخصم):',
                     erp.totalWorkshopRevenue -
                         erp.workshopServiceRevenueOf(AppCurrency.usd) +
                         erp.workshopSalesDiscountOf(AppCurrency.usd),
@@ -3696,7 +3805,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         erp.workshopSalesDiscountOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
-                    'خدمات المعمل المحصلة:',
+                    'خدمات المعمل النقدية والآجلة:',
                     erp.workshopServiceRevenueOf(AppCurrency.usd),
                     syp: erp.workshopServiceRevenueOf(AppCurrency.syp),
                   ),
@@ -3710,11 +3819,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     erp.totalKeptDepositsRevenue,
                     syp: erp.totalKeptDepositsRevenueSyp,
                   ),
-                  _buildPlLine(
-                    'مرتجعات ومسموحات المشتريات:',
-                    erp.purchaseReturnsAndAllowances,
-                    syp: erp.purchaseReturnsAndAllowancesSyp,
-                  ),
+
                   _buildPlLine(
                     'إيرادات مرتجعات جرانيت من محاسب:',
                     erp.graniteReturnAccountantRevenueOf(AppCurrency.usd),
@@ -3725,11 +3830,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     erp.assetSaleGainsOf(AppCurrency.usd),
                     syp: erp.assetSaleGainsOf(AppCurrency.syp),
                   ),
-                  _buildPlLine(
-                    'إيرادات تحصيل واسترداد سُلف العمالة:',
-                    erp.totalAdvanceRepaymentsRevenueOf(AppCurrency.usd),
-                    syp: erp.totalAdvanceRepaymentsRevenueOf(AppCurrency.syp),
-                  ),
+
                   const Divider(height: 16),
                   _buildPlLine(
                     'مجموع الإيرادات الكلية:',
@@ -3743,7 +3844,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
 
                   // DIRECT & OPERATIONAL EXPENSES SECTION
                   const Text(
-                    'ثانياً: المصروفات المباشرة والتشغيلية (Direct & Operational Expenses)',
+                    'ثانياً: تكلفة البضاعة المباعة والمصروفات التشغيلية',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -3752,25 +3853,27 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ),
                   const Divider(height: 20),
                   _buildPlLine(
-                    'مشتريات ودفوعات البلوكات المباشرة:',
-                    erp.totalBlockPurchaseExpensesOf(AppCurrency.usd),
-                    syp: erp.totalBlockPurchaseExpensesOf(AppCurrency.syp),
+                    'تكلفة البضاعة المباعة (بعد عكس تكلفة المرتجعات):',
+                    erp.totalCOGSOf(AppCurrency.usd),
+                    syp: erp.totalCOGSOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
                     'مصاريف أجرة العمالة وإنجاز أيام العمل:',
                     erp.totalOperationalExpenses,
                     syp: erp.totalOperationalExpensesSyp,
                   ),
-                  for (final type in erp.expenseTypes.where((t) =>
-                      t.id != ERPProvider.blockPurchaseExpenseTypeId &&
-                      !t.name.contains('Block Purchase') &&
-                      !t.name.contains('مشتريات البلوكات')))
+                  for (final type in erp.expenseTypes.where(
+                    (t) =>
+                        t.id != ERPProvider.blockPurchaseExpenseTypeId &&
+                        !t.name.contains('Block Purchase') &&
+                        !t.name.contains('مشتريات البلوكات'),
+                  ))
                     _buildPlLine(
                       'مصروفات ${type.name}:',
                       erp.expenseRecords
                           .where(
                             (expense) =>
-
+                                erp.isOperatingExpense(expense) &&
                                 expense.typeId == type.id &&
                                 expense.currency == AppCurrency.usd,
                           )
@@ -3781,7 +3884,6 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       syp: erp.expenseRecords
                           .where(
                             (expense) =>
-
                                 expense.typeId == type.id &&
                                 expense.currency == AppCurrency.syp,
                           )
@@ -3806,7 +3908,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     syp: erp.totalUnnaturalWasteLossesSyp,
                   ),
                   _buildPlLine(
-                    'تكاليف الزيادات الأولية (Surplus Initial Cost):',
+                    'تكلفة القطع الزائدة المباعة:',
                     erp.totalSurplusInitialCost,
                     syp: erp.totalSurplusInitialCostSyp,
                   ),
@@ -4024,7 +4126,13 @@ class _FinancialsScreenState extends State<FinancialsScreen>
         children: [
           Row(
             children: [
-              Icon(icon, color: (balance < -0.001 || balanceSyp < -0.001) ? AppColors.dangerWaste : accentColor, size: 24),
+              Icon(
+                icon,
+                color: (balance < -0.001 || balanceSyp < -0.001)
+                    ? AppColors.dangerWaste
+                    : accentColor,
+                size: 24,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Row(
@@ -4034,13 +4142,18 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
-                        color: (balance < -0.001 || balanceSyp < -0.001) ? AppColors.dangerWaste : accentColor,
+                        color: (balance < -0.001 || balanceSyp < -0.001)
+                            ? AppColors.dangerWaste
+                            : accentColor,
                       ),
                     ),
                     if (balance < -0.001 || balanceSyp < -0.001) ...[
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.dangerWaste,
                           borderRadius: BorderRadius.circular(4),
@@ -4085,7 +4198,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: balance < -0.001 ? AppColors.dangerWaste : accentColor,
+                        color: balance < -0.001
+                            ? AppColors.dangerWaste
+                            : accentColor,
                       ),
                     ),
                   if (currencyFilter != AppCurrency.usd)
@@ -4094,7 +4209,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       style: TextStyle(
                         fontSize: currencyFilter == AppCurrency.syp ? 20 : 15,
                         fontWeight: FontWeight.bold,
-                        color: balanceSyp < -0.001 ? AppColors.dangerWaste : accentColor,
+                        color: balanceSyp < -0.001
+                            ? AppColors.dangerWaste
+                            : accentColor,
                       ),
                     ),
                 ],
@@ -4319,9 +4436,9 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       onChanged: (v) => setSt(() {
                         fromId = v!;
                         if (fromId == toId) {
-                          toId = boxes.firstWhere(
-                            (b) => b['id'] != fromId,
-                          )['id'] as String;
+                          toId =
+                              boxes.firstWhere((b) => b['id'] != fromId)['id']
+                                  as String;
                         }
                         formError = null;
                       }),
@@ -4373,11 +4490,11 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                                 decoration: InputDecoration(
                                   labelText:
                                       'المبلغ المراد تحويله (${fromBox['symbol']})',
-                                  prefixIcon:
-                                      const Icon(Icons.payments_outlined),
+                                  prefixIcon: const Icon(
+                                    Icons.payments_outlined,
+                                  ),
                                 ),
-                                onChanged: (_) =>
-                                    setSt(() => formError = null),
+                                onChanged: (_) => setSt(() => formError = null),
                               ),
                               Align(
                                 alignment: AlignmentDirectional.centerStart,
@@ -4408,8 +4525,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                                 labelText: 'سعر الصرف (1\$ = ... ل.س)',
                                 prefixIcon: Icon(Icons.price_change_outlined),
                               ),
-                              onChanged: (_) =>
-                                  setSt(() => formError = null),
+                              onChanged: (_) => setSt(() => formError = null),
                             ),
                           ),
                         ],
@@ -4518,22 +4634,20 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     return;
                   }
                   if (amount <= 0) {
-                    setSt(() => formError = 'أدخل مبلغاً صحيحاً أكبر من الصفر.');
+                    setSt(
+                      () => formError = 'أدخل مبلغاً صحيحاً أكبر من الصفر.',
+                    );
                     return;
                   }
                   if (amount > fromBalance + 0.0001) {
                     setSt(
-                      () =>
-                          formError =
-                              'المبلغ يتجاوز رصيد الصندوق المصدر.',
+                      () => formError = 'المبلغ يتجاوز رصيد الصندوق المصدر.',
                     );
                     return;
                   }
                   if (!sameCurrency && rate <= 0) {
                     setSt(
-                      () =>
-                          formError =
-                              'أدخل سعر صرف صحيح لاختلاف العملتين.',
+                      () => formError = 'أدخل سعر صرف صحيح لاختلاف العملتين.',
                     );
                     return;
                   }
@@ -4557,9 +4671,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   }
 
                   if (!success) {
-                    setSt(
-                      () => formError = 'تعذر تنفيذ عملية التحويل.',
-                    );
+                    setSt(() => formError = 'تعذر تنفيذ عملية التحويل.');
                     return;
                   }
 
@@ -4594,10 +4706,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
     final text = syp == null
         ? '${val.fmt} \$'
         : _pnlCurrency == AppCurrency.usd
-            ? '${val.fmt} \$'
-            : _pnlCurrency == AppCurrency.syp
-                ? '${syp.fmt} ل.س'
-                : AppCurrency.dual(val, syp);
+        ? '${val.fmt} \$'
+        : _pnlCurrency == AppCurrency.syp
+        ? '${syp.fmt} ل.س'
+        : AppCurrency.dual(val, syp);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(

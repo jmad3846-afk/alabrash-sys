@@ -1,3 +1,4 @@
+import 'support/stocked_factory_invoice.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:abaad/core/database/erp_provider.dart';
@@ -6,17 +7,16 @@ import 'package:abaad/core/models/models.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('Cash-Collected Revenue Recognition Model Tests (Abaad ERP)', () {
+  group('Accrual sales revenue and collection isolation', () {
     setUp(() {
       SharedPreferences.setMockInitialValues({});
     });
 
-    test('1. Unpaid credit factory sales invoice: 0 realized revenue, no profit inflation', () {
+    test('1. Unpaid dealer delivery recognizes full revenue and COGS', () {
       final erp = ERPProvider();
       final initialRevenue = erp.totalFactoryRevenueOf(AppCurrency.usd);
       final initialProfit = erp.netOperatingProfitOf(AppCurrency.usd);
 
-      // Create a client
       final client = ClientModel(
         id: 'client_credit_1',
         name: 'عميل آجل تجريبي',
@@ -28,7 +28,6 @@ void main() {
       );
       erp.clients.add(client);
 
-      // Create a 100% credit sales invoice (advancePayment = 0.0)
       final invoice = FactoryInvoiceModel(
         id: 'fi_credit_1',
         invoiceNo: 'POS-CREDIT-001',
@@ -49,19 +48,16 @@ void main() {
         currency: AppCurrency.usd,
       );
 
-      erp.addFactoryPOSInvoice(invoice);
+      postStockedFactoryInvoice(erp, invoice);
 
-      // 1. Revenue must NOT increase because no cash was collected
-      expect(erp.totalFactoryRevenueOf(AppCurrency.usd) - initialRevenue, 0.0);
+      expect(erp.totalFactoryRevenueOf(AppCurrency.usd) - initialRevenue, 1000.0);
 
-      // 2. Net Operating Profit must NOT inflate
-      expect(erp.netOperatingProfitOf(AppCurrency.usd) - initialProfit, 0.0);
+      expect(erp.netOperatingProfitOf(AppCurrency.usd) - initialProfit, 400.0);
 
-      // 3. Customer debt must receive the full receivable (1000 USD)
       expect(client.debtOf(AppCurrency.usd), 1000.0);
     });
 
-    test('2. Partial cash factory sales invoice: only collected cash enters Income Summary', () {
+    test('2. Partial cash invoice recognizes full revenue and COGS', () {
       final erp = ERPProvider();
       final initialRevenue = erp.totalFactoryRevenueOf(AppCurrency.usd);
       final initialProfit = erp.netOperatingProfitOf(AppCurrency.usd);
@@ -77,7 +73,6 @@ void main() {
       );
       erp.clients.add(client);
 
-      // Total invoice = 1000 USD, Advance Payment collected now = 350 USD
       final invoice = FactoryInvoiceModel(
         id: 'fi_partial_1',
         invoiceNo: 'POS-PARTIAL-001',
@@ -98,23 +93,19 @@ void main() {
         currency: AppCurrency.usd,
       );
 
-      erp.addFactoryPOSInvoice(invoice);
+      postStockedFactoryInvoice(erp, invoice);
 
-      // 1. Revenue increases ONLY by collected amount (350 USD), not the gross 1000 USD
-      expect(erp.totalFactoryRevenueOf(AppCurrency.usd) - initialRevenue, 350.0);
+      expect(erp.totalFactoryRevenueOf(AppCurrency.usd) - initialRevenue, 1000.0);
 
-      // 2. Net Profit increases strictly by the collected 350 USD
-      expect(erp.netOperatingProfitOf(AppCurrency.usd) - initialProfit, 350.0);
+      expect(erp.netOperatingProfitOf(AppCurrency.usd) - initialProfit, 500.0);
 
-      // 3. Customer debt receives only the unpaid remainder (650 USD)
       expect(client.debtOf(AppCurrency.usd), 650.0);
     });
 
-    test('3. Factory order conversion: deposit + cash paid now enter Income Summary', () {
+    test('3. Factory order delivery recognizes the full invoice', () {
       final erp = ERPProvider();
       final initialRevenue = erp.totalFactoryRevenueOf(AppCurrency.usd);
 
-      // Order with 200 USD deposit already received
       final order = FactoryOrderModel(
         id: 'fo_test_1',
         orderNo: 'ORD-101',
@@ -130,20 +121,16 @@ void main() {
       );
       erp.factoryOrders.add(order);
 
-      // Convert order to invoice with 300 USD cash paid now upon delivery
-      // Total collected = 200 (deposit) + 300 (cash now) = 500 USD
       erp.assignFactoryOrderToInvoice(order, 300.0);
 
-      // Realized revenue must be exactly 500 USD (deposit + cash paid now)
-      expect(erp.totalFactoryRevenueOf(AppCurrency.usd) - initialRevenue, 500.0);
+      expect(erp.totalFactoryRevenueOf(AppCurrency.usd) - initialRevenue, 1000.0);
 
-      // Find the generated invoice
       final inv = erp.factoryInvoices.firstWhere((i) => i.id == order.assignedInvoiceId);
       expect(inv.advancePayment, 500.0);
       expect(inv.remainingBalance, 500.0);
     });
 
-    test('4. Workshop order conversion: depositDeducted + cashPaidNow enter Income Summary', () {
+    test('4. Workshop invoice recognizes full revenue independently of deposits', () {
       final erp = ERPProvider();
       final initialRevenue = erp.totalWorkshopRevenueOf(AppCurrency.usd);
 
@@ -160,7 +147,6 @@ void main() {
       );
       erp.workshopOrders.add(order);
 
-      // Create workshop invoice from order: 150 deposit deducted + 250 cash paid now = 400 collected
       final invoice = WorkshopInvoiceModel(
         id: 'wi_test_1',
         invoiceNo: 'WRK-INV-101',
@@ -179,15 +165,13 @@ void main() {
       final ok = erp.createWorkshopInvoice(invoice);
       expect(ok, isTrue);
 
-      // Realized revenue must be exactly 400 USD
-      expect(erp.totalWorkshopRevenueOf(AppCurrency.usd) - initialRevenue, 400.0);
+      expect(erp.totalWorkshopRevenueOf(AppCurrency.usd) - initialRevenue, 800.0);
       expect(invoice.remainingBalance, 400.0);
     });
 
-    test('5. Subsequent collection on invoice immediately increases realized revenue', () {
+    test('5. Subsequent collections do not recognize sales a second time', () {
       final erp = ERPProvider();
 
-      // Create credit invoice (advancePayment = 0)
       final invoice = FactoryInvoiceModel(
         id: 'fi_subseq_1',
         invoiceNo: 'POS-SUBSEQ-001',
@@ -207,26 +191,22 @@ void main() {
         advancePayment: 0.0,
         currency: AppCurrency.usd,
       );
-      erp.addFactoryPOSInvoice(invoice);
+      postStockedFactoryInvoice(erp, invoice);
 
       final revenueBeforePayment = erp.totalFactoryRevenueOf(AppCurrency.usd);
       final profitBeforePayment = erp.netOperatingProfitOf(AppCurrency.usd);
 
-      // Customer makes partial payment of 400 USD later
       final collected = erp.collectFactoryInvoice(invoice, 400.0);
       expect(collected, isTrue);
 
-      // Revenue immediately increases by 400 USD at collection timestamp
-      expect(erp.totalFactoryRevenueOf(AppCurrency.usd) - revenueBeforePayment, 400.0);
+      expect(erp.totalFactoryRevenueOf(AppCurrency.usd) - revenueBeforePayment, 0.0);
 
-      // Net profit immediately reflects the 400 USD collected
-      expect(erp.netOperatingProfitOf(AppCurrency.usd) - profitBeforePayment, 400.0);
+      expect(erp.netOperatingProfitOf(AppCurrency.usd) - profitBeforePayment, 0.0);
 
-      // Invoice remaining balance reduces to 600 USD
       expect(invoice.remainingBalance, 600.0);
     });
 
-    test('6. Multi-currency FIFO customer debt collection updates realized revenue', () {
+    test('6. FIFO collection settles receivables without changing revenue', () {
       final erp = ERPProvider();
 
       final client = ClientModel(
@@ -240,7 +220,6 @@ void main() {
       );
       erp.clients.add(client);
 
-      // Invoice 1: 500 USD (credit)
       final inv1 = FactoryInvoiceModel(
         id: 'fi_fifo_1',
         invoiceNo: 'FIFO-001',
@@ -260,9 +239,8 @@ void main() {
         advancePayment: 0.0,
         currency: AppCurrency.usd,
       );
-      erp.addFactoryPOSInvoice(inv1);
+      postStockedFactoryInvoice(erp, inv1);
 
-      // Invoice 2: 700 USD (credit)
       final inv2 = FactoryInvoiceModel(
         id: 'fi_fifo_2',
         invoiceNo: 'FIFO-002',
@@ -282,14 +260,12 @@ void main() {
         advancePayment: 0.0,
         currency: AppCurrency.usd,
       );
-      erp.addFactoryPOSInvoice(inv2);
+      postStockedFactoryInvoice(erp, inv2);
 
       expect(client.debtOf(AppCurrency.usd), 1200.0);
 
       final revenueBefore = erp.totalFactoryRevenueOf(AppCurrency.usd);
 
-      // Customer pays 600 USD against total debt:
-      // FIFO settles inv1 completely (500 USD) and 100 USD of inv2
       final ok = erp.collectCustomerPayment(
         client: client,
         paymentCurrency: AppCurrency.usd,
@@ -297,25 +273,20 @@ void main() {
       );
       expect(ok, isTrue);
 
-      // Realized revenue increases by exactly 600 USD
-      expect(erp.totalFactoryRevenueOf(AppCurrency.usd) - revenueBefore, 600.0);
+      expect(erp.totalFactoryRevenueOf(AppCurrency.usd) - revenueBefore, 0.0);
 
-      // Inv1 is now fully paid (advancePayment = 500)
       expect(inv1.advancePayment, 500.0);
       expect(inv1.remainingBalance, 0.0);
 
-      // Inv2 has 100 paid, 600 remaining
       expect(inv2.advancePayment, 100.0);
       expect(inv2.remainingBalance, 600.0);
 
-      // Customer debt reduces to 600 USD
       expect(client.debtOf(AppCurrency.usd), 600.0);
     });
 
-    test('7. Unallocated customer debt settlement (legacy balance) recognized in realized revenue', () {
+    test('7. Opening debt collection never becomes new sales revenue', () {
       final erp = ERPProvider();
 
-      // Customer has opening legacy debt of 500 USD (no open invoice in factoryInvoices)
       final client = ClientModel(
         id: 'cli_legacy_1',
         name: 'عميل رصيد افتتاحي قديم',
@@ -329,7 +300,6 @@ void main() {
 
       final revenueBefore = erp.totalFactoryRevenueOf(AppCurrency.usd);
 
-      // Client pays 300 USD of legacy debt
       final ok = erp.collectCustomerPayment(
         client: client,
         paymentCurrency: AppCurrency.usd,
@@ -337,11 +307,9 @@ void main() {
       );
       expect(ok, isTrue);
 
-      // Debt drops to 200 USD
       expect(client.debtOf(AppCurrency.usd), 200.0);
 
-      // Realized revenue captures the unallocated cash collection
-      expect(erp.totalFactoryRevenueOf(AppCurrency.usd) - revenueBefore, 300.0);
+      expect(erp.totalFactoryRevenueOf(AppCurrency.usd) - revenueBefore, 0.0);
     });
   });
 }

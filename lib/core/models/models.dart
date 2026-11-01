@@ -541,6 +541,16 @@ class ExpenseTypeModel {
 }
 
 class ExpenseRecordModel {
+  static const operational = 'operational';
+  static const manufacturing = 'manufacturing';
+  static const inventoryPurchase = 'inventory_purchase';
+  static const supplierPayment = 'supplier_payment';
+  static const freight = 'capitalized_freight';
+  final String? expenseType;
+  final String inventorySource;
+  final String inventoryId;
+  final String capitalizedInventoryId;
+  final double manufacturingQuantity;
   final String id;
   final String typeId;
   final double amount;
@@ -554,6 +564,11 @@ class ExpenseRecordModel {
   final String cashBox;
 
   ExpenseRecordModel({
+    this.expenseType,
+    this.inventorySource = '',
+    this.inventoryId = '',
+    this.capitalizedInventoryId = '',
+    this.manufacturingQuantity = 0,
     required this.id,
     required this.typeId,
     required this.amount,
@@ -568,6 +583,11 @@ class ExpenseRecordModel {
   }) : date = date ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
+    'expenseType': expenseType,
+    'inventorySource': inventorySource,
+    'inventoryId': inventoryId,
+    'capitalizedInventoryId': capitalizedInventoryId,
+    'manufacturingQuantity': manufacturingQuantity,
     'id': id,
     'typeId': typeId,
     'amount': amount,
@@ -583,6 +603,12 @@ class ExpenseRecordModel {
 
   factory ExpenseRecordModel.fromJson(Map<String, dynamic> json) =>
       ExpenseRecordModel(
+        expenseType: json['expenseType'] as String?,
+        inventorySource: json['inventorySource'] ?? '',
+        inventoryId: json['inventoryId'] ?? '',
+        capitalizedInventoryId: json['capitalizedInventoryId'] ?? '',
+        manufacturingQuantity:
+            (json['manufacturingQuantity'] as num?)?.toDouble() ?? 0,
         id: json['id'],
         typeId: json['typeId'],
         amount: (json['amount'] as num).toDouble(),
@@ -1208,6 +1234,7 @@ class MeterTypeModel {
 // 5. FACTORY BLOCK STOCK
 // ==========================================
 class FactoryBlockModel {
+  final String currency;
   final String id;
   final String blockCode;
   final String typeName;
@@ -1220,6 +1247,7 @@ class FactoryBlockModel {
   final bool isGranite;
 
   FactoryBlockModel({
+    this.currency = AppCurrency.usd,
     required this.id,
     required this.blockCode,
     required this.typeName,
@@ -1235,6 +1263,7 @@ class FactoryBlockModel {
   double get totalCost => weightTons * tonCost;
 
   Map<String, dynamic> toJson() => {
+    'currency': currency,
     'id': id,
     'blockCode': blockCode,
     'typeName': typeName,
@@ -1249,6 +1278,7 @@ class FactoryBlockModel {
 
   factory FactoryBlockModel.fromJson(Map<String, dynamic> json) =>
       FactoryBlockModel(
+        currency: AppCurrency.normalize(json['currency']),
         id: json['id'],
         blockCode: json['blockCode'],
         typeName: json['typeName'],
@@ -1266,6 +1296,7 @@ class FactoryBlockModel {
 // 6. FACTORY WAREHOUSE ITEM (Slabs & Cubes)
 // ==========================================
 class FactoryWarehouseModel {
+  final String currency;
   final String id;
   final String typeName;
   final String grade;
@@ -1277,6 +1308,7 @@ class FactoryWarehouseModel {
   final bool isGranite;
 
   FactoryWarehouseModel({
+    this.currency = AppCurrency.usd,
     required this.id,
     required this.typeName,
     required this.grade,
@@ -1291,6 +1323,7 @@ class FactoryWarehouseModel {
   double get totalInventoryValue => availableQty * netCostPerUnit;
 
   Map<String, dynamic> toJson() => {
+    'currency': currency,
     'id': id,
     'typeName': typeName,
     'grade': grade,
@@ -1304,6 +1337,7 @@ class FactoryWarehouseModel {
 
   factory FactoryWarehouseModel.fromJson(Map<String, dynamic> json) =>
       FactoryWarehouseModel(
+        currency: AppCurrency.normalize(json['currency']),
         id: json['id'],
         typeName: json['typeName'],
         grade: json['grade'],
@@ -1740,6 +1774,7 @@ class FactoryInvoiceModel {
 // 9. WORKSHOP STOCK & TAILORING ITEMS
 // ==========================================
 class WorkshopStockModel {
+  final String currency;
   final String id;
   final String typeName;
   final String grade;
@@ -1751,6 +1786,7 @@ class WorkshopStockModel {
   final bool isGranite;
 
   WorkshopStockModel({
+    this.currency = AppCurrency.usd,
     required this.id,
     required this.typeName,
     required this.grade,
@@ -1763,6 +1799,7 @@ class WorkshopStockModel {
   });
 
   Map<String, dynamic> toJson() => {
+    'currency': currency,
     'id': id,
     'typeName': typeName,
     'grade': grade,
@@ -1776,6 +1813,7 @@ class WorkshopStockModel {
 
   factory WorkshopStockModel.fromJson(Map<String, dynamic> json) =>
       WorkshopStockModel(
+        currency: AppCurrency.normalize(json['currency']),
         id: json['id'],
         typeName: json['typeName'],
         grade: json['grade'],
@@ -2547,7 +2585,7 @@ class WorkshopInvoiceModel {
   final double agreedPrice;
   final double depositDeducted;
   final double cashPaidNow;
-  final double netCost;
+  double netCost;
   final double salesDiscount;
   double adjustmentsAmount;
   double adjustmentsCashRefund;
@@ -3431,6 +3469,7 @@ class CuttingBatchSelection {
 /// Aggregated tons of a single type+grade picked from one or more suppliers.
 /// Arithmetic mean: total price of supplier tons / total number of tons.
 class CuttingBatchInput {
+  final String currency;
   final String typeName;
   final String grade;
   final bool isGranite;
@@ -3439,6 +3478,7 @@ class CuttingBatchInput {
   final List<CuttingBatchSelection> selections;
 
   CuttingBatchInput({
+    this.currency = AppCurrency.usd,
     required this.typeName,
     required this.grade,
     required this.isGranite,
@@ -3450,6 +3490,7 @@ class CuttingBatchInput {
 
 /// One thickness conversion inside the staged cutting plan.
 class StagedCutConversion {
+  final String currency;
   final String typeName;
   final String grade;
   final bool isGranite;
@@ -3463,6 +3504,7 @@ class StagedCutConversion {
   final double salePrice;
 
   StagedCutConversion({
+    this.currency = AppCurrency.usd,
     required this.typeName,
     required this.grade,
     required this.isGranite,
