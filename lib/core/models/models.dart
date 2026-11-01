@@ -1306,6 +1306,8 @@ class FactoryBlockModel {
 // 6. FACTORY WAREHOUSE ITEM (Slabs & Cubes)
 // ==========================================
 class FactoryWarehouseModel {
+  List<String> sourceIds;
+  List<double> thicknesses;
   final String currency;
   Map<String, double> batchUnitsPerUnit;
   final String id;
@@ -1319,6 +1321,8 @@ class FactoryWarehouseModel {
   final bool isGranite;
 
   FactoryWarehouseModel({
+    this.sourceIds = const [],
+    this.thicknesses = const [],
     this.currency = AppCurrency.usd,
     this.batchUnitsPerUnit = const {},
     required this.id,
@@ -1332,9 +1336,15 @@ class FactoryWarehouseModel {
     this.isGranite = false,
   });
 
+  bool matchesId(String value) => id == value || sourceIds.contains(value);
+  List<double> get allThicknesses =>
+      {thicknessCm, ...thicknesses}.toList()..sort();
+
   double get totalInventoryValue => availableQty * netCostPerUnit;
 
   Map<String, dynamic> toJson() => {
+    'sourceIds': sourceIds,
+    'thicknesses': thicknesses,
     'currency': currency,
     'batchUnitsPerUnit': batchUnitsPerUnit,
     'id': id,
@@ -1350,6 +1360,10 @@ class FactoryWarehouseModel {
 
   factory FactoryWarehouseModel.fromJson(Map<String, dynamic> json) =>
       FactoryWarehouseModel(
+        sourceIds: List<String>.from(json['sourceIds'] ?? []),
+        thicknesses: (json['thicknesses'] as List? ?? [])
+            .map((v) => (v as num).toDouble())
+            .toList(),
         currency: AppCurrency.normalize(json['currency']),
         batchUnitsPerUnit: _batchUnits(json['batchUnitsPerUnit']),
         id: json['id'],

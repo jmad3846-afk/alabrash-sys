@@ -47,7 +47,7 @@ void main() {
       expect(erp.blockTypes.length, greaterThanOrEqualTo(4));
       expect(erp.meterTypes.length, greaterThanOrEqualTo(4));
       expect(erp.factoryBlocks.length, greaterThanOrEqualTo(3));
-      expect(erp.factoryWarehouse.length, greaterThanOrEqualTo(4));
+      expect(erp.factoryWarehouse.length, greaterThanOrEqualTo(3));
       expect(erp.cuttingOperations.length, greaterThanOrEqualTo(1));
       expect(erp.factoryInvoices.length, greaterThanOrEqualTo(3));
       expect(erp.factoryOrders.length, greaterThanOrEqualTo(2));

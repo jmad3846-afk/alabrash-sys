@@ -10,6 +10,7 @@ class ERPProvider extends ChangeNotifier {
   @override
   void notifyListeners() {
     syncCuttingBatchCatalog();
+    consolidateFactoryWarehouseStock();
     super.notifyListeners();
   }
 
@@ -234,6 +235,7 @@ class ERPProvider extends ChangeNotifier {
   ERPProvider() {
     _initDefaultSeedData();
     syncCuttingBatchCatalog();
+    consolidateFactoryWarehouseStock();
     loadFuture = loadFromDisk();
   }
 
@@ -2349,6 +2351,123 @@ class ERPProvider extends ChangeNotifier {
     );
   }
 
+  String _warehouseGroupKey(FactoryWarehouseModel item) => jsonEncode([
+    item.typeName.trim(),
+    item.grade.trim(),
+    item.category,
+    item.currency,
+    item.category == 'متر مكعب' ? null : item.thicknessCm,
+  ]);
+
+  void _mergeFactoryWarehouseLot(
+    FactoryWarehouseModel target,
+    FactoryWarehouseModel incoming, {
+    bool updateSellingPrice = true,
+  }) {
+    final before = target.availableQty;
+    final total = before + incoming.availableQty;
+    final capital = target.totalInventoryValue + incoming.totalInventoryValue;
+    target.batchUnitsPerUnit = total > .000001
+        ? _combineBatchUnits([
+            (target.batchUnitsPerUnit, before),
+            (incoming.batchUnitsPerUnit, incoming.availableQty),
+          ], total)
+        : <String, double>{};
+    target.netCostPerUnit = total > .000001
+        ? capital / total
+        : incoming.netCostPerUnit;
+    target.availableQty = total;
+    target.thicknesses = {
+      ...target.allThicknesses,
+      ...incoming.allThicknesses,
+    }.toList()..sort();
+    target.sourceIds = {
+      ...target.sourceIds,
+      incoming.id,
+      ...incoming.sourceIds,
+    }.where((id) => id != target.id).toList();
+    if (updateSellingPrice)
+      target.recommendedSalePrice = incoming.recommendedSalePrice;
+  }
+
+  FactoryWarehouseModel _receiveFactoryWarehouseLot(
+    FactoryWarehouseModel incoming, {
+    bool updateSellingPrice = true,
+  }) {
+    final existing = _firstOrNull(
+      factoryWarehouse.where(
+        (w) => _warehouseGroupKey(w) == _warehouseGroupKey(incoming),
+      ),
+    );
+    if (existing == null) {
+      factoryWarehouse.add(incoming);
+      return incoming;
+    }
+    _mergeFactoryWarehouseLot(
+      existing,
+      incoming,
+      updateSellingPrice: updateSellingPrice,
+    );
+    return existing;
+  }
+
+  /// Upgrade old separate receipts to one physical balance without losing their
+  /// proportional cutting-batch ownership or existing invoice/order references.
+  void consolidateFactoryWarehouseStock() {
+    final groups = <String, FactoryWarehouseModel>{};
+    for (final lot in factoryWarehouse) {
+      final key = _warehouseGroupKey(lot);
+      final existing = groups[key];
+      if (existing == null) {
+        groups[key] = lot;
+      } else {
+        _mergeFactoryWarehouseLot(existing, lot);
+      }
+    }
+    factoryWarehouse = groups.values.toList();
+    final aliases = <String, String>{
+      for (final w in factoryWarehouse)
+        for (final id in w.sourceIds) id: w.id,
+    };
+    if (aliases.isEmpty) return;
+    String canonical(String id) => aliases[id] ?? id;
+    for (final inv in factoryInvoices) {
+      for (var n = 0; n < inv.items.length; n++) {
+        final item = inv.items[n];
+        final id = canonical(item.itemId);
+        if (id != item.itemId) inv.items[n] = item.copyWith(itemId: id);
+      }
+    }
+    for (final order in factoryOrders) {
+      for (var n = 0; n < order.items.length; n++) {
+        final item = order.items[n];
+        final id = canonical(item.itemId);
+        if (id != item.itemId) order.items[n] = item.copyWith(itemId: id);
+      }
+    }
+    for (final batch in cuttingOperations) {
+      if (batch.outputItemIds.any(aliases.containsKey))
+        batch.outputItemIds = batch.outputItemIds
+            .map(canonical)
+            .toSet()
+            .toList();
+    }
+    for (var n = 0; n < adjustmentInvoices.length; n++) {
+      final doc = adjustmentInvoices[n];
+      if (doc.module != 'factory' ||
+          (!aliases.containsKey(doc.itemId) &&
+              !doc.lines.any((l) => aliases.containsKey(l.itemId))))
+        continue;
+      adjustmentInvoices[n] = AdjustmentInvoiceModel.fromJson({
+        ...doc.toJson(),
+        'itemId': canonical(doc.itemId),
+        'lines': doc.lines
+            .map((l) => {...l.toJson(), 'itemId': canonical(l.itemId)})
+            .toList(),
+      });
+    }
+  }
+
   bool _sameBatchUnits(Map<String, double> a, Map<String, double> b) =>
       a.length == b.length &&
       a.entries.every((e) => (b[e.key] ?? double.nan) == e.value);
@@ -2904,11 +3023,11 @@ class ERPProvider extends ChangeNotifier {
     final category = isCube ? 'متر مكعب' : 'متر مربع';
     if (item.itemId.isNotEmpty) {
       final byId = factoryWarehouse
-          .where((w) => w.id == item.itemId && w.category == category)
+          .where((w) => w.matchesId(item.itemId) && w.category == category)
           .toList();
       if (byId.isNotEmpty) return byId.first;
       final anyById = factoryWarehouse
-          .where((w) => w.id == item.itemId)
+          .where((w) => w.matchesId(item.itemId))
           .toList();
       if (anyById.isNotEmpty) return anyById.first;
     }
@@ -3196,9 +3315,14 @@ class ERPProvider extends ChangeNotifier {
       final warehouse = _matchFactoryWarehouse(item);
       if (warehouse != null) {
         if (!purchase && returnedArea > 0) {
+          final total = warehouse.availableQty + returnedArea;
           warehouse.netCostPerUnit =
               (warehouse.totalInventoryValue + returnedArea * item.unitCost) /
-              (warehouse.availableQty + returnedArea);
+              total;
+          warehouse.batchUnitsPerUnit = _combineBatchUnits([
+            (warehouse.batchUnitsPerUnit, warehouse.availableQty),
+            (item.batchUnitsPerUnit, returnedArea),
+          ], total);
         }
         warehouse.availableQty = purchase
             ? (warehouse.availableQty - line.quantity).clamp(
@@ -5711,7 +5835,8 @@ class ERPProvider extends ChangeNotifier {
               i.unitCost < 0 ||
               !i.unitPrice.isFinite ||
               i.unitPrice < 0 ||
-              (i.sellingPrice != null && (!i.sellingPrice!.isFinite || i.sellingPrice! < 0)),
+              (i.sellingPrice != null &&
+                  (!i.sellingPrice!.isFinite || i.sellingPrice! < 0)),
         ) ||
         factoryInvoices.any((existing) => existing.id == inv.id) ||
         !inv.shippingFee.isFinite ||
@@ -5808,45 +5933,29 @@ class ERPProvider extends ChangeNotifier {
             ? item.typeName
             : item.description;
         final targetGrade = item.grade.isNotEmpty ? item.grade : 'درجة أولى';
-        final targetThickness = item.thicknessCm > 0 ? item.thicknessCm : 2.0;
+        final targetThickness = category == 'متر مكعب'
+            ? 0.0
+            : (item.thicknessCm > 0 ? item.thicknessCm : 2.0);
 
-        final existingMatches = factoryWarehouse
-            .where(
-              (w) =>
-                  w.typeName == targetTypeName &&
-                  w.grade == targetGrade &&
-                  (w.thicknessCm - targetThickness).abs() < 0.01 &&
-                  w.category == category && w.currency == inv.currency && w.batchUnitsPerUnit.isEmpty,
-            )
-            .toList();
-
-        if (existingMatches.isNotEmpty) {
-          final w = existingMatches.first;
-          final double mergedQty = w.availableQty + item.quantity;
-          final double mergedCost = mergedQty > 0
-              ? ((w.availableQty * w.netCostPerUnit) +
-                        (item.quantity * effectiveUnitCost)) /
-                    mergedQty
-              : effectiveUnitCost;
-          w.availableQty = mergedQty;
-          w.netCostPerUnit = mergedCost;
-          if (item.sellingPrice != null) w.recommendedSalePrice = item.sellingPrice!;
-        } else {
-          factoryWarehouse.add(
-            FactoryWarehouseModel(
-              currency: inv.currency,
-              id: 'fw_${DateTime.now().millisecondsSinceEpoch}_${factoryWarehouse.length}',
-              typeName: targetTypeName,
-              grade: targetGrade,
-              thicknessCm: targetThickness,
-              category: category,
-              availableQty: item.quantity,
-              netCostPerUnit: effectiveUnitCost,
-              recommendedSalePrice: item.sellingPrice ?? effectiveUnitCost * 1.25,
-              isGranite: item.isGranite,
-            ),
-          );
-        }
+        _receiveFactoryWarehouseLot(
+          FactoryWarehouseModel(
+            currency: inv.currency,
+            id:
+                'fw_' +
+                DateTime.now().microsecondsSinceEpoch.toString() +
+                '_' +
+                factoryWarehouse.length.toString(),
+            typeName: targetTypeName,
+            grade: targetGrade,
+            thicknessCm: targetThickness,
+            category: category,
+            availableQty: item.quantity,
+            netCostPerUnit: effectiveUnitCost,
+            recommendedSalePrice: item.sellingPrice ?? effectiveUnitCost * 1.25,
+            isGranite: item.isGranite,
+          ),
+          updateSellingPrice: item.sellingPrice != null,
+        );
       } else {
         factoryBlocks.add(
           FactoryBlockModel(
@@ -5978,8 +6087,7 @@ class ERPProvider extends ChangeNotifier {
             now.microsecondsSinceEpoch.toString() +
             '_' +
             factoryWarehouse.length.toString();
-        outputIds.add(outputId);
-        factoryWarehouse.add(
+        final received = _receiveFactoryWarehouseLot(
           FactoryWarehouseModel(
             id: outputId,
             currency: c.currency,
@@ -5994,6 +6102,7 @@ class ERPProvider extends ChangeNotifier {
             isGranite: c.isGranite,
           ),
         );
+        if (!outputIds.contains(received.id)) outputIds.add(received.id);
       }
       cuttingOperations.add(
         CuttingOperationModel(
@@ -6056,12 +6165,20 @@ class ERPProvider extends ChangeNotifier {
       (sum, b) => sum + b.totalCost,
     );
     final now = DateTime.now();
-    final id = 'cut_' + now.microsecondsSinceEpoch.toString();
-    final outputId = 'fw_' + now.microsecondsSinceEpoch.toString();
+    final id =
+        'cut_' +
+        now.microsecondsSinceEpoch.toString() +
+        '_' +
+        cuttingOperations.length.toString();
+    final outputId =
+        'fw_' +
+        now.microsecondsSinceEpoch.toString() +
+        '_' +
+        factoryWarehouse.length.toString();
     for (final b in selectedBlocks) {
       factoryBlocks.remove(b);
     }
-    factoryWarehouse.add(
+    final received = _receiveFactoryWarehouseLot(
       FactoryWarehouseModel(
         id: outputId,
         currency: currency,
@@ -6081,7 +6198,7 @@ class ERPProvider extends ChangeNotifier {
         id: id,
         timestamp: now,
         currency: currency,
-        outputItemIds: [outputId],
+        outputItemIds: [received.id],
         inputTons: tons,
         baseTonCost: rawCost / tons,
         cuttingFeePercentage: cuttingFeePercent,
@@ -6147,35 +6264,22 @@ class ERPProvider extends ChangeNotifier {
       double.infinity,
     );
 
-    var existingWh = factoryWarehouse.firstWhere(
-      (wh) =>
-          wh.typeName == wsItem.typeName &&
-          wh.grade == wsItem.grade &&
-          wh.thicknessCm == wsItem.thicknessCm &&
-          wh.currency == wsItem.currency &&
-          _sameBatchUnits(wh.batchUnitsPerUnit, wsItem.batchUnitsPerUnit),
-      orElse: () {
-        var newWh = FactoryWarehouseModel(
-          currency: wsItem.currency,
-          batchUnitsPerUnit: Map.of(wsItem.batchUnitsPerUnit),
-          id: 'wh_${DateTime.now().millisecondsSinceEpoch}',
-          typeName: wsItem.typeName,
-          grade: wsItem.grade,
-          thicknessCm: wsItem.thicknessCm,
-          category: wsItem.category,
-          availableQty: 0.0,
-          netCostPerUnit: wsItem.netCostPerUnit,
-          recommendedSalePrice: wsItem.recommendedSalePrice,
-          isGranite: wsItem.isGranite,
-        );
-        factoryWarehouse.add(newWh);
-        return newWh;
-      },
+    _receiveFactoryWarehouseLot(
+      FactoryWarehouseModel(
+        currency: wsItem.currency,
+        batchUnitsPerUnit: Map.of(wsItem.batchUnitsPerUnit),
+        id: 'wh_' + DateTime.now().microsecondsSinceEpoch.toString(),
+        typeName: wsItem.typeName,
+        grade: wsItem.grade,
+        thicknessCm: wsItem.thicknessCm,
+        category: wsItem.category,
+        availableQty: qty,
+        netCostPerUnit: wsItem.netCostPerUnit,
+        recommendedSalePrice: wsItem.recommendedSalePrice,
+        isGranite: wsItem.isGranite,
+      ),
+      updateSellingPrice: false,
     );
-    existingWh.netCostPerUnit =
-        (existingWh.totalInventoryValue + qty * wsItem.netCostPerUnit) /
-        (existingWh.availableQty + qty);
-    existingWh.availableQty += qty;
     notifyListeners();
     saveToDisk();
     return true;
@@ -6183,7 +6287,7 @@ class ERPProvider extends ChangeNotifier {
 
   // Update recommended selling price for factory warehouse item
   void updateFactoryWarehouseSalePrice(String whId, double newPrice) {
-    final idx = factoryWarehouse.indexWhere((w) => w.id == whId);
+    final idx = factoryWarehouse.indexWhere((w) => w.matchesId(whId));
     if (idx != -1 && newPrice >= 0) {
       factoryWarehouse[idx].recommendedSalePrice = newPrice;
       notifyListeners();
@@ -6293,7 +6397,7 @@ class ERPProvider extends ChangeNotifier {
         final warehouse =
             _firstOrNull(
               factoryWarehouse.where(
-                (w) => w.currency == inv.currency && w.id == item.itemId,
+                (w) => w.currency == inv.currency && w.matchesId(item.itemId),
               ),
             ) ??
             _firstOrNull(
@@ -7218,7 +7322,7 @@ class ERPProvider extends ChangeNotifier {
     if (factoryWarehouse.isEmpty) return;
     FactoryWarehouseModel? wh;
     for (final warehouseItem in factoryWarehouse) {
-      if (warehouseItem.id == item.itemId) {
+      if (warehouseItem.matchesId(item.itemId)) {
         wh = warehouseItem;
         break;
       }
@@ -7250,7 +7354,16 @@ class ERPProvider extends ChangeNotifier {
           warehouseItem.typeName == item.typeName,
       orElse: () => factoryWarehouse.first,
     );
-    wh.availableQty += item.calculatedArea;
+    final quantity = item.calculatedArea;
+    final total = wh.availableQty + quantity;
+    if (total > 0) {
+      wh.netCostPerUnit = (wh.totalInventoryValue + item.totalCost) / total;
+      wh.batchUnitsPerUnit = _combineBatchUnits([
+        (wh.batchUnitsPerUnit, wh.availableQty),
+        (item.batchUnitsPerUnit, quantity),
+      ], total);
+    }
+    wh.availableQty = total;
   }
 
   void createFactoryOrder(FactoryOrderModel order) {
@@ -7258,7 +7371,7 @@ class ERPProvider extends ChangeNotifier {
       final item = order.items[n];
       final stock = _firstOrNull(
         factoryWarehouse.where(
-          (w) => w.id == item.itemId && w.currency == order.currency,
+          (w) => w.matchesId(item.itemId) && w.currency == order.currency,
         ),
       );
       if (stock != null)
@@ -7403,7 +7516,7 @@ class ERPProvider extends ChangeNotifier {
 
   /// Factory warehouse helpers for tailoring replenishment and stock adjustments.
   bool deductFactoryWarehouseStock(String whId, double qty) {
-    final matches = factoryWarehouse.where((w) => w.id == whId).toList();
+    final matches = factoryWarehouse.where((w) => w.matchesId(whId)).toList();
     if (matches.isEmpty || qty <= 0) return false;
     if (matches.first.availableQty + 0.0001 < qty) return false;
     matches.first.availableQty -= qty;
@@ -7413,7 +7526,7 @@ class ERPProvider extends ChangeNotifier {
   }
 
   void restoreFactoryWarehouseStock(String whId, double qty) {
-    final matches = factoryWarehouse.where((w) => w.id == whId).toList();
+    final matches = factoryWarehouse.where((w) => w.matchesId(whId)).toList();
     if (matches.isEmpty || qty <= 0) return;
     matches.first.availableQty += qty;
     notifyListeners();
@@ -10207,6 +10320,7 @@ class ERPProvider extends ChangeNotifier {
         .toList();
 
     syncCuttingBatchCatalog();
+    consolidateFactoryWarehouseStock();
 
     // Persist to disk immediately
 

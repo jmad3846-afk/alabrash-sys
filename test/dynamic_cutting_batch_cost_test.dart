@@ -73,7 +73,7 @@ void main() {
   );
 
   test(
-    'all staged output lots share actual expense proportionally without touching other batches',
+    'staged outputs allocate actual expenses across separate thickness balances',
     () async {
       final e = await fixture.clean();
       e.cuttingOperations.clear();
@@ -109,13 +109,13 @@ void main() {
         ],
         wasteValue: 0,
       );
-      expect(e.currentInventoryValueUsd, 1000);
+      expect(e.currentInventoryValueUsd, closeTo(1000, .000001));
       final batch = e.cuttingOperations.single;
       expect(batch.outputItemIds.length, 2);
       actual(e, batch, 600, 'shared');
-      expect(e.factoryWarehouse[0].netCostPerUnit, 22.5);
-      expect(e.factoryWarehouse[1].netCostPerUnit, 35);
-      expect(e.currentInventoryValueUsd, 1600);
+      expect(e.factoryWarehouse[0].netCostPerUnit, closeTo(22.5, .000001));
+      expect(e.factoryWarehouse[1].netCostPerUnit, closeTo(35, .000001));
+      expect(e.currentInventoryValueUsd, closeTo(1600, .000001));
       expect(e.mainCashBox, 9400);
     },
   );

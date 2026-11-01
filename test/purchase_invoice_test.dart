@@ -384,7 +384,7 @@ void main() {
     final wh = erp.factoryWarehouse.firstWhere((w) =>
         w.typeName == 'رخام كاردينال' &&
         w.grade == 'درجة أولى' &&
-        w.thicknessCm == 3.0);
+        w.allThicknesses.contains(3.0));
     expect(wh.availableQty, greaterThan(0));
   });
 
@@ -517,7 +517,7 @@ void main() {
     final wh = erp.factoryWarehouse.firstWhere((w) =>
         w.typeName == 'غرانيت أسود جالكسي' &&
         w.grade == 'ممتاز' &&
-        w.thicknessCm == 3.0);
+        w.allThicknesses.contains(3.0));
     expect(wh.isGranite, isTrue);
     expect(wh.recommendedSalePrice, 65.0);
     expect(FactoryInvoiceModel.fromJson(invoice.toJson()).items.single.sellingPrice, 65.0);

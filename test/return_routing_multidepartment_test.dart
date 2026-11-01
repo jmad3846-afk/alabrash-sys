@@ -251,8 +251,9 @@ void main() {
         ),
       );
 
-      final startingM2 = erp.factoryWarehouse.firstWhere((w) => w.id == 'fw_legacy_m2').availableQty;
-      final startingM3 = erp.factoryWarehouse.firstWhere((w) => w.id == 'fw_legacy_m3').availableQty;
+      erp.consolidateFactoryWarehouseStock();
+      final startingM2 = erp.factoryWarehouse.firstWhere((w) => w.matchesId('fw_legacy_m2')).availableQty;
+      final startingM3 = erp.factoryWarehouse.firstWhere((w) => w.matchesId('fw_legacy_m3')).availableQty;
       final startingBlocksCount = erp.factoryBlocks.length;
 
       // Approved dealer invoice where items have legacy itemCategory: 'block' or default
@@ -346,8 +347,8 @@ void main() {
 
       // Verify returned items were routed strictly to Factory Warehouse, NOT Factory Blocks
       expect(erp.factoryBlocks.length, startingBlocksCount); // No block was added!
-      final updatedM2 = erp.factoryWarehouse.firstWhere((w) => w.id == 'fw_legacy_m2');
-      final updatedM3 = erp.factoryWarehouse.firstWhere((w) => w.id == 'fw_legacy_m3');
+      final updatedM2 = erp.factoryWarehouse.firstWhere((w) => w.matchesId('fw_legacy_m2'));
+      final updatedM3 = erp.factoryWarehouse.firstWhere((w) => w.matchesId('fw_legacy_m3'));
       expect(updatedM2.availableQty, closeTo(startingM2 + 4.0, 0.001)); // 2 slabs * 2.0 m²
       expect(updatedM3.availableQty, closeTo(startingM3 + 0.1, 0.001)); // 1 cube * 0.1 m³
 

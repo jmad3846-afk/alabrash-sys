@@ -908,7 +908,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'السماكة المصنعة: ${item.thicknessCm} سم',
+                  item.category == 'متر مكعب' ? 'المخزون بالحجم (م³)' : 'السماكة: ${item.thicknessCm.fmt} سم',
                   style: const TextStyle(
                     color: AppColors.brandSecondaryText,
                     fontSize: 12,
@@ -940,7 +940,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                       style: TextStyle(fontSize: 12),
                     ),
                     Text(
-                      '${item.netCostPerUnit.fmt} \$ / ${isM2 ? "م²" : "م³"}',
+                      '${AppCurrency.single(item.netCostPerUnit, item.currency)} / ${item.category == 'متر مكعب' ? 'م³' : item.category == 'متر طولي' ? 'م.ط' : 'م²'}',
                       style: const TextStyle(fontSize: 12),
                     ),
                   ],
@@ -956,7 +956,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                       ),
                     ),
                     Text(
-                      '${item.recommendedSalePrice.fmt} \$',
+                      AppCurrency.single(item.recommendedSalePrice, item.currency),
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         color: AppColors.successGreen,
@@ -3256,6 +3256,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     String? selectedMeterTypeId;
     String meterSearch = '';
     String selectedMeterUnit = 'متر مربع'; // 'متر مربع' | 'متر طولي' | 'متر مكعب'
+    final meterThicknessCtrl = TextEditingController();
     final meterQtyCtrl = TextEditingController();
     final meterPriceCtrl = TextEditingController();
     final meterTotalCostCtrl = TextEditingController();
@@ -3966,16 +3967,17 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                       DropdownButtonFormField<String>(
                                         initialValue: meterValue,
                                         isExpanded: true,
-                                        decoration: const InputDecoration(
-                                          labelText:
-                                              'نوع المتر (النوع • الدرجة • السماكة • الفئة)',
+                                        decoration: InputDecoration(
+                                          labelText: selectedMeterUnit == 'متر مكعب'
+                                              ? 'نوع المتر (النوع • الدرجة)'
+                                              : 'نوع المتر (النوع • الدرجة • السماكة • الفئة)',
                                         ),
                                         items: meterOptionsFiltered
                                             .map(
                                               (m) => DropdownMenuItem(
                                                 value: m.id,
                                                 child: Text(
-                                                  '${m.typeName} • ${m.grade} • ${m.thicknessCm.fmt} سم • ${m.category} ${m.isGranite ? "(غرانيت)" : "(رخام)"}',
+                                                  '${m.typeName} • ${m.grade}${selectedMeterUnit == "متر مكعب" ? "" : " • ${m.thicknessCm.fmt} سم"} • ${m.category} ${m.isGranite ? "(غرانيت)" : "(رخام)"}',
                                                 ),
                                               ),
                                             )
@@ -3988,6 +3990,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                 (m) => m.id == v,
                                                 orElse: () => erp.meterTypes.first,
                                               );
+                                              meterThicknessCtrl.text = mt.thicknessCm.fmt;
                                               selectedMeterUnit = mt.category.isNotEmpty
                                                   ? mt.category
                                                   : 'متر مربع';
@@ -4109,6 +4112,17 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         ],
                                       ),
                                       const SizedBox(height: 8),
+                                      if (selectedMeterUnit != 'متر مكعب') ...[
+                                        TextField(
+                                          controller: meterThicknessCtrl,
+                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                          decoration: const InputDecoration(
+                                            labelText: 'السماكة (سم)',
+                                            helperText: 'رصيد مستقل لكل سماكة من النوع والدرجة',
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                      ],
                                       TextField(
                                         controller: meterSellingPriceCtrl,
                                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -4149,6 +4163,13 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               );
                                               return;
                                             }
+                                            final thickness = selectedMeterUnit == 'متر مكعب'
+                                                ? 0.0
+                                                : double.tryParse(meterThicknessCtrl.text.trim().replaceAll(',', '.'));
+                                            if (thickness == null || !thickness.isFinite || (selectedMeterUnit != 'متر مكعب' && thickness <= 0)) {
+                                              setSt(() => formError = 'أدخل سماكة صحيحة أكبر من صفر.');
+                                              return;
+                                            }
                                             final sellingText = meterSellingPriceCtrl.text.trim();
                                             final sellingPrice = sellingText.isEmpty ? null : double.tryParse(sellingText.replaceAll(',', '.'));
                                             if (sellingText.isNotEmpty && (sellingPrice == null || !sellingPrice.isFinite || sellingPrice < 0)) {
@@ -4165,10 +4186,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                 FactoryInvoiceItem(
                                                   itemId: mt.id,
                                                   description:
-                                                      '${mt.typeName} (${mt.grade}) ${mt.thicknessCm.fmt}سم - $selectedMeterUnit',
+                                                      '${mt.typeName} (${mt.grade})${selectedMeterUnit == "متر مكعب" ? "" : " ${thickness.fmt}سم"} - $selectedMeterUnit',
                                                   typeName: mt.typeName,
                                                   grade: mt.grade,
-                                                  thicknessCm: mt.thicknessCm,
+                                                  thicknessCm: thickness,
                                                   quantity: q,
                                                   unitPrice: p,
                                                   unitCost: p,

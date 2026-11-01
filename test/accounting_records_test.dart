@@ -417,14 +417,15 @@ void main() {
     erp.lockOpeningEntry();
 
     final meter = erp.factoryWarehouse.singleWhere(
-      (item) => item.id == 'opening-meter-test',
+      (item) => item.matchesId('opening-meter-test'),
     );
+    final meterQuantityBefore = meter.availableQty;
     final workshopQuantityBefore = erp.workshopStock.fold<double>(
       0,
       (sum, item) => sum + item.availableQty,
     );
     erp.transferFactoryToWorkshop(meter, 3);
-    expect(meter.availableQty, 5);
+    expect(meter.availableQty, meterQuantityBefore - 3);
     expect(
       erp.workshopStock.fold<double>(0, (sum, item) => sum + item.availableQty),
       closeTo(workshopQuantityBefore + 3, 0.001),
@@ -449,7 +450,7 @@ void main() {
         ],
       ),
     );
-    expect(meter.availableQty, 4);
+    expect(meter.availableQty, meterQuantityBefore - 4);
   });
 
   test('Factory cash sales are collected in full and flagged as cash', () {
