@@ -1,3 +1,4 @@
+import 'revenue_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/database/erp_provider.dart';
@@ -63,9 +64,9 @@ class _MainLayoutState extends State<MainLayout> {
                   // Screen Content
                   Expanded(
                     child: IndexedStack(
-                      // 0-13: sidebar screens, 14: cutting calculator (reached
+                      // 0-14: sidebar screens, 15: cutting calculator (reached
                       // via "Transfer to Cutting Process", not the sidebar).
-                      index: (_selectedIndex >= 0 && _selectedIndex <= 14)
+                      index: (_selectedIndex >= 0 && _selectedIndex <= 15)
                           ? _selectedIndex
                           : 0,
                       children: [
@@ -75,7 +76,7 @@ class _MainLayoutState extends State<MainLayout> {
                         FactoryWorkspaceScreen(
                           onNavigateToCutting: (idx) {
                             setState(() {
-                              _selectedIndex = 14; // Cutting Calculator Screen
+                              _selectedIndex = 15; // Cutting Calculator Screen
                             });
                           },
                         ), // 1: Factory Module
@@ -96,7 +97,8 @@ class _MainLayoutState extends State<MainLayout> {
                         const FixedAssetsManagementScreen(), // 11: Fixed assets
                         const ExpensesManagementScreen(), // 12: Expenses
                         const BalanceSheetScreen(), // 13: Balance Sheet
-                        const CuttingCalculatorScreen(), // 14: Special Cutting Calculator
+                        const RevenueScreen(), // 14: Revenue
+                        const CuttingCalculatorScreen(), // 15: Special Cutting Calculator
                       ],
                     ),
                   ),

@@ -393,8 +393,10 @@ class A4StatementData {
         currentRunning += it.remainingAmount;
       } else if (it.isReturn) {
         // Return invoice reduces debt/balance by the non-cash-refunded portion (debt settlement)
-        final debtReduction =
-            (it.totalAmount - it.paidAmount).clamp(0.0, double.infinity);
+        final debtReduction = (it.totalAmount - it.paidAmount).clamp(
+          0.0,
+          double.infinity,
+        );
         currentRunning -= debtReduction;
       } else {
         // Master invoice increases running balance by its historical unpaid remaining balance
@@ -409,12 +411,7 @@ class A4StatementData {
         runningUsd = currentRunning;
       }
 
-      result.add(
-        it.copyWith(
-          index: i + 1,
-          runningBalance: currentRunning,
-        ),
-      );
+      result.add(it.copyWith(index: i + 1, runningBalance: currentRunning));
     }
     return result;
   }
@@ -544,28 +541,32 @@ class A4StatementData {
   String get dualCurrentBalance =>
       AppCurrency.dual(currentBalanceUsd, currentBalanceSyp);
 
-  static List<A4StatementDetailLine> _adjustmentDetails(AdjustmentInvoiceModel ret) {
+  static List<A4StatementDetailLine> _adjustmentDetails(
+    AdjustmentInvoiceModel ret,
+  ) {
     if (ret.lines.isNotEmpty) {
       return ret.lines
-          .map((l) => A4StatementDetailLine(
-                description: l.description.isNotEmpty
-                    ? l.description
-                    : 'صنف مرتجع',
-                item: l.description.isNotEmpty ? l.description : 'صنف مرتجع',
-                specifications: l.isDamaged ? 'تالف / هدر غير طبيعي' : 'سليم',
-                type: l.sourceType.isNotEmpty
-                    ? l.sourceType
-                    : (l.unit.isNotEmpty ? l.unit : 'مرتجع'),
-                length: '—',
-                width: '—',
-                quantityText:
-                    '${l.quantity.fmt} ${l.unit.isNotEmpty ? l.unit : "وحدة"}',
-                unitPrice: l.unitPrice > 0
-                    ? l.unitPrice
-                    : (l.quantity > 0 ? l.amount / l.quantity : null),
-                servicesText: '—',
-                total: l.amount,
-              ))
+          .map(
+            (l) => A4StatementDetailLine(
+              description: l.description.isNotEmpty
+                  ? l.description
+                  : 'صنف مرتجع',
+              item: l.description.isNotEmpty ? l.description : 'صنف مرتجع',
+              specifications: l.isDamaged ? 'تالف / هدر غير طبيعي' : 'سليم',
+              type: l.sourceType.isNotEmpty
+                  ? l.sourceType
+                  : (l.unit.isNotEmpty ? l.unit : 'مرتجع'),
+              length: '—',
+              width: '—',
+              quantityText:
+                  '${l.quantity.fmt} ${l.unit.isNotEmpty ? l.unit : "وحدة"}',
+              unitPrice: l.unitPrice > 0
+                  ? l.unitPrice
+                  : (l.quantity > 0 ? l.amount / l.quantity : null),
+              servicesText: '—',
+              total: l.amount,
+            ),
+          )
           .toList();
     }
     return [
@@ -593,7 +594,8 @@ class A4StatementData {
     required AdjustmentInvoiceModel ret,
     required String category,
   }) {
-    final isCashRefund = ret.paymentAction.contains('نقدي') ||
+    final isCashRefund =
+        ret.paymentAction.contains('نقدي') ||
         ret.paymentAction == 'cash_refund';
     final cashPaid = ret.cashAmount > 0
         ? ret.cashAmount
@@ -601,18 +603,18 @@ class A4StatementData {
     final isAllowance = !ret.isReturn;
     final status = isCashRefund
         ? (cashPaid < ret.amount && cashPaid > 0
-            ? (isAllowance ? 'مسموح نقدي ومسوى' : 'مرتجع نقدي ومسوى')
-            : (cashPaid <= 0.001
-                ? (isAllowance ? 'مسموح مسوى' : 'مرتجع مسوى')
-                : (isAllowance ? 'مسموح نقدي' : 'مرتجع نقدي')))
+              ? (isAllowance ? 'مسموح نقدي ومسوى' : 'مرتجع نقدي ومسوى')
+              : (cashPaid <= 0.001
+                    ? (isAllowance ? 'مسموح مسوى' : 'مرتجع مسوى')
+                    : (isAllowance ? 'مسموح نقدي' : 'مرتجع نقدي')))
         : (isAllowance ? 'مسموح مسوى' : 'مرتجع مسوى');
 
     final actionPrefix = isAllowance ? 'إشعار مسموح' : 'إشعار مرتجع';
     final desc = ret.description.isNotEmpty
         ? '$actionPrefix: ${ret.description}'
         : (ret.itemDescription.isNotEmpty
-            ? '$actionPrefix: ${ret.itemDescription}'
-            : 'إشعار $category');
+              ? '$actionPrefix: ${ret.itemDescription}'
+              : 'إشعار $category');
 
     final parentNo = ret.targetInvoiceNo.isNotEmpty
         ? ret.targetInvoiceNo
@@ -646,8 +648,8 @@ class A4StatementData {
         : (isCashRefund ? ret.refundAmount : 0.0);
     final status = isCashRefund
         ? (cashPaid < ret.refundAmount && cashPaid > 0
-            ? 'مرتجع نقدي ومسوى'
-            : (cashPaid <= 0.001 ? 'مرتجع مسوى' : 'مرتجع نقدي'))
+              ? 'مرتجع نقدي ومسوى'
+              : (cashPaid <= 0.001 ? 'مرتجع مسوى' : 'مرتجع نقدي'))
         : 'مرتجع مسوى';
     return A4StatementLineItem(
       index: index,
@@ -707,7 +709,7 @@ class A4StatementData {
         .where(
           (r) =>
               r.category == 'suppliers' &&
-              r.name.trim() == supplier.name.trim(),
+              r.belongsTo(supplier.id, supplier.name),
         )
         .toList();
     double legacyUsd = 0.0;
@@ -729,8 +731,8 @@ class A4StatementData {
               : 'رصيد سابق مدور من القيد الافتتاحي',
           category: 'قيد افتتاحي',
           currency: r.currency,
-          totalAmount: r.amount,
-          paidAmount: 0.0,
+          totalAmount: r.originalAmount,
+          paidAmount: r.paidAmount,
           remainingAmount: r.amount,
           status: 'رصيد مدور',
         ),
@@ -777,10 +779,12 @@ class A4StatementData {
 
     // Check adjustment invoices (returns & allowances)
     final adjReturns = erp.adjustmentInvoices
-        .where((r) =>
-            r.isPurchase &&
-            (r.partyName.trim() == supplier.name.trim() ||
-                invs.any((i) => i.id == r.targetInvoiceId)))
+        .where(
+          (r) =>
+              r.isPurchase &&
+              (r.partyName.trim() == supplier.name.trim() ||
+                  invs.any((i) => i.id == r.targetInvoiceId)),
+        )
         .toList();
     for (final ret in adjReturns) {
       items.add(
@@ -793,21 +797,21 @@ class A4StatementData {
     }
 
     final legacyReturns = erp.returnInvoices
-        .where((r) =>
-            r.partyName.trim() == supplier.name.trim() &&
-            !adjReturns.any((a) =>
-                a.invoiceNo == r.returnNo ||
-                (a.targetInvoiceId.isNotEmpty &&
-                    a.targetInvoiceId == r.parentInvoiceId &&
-                    (a.amount - r.refundAmount).abs() < 0.01)))
+        .where(
+          (r) =>
+              r.partyName.trim() == supplier.name.trim() &&
+              !adjReturns.any(
+                (a) =>
+                    a.invoiceNo == r.returnNo ||
+                    (a.targetInvoiceId.isNotEmpty &&
+                        a.targetInvoiceId == r.parentInvoiceId &&
+                        (a.amount - r.refundAmount).abs() < 0.01),
+              ),
+        )
         .toList();
     for (final ret in legacyReturns) {
       items.add(
-        _fromLegacyReturn(
-          index: idx++,
-          ret: ret,
-          category: 'مرتجع مشتريات',
-        ),
+        _fromLegacyReturn(index: idx++, ret: ret, category: 'مرتجع مشتريات'),
       );
     }
 
@@ -839,8 +843,8 @@ class A4StatementData {
       accountPhone: supplier.phone,
       accountLocation: supplier.location,
       items: computedItems,
-      currentBalanceUsd: supplier.debtBalance,
-      currentBalanceSyp: supplier.debtBalanceSyp,
+      currentBalanceUsd: supplier.debtBalance + legacyUsd,
+      currentBalanceSyp: supplier.debtBalanceSyp + legacySyp,
       openingBalanceUsd: legacyUsd,
       openingBalanceSyp: legacySyp,
     );
@@ -868,7 +872,7 @@ class A4StatementData {
 
     final legacy = erp.openingEntry.legacyFinancials
         .where(
-          (r) => r.category == 'clients' && r.name.trim() == client.name.trim(),
+          (r) => r.category == 'clients' && r.belongsTo(client.id, client.name),
         )
         .toList();
     double legacyUsd = 0.0;
@@ -890,8 +894,8 @@ class A4StatementData {
               : 'رصيد ذمة افتتاحية سابقة',
           category: 'قيد افتتاحي',
           currency: r.currency,
-          totalAmount: r.amount,
-          paidAmount: 0.0,
+          totalAmount: r.originalAmount,
+          paidAmount: r.paidAmount,
           remainingAmount: r.amount,
           status: 'رصيد مدور',
         ),
@@ -934,10 +938,12 @@ class A4StatementData {
 
     // Check adjustment invoices (returns & allowances)
     final adjReturns = erp.adjustmentInvoices
-        .where((r) =>
-            !r.isPurchase &&
-            (r.partyName.trim() == client.name.trim() ||
-                invs.any((i) => i.id == r.targetInvoiceId)))
+        .where(
+          (r) =>
+              !r.isPurchase &&
+              (r.partyName.trim() == client.name.trim() ||
+                  invs.any((i) => i.id == r.targetInvoiceId)),
+        )
         .toList();
     for (final ret in adjReturns) {
       items.add(
@@ -950,21 +956,21 @@ class A4StatementData {
     }
 
     final legacyReturns = erp.returnInvoices
-        .where((r) =>
-            r.partyName.trim() == client.name.trim() &&
-            !adjReturns.any((a) =>
-                a.invoiceNo == r.returnNo ||
-                (a.targetInvoiceId.isNotEmpty &&
-                    a.targetInvoiceId == r.parentInvoiceId &&
-                    (a.amount - r.refundAmount).abs() < 0.01)))
+        .where(
+          (r) =>
+              r.partyName.trim() == client.name.trim() &&
+              !adjReturns.any(
+                (a) =>
+                    a.invoiceNo == r.returnNo ||
+                    (a.targetInvoiceId.isNotEmpty &&
+                        a.targetInvoiceId == r.parentInvoiceId &&
+                        (a.amount - r.refundAmount).abs() < 0.01),
+              ),
+        )
         .toList();
     for (final ret in legacyReturns) {
       items.add(
-        _fromLegacyReturn(
-          index: idx++,
-          ret: ret,
-          category: 'مرتجع مبيعات',
-        ),
+        _fromLegacyReturn(index: idx++, ret: ret, category: 'مرتجع مبيعات'),
       );
     }
 
@@ -997,8 +1003,8 @@ class A4StatementData {
       accountLocation: client.location,
       accountDescription: client.description,
       items: computedItems,
-      currentBalanceUsd: client.debtBalance,
-      currentBalanceSyp: client.debtBalanceSyp,
+      currentBalanceUsd: client.debtBalance + legacyUsd,
+      currentBalanceSyp: client.debtBalanceSyp + legacySyp,
       openingBalanceUsd: legacyUsd,
       openingBalanceSyp: legacySyp,
     );
@@ -1024,7 +1030,7 @@ class A4StatementData {
 
     final legacy = erp.openingEntry.legacyFinancials
         .where(
-          (r) => r.category == 'clients' && r.name.trim() == client.name.trim(),
+          (r) => r.category == 'clients' && r.belongsTo(client.id, client.name),
         )
         .toList();
     double legacyUsd = 0.0;
@@ -1046,8 +1052,8 @@ class A4StatementData {
               : 'رصيد ذمة زبون سابقة',
           category: 'قيد افتتاحي',
           currency: r.currency,
-          totalAmount: r.amount,
-          paidAmount: 0.0,
+          totalAmount: r.originalAmount,
+          paidAmount: r.paidAmount,
           remainingAmount: r.amount,
           status: 'رصيد مدور',
         ),
@@ -1093,10 +1099,12 @@ class A4StatementData {
 
     // Check adjustment invoices (returns & allowances)
     final adjReturns = erp.adjustmentInvoices
-        .where((r) =>
-            !r.isPurchase &&
-            (r.partyName.trim() == client.name.trim() ||
-                invs.any((i) => i.id == r.targetInvoiceId)))
+        .where(
+          (r) =>
+              !r.isPurchase &&
+              (r.partyName.trim() == client.name.trim() ||
+                  invs.any((i) => i.id == r.targetInvoiceId)),
+        )
         .toList();
     for (final ret in adjReturns) {
       items.add(
@@ -1109,13 +1117,17 @@ class A4StatementData {
     }
 
     final legacyReturns = erp.returnInvoices
-        .where((r) =>
-            r.partyName.trim() == client.name.trim() &&
-            !adjReturns.any((a) =>
-                a.invoiceNo == r.returnNo ||
-                (a.targetInvoiceId.isNotEmpty &&
-                    a.targetInvoiceId == r.parentInvoiceId &&
-                    (a.amount - r.refundAmount).abs() < 0.01)))
+        .where(
+          (r) =>
+              r.partyName.trim() == client.name.trim() &&
+              !adjReturns.any(
+                (a) =>
+                    a.invoiceNo == r.returnNo ||
+                    (a.targetInvoiceId.isNotEmpty &&
+                        a.targetInvoiceId == r.parentInvoiceId &&
+                        (a.amount - r.refundAmount).abs() < 0.01),
+              ),
+        )
         .toList();
     for (final ret in legacyReturns) {
       items.add(
@@ -1156,8 +1168,8 @@ class A4StatementData {
       accountLocation: client.location,
       accountDescription: client.description,
       items: computedItems,
-      currentBalanceUsd: client.debtBalance,
-      currentBalanceSyp: client.debtBalanceSyp,
+      currentBalanceUsd: client.debtBalance + legacyUsd,
+      currentBalanceSyp: client.debtBalanceSyp + legacySyp,
       openingBalanceUsd: legacyUsd,
       openingBalanceSyp: legacySyp,
     );
@@ -1217,9 +1229,9 @@ class A4StatementData {
 
     // Check adjustment invoices for this project
     final adjReturns = erp.adjustmentInvoices
-        .where((r) =>
-            !r.isPurchase &&
-            invs.any((i) => i.id == r.targetInvoiceId))
+        .where(
+          (r) => !r.isPurchase && invs.any((i) => i.id == r.targetInvoiceId),
+        )
         .toList();
     for (final ret in adjReturns) {
       items.add(
@@ -2045,21 +2057,25 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3.5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: data.roleAccentColor,
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  child: Text(
-                    data.roleBadgeText,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.bold,
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3.5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: data.roleAccentColor,
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    child: Text(
+                      data.roleBadgeText,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
@@ -2191,13 +2207,13 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   value: data.hasOutstandingDue
                       ? 'ذمة مستحقة'
                       : (data.isClearedViaReturns
-                          ? 'مصفى بالمرتجعات'
-                          : 'خالص ومسدد بالكامل'),
+                            ? 'مصفى بالمرتجعات'
+                            : 'خالص ومسدد بالكامل'),
                   valueColor: data.hasOutstandingDue
                       ? const Color(0xFFDC2626)
                       : (data.isClearedViaReturns
-                          ? const Color(0xFF7C3AED)
-                          : const Color(0xFF16A34A)),
+                            ? const Color(0xFF7C3AED)
+                            : const Color(0xFF16A34A)),
                   isBold: true,
                 ),
               ),
@@ -2356,7 +2372,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
             child: Row(
               children: const [
                 SizedBox(
-                  width: 26,
+                  width: 20,
                   child: Text(
                     'م',
                     style: TextStyle(
@@ -2368,7 +2384,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 68,
+                  width: 56,
                   child: Text(
                     'التاريخ',
                     style: TextStyle(
@@ -2379,7 +2395,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 76,
+                  width: 60,
                   child: Text(
                     'رقم السند/الفاتورة',
                     style: TextStyle(
@@ -2401,7 +2417,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 38,
+                  width: 32,
                   child: Text(
                     'العملة',
                     style: TextStyle(
@@ -2413,7 +2429,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 74,
+                  width: 60,
                   child: Text(
                     'القيمة الإجمالية',
                     style: TextStyle(
@@ -2425,7 +2441,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 72,
+                  width: 58,
                   child: Text(
                     'المدفوع/المسدد',
                     style: TextStyle(
@@ -2437,7 +2453,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 72,
+                  width: 58,
                   child: Text(
                     'المتبقي',
                     style: TextStyle(
@@ -2449,7 +2465,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 76,
+                  width: 60,
                   child: Text(
                     'الرصيد التراكمي',
                     style: TextStyle(
@@ -2461,7 +2477,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   ),
                 ),
                 SizedBox(
-                  width: 68,
+                  width: 56,
                   child: Text(
                     'الحالة',
                     style: TextStyle(
@@ -2470,6 +2486,18 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                       fontWeight: FontWeight.bold,
                     ),
                     textAlign: TextAlign.center,
+                  ),
+                ),
+                SizedBox(
+                  width: 64,
+                  child: Text(
+                    'ذمم قديمة',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
@@ -2485,13 +2513,17 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
             final statusBg = it.isReturn
                 ? const Color(0xFFF3E8FF)
                 : (isClearedReturn
-                    ? const Color(0xFFF3E8FF)
-                    : (isDue ? const Color(0xFFFEE2E2) : const Color(0xFFDCFCE7)));
+                      ? const Color(0xFFF3E8FF)
+                      : (isDue
+                            ? const Color(0xFFFEE2E2)
+                            : const Color(0xFFDCFCE7)));
             final statusTextColor = it.isReturn
                 ? const Color(0xFF6B21A8)
                 : (isClearedReturn
-                    ? const Color(0xFF6B21A8)
-                    : (isDue ? const Color(0xFF991B1B) : const Color(0xFF166534)));
+                      ? const Color(0xFF6B21A8)
+                      : (isDue
+                            ? const Color(0xFF991B1B)
+                            : const Color(0xFF166534)));
 
             final rowWidget = Container(
               color: it.isReturn
@@ -2501,7 +2533,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
               child: Row(
                 children: [
                   SizedBox(
-                    width: 26,
+                    width: 20,
                     child: Text(
                       '${it.index}',
                       style: const TextStyle(
@@ -2513,7 +2545,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 68,
+                    width: 56,
                     child: Text(
                       intl.DateFormat('yyyy-MM-dd').format(it.date),
                       style: const TextStyle(
@@ -2523,7 +2555,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 76,
+                    width: 60,
                     child: Text(
                       it.documentNo,
                       style: TextStyle(
@@ -2549,7 +2581,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 38,
+                    width: 32,
                     child: Center(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -2576,7 +2608,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 74,
+                    width: 60,
                     child: Text(
                       it.isReturn
                           ? '-${it.totalAmount.fmt} ${it.currencySymbol}'
@@ -2592,7 +2624,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 72,
+                    width: 58,
                     child: Text(
                       '${it.paidAmount.fmt} ${it.currencySymbol}',
                       style: const TextStyle(
@@ -2604,7 +2636,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 72,
+                    width: 58,
                     child: Text(
                       '${it.remainingAmount.fmt} ${it.currencySymbol}',
                       style: TextStyle(
@@ -2618,7 +2650,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 76,
+                    width: 60,
                     child: Text(
                       '${it.runningBalance.fmt} ${it.currencySymbol}',
                       style: TextStyle(
@@ -2632,7 +2664,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 68,
+                    width: 56,
                     child: Center(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -2654,6 +2686,19 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 64,
+                    child: Text(
+                      it.category == 'قيد افتتاحي'
+                          ? '${it.remainingAmount.fmt} ${it.currencySymbol}'
+                          : '—',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
@@ -2770,12 +2815,14 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                               color: Color(0xFFD97706),
                             ),
                             SizedBox(width: 4),
-                            Text(
-                              'حركات الليرة السورية (ل.س SYP)',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFFD97706),
+                            Expanded(
+                              child: Text(
+                                'حركات الليرة السورية (ل.س SYP)',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFFD97706),
+                                ),
                               ),
                             ),
                           ],

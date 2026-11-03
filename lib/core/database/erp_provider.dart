@@ -210,6 +210,7 @@ class ERPProvider extends ChangeNotifier {
   List<ReturnInvoiceModel> returnInvoices = [];
   List<ExpenseTypeModel> expenseTypes = [];
   List<ExpenseRecordModel> expenseRecords = [];
+  List<RevenueRecordModel> revenueRecords = [];
   List<AssetSaleRecordModel> assetSaleRecords = [];
   List<CapitalInjectionRecordModel> capitalInjections = [];
   List<AdjustmentInvoiceModel> adjustmentInvoices = [];
@@ -2149,10 +2150,28 @@ class ERPProvider extends ChangeNotifier {
     }
   }
 
+  void _validateOpeningParty(LegacyFinancialRecordModel record) {
+    if (record.category != 'clients' && record.category != 'suppliers') return;
+    final registered = record.category == 'suppliers'
+        ? suppliers.any((p) => p.id == record.partyId)
+        : clients.any(
+            (p) => p.id == record.partyId && p.clientType == 'معتمد مصنع',
+          );
+    if (!registered) {
+      throw ArgumentError(
+        'يجب اختيار مورد أو معتمد مسجل أولاً في شاشة أشخاص المصنع.',
+      );
+    }
+    if (!record.amount.isFinite || record.amount <= 0) {
+      throw ArgumentError('أدخل مبلغاً أكبر من الصفر.');
+    }
+  }
+
   void addOpeningFinancialRecord(LegacyFinancialRecordModel record) {
     if (openingEntry.isLocked) {
       throw StateError('The opening entry is locked.');
     }
+    _validateOpeningParty(record);
     openingEntry.legacyFinancials.add(record);
     _syncOpeningFinancialTotals();
     refresh();
@@ -2166,6 +2185,7 @@ class ERPProvider extends ChangeNotifier {
       (existing) => existing.id == record.id,
     );
     if (index < 0) throw StateError('Opening financial record was not found.');
+    _validateOpeningParty(record);
     openingEntry.legacyFinancials[index] = record;
     _syncOpeningFinancialTotals();
     refresh();
@@ -2742,6 +2762,23 @@ class ERPProvider extends ChangeNotifier {
       );
     }
   }
+
+  void addRevenueRecord(RevenueRecordModel record) {
+    if (record.id.trim().isEmpty ||
+        record.description.trim().isEmpty ||
+        !record.amount.isFinite ||
+        record.amount <= 0 ||
+        revenueRecords.any((r) => r.id == record.id)) {
+      throw ArgumentError('Invalid or duplicated revenue entry.');
+    }
+    revenueRecords.add(record);
+    addCash('main', record.currency, record.amount);
+    refresh();
+  }
+
+  double revenuePageEarningsOf(String? currency) => revenueRecords
+      .where((r) => r.currency == AppCurrency.normalize(currency))
+      .fold<double>(0, (sum, r) => sum + r.amount);
 
   void addExpenseRecord(ExpenseRecordModel expense, {String? box}) {
     if (!expense.amount.isFinite ||
@@ -4186,7 +4223,7 @@ class ERPProvider extends ChangeNotifier {
         .where(
           (item) =>
               item.category == category &&
-              item.name == partyName &&
+              item.belongsTo(partyId, partyName) &&
               item.currency == AppCurrency.normalize(currency),
         )
         .fold<double>(0, (sum, item) => sum + item.amount);
@@ -4223,7 +4260,7 @@ class ERPProvider extends ChangeNotifier {
           .where(
             (item) =>
                 item.category == category &&
-                item.name == partyName &&
+                item.belongsTo(partyId, partyName) &&
                 item.currency == AppCurrency.normalize(currency),
           )
           .toList();
@@ -4260,7 +4297,7 @@ class ERPProvider extends ChangeNotifier {
           .where(
             (item) =>
                 item.category == category &&
-                item.name == partyName &&
+                item.belongsTo(partyId, partyName) &&
                 item.currency == AppCurrency.normalize(currency),
           )
           .toList();
@@ -4952,7 +4989,8 @@ class ERPProvider extends ChangeNotifier {
       totalScrapRevenueOf(currency) +
       totalKeptDepositsRevenueOf(currency) +
       salesDiscountsOf(currency) +
-      assetSaleRevenueOf(currency);
+      assetSaleRevenueOf(currency) +
+      revenuePageEarningsOf(currency);
   double get totalRevenues => totalRevenuesOf(AppCurrency.usd);
   double get totalRevenuesSyp => totalRevenuesOf(AppCurrency.syp);
 
@@ -9108,6 +9146,7 @@ class ERPProvider extends ChangeNotifier {
     returnInvoices.clear();
     expenseTypes.clear();
     expenseRecords.clear();
+    revenueRecords.clear();
     adjustmentInvoices.clear();
     dailyReports.clear();
     advanceRepayments.clear();
@@ -9323,6 +9362,10 @@ class ERPProvider extends ChangeNotifier {
       await prefs.setString(
         'expenseTypes',
         jsonEncode(expenseTypes.map((e) => e.toJson()).toList()),
+      );
+      await prefs.setString(
+        'revenueRecords',
+        jsonEncode(revenueRecords.map((r) => r.toJson()).toList()),
       );
       await prefs.setString(
         'expenseRecords',
@@ -9559,6 +9602,16 @@ class ERPProvider extends ChangeNotifier {
             .map((item) => ExpenseTypeModel.fromJson(item))
             .toList();
       }
+      final revenueRecordsJson = prefs.getString('revenueRecords');
+      revenueRecords = revenueRecordsJson == null
+          ? []
+          : (jsonDecode(revenueRecordsJson) as List)
+                .map(
+                  (item) => RevenueRecordModel.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ),
+                )
+                .toList();
       final expenseRecordsJson = prefs.getString('expenseRecords');
       if (expenseRecordsJson != null) {
         expenseRecords = (jsonDecode(expenseRecordsJson) as List)
@@ -9809,6 +9862,7 @@ class ERPProvider extends ChangeNotifier {
       'operations': {
         'returnInvoices': returnInvoices.map((r) => r.toJson()).toList(),
         'expenseTypes': expenseTypes.map((e) => e.toJson()).toList(),
+        'revenueRecords': revenueRecords.map((r) => r.toJson()).toList(),
         'expenseRecords': expenseRecords.map((e) => e.toJson()).toList(),
         'advanceRepayments': advanceRepayments.map((a) => a.toJson()).toList(),
         'adjustmentInvoices': adjustmentInvoices
@@ -10252,6 +10306,12 @@ class ERPProvider extends ChangeNotifier {
           )
           .toList();
     }
+    revenueRecords = (ops['revenueRecords'] as List? ?? [])
+        .map(
+          (item) =>
+              RevenueRecordModel.fromJson(Map<String, dynamic>.from(item)),
+        )
+        .toList();
     if (ops['expenseRecords'] is List) {
       expenseRecords = (ops['expenseRecords'] as List)
           .map(

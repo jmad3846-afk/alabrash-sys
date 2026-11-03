@@ -3828,6 +3828,11 @@ class _FinancialsScreenState extends State<FinancialsScreen>
 
                   const Divider(height: 16),
                   _buildPlLine(
+                    'أرباح صفحة الإيرادات (Revenue Page Earnings):',
+                    erp.revenuePageEarningsOf(AppCurrency.usd),
+                    syp: erp.revenuePageEarningsOf(AppCurrency.syp),
+                  ),
+                  _buildPlLine(
                     'مجموع الإيرادات الكلية:',
                     erp.totalRevenues,
                     syp: erp.totalRevenuesSyp,

@@ -257,15 +257,16 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
     String category, {
     FixedAssetModel? existing,
   }) async {
-    final value = await _showEntryDialog('إضافة أصل ثابت • $category', const [
-      'اسم الأصل',
-      'المبلغ',
-      'الوصف',
-    ], initialValues: {
-      'اسم الأصل': existing?.name ?? '',
-      'المبلغ': existing?.amount.fmt ?? '',
-      'الوصف': existing?.description ?? '',
-    }, initialCurrency: existing?.currency ?? AppCurrency.usd);
+    final value = await _showEntryDialog(
+      'إضافة أصل ثابت • $category',
+      const ['اسم الأصل', 'المبلغ', 'الوصف'],
+      initialValues: {
+        'اسم الأصل': existing?.name ?? '',
+        'المبلغ': existing?.amount.fmt ?? '',
+        'الوصف': existing?.description ?? '',
+      },
+      initialCurrency: existing?.currency ?? AppCurrency.usd,
+    );
     if (value == null ||
         value['اسم الأصل']!.isEmpty ||
         value['الوصف']!.isEmpty) {
@@ -278,14 +279,15 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
       return;
     }
     final asset = FixedAssetModel(
-        id: existing?.id ??
-            'opening_asset_${DateTime.now().microsecondsSinceEpoch}',
-        category: category,
-        name: value['اسم الأصل']!,
-        amount: amount,
-        description: value['الوصف'] ?? '',
-        currency: value['currency']!,
-      );
+      id:
+          existing?.id ??
+          'opening_asset_${DateTime.now().microsecondsSinceEpoch}',
+      category: category,
+      name: value['اسم الأصل']!,
+      amount: amount,
+      description: value['الوصف'] ?? '',
+      currency: value['currency']!,
+    );
     if (existing == null) {
       erp.addOpeningFixedAsset(asset);
     } else {
@@ -332,20 +334,21 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
           )?.id
         : isMeter
         ? (_firstOrNull(
-            erp.blockTypes.where(
-              (type) =>
-                  type.id == existing.typeId ||
-                  (type.typeName == existing.typeName &&
-                      (existing.grade.isEmpty || type.grade == existing.grade)),
-            ),
-          )?.id ??
-          _firstOrNull(
-            erp.meterTypes.where(
-              (type) =>
-                  type.id == existing.typeId ||
-                  type.typeName == existing.typeName,
-            ),
-          )?.id)
+                erp.blockTypes.where(
+                  (type) =>
+                      type.id == existing.typeId ||
+                      (type.typeName == existing.typeName &&
+                          (existing.grade.isEmpty ||
+                              type.grade == existing.grade)),
+                ),
+              )?.id ??
+              _firstOrNull(
+                erp.meterTypes.where(
+                  (type) =>
+                      type.id == existing.typeId ||
+                      type.typeName == existing.typeName,
+                ),
+              )?.id)
         : isSimple || isComplex
         ? _firstOrNull(
             (isSimple ? erp.simpleTailorings : erp.complexTailorings).where(
@@ -368,15 +371,15 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
       final meterSourceTypes = erp.blockTypes.isNotEmpty
           ? erp.blockTypes
           : erp.meterTypes
-              .map(
-                (m) => BlockTypeModel(
-                  id: m.id,
-                  typeName: m.typeName,
-                  grade: m.grade,
-                  isGranite: m.isGranite,
-                ),
-              )
-              .toList();
+                .map(
+                  (m) => BlockTypeModel(
+                    id: m.id,
+                    typeName: m.typeName,
+                    grade: m.grade,
+                    isGranite: m.isGranite,
+                  ),
+                )
+                .toList();
       options.addAll(
         meterSourceTypes.map(
           (type) => DropdownMenuItem(
@@ -386,9 +389,7 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         ),
       );
     } else if (isSimple || isComplex) {
-      final products = isSimple
-          ? erp.simpleTailorings
-          : erp.complexTailorings;
+      final products = isSimple ? erp.simpleTailorings : erp.complexTailorings;
       options.addAll(
         products.map(
           (product) => DropdownMenuItem(
@@ -415,32 +416,38 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         ? 'سعر بيع المتر (Selling Price per Meter)'
         : 'سعر البيع (Selling Price)';
 
-    final value = await _showEntryDialog('إضافة مخزون • $category', [
-      typeField ? 'النوع' : 'اسم الصنف / النوع',
-      if (isMeter) thicknessLabel,
-      qtyLabel,
-      costPriceLabel,
-      if (!isBlock) sellingPriceLabel,
-      if (isBlock) 'اسم المورد',
-      'الوصف',
-    ], initialValues: {
-      if (existing != null)
-        'النوع': existingTypeId ?? '',
-      if (existing != null && !typeField) 'اسم الصنف / النوع': existing.typeName,
-      if (existing != null && isMeter)
-        thicknessLabel: existing.thicknessCm > 0 ? existing.thicknessCm.fmt : '2',
-      if (existing == null && isMeter)
-        thicknessLabel: '2',
-      if (existing != null) qtyLabel: existing.quantity.fmt,
-      if (existing != null) costPriceLabel: existing.unitPrice.fmt,
-      if (existing != null && !isBlock)
-        sellingPriceLabel: existing.sellingPrice > 0 ? existing.sellingPrice.fmt : '',
-      if (existing != null) 'اسم المورد': existing.supplierName,
-      if (existing != null) 'الوصف': existing.description,
-    },
-    showCurrency: false,
-    fieldOptions: typeField ? {'النوع': options} : const {},
-    initialCurrency: AppCurrency.usd,
+    final value = await _showEntryDialog(
+      'إضافة مخزون • $category',
+      [
+        typeField ? 'النوع' : 'اسم الصنف / النوع',
+        if (isMeter) thicknessLabel,
+        qtyLabel,
+        costPriceLabel,
+        if (!isBlock) sellingPriceLabel,
+        if (isBlock) 'اسم المورد',
+        'الوصف',
+      ],
+      initialValues: {
+        if (existing != null) 'النوع': existingTypeId ?? '',
+        if (existing != null && !typeField)
+          'اسم الصنف / النوع': existing.typeName,
+        if (existing != null && isMeter)
+          thicknessLabel: existing.thicknessCm > 0
+              ? existing.thicknessCm.fmt
+              : '2',
+        if (existing == null && isMeter) thicknessLabel: '2',
+        if (existing != null) qtyLabel: existing.quantity.fmt,
+        if (existing != null) costPriceLabel: existing.unitPrice.fmt,
+        if (existing != null && !isBlock)
+          sellingPriceLabel: existing.sellingPrice > 0
+              ? existing.sellingPrice.fmt
+              : '',
+        if (existing != null) 'اسم المورد': existing.supplierName,
+        if (existing != null) 'الوصف': existing.description,
+      },
+      showCurrency: false,
+      fieldOptions: typeField ? {'النوع': options} : const {},
+      initialCurrency: AppCurrency.usd,
     );
     if (value == null ||
         value[typeField ? 'النوع' : 'اسم الصنف / النوع']!.isEmpty) {
@@ -474,34 +481,37 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
         unitPrice < 0 ||
         sellingPrice < 0 ||
         (isMeter && thickness <= 0) ||
-        (isBlock &&
-            (unitPrice <= 0 || (value['اسم المورد'] ?? '').isEmpty))) {
-      _showMessage(isBlock
-          ? 'تحقق من كمية الطن وسعر التكلفة واسم المورد.'
-          : (isMeter && thickness <= 0)
-              ? 'يرجى إدخال سماكة صحيحة للأمتار بالسنتيمتر (سم).'
-              : 'تحقق من الكمية وسعر التكلفة وسعر البيع.');
+        (isBlock && (unitPrice <= 0 || (value['اسم المورد'] ?? '').isEmpty))) {
+      _showMessage(
+        isBlock
+            ? 'تحقق من كمية الطن وسعر التكلفة واسم المورد.'
+            : (isMeter && thickness <= 0)
+            ? 'يرجى إدخال سماكة صحيحة للأمتار بالسنتيمتر (سم).'
+            : 'تحقق من الكمية وسعر التكلفة وسعر البيع.',
+      );
       return;
     }
     final item = OpeningStockItemModel(
-        id: existing?.id ??
-            'opening_stock_${DateTime.now().microsecondsSinceEpoch}',
-        category: category,
-        typeName: blockType?.typeName ??
-            meterType?.typeName ??
-            tailoredItem?.name ??
-            value['اسم الصنف / النوع']!,
-        typeId: blockType?.id ?? meterType?.id ?? tailoredItem?.id ?? '',
-        grade: blockType?.grade ?? meterType?.grade ?? '',
-        isGranite: blockType?.isGranite ?? meterType?.isGranite ?? false,
-        thicknessCm: isMeter ? thickness : (meterType?.thicknessCm ?? 0),
-        supplierName: value['اسم المورد'] ?? '',
-        quantity: quantity,
-        unitPrice: unitPrice,
-        sellingPrice: isBlock ? 0.0 : sellingPrice,
-        description: value['الوصف'] ?? '',
-        currency: AppCurrency.usd,
-      );
+      id:
+          existing?.id ??
+          'opening_stock_${DateTime.now().microsecondsSinceEpoch}',
+      category: category,
+      typeName:
+          blockType?.typeName ??
+          meterType?.typeName ??
+          tailoredItem?.name ??
+          value['اسم الصنف / النوع']!,
+      typeId: blockType?.id ?? meterType?.id ?? tailoredItem?.id ?? '',
+      grade: blockType?.grade ?? meterType?.grade ?? '',
+      isGranite: blockType?.isGranite ?? meterType?.isGranite ?? false,
+      thicknessCm: isMeter ? thickness : (meterType?.thicknessCm ?? 0),
+      supplierName: value['اسم المورد'] ?? '',
+      quantity: quantity,
+      unitPrice: unitPrice,
+      sellingPrice: isBlock ? 0.0 : sellingPrice,
+      description: value['الوصف'] ?? '',
+      currency: AppCurrency.usd,
+    );
     if (existing == null) {
       erp.addOpeningStockItem(item);
     } else {
@@ -536,32 +546,75 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
       'suppliers': 'ذمة مورد قديمة',
       'employees': 'مستحقات موظف قديمة',
     };
-    final value = await _showEntryDialog(titles[category]!, const [
-      'الاسم',
-      'رقم الهاتف',
-      'المبلغ',
-      'الوصف',
-    ], initialValues: {
-      'الاسم': existing?.name ?? '',
-      'رقم الهاتف': existing?.phone ?? '',
-      'المبلغ': existing?.amount.fmt ?? '',
-      'الوصف': existing?.description ?? '',
-    }, initialCurrency: existing?.currency ?? AppCurrency.usd);
-    if (value == null || value['الاسم']!.isEmpty) return;
+    final isPerson = category == 'clients' || category == 'suppliers';
+    final people = <String, ({String name, String phone})>{
+      if (category == 'suppliers')
+        for (final p in erp.suppliers) p.id: (name: p.name, phone: p.phone),
+      if (category == 'clients')
+        for (final p in erp.clients.where((p) => p.clientType == 'معتمد مصنع'))
+          p.id: (name: p.name, phone: p.phone),
+    };
+    if (isPerson && people.isEmpty) {
+      _showMessage('أضف المورد أو المعتمد أولاً في المصنع ← الأشخاص.');
+      return;
+    }
+    String selectedId = existing?.partyId ?? '';
+    if (isPerson && !people.containsKey(selectedId)) {
+      final matches = people.entries
+          .where((p) => p.value.name.trim() == existing?.name.trim())
+          .toList();
+      selectedId = matches.length == 1 ? matches.single.key : '';
+    }
+    const personField = 'المورد أو المعتمد المسجل';
+    final value = await _showEntryDialog(
+      titles[category]!,
+      [
+        if (isPerson) personField else 'الاسم',
+        if (!isPerson) 'رقم الهاتف',
+        'المبلغ',
+        'الوصف',
+      ],
+      initialValues: {
+        personField: selectedId,
+        'الاسم': existing?.name ?? '',
+        'رقم الهاتف': existing?.phone ?? '',
+        'المبلغ': existing?.amount.fmt ?? '',
+        'الوصف': existing?.description ?? '',
+      },
+      fieldOptions: {
+        if (isPerson)
+          personField: [
+            for (final p in people.entries)
+              DropdownMenuItem(value: p.key, child: Text(p.value.name)),
+          ],
+      },
+      initialCurrency: existing?.currency ?? AppCurrency.usd,
+    );
+    if (value == null) return;
+    final person = people[value[personField]];
+    if (isPerson && person == null) {
+      _showMessage('اختر المورد أو المعتمد المسجل في شاشة الأشخاص.');
+      return;
+    }
+    if (!isPerson && (value['الاسم'] ?? '').isEmpty) return;
     final amount = double.tryParse(value['المبلغ']!) ?? 0;
-    if (amount <= 0) {
+    if (!amount.isFinite || amount <= 0) {
       _showMessage('أدخل مبلغاً أكبر من الصفر.');
       return;
     }
     final record = LegacyFinancialRecordModel(
-        id: existing?.id ?? 'legacy_${DateTime.now().microsecondsSinceEpoch}',
-        category: category,
-        name: value['الاسم']!,
-        phone: value['رقم الهاتف'] ?? '',
-        currency: value['currency']!,
-        amount: amount,
-        description: value['الوصف'] ?? '',
-      );
+      id: existing?.id ?? 'legacy_${DateTime.now().microsecondsSinceEpoch}',
+      category: category,
+      partyId: isPerson ? value[personField]! : '',
+      name: person?.name ?? value['الاسم']!,
+      phone: person?.phone ?? value['رقم الهاتف'] ?? '',
+      currency: value['currency']!,
+      amount: amount,
+      originalAmount: existing == null
+          ? amount
+          : existing.originalAmount + amount - existing.amount,
+      description: value['الوصف'] ?? '',
+    );
     if (existing == null) {
       erp.addOpeningFinancialRecord(record);
     } else {
@@ -680,7 +733,9 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                             ? AppColors.successGreen
                             : AppColors.accentPrimary,
                       ),
-                      label: Text(entry.isLocked ? 'معتمد ومغلق' : 'قيد الإعداد'),
+                      label: Text(
+                        entry.isLocked ? 'معتمد ومغلق' : 'قيد الإعداد',
+                      ),
                     ),
                   ],
                 ),
@@ -817,7 +872,9 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                       (item) => ListTile(
                         dense: true,
                         leading: const Icon(Icons.inventory_2_outlined),
-                        title: Text('${item.typeName} • ${item.category}${item.thicknessCm > 0 ? " (${item.thicknessCm.fmt} سم)" : ""}'),
+                        title: Text(
+                          '${item.typeName} • ${item.category}${item.thicknessCm > 0 ? " (${item.thicknessCm.fmt} سم)" : ""}',
+                        ),
                         subtitle: Text(
                           'الكمية: ${item.quantity.fmt} ${_openingStockUnit(erp, item)}${item.thicknessCm > 0 ? " • سماكة: ${item.thicknessCm.fmt} سم" : ""} • سعر التكلفة: ${item.unitPrice.fmt} ${AppCurrency.symbol(item.currency)}${item.sellingPrice > 0 ? ' • سعر البيع: ${item.sellingPrice.fmt} ${AppCurrency.symbol(item.currency)}' : ''}${item.supplierName.isEmpty ? '' : ' • المورد: ${item.supplierName}'} • ${item.description}',
                         ),

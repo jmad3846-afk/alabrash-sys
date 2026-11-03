@@ -483,29 +483,41 @@ class OpeningStockItemModel {
 class LegacyFinancialRecordModel {
   final String id;
   final String category;
+  final String partyId;
   final String name;
   final String phone;
   final String currency;
   double amount;
+  final double originalAmount;
+
+  double get paidAmount =>
+      (originalAmount - amount).clamp(0.0, double.infinity);
   final String description;
 
   LegacyFinancialRecordModel({
     required this.id,
     required this.category,
+    this.partyId = '',
     required this.name,
     this.phone = '',
     required this.currency,
     required this.amount,
+    double? originalAmount,
     this.description = '',
-  });
+  }) : originalAmount = originalAmount ?? amount;
+
+  bool belongsTo(String id, String partyName) =>
+      partyId.isNotEmpty ? partyId == id : name.trim() == partyName.trim();
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'category': category,
+    'partyId': partyId,
     'name': name,
     'phone': phone,
     'currency': currency,
     'amount': amount,
+    'originalAmount': originalAmount,
     'description': description,
   };
 
@@ -513,10 +525,12 @@ class LegacyFinancialRecordModel {
       LegacyFinancialRecordModel(
         id: json['id'],
         category: json['category'],
+        partyId: json['partyId'] ?? '',
         name: json['name'],
         phone: json['phone'] ?? '',
         currency: AppCurrency.normalize(json['currency']),
         amount: (json['amount'] as num).toDouble(),
+        originalAmount: (json['originalAmount'] as num?)?.toDouble(),
         description: json['description'] ?? '',
       );
 }
@@ -4025,4 +4039,34 @@ class DailyReportModel {
     cuttingOperationsCount: json['cuttingOperationsCount'] ?? 0,
     attendanceCount: json['attendanceCount'] ?? 0,
   );
+}
+
+class RevenueRecordModel {
+  final String id;
+  final String description;
+  final double amount;
+  final String currency;
+  final DateTime date;
+  RevenueRecordModel({
+    required this.id,
+    required this.description,
+    required this.amount,
+    required String currency,
+    required this.date,
+  }) : currency = AppCurrency.normalize(currency);
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'description': description,
+    'amount': amount,
+    'currency': currency,
+    'date': date.toIso8601String(),
+  };
+  factory RevenueRecordModel.fromJson(Map<String, dynamic> json) =>
+      RevenueRecordModel(
+        id: json['id'] as String,
+        description: json['description'] as String,
+        amount: (json['amount'] as num).toDouble(),
+        currency: json['currency'] as String,
+        date: DateTime.parse(json['date'] as String),
+      );
 }
