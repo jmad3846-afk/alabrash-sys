@@ -1207,12 +1207,25 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                 subtitle: Text(
                                   'الهاتف: ${s.phone} • الموقع: ${s.location}',
                                 ),
-                                trailing: Text(
-                                  'الذمة المستحقة: ${s.dualDebt}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.dangerWaste,
-                                  ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'الذمة المستحقة: ${s.dualDebt}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.dangerWaste,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'تعديل المورد',
+                                      icon: const Icon(Icons.edit_outlined),
+                                      onPressed: () => _showAddSupplierDialog(
+                                        erp,
+                                        existing: s,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               );
                             },
@@ -1263,12 +1276,25 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                 subtitle: Text(
                                   'النوع: ${c.clientType} • الهاتف: ${c.phone} • الموقع: ${c.location}',
                                 ),
-                                trailing: Text(
-                                  'الديون المستحقة: ${c.dualDebt}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.accentPrimary,
-                                  ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'الديون المستحقة: ${c.dualDebt}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.accentPrimary,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'تعديل المعتمد/الزبون',
+                                      icon: const Icon(Icons.edit_outlined),
+                                      onPressed: () => _showAddClientDialog(
+                                        erp,
+                                        existing: c,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               );
                             },
@@ -3003,17 +3029,20 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   }
 
   // DIALOGS & POPUPS HELPERS
-  Future<void> _showAddSupplierDialog(ERPProvider erp) async {
-    final nameCtrl = TextEditingController();
-    final phoneCtrl = TextEditingController();
-    final locCtrl = TextEditingController();
+  Future<void> _showAddSupplierDialog(
+    ERPProvider erp, {
+    SupplierModel? existing,
+  }) async {
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final phoneCtrl = TextEditingController(text: existing?.phone ?? '');
+    final locCtrl = TextEditingController(text: existing?.location ?? '');
     String? errorMsg;
 
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => AlertDialog(
-          title: const Text('إضافة مورد جديد'),
+          title: Text(existing == null ? 'إضافة مورد جديد' : 'تعديل المورد'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -3035,7 +3064,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               const SizedBox(height: 8),
               TextField(
                 controller: locCtrl,
-                decoration: const InputDecoration(labelText: 'الموقع / المدينة'),
+                decoration: const InputDecoration(
+                  labelText: 'الموقع / المدينة',
+                ),
               ),
             ],
           ),
@@ -3051,27 +3082,50 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   setSt(() => errorMsg = 'يرجى إدخال اسم المورد');
                   return;
                 }
-                if (erp.suppliers.any((s) => s.name.trim().toLowerCase() == name.toLowerCase())) {
-                  setSt(() => errorMsg = 'اسم المورد مسجل مسبقاً! يرجى إدخال اسم مميز.');
+                if (erp.suppliers.any(
+                  (s) =>
+                      s.id != existing?.id &&
+                      s.name.trim().toLowerCase() == name.toLowerCase(),
+                )) {
+                  setSt(
+                    () => errorMsg =
+                        'اسم المورد مسجل مسبقاً! يرجى إدخال اسم مميز.',
+                  );
                   return;
                 }
-                if (erp.clients.any((c) => c.name.trim().toLowerCase() == name.toLowerCase())) {
-                  setSt(() => errorMsg = 'هذا الاسم مسجل مسبقاً كمعتمد/عميل في قسم الأشخاص!');
+                if (erp.clients.any(
+                  (c) => c.name.trim().toLowerCase() == name.toLowerCase(),
+                )) {
+                  setSt(
+                    () => errorMsg =
+                        'هذا الاسم مسجل مسبقاً كمعتمد/عميل في قسم الأشخاص!',
+                  );
                   return;
                 }
-                final ok = erp.addSupplier(
-                  SupplierModel(
-                    id: 'sup_${DateTime.now().millisecondsSinceEpoch}',
-                    name: name,
-                    phone: phoneCtrl.text.trim(),
-                    location: locCtrl.text.trim(),
-                  ),
-                );
+                final ok = existing == null
+                    ? erp.addSupplier(
+                        SupplierModel(
+                          id: 'sup_${DateTime.now().millisecondsSinceEpoch}',
+                          name: name,
+                          phone: phoneCtrl.text.trim(),
+                          location: locCtrl.text.trim(),
+                        ),
+                      )
+                    : erp.updateSupplier(
+                        id: existing.id,
+                        name: name,
+                        phone: phoneCtrl.text.trim(),
+                        location: locCtrl.text.trim(),
+                      );
                 if (ok) {
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('تمت إضافة المورد "$name" بنجاح'),
+                      content: Text(
+                        existing == null
+                            ? 'تمت إضافة "$name" بنجاح'
+                            : 'تم حفظ تعديلات "$name" بنجاح',
+                      ),
                       backgroundColor: AppColors.successGreen,
                     ),
                   );
@@ -3085,18 +3139,23 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     );
   }
 
-  Future<void> _showAddClientDialog(ERPProvider erp) async {
-    final nameCtrl = TextEditingController();
-    final phoneCtrl = TextEditingController();
-    final locCtrl = TextEditingController();
-    String type = 'معتمد مصنع';
+  Future<void> _showAddClientDialog(
+    ERPProvider erp, {
+    ClientModel? existing,
+  }) async {
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final phoneCtrl = TextEditingController(text: existing?.phone ?? '');
+    final locCtrl = TextEditingController(text: existing?.location ?? '');
+    String type = existing?.clientType ?? 'معتمد مصنع';
     String? errorMsg;
 
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => AlertDialog(
-          title: const Text('إضافة معتمد/زبون جديد'),
+          title: Text(
+            existing == null ? 'إضافة معتمد/زبون جديد' : 'تعديل المعتمد/الزبون',
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -3118,7 +3177,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     value: 'معتمد مصنع',
                     child: Text('معتمد مصنع'),
                   ),
-                  DropdownMenuItem(value: 'زبون معمل', child: Text('زبون معمل')),
+                  DropdownMenuItem(
+                    value: 'زبون معمل',
+                    child: Text('زبون معمل'),
+                  ),
                   DropdownMenuItem(
                     value: 'مشروع معمل',
                     child: Text('مشروع معمل'),
@@ -3151,28 +3213,52 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   setSt(() => errorMsg = 'يرجى إدخال اسم المعتمد/الزبون');
                   return;
                 }
-                if (erp.clients.any((c) => c.name.trim().toLowerCase() == name.toLowerCase())) {
-                  setSt(() => errorMsg = 'اسم المعتمد/الزبون مسجل مسبقاً! يرجى إدخال اسم مميز.');
+                if (erp.clients.any(
+                  (c) =>
+                      c.id != existing?.id &&
+                      c.name.trim().toLowerCase() == name.toLowerCase(),
+                )) {
+                  setSt(
+                    () => errorMsg =
+                        'اسم المعتمد/الزبون مسجل مسبقاً! يرجى إدخال اسم مميز.',
+                  );
                   return;
                 }
-                if (erp.suppliers.any((s) => s.name.trim().toLowerCase() == name.toLowerCase())) {
-                  setSt(() => errorMsg = 'هذا الاسم مسجل مسبقاً كمورد في قسم الأشخاص!');
+                if (erp.suppliers.any(
+                  (s) => s.name.trim().toLowerCase() == name.toLowerCase(),
+                )) {
+                  setSt(
+                    () => errorMsg =
+                        'هذا الاسم مسجل مسبقاً كمورد في قسم الأشخاص!',
+                  );
                   return;
                 }
-                final ok = erp.addClient(
-                  ClientModel(
-                    id: 'cli_${DateTime.now().millisecondsSinceEpoch}',
-                    name: name,
-                    phone: phoneCtrl.text.trim(),
-                    location: locCtrl.text.trim(),
-                    clientType: type,
-                  ),
-                );
+                final ok = existing == null
+                    ? erp.addClient(
+                        ClientModel(
+                          id: 'cli_${DateTime.now().millisecondsSinceEpoch}',
+                          name: name,
+                          phone: phoneCtrl.text.trim(),
+                          location: locCtrl.text.trim(),
+                          clientType: type,
+                        ),
+                      )
+                    : erp.updateClient(
+                        id: existing.id,
+                        name: name,
+                        phone: phoneCtrl.text.trim(),
+                        location: locCtrl.text.trim(),
+                        clientType: type,
+                      );
                 if (ok) {
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('تمت إضافة "$name" بنجاح'),
+                      content: Text(
+                        existing == null
+                            ? 'تمت إضافة "$name" بنجاح'
+                            : 'تم حفظ تعديلات "$name" بنجاح',
+                      ),
                       backgroundColor: AppColors.successGreen,
                     ),
                   );

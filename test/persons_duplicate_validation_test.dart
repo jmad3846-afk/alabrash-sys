@@ -10,6 +10,30 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  test('Editing persons preserves balances and rejects duplicate names', () {
+    final erp = ERPProvider();
+    erp.addSupplier(SupplierModel(id: 'edit_sup', name: 'Edit supplier', phone: '1', location: 'A', debtBalance: 12, debtBalanceSyp: 34));
+    erp.addClient(ClientModel(id: 'edit_cli', name: 'Edit client', clientType: 'معتمد مصنع', description: 'Keep', currencyClassification: 'SYP', debtBalance: 56, debtBalanceSyp: 78));
+    expect(erp.updateSupplier(id: 'edit_sup', name: 'Edit supplier', phone: '2', location: 'B'), isTrue);
+    expect(erp.updateClient(id: 'edit_cli', name: 'Updated client', phone: '3', location: 'C', clientType: 'زبون معمل'), isTrue);
+    final supplier = erp.suppliers.firstWhere((p) => p.id == 'edit_sup');
+    final client = erp.clients.firstWhere((p) => p.id == 'edit_cli');
+    expect(supplier.phone, '2');
+    expect(supplier.location, 'B');
+    expect(supplier.debtBalance, 12);
+    expect(supplier.debtBalanceSyp, 34);
+    expect(client.name, 'Updated client');
+    expect(client.clientType, 'زبون معمل');
+    expect(client.description, 'Keep');
+    expect(client.currencyClassification, 'SYP');
+    expect(client.debtBalance, 56);
+    expect(client.debtBalanceSyp, 78);
+    expect(erp.updateSupplier(id: 'edit_sup', name: ' updated CLIENT ', phone: '', location: ''), isFalse);
+    expect(erp.updateClient(id: 'edit_cli', name: 'Edit supplier', phone: '', location: '', clientType: 'معتمد مصنع'), isFalse);
+    expect(erp.updateSupplier(id: 'edit_sup', name: ' ', phone: '', location: ''), isFalse);
+    expect(erp.updateClient(id: 'missing', name: 'Unknown', phone: '', location: '', clientType: 'معتمد مصنع'), isFalse);
+  });
+
   group('Factory Persons Section - Duplicate Name Prevention Tests', () {
     test('1. Prevents adding duplicate supplier name (exact & case/whitespace variation)', () {
       final erp = ERPProvider();

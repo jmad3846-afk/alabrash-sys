@@ -8981,6 +8981,62 @@ class ERPProvider extends ChangeNotifier {
     return true;
   }
 
+  bool updateSupplier({
+    required String id,
+    required String name,
+    required String phone,
+    required String location,
+  }) {
+    final index = suppliers.indexWhere((p) => p.id == id);
+    final clean = name.trim();
+    if (index < 0 || clean.isEmpty) return false;
+    if (suppliers.any(
+          (p) =>
+              p.id != id && p.name.trim().toLowerCase() == clean.toLowerCase(),
+        ) ||
+        clients.any((p) => p.name.trim().toLowerCase() == clean.toLowerCase()))
+      return false;
+    suppliers[index] = SupplierModel.fromJson({
+      ...suppliers[index].toJson(),
+      'name': clean,
+      'phone': phone.trim(),
+      'location': location.trim(),
+    });
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
+  bool updateClient({
+    required String id,
+    required String name,
+    required String phone,
+    required String location,
+    required String clientType,
+  }) {
+    final index = clients.indexWhere((p) => p.id == id);
+    final clean = name.trim();
+    if (index < 0 || clean.isEmpty) return false;
+    if (suppliers.any(
+          (p) => p.name.trim().toLowerCase() == clean.toLowerCase(),
+        ) ||
+        clients.any(
+          (p) =>
+              p.id != id && p.name.trim().toLowerCase() == clean.toLowerCase(),
+        ))
+      return false;
+    clients[index] = ClientModel.fromJson({
+      ...clients[index].toJson(),
+      'name': clean,
+      'phone': phone.trim(),
+      'location': location.trim(),
+      'clientType': clientType,
+    });
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
   void addBlockType(BlockTypeModel bt) {
     blockTypes.add(bt);
     notifyListeners();
