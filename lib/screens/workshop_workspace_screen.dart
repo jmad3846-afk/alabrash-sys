@@ -7854,6 +7854,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
   }) {
     String invCurrency = AppCurrency.usd;
     final clientCtrl = TextEditingController(text: presetClientName ?? '');
+    String approvedClientSearch = '';
+    List<ClientModel> approvedClientOptions() => erp.clients.where((c) =>
+      c.clientType == 'معتمد مصنع' &&
+      (c.name.toLowerCase().contains(approvedClientSearch.trim().toLowerCase()) ||
+       c.phone.contains(approvedClientSearch.trim()))).toList();
     final salesDiscountCtrl = TextEditingController(text: '0');
     final depositCtrl = TextEditingController(text: '0');
     final cashCtrl = TextEditingController(text: '0');
@@ -8192,11 +8197,32 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                             ),
                                             const SizedBox(height: 10),
                                             TextField(
-                                              controller: clientCtrl,
                                               decoration: const InputDecoration(
-                                                labelText: 'اسم الزبون / العميل',
+                                                labelText: 'بحث عن معتمد بالاسم أو الهاتف',
                                                 isDense: true,
-                                                prefixIcon: Icon(Icons.badge_outlined, size: 18),
+                                                prefixIcon: Icon(Icons.search, size: 18),
+                                              ),
+                                              onChanged: (value) => setSt(() => approvedClientSearch = value),
+                                            ),
+                                            const SizedBox(height: 10),
+                                            InputDecorator(
+                                              decoration: InputDecoration(
+                                                labelText: 'اختر المعتمد',
+                                                helperText: clientCtrl.text.isEmpty ? null : 'المعتمد المحدد: ${clientCtrl.text}',
+                                              ),
+                                              child: DropdownButtonHideUnderline(
+                                                child: DropdownButton<String>(
+                                                  isExpanded: true,
+                                                  value: approvedClientOptions().any((c) => c.name == clientCtrl.text) ? clientCtrl.text : null,
+                                                  hint: Text(approvedClientOptions().isEmpty ? 'لا يوجد معتمدون مطابقون للبحث' : 'اختر معتمداً من شاشة الأشخاص'),
+                                                  items: approvedClientOptions().map((c) => DropdownMenuItem(value: c.name, child: Text(c.name))).toList(),
+                                                  onChanged: (name) {
+                                                    if (name != null) setSt(() {
+                                                      clientCtrl.text = name;
+                                                      formError = null;
+                                                    });
+                                                  },
+                                                ),
                                               ),
                                             ),
                                           ],
@@ -9878,8 +9904,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                   setSt(() => formError = 'يجب إضافة صنف واحد على الأقل للفاتورة.');
                                                   return;
                                                 }
-                                                if (clientCtrl.text.trim().isEmpty) {
-                                                  setSt(() => formError = 'يرجى إدخال اسم العميل / الزبون.');
+                                                if (!erp.clients.any((c) => c.clientType == 'معتمد مصنع' && c.name == clientCtrl.text)) {
+                                                  setSt(() => formError = 'يرجى اختيار معتمد من قائمة الأشخاص.');
                                                   return;
                                                 }
                                                 if (salesDiscount < 0 || salesDiscount > itemsTotal + servicesTotal) {

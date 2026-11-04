@@ -4460,6 +4460,15 @@ class ERPProvider extends ChangeNotifier {
       return false;
     if (record.category == 'clients') {
       addCash(cashBox, record.currency, amount);
+      final client = clients
+          .where((c) => record.belongsTo(c.id, c.name))
+          .firstOrNull;
+      client?.payments.add({
+        'date': DateTime.now().toIso8601String(),
+        'currency': record.currency,
+        'amount': amount,
+        'legacyRecordId': record.id,
+      });
     } else if (!takeCash(cashBox, record.currency, amount)) {
       return false;
     }
@@ -6742,7 +6751,7 @@ class ERPProvider extends ChangeNotifier {
           .where(
             (c) =>
                 c.name.trim() == order.clientName.trim() &&
-                c.clientType == 'زبون معمل',
+                (c.clientType == 'زبون معمل' || c.clientType == 'معتمد مصنع'),
           )
           .firstOrNull;
       final ClientModel client;
@@ -7195,7 +7204,7 @@ class ERPProvider extends ChangeNotifier {
             .where(
               (c) =>
                   c.name.trim() == inv.clientName.trim() &&
-                  c.clientType == 'زبون معمل',
+                  (c.clientType == 'زبون معمل' || c.clientType == 'معتمد مصنع'),
             )
             .firstOrNull;
         final ClientModel client;
@@ -7325,7 +7334,7 @@ class ERPProvider extends ChangeNotifier {
           .where(
             (c) =>
                 c.name.trim() == inv.clientName.trim() &&
-                c.clientType == 'زبون معمل',
+                (c.clientType == 'زبون معمل' || c.clientType == 'معتمد مصنع'),
           )
           .firstOrNull;
       final ClientModel client;
@@ -8360,7 +8369,11 @@ class ERPProvider extends ChangeNotifier {
   }
 
   /// Collects a factory sale invoice (they pay us) — invoice currency.
-  bool collectFactoryInvoice(FactoryInvoiceModel inv, double amount) {
+  bool collectFactoryInvoice(
+    FactoryInvoiceModel inv,
+    double amount, {
+    DateTime? transactionDate,
+  }) {
     if (inv.invoiceType != 'بيع_معتمد' ||
         !amount.isFinite ||
         amount <= 0 ||
@@ -8373,6 +8386,12 @@ class ERPProvider extends ChangeNotifier {
     final matches = clients.where((c) => c.id == inv.partyId).toList();
     if (matches.isNotEmpty) {
       matches.first.reduceDebt(inv.currency, take);
+      matches.first.payments.add({
+        'date': (transactionDate ?? DateTime.now()).toIso8601String(),
+        'currency': inv.currency,
+        'amount': take,
+        'allocations': {inv.id: take},
+      });
     }
     notifyListeners();
     saveToDisk();
@@ -8381,7 +8400,11 @@ class ERPProvider extends ChangeNotifier {
 
   /// Collects a workshop invoice. Scrap-sourced invoices route to the
   /// Scrap Cash Box, everything else to the Main Cash Box.
-  bool collectWorkshopInvoice(WorkshopInvoiceModel inv, double amount) {
+  bool collectWorkshopInvoice(
+    WorkshopInvoiceModel inv,
+    double amount, {
+    DateTime? transactionDate,
+  }) {
     if (amount <= 0 || amount > inv.remainingBalance + 0.001) return false;
     final take = amount;
     // Route the cash, then record the collection by raising cashPaidNow
@@ -8426,11 +8449,17 @@ class ERPProvider extends ChangeNotifier {
         .where(
           (c) =>
               c.name.trim() == inv.clientName.trim() &&
-              c.clientType == 'زبون معمل',
+              (c.clientType == 'زبون معمل' || c.clientType == 'معتمد مصنع'),
         )
         .firstOrNull;
     if (client != null) {
       client.reduceDebt(inv.currency, take);
+      client.payments.add({
+        'date': (transactionDate ?? DateTime.now()).toIso8601String(),
+        'currency': inv.currency,
+        'amount': take,
+        'allocations': {inv.id: take},
+      });
     }
     notifyListeners();
     saveToDisk();
@@ -8446,8 +8475,9 @@ class ERPProvider extends ChangeNotifier {
     required String paymentCurrency,
     required double paymentAmount,
     double? exchangeRate,
+    DateTime? transactionDate,
   }) {
-    if (paymentAmount <= 0) return false;
+    if (!paymentAmount.isFinite || paymentAmount <= 0) return false;
     final payCurr = AppCurrency.normalize(paymentCurrency);
     final acctCurr = AppCurrency.normalize(client.currencyClassification);
     final currentDebt = client.debtOf(acctCurr);
@@ -8493,10 +8523,11 @@ class ERPProvider extends ChangeNotifier {
       }
     }
 
+    final allocations = <String, double>{};
+    double remainingToSettle = convertedAcctAmount;
     // Settle open invoices for this client FIFO
     // 1. Factory Sale Invoices (if Factory Agent)
     if (client.clientType == 'معتمد مصنع') {
-      double remainingToSettle = convertedAcctAmount;
       final agentInvs = factoryInvoices
           .where(
             (i) =>
@@ -8507,6 +8538,7 @@ class ERPProvider extends ChangeNotifier {
           )
           .toList();
 
+      agentInvs.sort((a, b) => a.date.compareTo(b.date));
       for (final inv in agentInvs) {
         if (remainingToSettle <= 0.001) break;
         final settlePart = remainingToSettle
@@ -8516,20 +8548,15 @@ class ERPProvider extends ChangeNotifier {
         inv.paymentStatus = inv.remainingBalance > 0.01
             ? 'مستحق الدفع'
             : 'مدفوعة';
+        allocations[inv.id] = settlePart;
         remainingToSettle -= settlePart;
-      }
-      if (remainingToSettle > 0.001) {
-        if (acctCurr == AppCurrency.usd) {
-          unallocatedFactoryCollectionsUsd += remainingToSettle;
-        } else {
-          unallocatedFactoryCollectionsSyp += remainingToSettle;
-        }
       }
     }
 
     // 2. Workshop Retail Invoices (if Retail Customer)
-    if (client.clientType == 'زبون معمل' || client.clientType == 'زبون عادي') {
-      double remainingToSettle = convertedAcctAmount;
+    if (client.clientType == 'معتمد مصنع' ||
+        client.clientType == 'زبون معمل' ||
+        client.clientType == 'زبون عادي') {
       final retailInvs = workshopInvoices
           .where(
             (i) =>
@@ -8540,6 +8567,7 @@ class ERPProvider extends ChangeNotifier {
           )
           .toList();
 
+      retailInvs.sort((a, b) => a.date.compareTo(b.date));
       for (final inv in retailInvs) {
         if (remainingToSettle <= 0.001) break;
         final settlePart = remainingToSettle
@@ -8573,17 +8601,34 @@ class ERPProvider extends ChangeNotifier {
             currency: old.currency,
           );
         }
+        allocations[inv.id] = settlePart;
         remainingToSettle -= settlePart;
       }
       if (remainingToSettle > 0.001) {
         if (acctCurr == AppCurrency.usd) {
-          unallocatedWorkshopCollectionsUsd += remainingToSettle;
+          if (client.clientType == 'معتمد مصنع') {
+            unallocatedFactoryCollectionsUsd += remainingToSettle;
+          } else {
+            unallocatedWorkshopCollectionsUsd += remainingToSettle;
+          }
         } else {
-          unallocatedWorkshopCollectionsSyp += remainingToSettle;
+          if (client.clientType == 'معتمد مصنع') {
+            unallocatedFactoryCollectionsSyp += remainingToSettle;
+          } else {
+            unallocatedWorkshopCollectionsSyp += remainingToSettle;
+          }
         }
       }
     }
 
+    client.payments.add({
+      'date': (transactionDate ?? DateTime.now()).toIso8601String(),
+      'currency': acctCurr,
+      'amount': convertedAcctAmount,
+      'paymentCurrency': payCurr,
+      'paymentAmount': paymentAmount,
+      'allocations': allocations,
+    });
     notifyListeners();
     saveToDisk();
     return true;

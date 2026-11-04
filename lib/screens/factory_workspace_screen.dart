@@ -3146,7 +3146,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final phoneCtrl = TextEditingController(text: existing?.phone ?? '');
     final locCtrl = TextEditingController(text: existing?.location ?? '');
-    String type = existing?.clientType ?? 'معتمد مصنع';
+    final type = existing?.clientType ?? 'معتمد مصنع';
     String? errorMsg;
 
     await showDialog(
@@ -3154,7 +3154,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => AlertDialog(
           title: Text(
-            existing == null ? 'إضافة معتمد/زبون جديد' : 'تعديل المعتمد/الزبون',
+            existing == null ? 'إضافة معتمد جديد' : 'تعديل المعتمد',
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -3168,26 +3168,6 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 onChanged: (_) {
                   if (errorMsg != null) setSt(() => errorMsg = null);
                 },
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                initialValue: type,
-                items: const [
-                  DropdownMenuItem(
-                    value: 'معتمد مصنع',
-                    child: Text('معتمد مصنع'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'زبون معمل',
-                    child: Text('زبون معمل'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'مشروع معمل',
-                    child: Text('مشروع معمل'),
-                  ),
-                ],
-                onChanged: (v) => type = v!,
-                decoration: const InputDecoration(labelText: 'الصفة'),
               ),
               const SizedBox(height: 8),
               TextField(

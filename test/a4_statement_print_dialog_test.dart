@@ -163,7 +163,7 @@ void main() {
     final workshopDetails = A4StatementData.fromCustomer(
       client: client,
       erp: erp,
-    ).items.single.details.single;
+    ).items.singleWhere((i) => i.documentNo == 'W-001').details.single;
 
     expect(workshopDetails.description, 'مغسلة رخام');
     expect(workshopDetails.item, 'مغسلة رخام');
@@ -236,8 +236,15 @@ void main() {
 
       // Attempt to tap the return item's checkbox to uncheck it
       final returnTile = find.byWidgetPredicate(
-        (w) => w is CheckboxListTile && w.title is Row &&
-            (w.title as Row).children.any((c) => c is Expanded && c.child is Text && ((c.child as Text).data?.contains('RET-001') ?? false)),
+        (w) =>
+            w is CheckboxListTile &&
+            w.title is Row &&
+            (w.title as Row).children.any(
+              (c) =>
+                  c is Expanded &&
+                  c.child is Text &&
+                  ((c.child as Text).data?.contains('RET-001') ?? false),
+            ),
       );
       expect(returnTile, findsOneWidget);
       await tester.tap(returnTile);

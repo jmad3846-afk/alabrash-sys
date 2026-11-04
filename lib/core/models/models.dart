@@ -1071,6 +1071,7 @@ class SupplierModel {
 }
 
 class ClientModel {
+  final List<Map<String, dynamic>> payments;
   final String id;
   final String name;
   final String phone;
@@ -1087,11 +1088,13 @@ class ClientModel {
     this.phone = '',
     this.location = '',
     required this.clientType,
+    List<Map<String, dynamic>>? payments,
     this.description = '',
     this.debtBalance = 0.0,
     this.debtBalanceSyp = 0.0,
     String? currencyClassification,
-  }) : _currencyClassification =
+  }) : payments = payments ?? [],
+       _currencyClassification =
            (currencyClassification != null && currencyClassification.isNotEmpty)
            ? AppCurrency.normalize(currencyClassification)
            : null;
@@ -1168,6 +1171,7 @@ class ClientModel {
     'phone': phone,
     'location': location,
     'clientType': clientType,
+    'payments': payments,
     'description': description,
     'debtBalance': debtBalance,
     'debtBalanceSyp': debtBalanceSyp,
@@ -1180,6 +1184,9 @@ class ClientModel {
     phone: json['phone'] ?? '',
     location: json['location'] ?? '',
     clientType: json['clientType'] ?? 'زبون معمل',
+    payments: (json['payments'] as List? ?? [])
+        .map((p) => Map<String, dynamic>.from(p as Map))
+        .toList(),
     description: json['description'] ?? '',
     debtBalance: (json['debtBalance'] ?? 0.0).toDouble(),
     debtBalanceSyp: (json['debtBalanceSyp'] ?? 0.0).toDouble(),

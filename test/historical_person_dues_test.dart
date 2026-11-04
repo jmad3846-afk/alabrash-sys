@@ -177,7 +177,7 @@ void main() {
                 .where((i) => i.category == 'قيد افتتاحي')
                 .single
                 .remainingAmount,
-            70,
+            supplier ? 70 : 100,
           );
           expect(data.items.any((i) => i.documentNo == 'NEW'), isTrue);
           expect(
@@ -190,8 +190,11 @@ void main() {
             (i) => i.category == 'قيد افتتاحي',
           );
           expect(oldRow.totalAmount, 100);
-          expect(oldRow.paidAmount, 30);
-          expect(oldRow.remainingAmount, 70);
+          expect(oldRow.paidAmount, supplier ? 30 : 0);
+          expect(oldRow.remainingAmount, supplier ? 70 : 100);
+          if (!supplier) {
+            expect(data.items.singleWhere((i) => i.category == 'دفعة قبض').paidAmount, 30);
+          }
           final restored = LegacyFinancialRecordModel.fromJson(
             erp.openingEntry.legacyFinancials.single.toJson(),
           );

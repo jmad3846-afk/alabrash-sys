@@ -2309,7 +2309,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'مالية معتمدي المصنع (Approved Clients)',
+                      'مالية المعتمدين - المصنع والمعمل',
                       style: Theme.of(
                         context,
                       ).textTheme.titleLarge?.copyWith(fontSize: 20),
@@ -2423,12 +2423,12 @@ class _FinancialsScreenState extends State<FinancialsScreen>
               ),
             ),
           ...filteredAgents.map((c) {
-            final invs = erp.factoryInvoices
-                .where(
-                  (i) =>
-                      i.invoiceType == 'بيع_معتمد' &&
-                      (i.partyId == c.id || i.partyName == c.name),
-                )
+            final statement = A4StatementData.fromAccreditedAgent(
+              client: c,
+              erp: erp,
+            );
+            final invs = statement.items
+                .where((i) => i.category.startsWith('فاتورة مبيعات'))
                 .toList();
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
@@ -2508,80 +2508,16 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 ),
                 trailing: _buildCustomerCollectButton(erp, c),
                 children: [
-                  ...invs.map(
-                    (inv) => ExpansionTile(
-                      leading: CurrencyBadge(currency: inv.currency),
-                      title: Text(
-                        '${inv.invoiceNo} — ${inv.grandTotal.fmt}${inv.currencySymbol} (${inv.isDue ? "مستحق الدفع" : "مدفوعة"})',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
+                  ...statement.items.map(
+                    (line) => ExpansionTile(
+                      leading: CurrencyBadge(currency: line.currency),
+                      title: Text('${line.category} — ${line.documentNo}'),
                       subtitle: Text(
-                        'التاريخ: ${inv.date.toString().substring(0, 10)} • المدفوع: ${inv.advancePayment.fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
+                        '${line.date.toString()} • المدفوع: ${line.paidAmount.fmt} • الرصيد: ${line.runningBalance.fmt} ${line.currencySymbol}',
                       ),
-                      trailing: inv.isDue
-                          ? const Chip(
-                              label: Text(
-                                'مستحق الدفع',
-                                style: TextStyle(
-                                  color: AppColors.dangerWaste,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            )
-                          : const Chip(
-                              label: Text(
-                                'مدفوعة',
-                                style: TextStyle(
-                                  color: AppColors.successGreen,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
                       children: [
-                        if (inv.photoUrl.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 4,
-                            ),
-                            child: AppImagePreviewCard(
-                              imagePath: inv.photoUrl,
-                              title: 'صورة الفاتورة المرفقة (${inv.invoiceNo})',
-                            ),
-                          ),
-                        ...inv.items.map(
-                          (it) => ListTile(
-                            dense: true,
-                            title: Text(it.description),
-                            subtitle: Text(
-                              'الكمية: ${it.calculatedArea.fmt} • الإجمالي: ${it.grandTotal.fmt}\$',
-                            ),
-                          ),
-                        ),
-                        ...inv.items.expand(
-                          (it) => it.services.map(
-                            (s) => ListTile(
-                              dense: true,
-                              leading: const Icon(
-                                Icons.home_repair_service_rounded,
-                                size: 18,
-                                color: AppColors.accentPrimary,
-                              ),
-                              title: Text('خدمة: ${s.serviceName}'),
-                              trailing: Text(
-                                '${s.price}\$',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                        if (line.details.isNotEmpty)
+                          A4StatementInvoiceDetails(lineItem: line),
                       ],
                     ),
                   ),

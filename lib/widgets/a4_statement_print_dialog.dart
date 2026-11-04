@@ -878,6 +878,9 @@ class A4StatementData {
     double legacyUsd = 0.0;
     double legacySyp = 0.0;
     for (final r in legacy) {
+      final recordedPaid = client.payments
+          .where((p) => p['legacyRecordId'] == r.id)
+          .fold<double>(0, (sum, p) => sum + (p['amount'] as num).toDouble());
       if (AppCurrency.isSyp(r.currency)) {
         legacySyp += r.amount;
       } else {
@@ -895,8 +898,8 @@ class A4StatementData {
           category: 'قيد افتتاحي',
           currency: r.currency,
           totalAmount: r.originalAmount,
-          paidAmount: r.paidAmount,
-          remainingAmount: r.amount,
+          paidAmount: r.paidAmount - recordedPaid,
+          remainingAmount: r.amount + recordedPaid,
           status: 'رصيد مدور',
         ),
       );
@@ -925,7 +928,7 @@ class A4StatementData {
           date: inv.date,
           documentNo: inv.invoiceNo,
           description: desc,
-          category: 'فاتورة مبيعات',
+          category: 'فاتورة مبيعات - مصنع',
           currency: inv.currency,
           totalAmount: inv.grandTotal,
           paidAmount: inv.advancePayment,
@@ -936,6 +939,68 @@ class A4StatementData {
       );
     }
 
+    final workshop = erp.workshopInvoices
+        .where(
+          (i) =>
+              i.projectId.isEmpty && i.clientName.trim() == client.name.trim(),
+        )
+        .toList();
+    for (final inv in workshop) {
+      items.add(
+        A4StatementLineItem(
+          index: idx++,
+          date: inv.date,
+          documentNo: inv.invoiceNo,
+          description: inv.itemDescription,
+          category: 'فاتورة مبيعات - معمل',
+          currency: inv.currency,
+          totalAmount: inv.grandTotal,
+          paidAmount: inv.cashPaidNow + inv.depositDeducted,
+          remainingAmount: inv.historicalRemainingBalance,
+          status: 'فاتورة',
+          details: _workshopInvoiceDetails(inv),
+        ),
+      );
+    }
+    for (final payment in client.payments) {
+      final allocations = Map<String, dynamic>.from(
+        payment['allocations'] as Map? ?? {},
+      );
+      for (var n = 0; n < items.length; n++) {
+        final item = items[n];
+        final factory = invs
+            .where((i) => i.invoiceNo == item.documentNo)
+            .firstOrNull;
+        final lab = workshop
+            .where((i) => i.invoiceNo == item.documentNo)
+            .firstOrNull;
+        final id = item.category == 'فاتورة مبيعات - مصنع'
+            ? factory?.id
+            : lab?.id;
+        final amount = (allocations[id] as num? ?? 0).toDouble();
+        if (amount > 0) {
+          items[n] = item.copyWith(
+            paidAmount: item.paidAmount - amount,
+            remainingAmount: item.remainingAmount + amount,
+          );
+        }
+      }
+      final amount = (payment['amount'] as num).toDouble();
+      items.add(
+        A4StatementLineItem(
+          index: idx++,
+          date: DateTime.parse(payment['date'] as String),
+          documentNo: 'قبض',
+          description: 'دفعة من المعتمد',
+          category: 'دفعة قبض',
+          currency: payment['currency'] as String,
+          totalAmount: 0,
+          paidAmount: amount,
+          remainingAmount: -amount,
+          status: 'مقبوضة',
+        ),
+      );
+    }
     // Check adjustment invoices (returns & allowances)
     final adjReturns = erp.adjustmentInvoices
         .where(
@@ -1017,6 +1082,9 @@ class A4StatementData {
     required ClientModel client,
     required ERPProvider erp,
   }) {
+    if (client.clientType == 'معتمد مصنع') {
+      return A4StatementData.fromAccreditedAgent(client: client, erp: erp);
+    }
     final invs = erp.workshopInvoices
         .where(
           (i) =>
@@ -2547,7 +2615,7 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
                   SizedBox(
                     width: 56,
                     child: Text(
-                      intl.DateFormat('yyyy-MM-dd').format(it.date),
+                      intl.DateFormat('yyyy-MM-dd HH:mm:ss').format(it.date),
                       style: const TextStyle(
                         fontSize: 9.5,
                         color: Color(0xFF334155),
