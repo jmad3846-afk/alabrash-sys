@@ -5,7 +5,6 @@ import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../widgets/currency_selector.dart';
-import '../widgets/a4_invoice_print_dialog.dart';
 import '../widgets/a4_statement_print_dialog.dart';
 import '../widgets/app_image_attachment.dart';
 import '../widgets/customer_collection_dialog.dart';
@@ -24,8 +23,6 @@ class FinancialsScreen extends StatefulWidget {
 class _FinancialsScreenState extends State<FinancialsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _financialsTabController;
-  String _retailQuery = '';
-  int _retailSubView = 0;
   String _supplierQuery = '';
   int _supplierFilter = 0;
   String _agentQuery = '';
@@ -37,21 +34,19 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   String _cashBoxesCurrency = 'ALL';
   String _supplierCurrency = 'ALL';
   String _agentCurrency = 'ALL';
-  String _retailCurrency = 'ALL';
   String _surplusCurrency = 'ALL';
   String _pnlCurrency = 'ALL';
 
   final TextEditingController _supplierSearchCtrl = TextEditingController();
   final TextEditingController _agentSearchCtrl = TextEditingController();
-  final TextEditingController _retailSearchCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _financialsTabController = TabController(
-      length: 8,
+      length: 7,
       vsync: this,
-      initialIndex: widget.showOnlyIncomeStatement ? 6 : 0,
+      initialIndex: widget.showOnlyIncomeStatement ? 5 : 0,
     );
   }
 
@@ -59,7 +54,6 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   void dispose() {
     _supplierSearchCtrl.dispose();
     _agentSearchCtrl.dispose();
-    _retailSearchCtrl.dispose();
     _financialsTabController.dispose();
     super.dispose();
   }
@@ -91,11 +85,10 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 ),
                 Tab(text: '2. الصناديق المعزولة'),
                 Tab(text: '3. مالية موردي المصنع'),
-                Tab(text: '4. مالية معتمدي المصنع'),
-                Tab(text: '5. مالية المعمل'),
-                Tab(text: '6. مالية الزيادات (Surplus Financials)'),
-                Tab(text: '7. ملخص الدخل (P&L)'),
-                Tab(text: '8. المالية القديمة • أرصدة القيد الافتتاحي'),
+                Tab(text: '4. مالية المعتمدين'),
+                Tab(text: '5. مالية الزيادات (Surplus Financials)'),
+                Tab(text: '6. ملخص الدخل (P&L)'),
+                Tab(text: '7. المالية القديمة • أرصدة القيد الافتتاحي'),
               ],
             ),
           ),
@@ -108,8 +101,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                 _buildGraniteAccountantTab(erp),
                 _buildIsolatedCashBoxesTab(erp),
                 _buildFactorySuppliersTab(erp),
-                _buildFactoryClientsTab(erp),
-                _buildWorkshopFinancesTab(erp),
+                _buildApprovedClientsTab(erp),
                 _buildSurplusTab(erp),
                 _buildIncomeStatementTab(erp),
                 const HistoricalFinancialsScreen(),
@@ -2250,25 +2242,30 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   }
 
   // -------------------------------------------------------------
-  // TAB 4: FACTORY APPROVED CLIENTS FINANCIALS (collect from them)
+  // TAB 4: APPROVED CLIENTS FINANCIALS (factory and workshop)
   // -------------------------------------------------------------
-  Widget _buildFactoryClientsTab(ERPProvider erp) {
-    final debtors = erp.clients
+  Widget _buildApprovedClientsTab(ERPProvider erp) {
+    final accounts = erp.clients
         .where(
-          (c) => c.clientType == 'معتمد مصنع' && (c.hasDebt || c.hasCredit),
+          (c) =>
+              c.clientType == 'معتمد مصنع' ||
+              c.clientType == 'زبون معمل' ||
+              c.clientType == 'زبون عادي' ||
+              erp.workshopInvoices.any(
+                (i) => i.clientName.trim() == c.name.trim(),
+              ),
         )
         .toList();
-    final totalDue = erp.clients
-        .where((c) => c.clientType == 'معتمد مصنع' && c.debtBalance > 0.01)
+    final debtors = accounts.where((c) => c.hasDebt || c.hasCredit).toList();
+    final totalDue = accounts
+        .where((c) => c.debtBalance > 0.01)
         .fold<double>(0.0, (s, x) => s + x.debtBalance);
-    final totalDueSyp = erp.clients
-        .where((c) => c.clientType == 'معتمد مصنع' && c.debtBalanceSyp > 0.01)
+    final totalDueSyp = accounts
+        .where((c) => c.debtBalanceSyp > 0.01)
         .fold<double>(0.0, (s, x) => s + x.debtBalanceSyp);
 
     final q = _agentQuery.trim();
-    final allAgents = erp.clients
-        .where((c) => c.clientType == 'معتمد مصنع')
-        .toList();
+    final allAgents = accounts;
     final filteredAgents = allAgents.where((c) {
       if (_agentCurrency != 'ALL') {
         if (_agentCurrency == AppCurrency.usd &&
@@ -2309,14 +2306,14 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'مالية المعتمدين - المصنع والمعمل',
+                      'مالية المعتمدين (Approved Clients Financials)',
                       style: Theme.of(
                         context,
                       ).textTheme.titleLarge?.copyWith(fontSize: 20),
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'متابعة حسابات وفواتير وتحصيلات وكشوفات حساب وكلاء التوزيع المعتمدين',
+                      'حساب موحد لفواتير وتحصيلات المصنع والمعمل لكل معتمد',
                       style: TextStyle(color: AppColors.brandSecondaryText),
                     ),
                   ],
@@ -2370,7 +2367,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
             onSearchChanged: (v) => setState(() => _agentQuery = v),
             selectedCurrency: _agentCurrency,
             onCurrencyChanged: (c) => setState(() => _agentCurrency = c),
-            hintText: 'بحث في معتمدي المصنع بالاسم أو الهاتف أو الموقع...',
+            hintText: 'بحث في المعتمدين بالاسم أو الهاتف أو الموقع...',
             onClear: () => setState(() => _agentQuery = ''),
           ),
           const SizedBox(height: 10),
@@ -2531,539 +2528,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   }
 
   // -------------------------------------------------------------
-  // TAB 5: WORKSHOP FINANCIALS (مالية المعمل - زبائن المعمل والطلبيات)
-  // -------------------------------------------------------------
-  Widget _buildWorkshopFinancesTab(ERPProvider erp) {
-    return _buildRetailFinances(erp);
-  }
-
-  Widget _buildRetailStats(ERPProvider erp) {
-    final invs = erp.workshopInvoices;
-    double sumWhere(String cur, double Function(WorkshopInvoiceModel) f) => invs
-        .where((i) => i.currency == cur)
-        .fold<double>(0.0, (s, i) => s + f(i));
-    final totalInvoiced = sumWhere(AppCurrency.usd, (i) => i.grandTotal);
-    final totalInvoicedSyp = sumWhere(AppCurrency.syp, (i) => i.grandTotal);
-    final totalDue = sumWhere(AppCurrency.usd, (i) => i.remainingBalance);
-    final totalDueSyp = sumWhere(AppCurrency.syp, (i) => i.remainingBalance);
-    final retailDebt = erp.clients
-        .where((c) => c.clientType == 'زبون معمل')
-        .fold<double>(0.0, (s, c) => s + c.debtBalance);
-    final retailDebtSyp = erp.clients
-        .where((c) => c.clientType == 'زبون معمل')
-        .fold<double>(0.0, (s, c) => s + c.debtBalanceSyp);
-
-    String fmtRetail(double usd, double syp) {
-      if (_retailCurrency == AppCurrency.usd) {
-        return '${usd.fmt} \$';
-      } else if (_retailCurrency == AppCurrency.syp) {
-        return '${syp.fmt} ل.س';
-      } else {
-        return AppCurrency.dual(usd, syp);
-      }
-    }
-
-    Widget stat(String label, String value, Color color) => Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
-        ),
-        child: Column(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: color,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    return Row(
-      children: [
-        stat('إجمالي الفواتير', '${invs.length}', AppColors.accentPrimary),
-        const SizedBox(width: 8),
-        stat(
-          'إجمالي المبالغ',
-          fmtRetail(totalInvoiced, totalInvoicedSyp),
-          AppColors.accentPrimary,
-        ),
-        const SizedBox(width: 8),
-        stat(
-          'المتبقي للتحصيل',
-          fmtRetail(totalDue, totalDueSyp),
-          AppColors.dangerWaste,
-        ),
-        const SizedBox(width: 8),
-        stat(
-          'ديون الجزافي',
-          fmtRetail(retailDebt, retailDebtSyp),
-          AppColors.partnersEquityAccent,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRetailFinances(ERPProvider erp) {
-    final q = _retailQuery.trim();
-    final clients = erp.clients.where((c) {
-      final isWorkshopClient =
-          c.clientType == 'زبون معمل' ||
-          erp.workshopInvoices.any((i) => i.clientName.trim() == c.name.trim());
-      if (!isWorkshopClient) return false;
-      if (_retailCurrency != 'ALL') {
-        if (_retailCurrency == AppCurrency.usd &&
-            c.isSypCustomer &&
-            c.debtBalance <= 0.01) {
-          return false;
-        }
-        if (_retailCurrency == AppCurrency.syp &&
-            c.isUsdCustomer &&
-            c.debtBalanceSyp <= 0.01) {
-          return false;
-        }
-      }
-      if (q.isEmpty) return true;
-      final text = '${c.name} ${c.phone}';
-      return arabicFuzzyMatch(text, q);
-    }).toList();
-
-    bool matchesInv(WorkshopInvoiceModel i) {
-      if (_retailCurrency != 'ALL') {
-        final isInvSyp = AppCurrency.isSyp(i.currency);
-        final isInvUsd = AppCurrency.isUsd(i.currency);
-        final client = erp.clients
-            .where((c) => c.name.trim() == i.clientName.trim())
-            .firstOrNull;
-        final isSypHolder = client != null && client.isSypCustomer;
-        final isUsdHolder = client != null && client.isUsdCustomer;
-
-        if (_retailCurrency == AppCurrency.syp) {
-          if (isInvSyp) {
-            // matches
-          } else if (isSypHolder && !isInvUsd) {
-            // matches
-          } else {
-            return false;
-          }
-        } else {
-          if (isInvUsd) {
-            // matches
-          } else if (isUsdHolder && !isInvSyp) {
-            // matches
-          } else {
-            return false;
-          }
-        }
-      }
-      if (q.isEmpty) return true;
-      final hay =
-          '${i.invoiceNo} ${i.clientName} ${i.itemDescription} ${i.sourceType} ${i.photoPath} ${i.services.map((s) => '${s.serviceName} ${s.notes}').join(' ')}';
-      return arabicFuzzyMatch(hay, q);
-    }
-
-    final invs = erp.workshopInvoices.where((i) => matchesInv(i)).toList();
-
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Search across clients and invoice fields.
-          SectionSearchAndFilterBar(
-            searchController: _retailSearchCtrl,
-            searchQuery: _retailQuery,
-            onSearchChanged: (v) => setState(() => _retailQuery = v),
-            selectedCurrency: _retailCurrency,
-            onCurrencyChanged: (c) => setState(() => _retailCurrency = c),
-            hintText: 'بحث في الزبائن، الفواتير، الخدمات بالاسم أو الرقم...',
-            onClear: () => setState(() => _retailQuery = ''),
-          ),
-          const SizedBox(height: 12),
-          _buildRetailStats(erp),
-          const SizedBox(height: 12),
-
-          // Sub-view switch: Customer Accounts vs Invoice Ledger
-          Row(
-            children: [
-              ChoiceChip(
-                selected: _retailSubView == 0,
-                onSelected: (_) => setState(() => _retailSubView = 0),
-                label: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.people_outline, size: 16),
-                    const SizedBox(width: 6),
-                    Text(
-                      'حسابات زبائن المعمل (${clients.length})',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              ChoiceChip(
-                selected: _retailSubView == 1,
-                onSelected: (_) => setState(() => _retailSubView = 1),
-                label: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.receipt_long_outlined, size: 16),
-                    const SizedBox(width: 6),
-                    Text(
-                      'سجل فواتير المعمل (${invs.length})',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          Expanded(
-            child: _retailSubView == 0
-                ? (clients.isEmpty
-                      ? const Card(
-                          child: Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(24),
-                              child: Text('لا توجد حسابات زبائن معمل مطابقة.'),
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: clients.length,
-                          itemBuilder: (_, idx) {
-                            final c = clients[idx];
-                            final clientInvs = erp.workshopInvoices
-                                .where(
-                                  (i) => i.clientName.trim() == c.name.trim(),
-                                )
-                                .toList();
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              child: ExpansionTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: AppColors.chipBgBlue,
-                                  child: Text(
-                                    c.name.isEmpty ? '؟' : c.name[0],
-                                    style: const TextStyle(
-                                      color: AppColors.accentPrimary,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                title: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Row(
-                                        children: [
-                                          Flexible(
-                                            child: Text(
-                                              'الزبون: ${c.name}',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 15,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          CustomerClassificationBadge(
-                                            client: c,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(
-                                          0xFF2563EB,
-                                        ),
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 7,
-                                        ),
-                                        elevation: 1,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                      ),
-                                      icon: const Icon(
-                                        Icons.picture_as_pdf_rounded,
-                                        size: 16,
-                                      ),
-                                      label: const Text(
-                                        'معاينة كشف الحساب قبل الطباعة',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      onPressed: () {
-                                        A4StatementPrintDialog.show(
-                                          context,
-                                          statementData:
-                                              A4StatementData.fromCustomer(
-                                                client: c,
-                                                erp: erp,
-                                              ),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                                subtitle: Text(
-                                  c.hasCredit
-                                      ? 'رصيد دائن للزبون (أمانة بذمتنا): ${c.dualCredit} • الفواتير: ${clientInvs.length}${c.phone.isNotEmpty ? " • الهاتف: ${c.phone}" : ""}'
-                                      : 'الرصيد المتبقي عليه: ${c.dualDebt} • الفواتير: ${clientInvs.length}${c.phone.isNotEmpty ? " • الهاتف: ${c.phone}" : ""}',
-                                  style: TextStyle(
-                                    color: c.hasCredit
-                                        ? AppColors.dangerWaste
-                                        : null,
-                                    fontWeight: c.hasCredit
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                  ),
-                                ),
-                                trailing: _buildCustomerCollectButton(erp, c),
-                                children: [
-                                  if (clientInvs.isEmpty)
-                                    const Padding(
-                                      padding: EdgeInsets.all(12),
-                                      child: Text(
-                                        'لا توجد فواتير مسجلة لهذا الزبون.',
-                                      ),
-                                    )
-                                  else
-                                    ...clientInvs.map(
-                                      (inv) => ExpansionTile(
-                                        leading: CurrencyBadge(
-                                          currency: inv.currency,
-                                        ),
-                                        title: Text(
-                                          '${inv.invoiceNo} — الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المتبقي: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          'التاريخ: ${inv.date.toString().substring(0, 10)}${inv.depositDeducted > 0 ? " • عربون مخصوم: ${inv.depositDeducted.fmt}${inv.currencySymbol}" : ""} • مدفوع نقداً: ${inv.cashPaidNow.fmt}${inv.currencySymbol}',
-                                        ),
-                                        trailing: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            IconButton(
-                                              tooltip: 'معاينة طباعة A4',
-                                              icon: const Icon(
-                                                Icons.picture_as_pdf_rounded,
-                                                color: Color(0xFF2563EB),
-                                                size: 20,
-                                              ),
-                                              onPressed: () {
-                                                A4InvoicePrintDialog.show(
-                                                  context,
-                                                  invoiceData:
-                                                      A4InvoiceData.fromWorkshopInvoice(
-                                                        inv,
-                                                      ),
-                                                );
-                                              },
-                                            ),
-                                            const SizedBox(width: 4),
-                                            inv.remainingBalance > 0.01
-                                                ? const Chip(
-                                                    label: Text(
-                                                      'متبقي',
-                                                      style: TextStyle(
-                                                        color: AppColors
-                                                            .dangerWaste,
-                                                        fontSize: 11,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                  )
-                                                : const Chip(
-                                                    label: Text(
-                                                      'خالصة',
-                                                      style: TextStyle(
-                                                        color: AppColors
-                                                            .successGreen,
-                                                        fontSize: 11,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                  ),
-                                          ],
-                                        ),
-                                        children: [
-                                          if (inv.items.isNotEmpty)
-                                            ...inv.items.map(
-                                              (it) => ListTile(
-                                                dense: true,
-                                                title: Text(it.description),
-                                                subtitle: Text(
-                                                  'الكمية: ${it.quantity.fmt} ${it.unitCategory} • سعر الوحدة: ${it.unitPrice.fmt}${inv.currencySymbol} • الإجمالي: ${it.agreedPrice.fmt}${inv.currencySymbol}',
-                                                ),
-                                              ),
-                                            ),
-                                          ...inv.services.map(
-                                            (s) => ListTile(
-                                              dense: true,
-                                              title: Text(
-                                                'خدمة: ${s.serviceName}',
-                                              ),
-                                              trailing: Text(
-                                                '${s.price}\$',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            );
-                          },
-                        ))
-                : (invs.isEmpty
-                      ? const Card(
-                          child: Center(child: Text('لا توجد فواتير مطابقة.')),
-                        )
-                      : Card(
-                          child: ListView.separated(
-                            itemCount: invs.length,
-                            separatorBuilder: (_, __) =>
-                                const Divider(height: 1),
-                            itemBuilder: (_, idx) {
-                              final inv = invs[idx];
-                              return ExpansionTile(
-                                leading: CurrencyBadge(currency: inv.currency),
-                                title: Text(
-                                  '${inv.invoiceNo} • ${inv.clientName}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  '${inv.itemDescription} • الإجمالي: ${inv.grandTotal.fmt}${inv.currencySymbol} • المتبقي للتحصيل: ${inv.remainingBalance.fmt}${inv.currencySymbol}',
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      tooltip:
-                                          'معاينة طباعة A4 (Print Preview)',
-                                      icon: const Icon(
-                                        Icons.picture_as_pdf_rounded,
-                                        color: Color(0xFF2563EB),
-                                      ),
-                                      onPressed: () {
-                                        A4InvoicePrintDialog.show(
-                                          context,
-                                          invoiceData:
-                                              A4InvoiceData.fromWorkshopInvoice(
-                                                inv,
-                                              ),
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(width: 4),
-                                    inv.remainingBalance > 0.01
-                                        ? const Chip(
-                                            label: Text(
-                                              'متبقي',
-                                              style: TextStyle(
-                                                color: AppColors.dangerWaste,
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          )
-                                        : const Chip(
-                                            label: Text(
-                                              'خالصة',
-                                              style: TextStyle(
-                                                color: AppColors.successGreen,
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                  ],
-                                ),
-                                children: [
-                                  if (inv.photoPath.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 4,
-                                      ),
-                                      child: AppImagePreviewCard(
-                                        imagePath: inv.photoPath,
-                                        title:
-                                            'صورة الفاتورة المرفقة (${inv.invoiceNo})',
-                                      ),
-                                    ),
-                                  if (inv.items.isNotEmpty)
-                                    ...inv.items.map(
-                                      (it) => ListTile(
-                                        dense: true,
-                                        title: Text(it.description),
-                                        subtitle: Text(
-                                          'الكمية: ${it.quantity.fmt} ${it.unitCategory} • سعر الوحدة: ${it.unitPrice.fmt}${inv.currencySymbol} • الإجمالي: ${it.agreedPrice.fmt}${inv.currencySymbol}',
-                                        ),
-                                      ),
-                                    ),
-                                  ...inv.services.map(
-                                    (s) => ListTile(
-                                      dense: true,
-                                      title: Text('خدمة: ${s.serviceName}'),
-                                      trailing: Text(
-                                        '${s.price}\$',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                        )),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // -------------------------------------------------------------
-  // TAB 7: SURPLUS FINANCIALS (مالية الزيادات)
+  // TAB 5: SURPLUS FINANCIALS (مالية الزيادات)
   // Dedicated ledger: how much did each surplus item cost?
   // Rule: initial price > 0 must be broken down into worker wages
   // and/or general expenses; all settled ONLY from the Surplus Fund.
@@ -3607,7 +3072,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   }
 
   // -------------------------------------------------------------
-  // TAB 8: INCOME STATEMENT (ملخص الدخل P&L)
+  // TAB 6: INCOME STATEMENT (ملخص الدخل P&L)
   // -------------------------------------------------------------
   Widget _buildIncomeStatementTab(ERPProvider erp) {
     final expensesUsd = erp.incomeSummaryExpensesOf(AppCurrency.usd);
