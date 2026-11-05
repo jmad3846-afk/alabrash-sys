@@ -144,6 +144,33 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
     erp.refresh();
   }
 
+  Future<void> _reopenForEditing(ERPProvider erp) async {
+    final shouldReopen = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تعديل القيد الافتتاحي'),
+        content: const Text(
+          'سيُعاد القيد الافتتاحي إلى حالة الإعداد لتتمكن من تعديل بياناته. اعتمده مجدداً بعد الانتهاء.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('فتح للتعديل'),
+          ),
+        ],
+      ),
+    );
+    if (shouldReopen == true && mounted) {
+      erp.unlockOpeningEntryForEditing();
+      _showMessage('تم فتح القيد الافتتاحي للتعديل. اعتمده مجدداً بعد الحفظ.');
+    }
+  }
+
   Future<Map<String, String>?> _showEntryDialog(
     String title,
     List<String> fields, {
@@ -712,20 +739,12 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                   spacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: () async {
-                        await erp.populateComprehensiveSeedData(
-                          lockOpeningEntry: false,
-                        );
-                        _cashControllersReady = false;
-                        _initializeCashControllers(erp.openingEntry);
-                        _showMessage(
-                          'تمت تعبئة بيانات تجريبية شاملة للقيد الافتتاحي.',
-                        );
-                      },
-                      icon: const Icon(Icons.science_rounded, size: 18),
-                      label: const Text('تعبئة بيانات تجريبية'),
-                    ),
+                    if (entry.isLocked)
+                      OutlinedButton.icon(
+                        onPressed: () => _reopenForEditing(erp),
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('تعديل القيد المعتمد'),
+                      ),
                     Chip(
                       avatar: Icon(
                         entry.isLocked ? Icons.lock : Icons.edit,

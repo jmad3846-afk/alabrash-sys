@@ -33,6 +33,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   bool cuttingAggregated = false;
   List<CuttingBatchInput> cuttingAggregates = [];
 
+  final _personsSuppliersSearchCtrl = TextEditingController();
+  final _personsClientsSearchCtrl = TextEditingController();
+
   // Factory Orders filters
   String _foStatusFilter = 'الكل';
   String _foSearchQuery = '';
@@ -117,6 +120,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       c.dispose();
     }
     _supplierInvoicesSearchCtrl.dispose();
+    _personsSuppliersSearchCtrl.dispose();
+    _personsClientsSearchCtrl.dispose();
     _agentSalesSearchCtrl.dispose();
     _cashInvoicesSearchCtrl.dispose();
     _navTabController.dispose();
@@ -1149,7 +1154,44 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   // -------------------------------------------------------------
   // SUB-TAB 4: PERSONS (SUPPLIERS & CLIENTS)
   // -------------------------------------------------------------
+  Widget _buildPersonsSearchField(
+    TextEditingController controller,
+    String hintText,
+  ) {
+    return TextField(
+      controller: controller,
+      onChanged: (_) => setState(() {}),
+      decoration: InputDecoration(
+        hintText: hintText,
+        prefixIcon: const Icon(Icons.search),
+        suffixIcon: controller.text.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'مسح البحث',
+                icon: const Icon(Icons.clear),
+                onPressed: () => setState(controller.clear),
+              ),
+      ),
+    );
+  }
+
   Widget _buildSubTab4Persons(ERPProvider erp) {
+    final suppliers = erp.suppliers
+        .where(
+          (s) => arabicFuzzyMatch(
+            '${s.name} ${s.phone} ${s.location}',
+            _personsSuppliersSearchCtrl.text,
+          ),
+        )
+        .toList();
+    final clients = erp.clients
+        .where(
+          (c) => arabicFuzzyMatch(
+            '${c.name} ${c.phone} ${c.location}',
+            _personsClientsSearchCtrl.text,
+          ),
+        )
+        .toList();
     return DefaultTabController(
       length: 2,
       child: Column(
@@ -1189,47 +1231,59 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         ],
                       ),
                       const SizedBox(height: 12),
+                      _buildPersonsSearchField(
+                        _personsSuppliersSearchCtrl,
+                        'بحث في الموردين بالاسم أو الهاتف أو الموقع...',
+                      ),
+                      const SizedBox(height: 12),
                       Expanded(
                         child: Card(
-                          child: ListView.separated(
-                            itemCount: erp.suppliers.length,
-                            separatorBuilder: (context, index) =>
-                                const Divider(height: 1),
-                            itemBuilder: (context, idx) {
-                              final s = erp.suppliers[idx];
-                              return ListTile(
-                                title: Text(
-                                  s.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  'الهاتف: ${s.phone} • الموقع: ${s.location}',
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'الذمة المستحقة: ${s.dualDebt}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.dangerWaste,
+                          child: suppliers.isEmpty
+                              ? const Center(
+                                  child: Text('لا توجد نتائج مطابقة للبحث.'),
+                                )
+                              : ListView.separated(
+                                  itemCount: suppliers.length,
+                                  separatorBuilder: (context, index) =>
+                                      const Divider(height: 1),
+                                  itemBuilder: (context, idx) {
+                                    final s = suppliers[idx];
+                                    return ListTile(
+                                      title: Text(
+                                        s.name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'تعديل المورد',
-                                      icon: const Icon(Icons.edit_outlined),
-                                      onPressed: () => _showAddSupplierDialog(
-                                        erp,
-                                        existing: s,
+                                      subtitle: Text(
+                                        'الهاتف: ${s.phone} • الموقع: ${s.location}',
                                       ),
-                                    ),
-                                  ],
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            'الذمة المستحقة: ${s.dualDebt}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: AppColors.dangerWaste,
+                                            ),
+                                          ),
+                                          IconButton(
+                                            tooltip: 'تعديل المورد',
+                                            icon: const Icon(
+                                              Icons.edit_outlined,
+                                            ),
+                                            onPressed: () =>
+                                                _showAddSupplierDialog(
+                                                  erp,
+                                                  existing: s,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
                                 ),
-                              );
-                            },
-                          ),
                         ),
                       ),
                     ],
@@ -1258,47 +1312,59 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         ],
                       ),
                       const SizedBox(height: 12),
+                      _buildPersonsSearchField(
+                        _personsClientsSearchCtrl,
+                        'بحث في المعتمدين والزبائن بالاسم أو الهاتف أو الموقع...',
+                      ),
+                      const SizedBox(height: 12),
                       Expanded(
                         child: Card(
-                          child: ListView.separated(
-                            itemCount: erp.clients.length,
-                            separatorBuilder: (context, index) =>
-                                const Divider(height: 1),
-                            itemBuilder: (context, idx) {
-                              final c = erp.clients[idx];
-                              return ListTile(
-                                title: Text(
-                                  c.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  'النوع: ${c.clientType} • الهاتف: ${c.phone} • الموقع: ${c.location}',
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'الديون المستحقة: ${c.dualDebt}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.accentPrimary,
+                          child: clients.isEmpty
+                              ? const Center(
+                                  child: Text('لا توجد نتائج مطابقة للبحث.'),
+                                )
+                              : ListView.separated(
+                                  itemCount: clients.length,
+                                  separatorBuilder: (context, index) =>
+                                      const Divider(height: 1),
+                                  itemBuilder: (context, idx) {
+                                    final c = clients[idx];
+                                    return ListTile(
+                                      title: Text(
+                                        c.name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'تعديل المعتمد/الزبون',
-                                      icon: const Icon(Icons.edit_outlined),
-                                      onPressed: () => _showAddClientDialog(
-                                        erp,
-                                        existing: c,
+                                      subtitle: Text(
+                                        'النوع: ${c.clientType} • الهاتف: ${c.phone} • الموقع: ${c.location}',
                                       ),
-                                    ),
-                                  ],
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            'الديون المستحقة: ${c.dualDebt}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: AppColors.accentPrimary,
+                                            ),
+                                          ),
+                                          IconButton(
+                                            tooltip: 'تعديل المعتمد/الزبون',
+                                            icon: const Icon(
+                                              Icons.edit_outlined,
+                                            ),
+                                            onPressed: () =>
+                                                _showAddClientDialog(
+                                                  erp,
+                                                  existing: c,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
                                 ),
-                              );
-                            },
-                          ),
                         ),
                       ),
                     ],

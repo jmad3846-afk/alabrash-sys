@@ -5359,6 +5359,17 @@ class ERPProvider extends ChangeNotifier {
     saveToDisk();
   }
 
+  /// Reopens an approved opening entry so its original balances and records
+  /// can be corrected, then approved again through [lockOpeningEntry].
+  void unlockOpeningEntryForEditing() {
+    if (!openingEntry.isLocked) return;
+    openingEntry.isLocked = false;
+    openingEntry.lockedAt = null;
+    isOpeningEntryCompleted = false;
+    notifyListeners();
+    saveToDisk();
+  }
+
   // -------------------------------------------------------------
   // CURRENT PHYSICAL INVENTORY VALUATION
   // -------------------------------------------------------------

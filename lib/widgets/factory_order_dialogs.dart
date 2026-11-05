@@ -13,8 +13,9 @@ void showAddFactoryOrderDialog(
   ERPProvider erp, {
   void Function(FactoryOrderModel)? onOrderCreated,
 }) {
-  final approvedClients =
-      erp.clients.where((c) => c.clientType == 'معتمد مصنع').toList();
+  final approvedClients = erp.clients
+      .where((c) => c.clientType == 'معتمد مصنع')
+      .toList();
 
   if (approvedClients.isEmpty || erp.factoryWarehouse.isEmpty) {
     showDialog(
@@ -74,9 +75,14 @@ void showAddFactoryOrderDialog(
     if (item.category == 'متر مكعب' && item.recommendedSalePrice > 0) {
       return item.recommendedSalePrice;
     }
-    final matches = erp.factoryWarehouse.where(
-      (w) => w.typeName.trim() == item.typeName.trim() && w.category == 'متر مكعب' && w.recommendedSalePrice > 0,
-    ).toList();
+    final matches = erp.factoryWarehouse
+        .where(
+          (w) =>
+              w.typeName.trim() == item.typeName.trim() &&
+              w.category == 'متر مكعب' &&
+              w.recommendedSalePrice > 0,
+        )
+        .toList();
     if (matches.isNotEmpty) {
       return matches.first.recommendedSalePrice;
     }
@@ -105,7 +111,10 @@ void showAddFactoryOrderDialog(
       builder: (ctx, setSt) {
         final clientsFiltered = approvedClients
             .where(
-              (c) => clientSearch.isEmpty || c.name.contains(clientSearch),
+              (c) => arabicFuzzyMatch(
+                '${c.name} ${c.phone} ${c.location}',
+                clientSearch,
+              ),
             )
             .toList();
         final clientValue = clientsFiltered.any((c) => c.id == selectedClientId)
@@ -124,11 +133,14 @@ void showAddFactoryOrderDialog(
         final goodsValue = goodsFiltered.any((w) => w.id == selectedWhId)
             ? selectedWhId
             : null;
-        final matches =
-            erp.factoryWarehouse.where((w) => w.id == selectedWhId).toList();
-        final FactoryWarehouseModel? wh =
-            matches.isEmpty ? null : matches.first;
-        final bool isCube = selectedItemMeterUnit == 'متر مكعب' || wh?.category == 'متر مكعب';
+        final matches = erp.factoryWarehouse
+            .where((w) => w.id == selectedWhId)
+            .toList();
+        final FactoryWarehouseModel? wh = matches.isEmpty
+            ? null
+            : matches.first;
+        final bool isCube =
+            selectedItemMeterUnit == 'متر مكعب' || wh?.category == 'متر مكعب';
 
         if (wh != null) {
           if (isCube) {
@@ -156,8 +168,9 @@ void showAddFactoryOrderDialog(
 
         void autoCalcServicePrice() {
           if (selectedServiceId == null) return;
-          final srvMatches =
-              erp.services.where((s) => s.id == selectedServiceId).toList();
+          final srvMatches = erp.services
+              .where((s) => s.id == selectedServiceId)
+              .toList();
           if (srvMatches.isEmpty) return;
           final srv = srvMatches.first;
 
@@ -173,8 +186,7 @@ void showAddFactoryOrderDialog(
           } else if (curQty > 0) {
             final double calc = curQty * srv.unitRate;
             servicePriceCtrl.text = calc.toStringAsFixed(2);
-            serviceNotesCtrl.text =
-                '${curQty.fmt} قطع × ${srv.unitRate.fmt}\$';
+            serviceNotesCtrl.text = '${curQty.fmt} قطع × ${srv.unitRate.fmt}\$';
           } else {
             servicePriceCtrl.text = srv.unitRate.toStringAsFixed(2);
             serviceNotesCtrl.text = 'سعر الوحدة: ${srv.unitRate.fmt}\$';
@@ -195,11 +207,15 @@ void showAddFactoryOrderDialog(
         final double salesDiscount =
             double.tryParse(salesDiscountCtrl.text) ?? 0.0;
         final double grandTotal =
-            (itemsTotal + itemsServicesTotal + shipping - salesDiscount)
-                .clamp(0.0, double.infinity);
+            (itemsTotal + itemsServicesTotal + shipping - salesDiscount).clamp(
+              0.0,
+              double.infinity,
+            );
         final double deposit = double.tryParse(depositCtrl.text) ?? 0.0;
-        final double remaining =
-            (grandTotal - deposit).clamp(0.0, double.infinity);
+        final double remaining = (grandTotal - deposit).clamp(
+          0.0,
+          double.infinity,
+        );
 
         final servicesFiltered = erp.services
             .where(
@@ -208,8 +224,8 @@ void showAddFactoryOrderDialog(
             .toList();
         final serviceValue =
             servicesFiltered.any((s) => s.id == selectedServiceId)
-                ? selectedServiceId
-                : null;
+            ? selectedServiceId
+            : null;
 
         double draftedFor(String whId) => draftItems
             .where((it) => it.itemId == whId)
@@ -301,12 +317,18 @@ void showAddFactoryOrderDialog(
                   DropdownButtonFormField<String>(
                     initialValue: clientValue,
                     isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'اختر المعتمد'),
+                    decoration: const InputDecoration(
+                      labelText: 'اختر المعتمد',
+                    ),
                     items: clientsFiltered
                         .map(
                           (c) => DropdownMenuItem(
                             value: c.id,
-                            child: Text('${c.name} (${c.location})'),
+                            child: Text(
+                              c.location.isEmpty
+                                  ? c.name
+                                  : '${c.name} • ${c.location}',
+                            ),
                           ),
                         )
                         .toList(),
@@ -354,11 +376,17 @@ void showAddFactoryOrderDialog(
                               .toList();
                           if (mList.isNotEmpty) {
                             final selWh = mList.first;
-                            selectedItemMeterUnit = selWh.category == 'متر مكعب' ? 'متر مكعب' : 'متر مربع';
+                            selectedItemMeterUnit = selWh.category == 'متر مكعب'
+                                ? 'متر مكعب'
+                                : 'متر مربع';
                             if (selectedItemMeterUnit == 'متر مكعب') {
                               heightCtrl.text = selWh.thicknessCm.fmt;
                               final cp = getFactoryCubicSellingPrice(selWh);
-                              unitPriceCtrl.text = cp > 0 ? cp.fmt : (selWh.recommendedSalePrice > 0 ? selWh.recommendedSalePrice.fmt : '');
+                              unitPriceCtrl.text = cp > 0
+                                  ? cp.fmt
+                                  : (selWh.recommendedSalePrice > 0
+                                        ? selWh.recommendedSalePrice.fmt
+                                        : '');
                             } else {
                               heightCtrl.clear();
                               if (selWh.recommendedSalePrice > 0) {
@@ -379,7 +407,10 @@ void showAddFactoryOrderDialog(
                       children: [
                         const Text(
                           'وحدة القياس / البيع:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         ChoiceChip(
@@ -391,7 +422,8 @@ void showAddFactoryOrderDialog(
                                 selectedItemMeterUnit = 'متر مربع';
                                 heightCtrl.clear();
                                 if (wh.recommendedSalePrice > 0) {
-                                  unitPriceCtrl.text = wh.recommendedSalePrice.fmt;
+                                  unitPriceCtrl.text =
+                                      wh.recommendedSalePrice.fmt;
                                 }
                               });
                             }
@@ -457,7 +489,8 @@ void showAddFactoryOrderDialog(
                                   ),
                               decoration: InputDecoration(
                                 labelText: 'الارتفاع = السماكة (سم)',
-                                helperText: 'سماكة المادة: ${wh.thicknessCm.fmt} سم',
+                                helperText:
+                                    'سماكة المادة: ${wh.thicknessCm.fmt} سم',
                               ),
                               onChanged: (_) => setSt(() {}),
                             ),
@@ -496,8 +529,8 @@ void showAddFactoryOrderDialog(
                               helperText: isCube
                                   ? 'سعر المتر المكعب للمادة: ${getFactoryCubicSellingPrice(wh).fmt} \$'
                                   : (wh.recommendedSalePrice > 0
-                                      ? 'سعر المستودع: ${wh.recommendedSalePrice.fmt} \$'
-                                      : null),
+                                        ? 'سعر المستودع: ${wh.recommendedSalePrice.fmt} \$'
+                                        : null),
                             ),
                             onChanged: (_) => setSt(() {}),
                           ),
@@ -717,7 +750,7 @@ void showAddFactoryOrderDialog(
                                   );
                                   final p =
                                       double.tryParse(servicePriceCtrl.text) ??
-                                          srv.unitRate;
+                                      srv.unitRate;
                                   setSt(() {
                                     draftServices.add(
                                       ServiceAttachment(
@@ -784,8 +817,7 @@ void showAddFactoryOrderDialog(
                             setSt(() => formError = 'أدخل سعر وحدة صحيح.');
                             return;
                           }
-                          final available =
-                              wh.availableQty - draftedFor(wh.id);
+                          final available = wh.availableQty - draftedFor(wh.id);
                           if (area > available + 0.0001) {
                             setSt(
                               () => formError =
@@ -966,12 +998,14 @@ void showAddFactoryOrderDialog(
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: AppColors.orderDepositBoxAccent
-                                .withValues(alpha: 0.08),
+                            color: AppColors.orderDepositBoxAccent.withValues(
+                              alpha: 0.08,
+                            ),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: AppColors.orderDepositBoxAccent
-                                  .withValues(alpha: 0.3),
+                              color: AppColors.orderDepositBoxAccent.withValues(
+                                alpha: 0.3,
+                              ),
                             ),
                           ),
                           child: Column(
@@ -1130,7 +1164,8 @@ void showAddFactoryOrderDialog(
                       }
                       if (draftItems.isEmpty) {
                         setSt(
-                          () => formError = 'أضف صنفاً واحداً على الأقل للطلبية.',
+                          () =>
+                              formError = 'أضف صنفاً واحداً على الأقل للطلبية.',
                         );
                         return;
                       }
@@ -1152,8 +1187,7 @@ void showAddFactoryOrderDialog(
 
                       final order = FactoryOrderModel(
                         id: 'fo_${DateTime.now().millisecondsSinceEpoch}',
-                        orderNo:
-                            'FORD-${erp.factoryOrders.length + 101}',
+                        orderNo: 'FORD-${erp.factoryOrders.length + 101}',
                         date: DateTime.now(),
                         partyId: client.id,
                         clientName: client.name,
@@ -1206,7 +1240,11 @@ void showFactoryOrderSuccessDialog(
     builder: (ctx) => AlertDialog(
       title: Row(
         children: const [
-          Icon(Icons.check_circle_rounded, color: AppColors.successGreen, size: 28),
+          Icon(
+            Icons.check_circle_rounded,
+            color: AppColors.successGreen,
+            size: 28,
+          ),
           SizedBox(width: 10),
           Expanded(child: Text('تم حفظ طلبية المصنع بنجاح')),
         ],
@@ -1247,7 +1285,11 @@ void showFactoryOrderSuccessDialog(
             ),
             child: const Row(
               children: [
-                Icon(Icons.info_outline_rounded, color: Color(0xFF2563EB), size: 18),
+                Icon(
+                  Icons.info_outline_rounded,
+                  color: Color(0xFF2563EB),
+                  size: 18,
+                ),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -1306,7 +1348,11 @@ void showCancelFactoryOrderDialog(
       builder: (ctx, setSt) => AlertDialog(
         title: Row(
           children: [
-            const Icon(Icons.warning_amber_rounded, color: AppColors.dangerWaste, size: 26),
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: AppColors.dangerWaste,
+              size: 26,
+            ),
             const SizedBox(width: 10),
             Expanded(child: Text('إلغاء طلبية المصنع (${order.orderNo})')),
           ],
@@ -1512,8 +1558,8 @@ void showCancelFactoryOrderDialog(
                     isCompleted
                         ? 'تم إلغاء الطلبية كمكتملة: بقي العربون في الصندوق وأعيدت الأمتار لمستودع المصنع.'
                         : refundDeposit
-                            ? 'تم إلغاء الطلبية واسترجاع العربون للزبون وأعيدت الأمتار لمستودع المصنع.'
-                            : 'تم إلغاء الطلبية مع إبقاء العربون وأعيدت الأمتار لمستودع المصنع.',
+                        ? 'تم إلغاء الطلبية واسترجاع العربون للزبون وأعيدت الأمتار لمستودع المصنع.'
+                        : 'تم إلغاء الطلبية مع إبقاء العربون وأعيدت الأمتار لمستودع المصنع.',
                   ),
                   backgroundColor: AppColors.dangerWaste,
                 ),

@@ -1491,9 +1491,11 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
     var currency = AppCurrency.usd;
     var box = 'main';
     String? staffId;
-    String? classification = type.name == 'مصروف قص وتصنيع مباشر'
+    final classification =
+        type.id == ERPProvider.cuttingExpenseTypeId ||
+            type.name == 'مصروف قص وتصنيع مباشر'
         ? ExpenseRecordModel.manufacturing
-        : null;
+        : ExpenseRecordModel.operational;
     String? cuttingBatchId;
     String? error;
     final route = DialogRoute<bool>(
@@ -1526,27 +1528,6 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    DropdownButtonFormField<String>(
-                      initialValue: classification,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'نوع المصروف *',
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: ExpenseRecordModel.operational,
-                          child: Text('مصروف تشغيلي'),
-                        ),
-                        DropdownMenuItem(
-                          value: ExpenseRecordModel.manufacturing,
-                          child: Text('مصروف قص وتصنيع مباشر'),
-                        ),
-                      ],
-                      onChanged: (value) => update(() {
-                        classification = value;
-                        error = null;
-                      }),
-                    ),
                     TextField(
                       controller: amount,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -1693,8 +1674,7 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                   final personShare = share.text.trim().isEmpty
                       ? 0.0
                       : parse(share);
-                  if (classification == null ||
-                      value == null ||
+                  if (value == null ||
                       !value.isFinite ||
                       value <= 0 ||
                       personShare == null ||
@@ -1705,8 +1685,8 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                       (classification == ExpenseRecordModel.manufacturing &&
                           (cuttingBatchId == null))) {
                     update(
-                      () => error =
-                          'حدد نوع المصروف وتحقق من المبلغ وعملية القص والمستفيد وحصته.',
+                      () =>
+                          error = 'تحقق من المبلغ وعملية القص والمستفيد وحصته.',
                     );
                     return;
                   }
