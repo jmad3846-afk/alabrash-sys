@@ -224,6 +224,7 @@ class ERPProvider extends ChangeNotifier {
 
   static const String blockPurchaseExpenseTypeId = 'block_purchases_expense';
   static const String cuttingExpenseTypeId = 'cutting_processing_expense';
+  static const double standardCuttingOverheadRate = 0.09;
 
   // Unallocated customer collections (cash tracking only): unallocated debt settlements (opening / historical customer balances)
   double unallocatedFactoryCollectionsUsd = 0.0;
@@ -4966,7 +4967,7 @@ class ERPProvider extends ChangeNotifier {
         label.contains('مصاريف القص') ||
         label.contains('أجور القص') ||
         label.contains('Cutting Expenses'))
-      return ExpenseRecordModel.manufacturing;
+      return ExpenseRecordModel.operational;
     if (label.contains('shipping_transport') ||
         expense.id.startsWith('exp_ship_'))
       return ExpenseRecordModel.freight;
@@ -5261,10 +5262,98 @@ class ERPProvider extends ChangeNotifier {
   double get totalCuttingExpenses => totalCuttingExpensesOf(AppCurrency.usd);
   double get totalCuttingExpensesSyp => totalCuttingExpensesOf(AppCurrency.syp);
 
+  bool _isInFinancialPeriod(DateTime date, {DateTime? start, DateTime? end}) =>
+      (start == null || !date.isBefore(start)) &&
+      (end == null || date.isBefore(end));
+
+  double _standardCuttingOverheadForUnits(
+    Map<String, double> batchUnits,
+    double quantity,
+    String currency,
+  ) {
+    if (quantity <= 0) return 0;
+    return batchUnits.entries.fold<double>(0, (sum, entry) {
+      final batch = _firstOrNull(
+        cuttingOperations.where(
+          (operation) =>
+              operation.id == entry.key && operation.currency == currency,
+        ),
+      );
+      if (batch == null) return sum;
+      return sum +
+          quantity *
+              entry.value *
+              batch.netCostPerUnit *
+              standardCuttingOverheadRate;
+    });
+  }
+
+  /// The 9% standard cutting allowance included in sold cutting output.
+  double collectedStandardCuttingOverheadOf(
+    String? currency, {
+    DateTime? start,
+    DateTime? end,
+  }) {
+    final c = AppCurrency.normalize(currency);
+    var total = 0.0;
+    for (final invoice in factoryInvoices.where(
+      (invoice) =>
+          invoice.invoiceType == 'بيع_معتمد' &&
+          invoice.currency == c &&
+          _isInFinancialPeriod(invoice.date, start: start, end: end),
+    )) {
+      for (final item in invoice.items) {
+        total += _standardCuttingOverheadForUnits(
+          item.batchUnitsPerUnit,
+          item.calculatedArea,
+          c,
+        );
+      }
+    }
+    for (final invoice in workshopInvoices.where(
+      (invoice) =>
+          invoice.currency == c &&
+          _isInFinancialPeriod(invoice.date, start: start, end: end),
+    )) {
+      for (final item in _workshopInvoiceLines(invoice)) {
+        total += _standardCuttingOverheadForUnits(
+          item.batchUnitsPerUnit,
+          item.quantity,
+          c,
+        );
+      }
+    }
+    return total;
+  }
+
+  double operatingExpensesForPeriodOf(
+    String? currency, {
+    DateTime? start,
+    DateTime? end,
+  }) {
+    final c = AppCurrency.normalize(currency);
+    return expenseRecords
+        .where(
+          (expense) =>
+              isOperatingExpense(expense) &&
+              expense.currency == c &&
+              _isInFinancialPeriod(expense.date, start: start, end: end),
+        )
+        .fold<double>(0, (sum, expense) => sum + expense.amount);
+  }
+
+  /// Positive values are operating-cost savings; negative values are deficits.
+  double operatingCostVarianceOf(
+    String? currency, {
+    DateTime? start,
+    DateTime? end,
+  }) =>
+      collectedStandardCuttingOverheadOf(currency, start: start, end: end) -
+      operatingExpensesForPeriodOf(currency, start: start, end: end);
+
   double totalDirectExpensesOf(String? currency) {
     final c = AppCurrency.normalize(currency);
     return totalCOGSOf(c) +
-        expenseRecordsTotalOf(c) +
         totalOperationalExpensesOf(c) +
         totalUnnaturalWasteLossesOf(c) +
         totalSurplusInitialCostOf(c) +
@@ -5289,20 +5378,25 @@ class ERPProvider extends ChangeNotifier {
   double get netOperatingProfit => netOperatingProfitOf(AppCurrency.usd);
   double get netOperatingProfitSyp => netOperatingProfitOf(AppCurrency.syp);
 
-  /// Delivered COGS and operating charges; purchases and manufacturing are capitalized.
+  /// Includes the operating-cost deficit after reconciling the 9% standard
+  /// cutting allowance with actual operating expenses.
   double incomeSummaryExpensesOf(String? currency) {
     final c = AppCurrency.normalize(currency);
-    return totalDirectExpensesOf(c);
+    final variance = operatingCostVarianceOf(c);
+    return totalDirectExpensesOf(c) + (variance < 0 ? -variance : 0);
   }
 
   double get incomeSummaryExpenses => incomeSummaryExpensesOf(AppCurrency.usd);
   double get incomeSummaryExpensesSyp =>
       incomeSummaryExpensesOf(AppCurrency.syp);
 
-  /// Net operating profit for the Income Summary / Statement (excluding direct cutting/manufacturing expenses).
+  /// Net operating profit after the operating-cost savings/deficit adjustment.
   double incomeSummaryNetProfitOf(String? currency) {
     final c = AppCurrency.normalize(currency);
-    return totalRevenuesOf(c) - incomeSummaryExpensesOf(c);
+    final variance = operatingCostVarianceOf(c);
+    return totalRevenuesOf(c) +
+        (variance > 0 ? variance : 0) -
+        incomeSummaryExpensesOf(c);
   }
 
   double get incomeSummaryNetProfit =>
@@ -6137,7 +6231,7 @@ class ERPProvider extends ChangeNotifier {
       for (final c in list) {
         final cost = c.inputTons * avgCost;
         final unitCost = cost / c.outputQty;
-        fee += c.inputTons * avgCost * c.feePercent;
+        fee += c.inputTons * avgCost * standardCuttingOverheadRate;
         output += c.outputQty;
         capital += cost;
         final outputId =
@@ -6155,7 +6249,7 @@ class ERPProvider extends ChangeNotifier {
             thicknessCm: c.thicknessCm,
             category: c.category,
             availableQty: c.outputQty,
-            netCostPerUnit: unitCost,
+            netCostPerUnit: unitCost * (1 + standardCuttingOverheadRate),
             recommendedSalePrice: c.salePrice,
             isGranite: c.isGranite,
           ),
@@ -6171,7 +6265,7 @@ class ERPProvider extends ChangeNotifier {
           timestamp: now,
           inputTons: inputTons,
           baseTonCost: avgCost,
-          cuttingFeePercentage: list.first.feePercent,
+          cuttingFeePercentage: standardCuttingOverheadRate,
           targetTypeName: first.typeName,
           targetGrade: first.grade,
           thicknessCm: first.thicknessCm,
@@ -6191,7 +6285,7 @@ class ERPProvider extends ChangeNotifier {
   // Converts selected raw blocks into a capitalized finished-goods batch.
   void executeCuttingOperation({
     required List<FactoryBlockModel> selectedBlocks,
-    required double cuttingFeePercent, // 0.07, 0.08, 0.09
+    required double cuttingFeePercent,
     required String targetTypeName,
     required String targetGrade,
     required double thicknessCm,
@@ -6246,7 +6340,8 @@ class ERPProvider extends ChangeNotifier {
         thicknessCm: thicknessCm,
         category: category,
         availableQty: totalOutputArea,
-        netCostPerUnit: rawCost / totalOutputArea,
+        netCostPerUnit:
+            rawCost * (1 + standardCuttingOverheadRate) / totalOutputArea,
         recommendedSalePrice: recommendedSalePrice,
         isGranite: isGranite,
       ),
@@ -6259,14 +6354,15 @@ class ERPProvider extends ChangeNotifier {
         outputItemIds: [received.id],
         inputTons: tons,
         baseTonCost: rawCost / tons,
-        cuttingFeePercentage: cuttingFeePercent,
+        cuttingFeePercentage: standardCuttingOverheadRate,
         targetTypeName: targetTypeName,
         targetGrade: targetGrade,
         thicknessCm: thicknessCm,
         category: category,
         totalOutputArea: totalOutputArea,
         netCostPerUnit: rawCost / totalOutputArea,
-        estimatedUnitCost: rawCost * (1 + cuttingFeePercent) / totalOutputArea,
+        estimatedUnitCost:
+            rawCost * (1 + standardCuttingOverheadRate) / totalOutputArea,
         recommendedSalePrice: recommendedSalePrice,
         wasteValue: wasteValue,
         isGranite: isGranite,

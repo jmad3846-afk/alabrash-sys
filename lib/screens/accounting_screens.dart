@@ -1491,35 +1491,12 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
     var currency = AppCurrency.usd;
     var box = 'main';
     String? staffId;
-    final classification =
-        type.id == ERPProvider.cuttingExpenseTypeId ||
-            type.name == 'مصروف قص وتصنيع مباشر'
-        ? ExpenseRecordModel.manufacturing
-        : ExpenseRecordModel.operational;
-    String? cuttingBatchId;
+    const classification = ExpenseRecordModel.operational;
     String? error;
     final route = DialogRoute<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, update) {
-          final choices = <String, String>{
-            for (final batch in erp.cuttingOperations.where(
-              (b) =>
-                  b.currency == currency &&
-                  b.totalOutputArea > 0 &&
-                  b.outputItemIds.isNotEmpty,
-            ))
-              batch.id:
-                  batch.id +
-                  ' • ' +
-                  batch.targetTypeName +
-                  ' • ' +
-                  (batch.sourceSection == 'factory' ? 'المصنع' : 'المعمل') +
-                  ' • ' +
-                  batch.totalOutputArea.fmt +
-                  ' ' +
-                  batch.category,
-          };
           return AlertDialog(
             title: Text('مصروف جديد • ' + type.name),
             content: SizedBox(
@@ -1550,41 +1527,8 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                           child: Text('ليرة سورية (SYP)'),
                         ),
                       ],
-                      onChanged: (v) => update(() {
-                        currency = v!;
-                        cuttingBatchId = null;
-                      }),
+                      onChanged: (v) => update(() => currency = v!),
                     ),
-                    if (classification == ExpenseRecordModel.manufacturing) ...[
-                      const SizedBox(height: 8),
-                      const Text(
-                        'يوزع المبلغ الفعلي على جميع مخرجات عملية القص المحددة، ويحدث تكلفة المخزون والمباع دون تكرار.',
-                      ),
-                      DropdownButtonFormField<String>(
-                        key: ValueKey(currency),
-                        initialValue: cuttingBatchId,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'اختيار عملية القص *',
-                        ),
-                        items: choices.entries
-                            .map(
-                              (e) => DropdownMenuItem(
-                                value: e.key,
-                                child: Text(
-                                  e.value,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) => update(() => cuttingBatchId = v),
-                      ),
-                      if (choices.isEmpty)
-                        const Text(
-                          'لا توجد عمليات قص مرتبطة بمخرجات بهذه العملة.',
-                        ),
-                    ],
                     DropdownButtonFormField<String>(
                       initialValue: box,
                       decoration: const InputDecoration(
@@ -1681,13 +1625,8 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                       !personShare.isFinite ||
                       personShare < 0 ||
                       personShare > value ||
-                      (personShare > 0 && person.text.trim().isEmpty) ||
-                      (classification == ExpenseRecordModel.manufacturing &&
-                          (cuttingBatchId == null))) {
-                    update(
-                      () =>
-                          error = 'تحقق من المبلغ وعملية القص والمستفيد وحصته.',
-                    );
+                      (personShare > 0 && person.text.trim().isEmpty)) {
+                    update(() => error = 'تحقق من المبلغ والمستفيد وحصته.');
                     return;
                   }
                   try {
@@ -1705,10 +1644,6 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                         personShare: personShare,
                         description: description.text.trim(),
                         cashBox: box,
-                        cuttingBatchId:
-                            classification == ExpenseRecordModel.manufacturing
-                            ? cuttingBatchId!
-                            : '',
                       ),
                     );
                     if (staffId != null && personShare > 0) {

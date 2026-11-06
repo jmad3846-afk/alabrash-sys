@@ -36,6 +36,25 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   String _agentCurrency = 'ALL';
   String _surplusCurrency = 'ALL';
   String _pnlCurrency = 'ALL';
+  DateTime _pnlPeriod = DateTime.now();
+
+  String get _pnlPeriodLabel {
+    const months = [
+      'كانون الثاني',
+      'شباط',
+      'آذار',
+      'نيسان',
+      'أيار',
+      'حزيران',
+      'تموز',
+      'آب',
+      'أيلول',
+      'تشرين الأول',
+      'تشرين الثاني',
+      'كانون الأول',
+    ];
+    return '${months[_pnlPeriod.month - 1]} ${_pnlPeriod.year}';
+  }
 
   final TextEditingController _supplierSearchCtrl = TextEditingController();
   final TextEditingController _agentSearchCtrl = TextEditingController();
@@ -3075,10 +3094,29 @@ class _FinancialsScreenState extends State<FinancialsScreen>
   // TAB 6: INCOME STATEMENT (ملخص الدخل P&L)
   // -------------------------------------------------------------
   Widget _buildIncomeStatementTab(ERPProvider erp) {
-    final expensesUsd = erp.incomeSummaryExpensesOf(AppCurrency.usd);
-    final expensesSyp = erp.incomeSummaryExpensesOf(AppCurrency.syp);
-    final netProfitUsd = erp.incomeSummaryNetProfitOf(AppCurrency.usd);
-    final netProfitSyp = erp.incomeSummaryNetProfitOf(AppCurrency.syp);
+    final periodStart = DateTime(_pnlPeriod.year, _pnlPeriod.month);
+    final periodEnd = DateTime(_pnlPeriod.year, _pnlPeriod.month + 1);
+    final varianceUsd = erp.operatingCostVarianceOf(
+      AppCurrency.usd,
+      start: periodStart,
+      end: periodEnd,
+    );
+    final varianceSyp = erp.operatingCostVarianceOf(
+      AppCurrency.syp,
+      start: periodStart,
+      end: periodEnd,
+    );
+    final varianceSavingsUsd = varianceUsd > 0 ? varianceUsd : 0.0;
+    final varianceSavingsSyp = varianceSyp > 0 ? varianceSyp : 0.0;
+    final varianceDeficitUsd = varianceUsd < 0 ? -varianceUsd : 0.0;
+    final varianceDeficitSyp = varianceSyp < 0 ? -varianceSyp : 0.0;
+    final expensesUsd =
+        erp.incomeSummaryExpensesOf(AppCurrency.usd) + varianceDeficitUsd;
+    final expensesSyp =
+        erp.incomeSummaryExpensesOf(AppCurrency.syp) + varianceDeficitSyp;
+    final netProfitUsd = erp.totalRevenues + varianceSavingsUsd - expensesUsd;
+    final netProfitSyp =
+        erp.totalRevenuesSyp + varianceSavingsSyp - expensesSyp;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -3150,6 +3188,36 @@ class _FinancialsScreenState extends State<FinancialsScreen>
             ],
           ),
           const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                tooltip: 'الشهر السابق',
+                onPressed: () => setState(
+                  () => _pnlPeriod = DateTime(
+                    _pnlPeriod.year,
+                    _pnlPeriod.month - 1,
+                  ),
+                ),
+                icon: const Icon(Icons.chevron_right),
+              ),
+              Text(
+                'فترة الانحراف التشغيلي: $_pnlPeriodLabel',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                tooltip: 'الشهر التالي',
+                onPressed: () => setState(
+                  () => _pnlPeriod = DateTime(
+                    _pnlPeriod.year,
+                    _pnlPeriod.month + 1,
+                  ),
+                ),
+                icon: const Icon(Icons.chevron_left),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -3233,10 +3301,16 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     erp.revenuePageEarningsOf(AppCurrency.usd),
                     syp: erp.revenuePageEarningsOf(AppCurrency.syp),
                   ),
+                  if (varianceSavingsUsd > 0 || varianceSavingsSyp > 0)
+                    _buildPlLine(
+                      'وفر تكاليف تشغيلية / Operating Cost Savings:',
+                      varianceSavingsUsd,
+                      syp: varianceSavingsSyp,
+                    ),
                   _buildPlLine(
                     'مجموع الإيرادات الكلية:',
-                    erp.totalRevenues,
-                    syp: erp.totalRevenuesSyp,
+                    erp.totalRevenues + varianceSavingsUsd,
+                    syp: erp.totalRevenuesSyp + varianceSavingsSyp,
                     isTotal: true,
                     color: AppColors.accentPrimary,
                   ),
@@ -3263,35 +3337,11 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     erp.totalOperationalExpenses,
                     syp: erp.totalOperationalExpensesSyp,
                   ),
-                  for (final type in erp.expenseTypes.where(
-                    (t) =>
-                        t.id != ERPProvider.blockPurchaseExpenseTypeId &&
-                        !t.name.contains('Block Purchase') &&
-                        !t.name.contains('مشتريات البلوكات'),
-                  ))
+                  if (varianceDeficitUsd > 0 || varianceDeficitSyp > 0)
                     _buildPlLine(
-                      'مصروفات ${type.name}:',
-                      erp.expenseRecords
-                          .where(
-                            (expense) =>
-                                erp.isOperatingExpense(expense) &&
-                                expense.typeId == type.id &&
-                                expense.currency == AppCurrency.usd,
-                          )
-                          .fold<double>(
-                            0,
-                            (sum, expense) => sum + expense.amount,
-                          ),
-                      syp: erp.expenseRecords
-                          .where(
-                            (expense) =>
-                                expense.typeId == type.id &&
-                                expense.currency == AppCurrency.syp,
-                          )
-                          .fold<double>(
-                            0,
-                            (sum, expense) => sum + expense.amount,
-                          ),
+                      'انحراف مصاريف تشغيلية / Operating Cost Deficit:',
+                      varianceDeficitUsd,
+                      syp: varianceDeficitSyp,
                     ),
                   _buildPlLine(
                     'مرتجعات ومسموحات المبيعات:',

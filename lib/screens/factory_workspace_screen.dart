@@ -41,7 +41,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   String _foSearchQuery = '';
 
   // Supplier Purchase Invoices filter/search
-  final TextEditingController _supplierInvoicesSearchCtrl = TextEditingController();
+  final TextEditingController _supplierInvoicesSearchCtrl =
+      TextEditingController();
   String _supplierInvoicesSearch = '';
   String _supplierInvoicesCurrency = 'ALL';
 
@@ -70,15 +71,23 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       final isInvUsd = AppCurrency.isUsd(inv.currency);
 
       final client = erp.clients
-          .where((c) => c.id == inv.partyId || c.name.trim() == inv.partyName.trim())
+          .where(
+            (c) => c.id == inv.partyId || c.name.trim() == inv.partyName.trim(),
+          )
           .firstOrNull;
       final supplier = erp.suppliers
-          .where((s) => s.id == inv.partyId || s.name.trim() == inv.partyName.trim())
+          .where(
+            (s) => s.id == inv.partyId || s.name.trim() == inv.partyName.trim(),
+          )
           .firstOrNull;
 
-      final isSypHolder = (client != null && client.isSypCustomer) ||
-          (supplier != null && supplier.debtBalanceSyp > 0 && supplier.debtBalance <= 0);
-      final isUsdHolder = (client != null && client.isUsdCustomer) ||
+      final isSypHolder =
+          (client != null && client.isSypCustomer) ||
+          (supplier != null &&
+              supplier.debtBalanceSyp > 0 &&
+              supplier.debtBalance <= 0);
+      final isUsdHolder =
+          (client != null && client.isUsdCustomer) ||
           (supplier != null && supplier.debtBalance > 0);
 
       if (currencyFilter == AppCurrency.syp) {
@@ -103,10 +112,14 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     if (query.trim().isEmpty) return true;
 
     final client = erp.clients
-        .where((c) => c.id == inv.partyId || c.name.trim() == inv.partyName.trim())
+        .where(
+          (c) => c.id == inv.partyId || c.name.trim() == inv.partyName.trim(),
+        )
         .firstOrNull;
     final supplier = erp.suppliers
-        .where((s) => s.id == inv.partyId || s.name.trim() == inv.partyName.trim())
+        .where(
+          (s) => s.id == inv.partyId || s.name.trim() == inv.partyName.trim(),
+        )
         .firstOrNull;
     final phone = client?.phone ?? supplier?.phone ?? '';
 
@@ -408,7 +421,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   Widget _buildSubTab2BlockStock(ERPProvider erp) {
     final Map<String, List<FactoryBlockModel>> groups = {};
     for (final b in erp.factoryBlocks) {
-      groups.putIfAbsent('${b.typeName}||${b.grade}||${b.currency}', () => []).add(b);
+      groups
+          .putIfAbsent('${b.typeName}||${b.grade}||${b.currency}', () => [])
+          .add(b);
     }
     final double grandTons = erp.factoryBlocks.fold(
       0.0,
@@ -913,7 +928,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  item.category == 'متر مكعب' ? 'المخزون بالحجم (م³)' : 'السماكة: ${item.thicknessCm.fmt} سم',
+                  item.category == 'متر مكعب'
+                      ? 'المخزون بالحجم (م³)'
+                      : 'السماكة: ${item.thicknessCm.fmt} سم',
                   style: const TextStyle(
                     color: AppColors.brandSecondaryText,
                     fontSize: 12,
@@ -945,7 +962,11 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                       style: TextStyle(fontSize: 12),
                     ),
                     Text(
-                      '${AppCurrency.single(item.netCostPerUnit, item.currency)} / ${item.category == 'متر مكعب' ? 'م³' : item.category == 'متر طولي' ? 'م.ط' : 'م²'}',
+                      '${AppCurrency.single(item.netCostPerUnit, item.currency)} / ${item.category == 'متر مكعب'
+                          ? 'م³'
+                          : item.category == 'متر طولي'
+                          ? 'م.ط'
+                          : 'م²'}',
                       style: const TextStyle(fontSize: 12),
                     ),
                   ],
@@ -961,7 +982,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                       ),
                     ),
                     Text(
-                      AppCurrency.single(item.recommendedSalePrice, item.currency),
+                      AppCurrency.single(
+                        item.recommendedSalePrice,
+                        item.currency,
+                      ),
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         color: AppColors.successGreen,
@@ -1005,8 +1029,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     FactoryWarehouseModel item,
     bool isM2,
   ) {
-    final priceCtrl =
-        TextEditingController(text: item.recommendedSalePrice.fmt);
+    final priceCtrl = TextEditingController(
+      text: item.recommendedSalePrice.fmt,
+    );
     final unit = isM2 ? 'م²' : 'م³';
     showDialog(
       context: context,
@@ -1442,7 +1467,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           const SizedBox(height: 8),
           Card(
             child: erp.blockTypes.isEmpty
-                ? const ListTile(title: Text('لا توجد أنواع خامات أو مواد معرفة بعد.'))
+                ? const ListTile(
+                    title: Text('لا توجد أنواع خامات أو مواد معرفة بعد.'),
+                  )
                 : ListView.separated(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -1472,7 +1499,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         ),
                         trailing: IconButton(
                           tooltip: 'تعديل نوع المادة',
-                          icon: const Icon(Icons.edit_outlined, color: AppColors.accentPrimary),
+                          icon: const Icon(
+                            Icons.edit_outlined,
+                            color: AppColors.accentPrimary,
+                          ),
                           onPressed: () =>
                               _showUnifiedItemTypeDialog(erp, existing: type),
                         ),
@@ -1489,8 +1519,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     ERPProvider erp, {
     BlockTypeModel? existing,
   }) async {
-    final nameController = TextEditingController(text: existing?.typeName ?? '');
-    final gradeController = TextEditingController(text: existing?.grade ?? 'درجة أولى');
+    final nameController = TextEditingController(
+      text: existing?.typeName ?? '',
+    );
+    final gradeController = TextEditingController(
+      text: existing?.grade ?? 'درجة أولى',
+    );
     bool isGranite = existing?.isGranite ?? false;
 
     final saved = await showDialog<bool>(
@@ -1501,7 +1535,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             title: Row(
               children: [
                 Icon(
-                  existing == null ? Icons.add_circle_outline : Icons.edit_outlined,
+                  existing == null
+                      ? Icons.add_circle_outline
+                      : Icons.edit_outlined,
                   color: AppColors.accentPrimary,
                 ),
                 const SizedBox(width: 8),
@@ -1635,29 +1671,37 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   // -------------------------------------------------------------
   Widget _buildCashFactoryInvoices(ERPProvider erp) {
     final allPurchases = erp.factoryInvoices
-        .where((invoice) => invoice.isCashInvoice &&
-            invoice.invoiceType == 'شراء_مورد')
+        .where(
+          (invoice) =>
+              invoice.isCashInvoice && invoice.invoiceType == 'شراء_مورد',
+        )
         .toList();
     final allSales = erp.factoryInvoices
-        .where((invoice) => invoice.isCashInvoice &&
-            invoice.invoiceType == 'بيع_معتمد')
+        .where(
+          (invoice) =>
+              invoice.isCashInvoice && invoice.invoiceType == 'بيع_معتمد',
+        )
         .toList();
 
     final purchases = allPurchases
-        .where((inv) => _matchesFactoryInvoice(
-              inv,
-              _cashInvoicesSearch,
-              _cashInvoicesCurrency,
-              erp,
-            ))
+        .where(
+          (inv) => _matchesFactoryInvoice(
+            inv,
+            _cashInvoicesSearch,
+            _cashInvoicesCurrency,
+            erp,
+          ),
+        )
         .toList();
     final sales = allSales
-        .where((inv) => _matchesFactoryInvoice(
-              inv,
-              _cashInvoicesSearch,
-              _cashInvoicesCurrency,
-              erp,
-            ))
+        .where(
+          (inv) => _matchesFactoryInvoice(
+            inv,
+            _cashInvoicesSearch,
+            _cashInvoicesCurrency,
+            erp,
+          ),
+        )
         .toList();
 
     return DefaultTabController(
@@ -1679,8 +1723,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               searchQuery: _cashInvoicesSearch,
               onSearchChanged: (v) => setState(() => _cashInvoicesSearch = v),
               selectedCurrency: _cashInvoicesCurrency,
-              onCurrencyChanged: (c) => setState(() => _cashInvoicesCurrency = c),
-              hintText: 'بحث في الفواتير النقدية بالاسم، الهاتف، أو رقم الفاتورة...',
+              onCurrencyChanged: (c) =>
+                  setState(() => _cashInvoicesCurrency = c),
+              hintText:
+                  'بحث في الفواتير النقدية بالاسم، الهاتف، أو رقم الفاتورة...',
               onClear: () => setState(() => _cashInvoicesSearch = ''),
             ),
             const SizedBox(height: 12),
@@ -1722,8 +1768,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                       Align(
                         alignment: Alignment.centerRight,
                         child: ElevatedButton.icon(
-                          onPressed: () =>
-                              _showAddSupplierInvoiceDialog(erp, cashInvoice: true),
+                          onPressed: () => _showAddSupplierInvoiceDialog(
+                            erp,
+                            cashInvoice: true,
+                          ),
                           icon: const Icon(Icons.payments_rounded),
                           label: const Text('إضافة فاتورة شراء نقدية'),
                         ),
@@ -1751,12 +1799,14 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
         .where((i) => i.invoiceType == 'شراء_مورد')
         .toList();
     final filtered = allPurchases
-        .where((i) => _matchesFactoryInvoice(
-              i,
-              _supplierInvoicesSearch,
-              _supplierInvoicesCurrency,
-              erp,
-            ))
+        .where(
+          (i) => _matchesFactoryInvoice(
+            i,
+            _supplierInvoicesSearch,
+            _supplierInvoicesCurrency,
+            erp,
+          ),
+        )
         .toList();
 
     final due = filtered.where((i) => i.isDue).toList();
@@ -1791,7 +1841,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               selectedCurrency: _supplierInvoicesCurrency,
               onCurrencyChanged: (c) =>
                   setState(() => _supplierInvoicesCurrency = c),
-              hintText: 'بحث في فواتير الشراء بالاسم، الهاتف، أو رقم الفاتورة...',
+              hintText:
+                  'بحث في فواتير الشراء بالاسم، الهاتف، أو رقم الفاتورة...',
               onClear: () => setState(() => _supplierInvoicesSearch = ''),
             ),
             const SizedBox(height: 12),
@@ -1869,8 +1920,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color:
-                        inv.isDue ? AppColors.chipBgRed : AppColors.chipBgGreen,
+                    color: inv.isDue
+                        ? AppColors.chipBgRed
+                        : AppColors.chipBgGreen,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
@@ -1954,12 +2006,14 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
         .where((i) => i.invoiceType == 'بيع_معتمد')
         .toList();
     final filtered = allSales
-        .where((i) => _matchesFactoryInvoice(
-              i,
-              _agentSalesSearch,
-              _agentSalesCurrency,
-              erp,
-            ))
+        .where(
+          (i) => _matchesFactoryInvoice(
+            i,
+            _agentSalesSearch,
+            _agentSalesCurrency,
+            erp,
+          ),
+        )
         .toList();
 
     final pending = filtered.where((i) => i.isDue).toList();
@@ -1994,9 +2048,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               searchQuery: _agentSalesSearch,
               onSearchChanged: (v) => setState(() => _agentSalesSearch = v),
               selectedCurrency: _agentSalesCurrency,
-              onCurrencyChanged: (c) =>
-                  setState(() => _agentSalesCurrency = c),
-              hintText: 'بحث في فواتير المعتمدين بالاسم، الهاتف، أو رقم الفاتورة...',
+              onCurrencyChanged: (c) => setState(() => _agentSalesCurrency = c),
+              hintText:
+                  'بحث في فواتير المعتمدين بالاسم، الهاتف، أو رقم الفاتورة...',
               onClear: () => setState(() => _agentSalesSearch = ''),
             ),
             const SizedBox(height: 12),
@@ -2030,7 +2084,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     );
   }
 
-  void _showCollectFactoryInvoiceDialog(ERPProvider erp, FactoryInvoiceModel inv) {
+  void _showCollectFactoryInvoiceDialog(
+    ERPProvider erp,
+    FactoryInvoiceModel inv,
+  ) {
     final amountCtrl = TextEditingController(text: inv.remainingBalance.fmt);
     String? errorMsg;
     showDialog(
@@ -2039,10 +2096,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       builder: (dctx) => StatefulBuilder(
         builder: (dctx, setSt) {
           return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             title: Row(
               children: [
-                const Icon(Icons.payments_rounded, color: AppColors.successGreen),
+                const Icon(
+                  Icons.payments_rounded,
+                  color: AppColors.successGreen,
+                ),
                 const SizedBox(width: 8),
                 Expanded(child: Text('تحصيل دفعة من فاتورة ${inv.invoiceNo}')),
               ],
@@ -2053,7 +2115,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('المعتمد: ${inv.partyName}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    'المعتمد: ${inv.partyName}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 6),
                   Container(
                     padding: const EdgeInsets.all(10),
@@ -2067,26 +2132,53 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('إجمالي الفاتورة:', style: TextStyle(fontSize: 12)),
-                            Text('${inv.grandTotal.fmt} ${inv.currencySymbol}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                            const Text(
+                              'إجمالي الفاتورة:',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            Text(
+                              '${inv.grandTotal.fmt} ${inv.currencySymbol}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 4),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('المحصل سابقاً:', style: TextStyle(fontSize: 12)),
-                            Text('${inv.advancePayment.fmt} ${inv.currencySymbol}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.successGreen)),
+                            const Text(
+                              'المحصل سابقاً:',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            Text(
+                              '${inv.advancePayment.fmt} ${inv.currencySymbol}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.successGreen,
+                              ),
+                            ),
                           ],
                         ),
                         const Divider(height: 10),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('الرصيد المتبقي للتحصيل:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            const Text(
+                              'الرصيد المتبقي للتحصيل:',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                             Text(
                               '${inv.remainingBalance.fmt} ${inv.currencySymbol}',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.dangerWaste),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.dangerWaste,
+                              ),
                             ),
                           ],
                         ),
@@ -2096,10 +2188,13 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   const SizedBox(height: 14),
                   TextField(
                     controller: amountCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'المبلغ المحصل الآن (${inv.currencySymbol})',
-                      helperText: 'الحد الأقصى المسموح: ${inv.remainingBalance.fmt} ${inv.currencySymbol}',
+                      helperText:
+                          'الحد الأقصى المسموح: ${inv.remainingBalance.fmt} ${inv.currencySymbol}',
                       errorText: errorMsg,
                       suffixIcon: TextButton(
                         onPressed: () {
@@ -2108,14 +2203,18 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             errorMsg = null;
                           });
                         },
-                        child: const Text('كامل المتبقي', style: TextStyle(fontSize: 11)),
+                        child: const Text(
+                          'كامل المتبقي',
+                          style: TextStyle(fontSize: 11),
+                        ),
                       ),
                     ),
                     onChanged: (val) {
                       final parsed = double.tryParse(val.trim()) ?? 0.0;
                       setSt(() {
                         if (parsed > inv.remainingBalance + 0.001) {
-                          errorMsg = 'خطأ: المبلغ المدخل يتجاوز الرصيد المتبقي (${inv.remainingBalance.fmt} ${inv.currencySymbol})!';
+                          errorMsg =
+                              'خطأ: المبلغ المدخل يتجاوز الرصيد المتبقي (${inv.remainingBalance.fmt} ${inv.currencySymbol})!';
                         } else if (parsed <= 0 && val.trim().isNotEmpty) {
                           errorMsg = 'المبلغ يجب أن يكون أكبر من الصفر';
                         } else {
@@ -2128,7 +2227,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('إلغاء')),
+              TextButton(
+                onPressed: () => Navigator.pop(dctx),
+                child: const Text('إلغاء'),
+              ),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.successGreen,
@@ -2139,11 +2241,16 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 onPressed: () {
                   final payAmt = double.tryParse(amountCtrl.text.trim()) ?? 0.0;
                   if (payAmt <= 0) {
-                    setSt(() => errorMsg = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.');
+                    setSt(
+                      () => errorMsg = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.',
+                    );
                     return;
                   }
                   if (payAmt > inv.remainingBalance + 0.001) {
-                    setSt(() => errorMsg = 'خطأ: المبلغ المدخل (${payAmt.fmt}) يتجاوز الرصيد المتبقي (${inv.remainingBalance.fmt} ${inv.currencySymbol})!');
+                    setSt(
+                      () => errorMsg =
+                          'خطأ: المبلغ المدخل (${payAmt.fmt}) يتجاوز الرصيد المتبقي (${inv.remainingBalance.fmt} ${inv.currencySymbol})!',
+                    );
                     return;
                   }
                   final ok = erp.collectFactoryInvoice(inv, payAmt);
@@ -2154,7 +2261,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   Navigator.pop(dctx);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('تم تحصيل ${payAmt.fmt} ${inv.currencySymbol} وإيداعها بالصندوق الرئيسي بنجاح.'),
+                      content: Text(
+                        'تم تحصيل ${payAmt.fmt} ${inv.currencySymbol} وإيداعها بالصندوق الرئيسي بنجاح.',
+                      ),
                       backgroundColor: AppColors.successGreen,
                     ),
                   );
@@ -2219,11 +2328,23 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.successGreen,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       minimumSize: const Size(60, 32),
                     ),
-                    onPressed: () => _showCollectFactoryInvoiceDialog(context.read<ERPProvider>(), inv),
-                    child: const Text('تحصيل', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    onPressed: () => _showCollectFactoryInvoiceDialog(
+                      context.read<ERPProvider>(),
+                      inv,
+                    ),
+                    child: const Text(
+                      'تحصيل',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ],
                 IconButton(
@@ -2408,9 +2529,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   // -------------------------------------------------------------
   Widget _buildSubTab9FactoryOrders(ERPProvider erp) {
     final allOrders = erp.factoryOrders;
-    final inProgress = allOrders.where((o) => o.status == 'قيد التنفيذ').toList();
-    final completed = allOrders.where((o) => o.status == 'مكتملة ومرحلة').toList();
-    final cancelled = allOrders.where((o) => o.status.startsWith('ملغاة')).toList();
+    final inProgress = allOrders
+        .where((o) => o.status == 'قيد التنفيذ')
+        .toList();
+    final completed = allOrders
+        .where((o) => o.status == 'مكتملة ومرحلة')
+        .toList();
+    final cancelled = allOrders
+        .where((o) => o.status.startsWith('ملغاة'))
+        .toList();
 
     List<FactoryOrderModel> filtered = allOrders;
     if (_foStatusFilter == 'قيد التنفيذ') {
@@ -2445,7 +2572,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: AppColors.orderDepositBoxAccent.withValues(alpha: 0.12),
+                      color: AppColors.orderDepositBoxAccent.withValues(
+                        alpha: 0.12,
+                      ),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(
@@ -2481,7 +2610,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.orderDepositBoxAccent,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -2563,7 +2695,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: AppColors.panelBorder),
+                      borderSide: const BorderSide(
+                        color: AppColors.panelBorder,
+                      ),
                     ),
                   ),
                   onChanged: (v) => setState(() => _foSearchQuery = v.trim()),
@@ -2573,13 +2707,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               Wrap(
                 spacing: 6,
                 children: ['الكل', 'قيد التنفيذ', 'مكتملة ومرحلة', 'ملغاة']
-                    .map((status) => ChoiceChip(
-                          label: Text(status),
-                          selected: _foStatusFilter == status,
-                          onSelected: (sel) {
-                            if (sel) setState(() => _foStatusFilter = status);
-                          },
-                        ))
+                    .map(
+                      (status) => ChoiceChip(
+                        label: Text(status),
+                        selected: _foStatusFilter == status,
+                        onSelected: (sel) {
+                          if (sel) setState(() => _foStatusFilter = status);
+                        },
+                      ),
+                    )
                     .toList(),
               ),
             ],
@@ -2626,11 +2762,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: isInProgress
-                                  ? AppColors.orderDepositBoxAccent
-                                      .withValues(alpha: 0.3)
+                                  ? AppColors.orderDepositBoxAccent.withValues(
+                                      alpha: 0.3,
+                                    )
                                   : isOrdCompleted
-                                      ? const Color(0xFFBBF7D0)
-                                      : const Color(0xFFFECACA),
+                                  ? const Color(0xFFBBF7D0)
+                                  : const Color(0xFFFECACA),
                               width: 1.2,
                             ),
                             boxShadow: [
@@ -2680,8 +2817,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     color: isInProgress
                                         ? const Color(0xFFFEF3C7)
                                         : isOrdCompleted
-                                            ? AppColors.chipBgGreen
-                                            : AppColors.chipBgRed,
+                                        ? AppColors.chipBgGreen
+                                        : AppColors.chipBgRed,
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
@@ -2692,8 +2829,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                       color: isInProgress
                                           ? const Color(0xFFB45309)
                                           : isOrdCompleted
-                                              ? AppColors.successGreen
-                                              : AppColors.dangerWaste,
+                                          ? AppColors.successGreen
+                                          : AppColors.dangerWaste,
                                     ),
                                   ),
                                 ),
@@ -2777,7 +2914,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               Padding(
                                 padding: const EdgeInsets.all(16),
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
                                     // Items details
                                     const Text(
@@ -2791,12 +2929,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     ...ord.items.asMap().entries.map((entry) {
                                       final it = entry.value;
                                       return Container(
-                                        margin: const EdgeInsets.only(bottom: 6),
+                                        margin: const EdgeInsets.only(
+                                          bottom: 6,
+                                        ),
                                         padding: const EdgeInsets.all(10),
                                         decoration: BoxDecoration(
                                           color: const Color(0xFFF8FAFC),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                           border: Border.all(
                                             color: AppColors.panelBorder,
                                           ),
@@ -2805,9 +2946,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           children: [
                                             CircleAvatar(
                                               radius: 12,
-                                              backgroundColor:
-                                                  AppColors.accentPrimary
-                                                      .withValues(alpha: 0.1),
+                                              backgroundColor: AppColors
+                                                  .accentPrimary
+                                                  .withValues(alpha: 0.1),
                                               child: Text(
                                                 '${entry.key + 1}',
                                                 style: const TextStyle(
@@ -2921,17 +3062,16 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
 
                                     // Action buttons row
                                     Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.end,
+                                      mainAxisAlignment: MainAxisAlignment.end,
                                       children: [
                                         // Preview for Printing button
                                         ElevatedButton.icon(
                                           style: ElevatedButton.styleFrom(
-                                            backgroundColor:
-                                                const Color(0xFF2563EB),
+                                            backgroundColor: const Color(
+                                              0xFF2563EB,
+                                            ),
                                             foregroundColor: Colors.white,
-                                            padding:
-                                                const EdgeInsets.symmetric(
+                                            padding: const EdgeInsets.symmetric(
                                               horizontal: 14,
                                               vertical: 10,
                                             ),
@@ -2940,8 +3080,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                             A4InvoicePrintDialog.show(
                                               context,
                                               invoiceData:
-                                                  A4InvoiceData
-                                                      .fromFactoryOrder(ord),
+                                                  A4InvoiceData.fromFactoryOrder(
+                                                    ord,
+                                                  ),
                                             );
                                           },
                                           icon: const Icon(
@@ -2966,15 +3107,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               foregroundColor: Colors.white,
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                horizontal: 14,
-                                                vertical: 10,
-                                              ),
+                                                    horizontal: 14,
+                                                    vertical: 10,
+                                                  ),
                                             ),
                                             onPressed: () =>
                                                 _showAssignFactoryOrderDialog(
-                                              erp,
-                                              ord,
-                                            ),
+                                                  erp,
+                                                  ord,
+                                                ),
                                             icon: const Icon(
                                               Icons.point_of_sale_rounded,
                                               size: 18,
@@ -2997,16 +3138,16 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               ),
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                horizontal: 14,
-                                                vertical: 10,
-                                              ),
+                                                    horizontal: 14,
+                                                    vertical: 10,
+                                                  ),
                                             ),
                                             onPressed: () =>
                                                 showCancelFactoryOrderDialog(
-                                              context,
-                                              erp,
-                                              ord,
-                                            ),
+                                                  context,
+                                                  erp,
+                                                  ord,
+                                                ),
                                             icon: const Icon(
                                               Icons.cancel_outlined,
                                               size: 18,
@@ -3219,9 +3360,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => AlertDialog(
-          title: Text(
-            existing == null ? 'إضافة معتمد جديد' : 'تعديل المعتمد',
-          ),
+          title: Text(existing == null ? 'إضافة معتمد جديد' : 'تعديل المعتمد'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -3376,7 +3515,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     // totals -> payment Q -> save to Due/Paid + Supplier Finances.
     String? selectedSupplierId;
     String supplierSearch = '';
-    String itemMode = erp.blockTypes.isNotEmpty ? 'block' : 'meter'; // 'block' | 'meter'
+    String itemMode = erp.blockTypes.isNotEmpty
+        ? 'block'
+        : 'meter'; // 'block' | 'meter'
 
     // Block item fields
     String? selectedBlockKey; // '<typeName>||<grade>'
@@ -3387,7 +3528,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     // Meter item fields
     String? selectedMeterTypeId;
     String meterSearch = '';
-    String selectedMeterUnit = 'متر مربع'; // 'متر مربع' | 'متر طولي' | 'متر مكعب'
+    String selectedMeterUnit =
+        'متر مربع'; // 'متر مربع' | 'متر طولي' | 'متر مكعب'
     final meterThicknessCtrl = TextEditingController();
     final meterQtyCtrl = TextEditingController();
     final meterPriceCtrl = TextEditingController();
@@ -3461,7 +3603,6 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           final double draftPrice = double.tryParse(priceCtrl.text) ?? 0.0;
           final double draftBlockTotal = draftTons * draftPrice;
 
-
           final double itemsTotal = draftItems.fold(
             0.0,
             (s, it) => s + (it.quantity * it.unitPrice),
@@ -3519,9 +3660,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               return;
             }
             if (draftItems.isEmpty) {
-              setSt(
-                () => formError = 'أضف صنفاً واحداً على الأقل بزر +.',
-              );
+              setSt(() => formError = 'أضف صنفاً واحداً على الأقل بزر +.');
               return;
             }
             if (isDelivered == null) {
@@ -3536,9 +3675,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               return;
             }
             if (!cashInvoice && wantsPay == null) {
-              setSt(
-                () => formError = 'أجب: هل نريد الدفع له أم لا؟',
-              );
+              setSt(() => formError = 'أجب: هل نريد الدفع له أم لا؟');
               return;
             }
             double advance = cashInvoice
@@ -3551,8 +3688,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               return;
             }
             if (advance > grandTotal + 0.01) {
-              setSt(() => formError =
-                  'خطأ: المبلغ المدفوع (${advance.fmt}) يتجاوز إجمالي قيمة الفاتورة (${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}).');
+              setSt(
+                () => formError =
+                    'خطأ: المبلغ المدفوع (${advance.fmt}) يتجاوز إجمالي قيمة الفاتورة (${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}).',
+              );
               return;
             }
             if (advance > 0 &&
@@ -3609,7 +3748,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           }
 
           return Dialog(
-            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 20,
+            ),
             child: Container(
               width: math.min(screenWidth * 0.95, 1200),
               height: math.min(screenHeight * 0.92, 850),
@@ -3646,12 +3788,11 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             cashInvoice
                                 ? 'إنشاء فاتورة شراء نقدية من مورد'
                                 : 'إنشاء فاتورة شراء من مورد',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.titleLarge?.copyWith(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
                           ),
                           if (cashInvoice) ...[
                             const SizedBox(width: 10),
@@ -3704,17 +3845,22 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFAFAFA),
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: AppColors.panelBorder),
+                                border: Border.all(
+                                  color: AppColors.panelBorder,
+                                ),
                               ),
                               padding: const EdgeInsets.all(16),
                               child: SingleChildScrollView(
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
                                     // 1. Supplier searchable dropdown + inline add.
                                     const Text(
                                       '1. اختر المورد (قائمة قابلة للبحث):',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                     const SizedBox(height: 8),
                                     Row(
@@ -3726,8 +3872,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               prefixIcon: Icon(Icons.search),
                                               isDense: true,
                                             ),
-                                            onChanged: (v) =>
-                                                setSt(() => supplierSearch = v.trim()),
+                                            onChanged: (v) => setSt(
+                                              () => supplierSearch = v.trim(),
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(width: 8),
@@ -3735,7 +3882,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           onPressed: () => refreshAfterAdd(
                                             () => _showAddSupplierDialog(erp),
                                           ),
-                                          icon: const Icon(Icons.person_add_alt_1, size: 18),
+                                          icon: const Icon(
+                                            Icons.person_add_alt_1,
+                                            size: 18,
+                                          ),
                                           label: const Text('مورد جديد +'),
                                         ),
                                       ],
@@ -3744,7 +3894,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     DropdownButtonFormField<String>(
                                       initialValue: supplierValue,
                                       isExpanded: true,
-                                      decoration: const InputDecoration(labelText: 'المورد'),
+                                      decoration: const InputDecoration(
+                                        labelText: 'المورد',
+                                      ),
                                       items: suppliersFiltered
                                           .map(
                                             (s) => DropdownMenuItem(
@@ -3753,18 +3905,22 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                             ),
                                           )
                                           .toList(),
-                                      onChanged: (v) => setSt(() => selectedSupplierId = v),
+                                      onChanged: (v) =>
+                                          setSt(() => selectedSupplierId = v),
                                     ),
                                     const SizedBox(height: 16),
 
                                     // 2. Item mode selector (Blocks vs Meters) + item inputs
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
                                         const Expanded(
                                           child: Text(
                                             '2. تفاصيل الصنف المراد إضافته:',
-                                            style: TextStyle(fontWeight: FontWeight.bold),
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
                                         ),
                                         Container(
@@ -3774,7 +3930,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           ),
                                           decoration: BoxDecoration(
                                             color: const Color(0xFFF1F5F9),
-                                            borderRadius: BorderRadius.circular(6),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
                                           ),
                                           child: Text(
                                             'الأصناف المضافة: ${draftItems.length}',
@@ -3803,51 +3961,68 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                 itemMode = 'block';
                                                 formError = null;
                                               }),
-                                              borderRadius: BorderRadius.circular(8),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
                                               child: Container(
-                                                padding: const EdgeInsets.symmetric(
-                                                  vertical: 8,
-                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 8,
+                                                    ),
                                                 decoration: BoxDecoration(
                                                   color: itemMode == 'block'
                                                       ? Colors.white
                                                       : Colors.transparent,
-                                                  borderRadius: BorderRadius.circular(8),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
                                                   boxShadow: itemMode == 'block'
                                                       ? [
                                                           BoxShadow(
-                                                            color: Colors.black.withOpacity(
-                                                              0.05,
-                                                            ),
+                                                            color: Colors.black
+                                                                .withOpacity(
+                                                                  0.05,
+                                                                ),
                                                             blurRadius: 4,
-                                                            offset: const Offset(0, 1),
+                                                            offset:
+                                                                const Offset(
+                                                                  0,
+                                                                  1,
+                                                                ),
                                                           ),
                                                         ]
                                                       : null,
                                                 ),
                                                 alignment: Alignment.center,
                                                 child: Row(
-                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
                                                   children: [
                                                     Icon(
                                                       Icons.view_in_ar_rounded,
                                                       size: 18,
                                                       color: itemMode == 'block'
-                                                          ? AppColors.accentPrimary
-                                                          : AppColors.brandSecondaryText,
+                                                          ? AppColors
+                                                                .accentPrimary
+                                                          : AppColors
+                                                                .brandSecondaryText,
                                                     ),
                                                     const SizedBox(width: 8),
                                                     Flexible(
                                                       child: Text(
                                                         'بند شراء بلوكات (Blocks)',
                                                         style: TextStyle(
-                                                          fontWeight: FontWeight.bold,
+                                                          fontWeight:
+                                                              FontWeight.bold,
                                                           fontSize: 13,
-                                                          color: itemMode == 'block'
-                                                              ? AppColors.accentPrimary
-                                                              : AppColors.brandSecondaryText,
+                                                          color:
+                                                              itemMode ==
+                                                                  'block'
+                                                              ? AppColors
+                                                                    .accentPrimary
+                                                              : AppColors
+                                                                    .brandSecondaryText,
                                                         ),
-                                                        overflow: TextOverflow.ellipsis,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
                                                       ),
                                                     ),
                                                   ],
@@ -3861,51 +4036,68 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                 itemMode = 'meter';
                                                 formError = null;
                                               }),
-                                              borderRadius: BorderRadius.circular(8),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
                                               child: Container(
-                                                padding: const EdgeInsets.symmetric(
-                                                  vertical: 8,
-                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 8,
+                                                    ),
                                                 decoration: BoxDecoration(
                                                   color: itemMode == 'meter'
                                                       ? Colors.white
                                                       : Colors.transparent,
-                                                  borderRadius: BorderRadius.circular(8),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
                                                   boxShadow: itemMode == 'meter'
                                                       ? [
                                                           BoxShadow(
-                                                            color: Colors.black.withOpacity(
-                                                              0.05,
-                                                            ),
+                                                            color: Colors.black
+                                                                .withOpacity(
+                                                                  0.05,
+                                                                ),
                                                             blurRadius: 4,
-                                                            offset: const Offset(0, 1),
+                                                            offset:
+                                                                const Offset(
+                                                                  0,
+                                                                  1,
+                                                                ),
                                                           ),
                                                         ]
                                                       : null,
                                                 ),
                                                 alignment: Alignment.center,
                                                 child: Row(
-                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
                                                   children: [
                                                     Icon(
                                                       Icons.straighten_rounded,
                                                       size: 18,
                                                       color: itemMode == 'meter'
-                                                          ? AppColors.accentPrimary
-                                                          : AppColors.brandSecondaryText,
+                                                          ? AppColors
+                                                                .accentPrimary
+                                                          : AppColors
+                                                                .brandSecondaryText,
                                                     ),
                                                     const SizedBox(width: 8),
                                                     Flexible(
                                                       child: Text(
                                                         'بند شراء أمتار (Meters)',
                                                         style: TextStyle(
-                                                          fontWeight: FontWeight.bold,
+                                                          fontWeight:
+                                                              FontWeight.bold,
                                                           fontSize: 13,
-                                                          color: itemMode == 'meter'
-                                                              ? AppColors.accentPrimary
-                                                              : AppColors.brandSecondaryText,
+                                                          color:
+                                                              itemMode ==
+                                                                  'meter'
+                                                              ? AppColors
+                                                                    .accentPrimary
+                                                              : AppColors
+                                                                    .brandSecondaryText,
                                                         ),
-                                                        overflow: TextOverflow.ellipsis,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
                                                       ),
                                                     ),
                                                   ],
@@ -3925,21 +4117,29 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           Expanded(
                                             child: TextField(
                                               decoration: const InputDecoration(
-                                                labelText: 'بحث نوع البلوك والدرجة...',
+                                                labelText:
+                                                    'بحث نوع البلوك والدرجة...',
                                                 prefixIcon: Icon(Icons.search),
                                                 isDense: true,
                                               ),
-                                              onChanged: (v) =>
-                                                  setSt(() => blockSearch = v.trim()),
+                                              onChanged: (v) => setSt(
+                                                () => blockSearch = v.trim(),
+                                              ),
                                             ),
                                           ),
                                           const SizedBox(width: 8),
                                           OutlinedButton.icon(
                                             onPressed: () => refreshAfterAdd(
-                                              () => _showAddBlockTypeDialog(erp),
+                                              () =>
+                                                  _showAddBlockTypeDialog(erp),
                                             ),
-                                            icon: const Icon(Icons.add_box_outlined, size: 18),
-                                            label: const Text('نوع بلوك جديد +'),
+                                            icon: const Icon(
+                                              Icons.add_box_outlined,
+                                              size: 18,
+                                            ),
+                                            label: const Text(
+                                              'نوع بلوك جديد +',
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -3948,17 +4148,22 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         initialValue: blockValue,
                                         isExpanded: true,
                                         decoration: const InputDecoration(
-                                          labelText: 'نوع البلوك حسب النوع والدرجة',
+                                          labelText:
+                                              'نوع البلوك حسب النوع والدرجة',
                                         ),
                                         items: optionsFiltered
                                             .map(
                                               (b) => DropdownMenuItem(
-                                                value: '${b.typeName}||${b.grade}',
-                                                child: Text('${b.typeName} • ${b.grade}'),
+                                                value:
+                                                    '${b.typeName}||${b.grade}',
+                                                child: Text(
+                                                  '${b.typeName} • ${b.grade}',
+                                                ),
                                               ),
                                             )
                                             .toList(),
-                                        onChanged: (v) => setSt(() => selectedBlockKey = v),
+                                        onChanged: (v) =>
+                                            setSt(() => selectedBlockKey = v),
                                       ),
                                       const SizedBox(height: 8),
                                       Row(
@@ -3968,10 +4173,11 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               controller: tonsCtrl,
                                               keyboardType:
                                                   const TextInputType.numberWithOptions(
-                                                decimal: true,
-                                              ),
+                                                    decimal: true,
+                                                  ),
                                               decoration: const InputDecoration(
-                                                labelText: 'عدد الأطنان لهذا النوع والدرجة',
+                                                labelText:
+                                                    'عدد الأطنان لهذا النوع والدرجة',
                                               ),
                                               onChanged: (_) => setSt(() {}),
                                             ),
@@ -3982,8 +4188,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               controller: priceCtrl,
                                               keyboardType:
                                                   const TextInputType.numberWithOptions(
-                                                decimal: true,
-                                              ),
+                                                    decimal: true,
+                                                  ),
                                               decoration: InputDecoration(
                                                 labelText:
                                                     'سعر الوحدة (سعر الطن ${AppCurrency.symbol(invCurrency)})',
@@ -3994,19 +4200,22 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 12,
-                                                vertical: 14,
-                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 14,
+                                                  ),
                                               decoration: BoxDecoration(
                                                 color: AppColors.chipBgBlue,
-                                                borderRadius: BorderRadius.circular(8),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
                                               ),
                                               child: Text(
                                                 'الإجمالي: ${draftBlockTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
                                                 style: const TextStyle(
                                                   fontWeight: FontWeight.bold,
-                                                  color: AppColors.accentPrimary,
+                                                  color:
+                                                      AppColors.accentPrimary,
                                                 ),
                                               ),
                                             ),
@@ -4015,7 +4224,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                       ),
                                       const SizedBox(height: 8),
                                       Align(
-                                        alignment: AlignmentDirectional.centerStart,
+                                        alignment:
+                                            AlignmentDirectional.centerStart,
                                         child: ElevatedButton.icon(
                                           onPressed: () {
                                             if (selectedSupplierId == null) {
@@ -4027,33 +4237,41 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                             }
                                             if (selectedBlockKey == null) {
                                               setSt(
-                                                () => formError = 'اختر نوع البلوك والدرجة.',
+                                                () => formError =
+                                                    'اختر نوع البلوك والدرجة.',
                                               );
                                               return;
                                             }
-                                            if (draftTons <= 0 || draftPrice < 0) {
+                                            if (draftTons <= 0 ||
+                                                draftPrice < 0) {
                                               setSt(
                                                 () => formError =
                                                     'أدخل عدد أطنان صحيح وسعر وحدة صحيح.',
                                               );
                                               return;
                                             }
-                                            final parts = selectedBlockKey!.split('||');
-                                            final bt = erp.blockTypes.firstWhere(
-                                              (b) =>
-                                                  b.typeName == parts[0] &&
-                                                  b.grade == parts[1],
-                                              orElse: () => erp.blockTypes.first,
-                                            );
+                                            final parts = selectedBlockKey!
+                                                .split('||');
+                                            final bt = erp.blockTypes
+                                                .firstWhere(
+                                                  (b) =>
+                                                      b.typeName == parts[0] &&
+                                                      b.grade == parts[1],
+                                                  orElse: () =>
+                                                      erp.blockTypes.first,
+                                                );
                                             setSt(() {
                                               formError = null;
                                               draftItems.add(
                                                 FactoryInvoiceItem(
                                                   itemId:
                                                       'draft_b_${DateTime.now().millisecondsSinceEpoch}_${draftItems.length}',
-                                                  description: '${parts[0]} (${parts[1]})',
+                                                  description:
+                                                      '${parts[0]} (${parts[1]})',
                                                   typeName: parts[0],
-                                                  grade: parts.length > 1 ? parts[1] : '',
+                                                  grade: parts.length > 1
+                                                      ? parts[1]
+                                                      : '',
                                                   quantity: draftTons,
                                                   unitPrice: draftPrice,
                                                   unitCost: draftPrice,
@@ -4067,7 +4285,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                             });
                                           },
                                           icon: const Icon(Icons.add),
-                                          label: const Text('إضافة بند البلوك للفاتورة +'),
+                                          label: const Text(
+                                            'إضافة بند البلوك للفاتورة +',
+                                          ),
                                         ),
                                       ),
                                     ] else ...[
@@ -4077,21 +4297,30 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           Expanded(
                                             child: TextField(
                                               decoration: const InputDecoration(
-                                                labelText: 'بحث نوع المتر أو السماكة...',
+                                                labelText:
+                                                    'بحث نوع المتر أو السماكة...',
                                                 prefixIcon: Icon(Icons.search),
                                                 isDense: true,
                                               ),
-                                              onChanged: (v) =>
-                                                  setSt(() => meterSearch = v.trim()),
+                                              onChanged: (v) => setSt(
+                                                () => meterSearch = v.trim(),
+                                              ),
                                             ),
                                           ),
                                           const SizedBox(width: 8),
                                           OutlinedButton.icon(
                                             onPressed: () => refreshAfterAdd(
-                                              () => _showUnifiedItemTypeDialog(erp),
+                                              () => _showUnifiedItemTypeDialog(
+                                                erp,
+                                              ),
                                             ),
-                                            icon: const Icon(Icons.add, size: 18),
-                                            label: const Text('نوع مادة جديد +'),
+                                            icon: const Icon(
+                                              Icons.add,
+                                              size: 18,
+                                            ),
+                                            label: const Text(
+                                              'نوع مادة جديد +',
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -4100,7 +4329,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         initialValue: meterValue,
                                         isExpanded: true,
                                         decoration: InputDecoration(
-                                          labelText: selectedMeterUnit == 'متر مكعب'
+                                          labelText:
+                                              selectedMeterUnit == 'متر مكعب'
                                               ? 'نوع المتر (النوع • الدرجة)'
                                               : 'نوع المتر (النوع • الدرجة • السماكة • الفئة)',
                                         ),
@@ -4118,12 +4348,16 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           setSt(() {
                                             selectedMeterTypeId = v;
                                             if (v != null) {
-                                              final mt = erp.meterTypes.firstWhere(
-                                                (m) => m.id == v,
-                                                orElse: () => erp.meterTypes.first,
-                                              );
-                                              meterThicknessCtrl.text = mt.thicknessCm.fmt;
-                                              selectedMeterUnit = mt.category.isNotEmpty
+                                              final mt = erp.meterTypes
+                                                  .firstWhere(
+                                                    (m) => m.id == v,
+                                                    orElse: () =>
+                                                        erp.meterTypes.first,
+                                                  );
+                                              meterThicknessCtrl.text =
+                                                  mt.thicknessCm.fmt;
+                                              selectedMeterUnit =
+                                                  mt.category.isNotEmpty
                                                   ? mt.category
                                                   : 'متر مربع';
                                             }
@@ -4132,7 +4366,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                       ),
                                       const SizedBox(height: 8),
                                       Wrap(
-                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
                                         spacing: 8,
                                         runSpacing: 6,
                                         children: [
@@ -4145,28 +4380,40 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           ),
                                           ChoiceChip(
                                             label: const Text('متر مربع (م²)'),
-                                            selected: selectedMeterUnit == 'متر مربع',
+                                            selected:
+                                                selectedMeterUnit == 'متر مربع',
                                             onSelected: (v) {
                                               if (v) {
-                                                setSt(() => selectedMeterUnit = 'متر مربع');
+                                                setSt(
+                                                  () => selectedMeterUnit =
+                                                      'متر مربع',
+                                                );
                                               }
                                             },
                                           ),
                                           ChoiceChip(
                                             label: const Text('متر طولي (م.ط)'),
-                                            selected: selectedMeterUnit == 'متر طولي',
+                                            selected:
+                                                selectedMeterUnit == 'متر طولي',
                                             onSelected: (v) {
                                               if (v) {
-                                                setSt(() => selectedMeterUnit = 'متر طولي');
+                                                setSt(
+                                                  () => selectedMeterUnit =
+                                                      'متر طولي',
+                                                );
                                               }
                                             },
                                           ),
                                           ChoiceChip(
                                             label: const Text('متر مكعب (م³)'),
-                                            selected: selectedMeterUnit == 'متر مكعب',
+                                            selected:
+                                                selectedMeterUnit == 'متر مكعب',
                                             onSelected: (v) {
                                               if (v) {
-                                                setSt(() => selectedMeterUnit = 'متر مكعب');
+                                                setSt(
+                                                  () => selectedMeterUnit =
+                                                      'متر مكعب',
+                                                );
                                               }
                                             },
                                           ),
@@ -4180,18 +4427,23 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               controller: meterQtyCtrl,
                                               keyboardType:
                                                   const TextInputType.numberWithOptions(
-                                                decimal: true,
-                                              ),
+                                                    decimal: true,
+                                                  ),
                                               decoration: InputDecoration(
                                                 labelText:
                                                     'إجمالي الأمتار ($selectedMeterUnit)',
                                               ),
                                               onChanged: (v) {
-                                                final q = double.tryParse(v) ?? 0.0;
+                                                final q =
+                                                    double.tryParse(v) ?? 0.0;
                                                 final p =
-                                                    double.tryParse(meterPriceCtrl.text) ?? 0.0;
+                                                    double.tryParse(
+                                                      meterPriceCtrl.text,
+                                                    ) ??
+                                                    0.0;
                                                 if (p > 0) {
-                                                  meterTotalCostCtrl.text = (q * p).fmt;
+                                                  meterTotalCostCtrl.text =
+                                                      (q * p).fmt;
                                                 }
                                                 setSt(() {});
                                               },
@@ -4203,17 +4455,22 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               controller: meterPriceCtrl,
                                               keyboardType:
                                                   const TextInputType.numberWithOptions(
-                                                decimal: true,
-                                              ),
+                                                    decimal: true,
+                                                  ),
                                               decoration: InputDecoration(
                                                 labelText:
                                                     'سعر الوحدة للمتر (${AppCurrency.symbol(invCurrency)})',
                                               ),
                                               onChanged: (v) {
-                                                final p = double.tryParse(v) ?? 0.0;
+                                                final p =
+                                                    double.tryParse(v) ?? 0.0;
                                                 final q =
-                                                    double.tryParse(meterQtyCtrl.text) ?? 0.0;
-                                                meterTotalCostCtrl.text = (q * p).fmt;
+                                                    double.tryParse(
+                                                      meterQtyCtrl.text,
+                                                    ) ??
+                                                    0.0;
+                                                meterTotalCostCtrl.text =
+                                                    (q * p).fmt;
                                                 setSt(() {});
                                               },
                                             ),
@@ -4224,18 +4481,23 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               controller: meterTotalCostCtrl,
                                               keyboardType:
                                                   const TextInputType.numberWithOptions(
-                                                decimal: true,
-                                              ),
+                                                    decimal: true,
+                                                  ),
                                               decoration: InputDecoration(
                                                 labelText:
                                                     'إجمالي التكلفة (${AppCurrency.symbol(invCurrency)})',
                                               ),
                                               onChanged: (v) {
-                                                final t = double.tryParse(v) ?? 0.0;
+                                                final t =
+                                                    double.tryParse(v) ?? 0.0;
                                                 final q =
-                                                    double.tryParse(meterQtyCtrl.text) ?? 0.0;
+                                                    double.tryParse(
+                                                      meterQtyCtrl.text,
+                                                    ) ??
+                                                    0.0;
                                                 if (q > 0) {
-                                                  meterPriceCtrl.text = (t / q).fmt;
+                                                  meterPriceCtrl.text =
+                                                      (t / q).fmt;
                                                 }
                                                 setSt(() {});
                                               },
@@ -4247,25 +4509,39 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                       if (selectedMeterUnit != 'متر مكعب') ...[
                                         TextField(
                                           controller: meterThicknessCtrl,
-                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                          keyboardType:
+                                              const TextInputType.numberWithOptions(
+                                                decimal: true,
+                                              ),
                                           decoration: const InputDecoration(
                                             labelText: 'السماكة (سم)',
-                                            helperText: 'رصيد مستقل لكل سماكة من النوع والدرجة',
+                                            helperText:
+                                                'رصيد مستقل لكل سماكة من النوع والدرجة',
                                           ),
                                         ),
                                         const SizedBox(height: 8),
                                       ],
                                       TextField(
                                         controller: meterSellingPriceCtrl,
-                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
                                         decoration: InputDecoration(
-                                          labelText: 'سعر بيع المتر (' + selectedMeterUnit + ' • ' + AppCurrency.symbol(invCurrency) + ')',
-                                          hintText: 'اختياري: اتركه فارغاً للتسعير التلقائي',
+                                          labelText:
+                                              'سعر بيع المتر (' +
+                                              selectedMeterUnit +
+                                              ' • ' +
+                                              AppCurrency.symbol(invCurrency) +
+                                              ')',
+                                          hintText:
+                                              'اختياري: اتركه فارغاً للتسعير التلقائي',
                                         ),
                                       ),
                                       const SizedBox(height: 8),
                                       Align(
-                                        alignment: AlignmentDirectional.centerStart,
+                                        alignment:
+                                            AlignmentDirectional.centerStart,
                                         child: ElevatedButton.icon(
                                           onPressed: () {
                                             if (selectedSupplierId == null) {
@@ -4276,15 +4552,27 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               return;
                                             }
                                             if (selectedMeterTypeId == null) {
-                                              setSt(() => formError = 'اختر نوع المتر.');
+                                              setSt(
+                                                () => formError =
+                                                    'اختر نوع المتر.',
+                                              );
                                               return;
                                             }
                                             final double q =
-                                                double.tryParse(meterQtyCtrl.text) ?? 0.0;
+                                                double.tryParse(
+                                                  meterQtyCtrl.text,
+                                                ) ??
+                                                0.0;
                                             var p =
-                                                double.tryParse(meterPriceCtrl.text) ?? 0.0;
+                                                double.tryParse(
+                                                  meterPriceCtrl.text,
+                                                ) ??
+                                                0.0;
                                             final t =
-                                                double.tryParse(meterTotalCostCtrl.text) ?? 0.0;
+                                                double.tryParse(
+                                                  meterTotalCostCtrl.text,
+                                                ) ??
+                                                0.0;
                                             if (p <= 0 && t > 0 && q > 0) {
                                               p = t / q;
                                             }
@@ -4295,23 +4583,55 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               );
                                               return;
                                             }
-                                            final thickness = selectedMeterUnit == 'متر مكعب'
+                                            final thickness =
+                                                selectedMeterUnit == 'متر مكعب'
                                                 ? 0.0
-                                                : double.tryParse(meterThicknessCtrl.text.trim().replaceAll(',', '.'));
-                                            if (thickness == null || !thickness.isFinite || (selectedMeterUnit != 'متر مكعب' && thickness <= 0)) {
-                                              setSt(() => formError = 'أدخل سماكة صحيحة أكبر من صفر.');
+                                                : double.tryParse(
+                                                    meterThicknessCtrl.text
+                                                        .trim()
+                                                        .replaceAll(',', '.'),
+                                                  );
+                                            if (thickness == null ||
+                                                !thickness.isFinite ||
+                                                (selectedMeterUnit !=
+                                                        'متر مكعب' &&
+                                                    thickness <= 0)) {
+                                              setSt(
+                                                () => formError =
+                                                    'أدخل سماكة صحيحة أكبر من صفر.',
+                                              );
                                               return;
                                             }
-                                            final sellingText = meterSellingPriceCtrl.text.trim();
-                                            final sellingPrice = sellingText.isEmpty ? null : double.tryParse(sellingText.replaceAll(',', '.'));
-                                            if (sellingText.isNotEmpty && (sellingPrice == null || !sellingPrice.isFinite || sellingPrice < 0)) {
-                                              setSt(() => formError = 'أدخل سعر بيع متر صالحاً غير سالب.');
+                                            final sellingText =
+                                                meterSellingPriceCtrl.text
+                                                    .trim();
+                                            final sellingPrice =
+                                                sellingText.isEmpty
+                                                ? null
+                                                : double.tryParse(
+                                                    sellingText.replaceAll(
+                                                      ',',
+                                                      '.',
+                                                    ),
+                                                  );
+                                            if (sellingText.isNotEmpty &&
+                                                (sellingPrice == null ||
+                                                    !sellingPrice.isFinite ||
+                                                    sellingPrice < 0)) {
+                                              setSt(
+                                                () => formError =
+                                                    'أدخل سعر بيع متر صالحاً غير سالب.',
+                                              );
                                               return;
                                             }
-                                            final mt = erp.meterTypes.firstWhere(
-                                              (m) => m.id == selectedMeterTypeId,
-                                              orElse: () => erp.meterTypes.first,
-                                            );
+                                            final mt = erp.meterTypes
+                                                .firstWhere(
+                                                  (m) =>
+                                                      m.id ==
+                                                      selectedMeterTypeId,
+                                                  orElse: () =>
+                                                      erp.meterTypes.first,
+                                                );
                                             setSt(() {
                                               formError = null;
                                               draftItems.add(
@@ -4339,7 +4659,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                             });
                                           },
                                           icon: const Icon(Icons.add),
-                                          label: const Text('إضافة بند الأمتار للفاتورة +'),
+                                          label: const Text(
+                                            'إضافة بند الأمتار للفاتورة +',
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -4349,12 +4671,20 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
                                           color: const Color(0xFFFEF2F2),
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0xFFFCA5A5),
+                                          ),
                                         ),
                                         child: Row(
                                           children: [
-                                            const Icon(Icons.error_outline, color: AppColors.dangerWaste, size: 18),
+                                            const Icon(
+                                              Icons.error_outline,
+                                              color: AppColors.dangerWaste,
+                                              size: 18,
+                                            ),
                                             const SizedBox(width: 8),
                                             Expanded(
                                               child: Text(
@@ -4375,7 +4705,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     // 3. Shipment question.
                                     const Text(
                                       '3. هل وصلت هذه الشحنة أم لا؟',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                     Row(
                                       children: [
@@ -4418,22 +4750,27 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     // 4. Financial & Payment settings
                                     const Text(
                                       '4. الشروط المالية والعملة:',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                     const SizedBox(height: 8),
                                     CurrencySelector(
                                       value: invCurrency,
                                       dense: true,
-                                      onChanged: (v) => setSt(() => invCurrency = v),
+                                      onChanged: (v) =>
+                                          setSt(() => invCurrency = v),
                                     ),
                                     const SizedBox(height: 8),
                                     TextField(
                                       controller: discountCtrl,
-                                      keyboardType: const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                            decimal: true,
+                                          ),
                                       decoration: const InputDecoration(
-                                        labelText: 'الخصم المكتسب من المورد (اختياري)',
+                                        labelText:
+                                            'الخصم المكتسب من المورد (اختياري)',
                                       ),
                                       onChanged: (_) => setSt(() {}),
                                     ),
@@ -4443,8 +4780,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         padding: const EdgeInsets.all(10),
                                         decoration: BoxDecoration(
                                           color: const Color(0xFFF0FDF4),
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: const Color(0xFF86EFAC)),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0xFF86EFAC),
+                                          ),
                                         ),
                                         child: Text(
                                           'فاتورة نقدية: سيتم دفع كامل مستحقات المورد (${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}) من الصندوق الرئيسي فوراً.',
@@ -4458,7 +4799,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     else ...[
                                       const Text(
                                         'هل نريد الدفع له أم لا؟',
-                                        style: TextStyle(fontWeight: FontWeight.bold),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                       Row(
                                         children: [
@@ -4479,22 +4822,32 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                       if (wantsPay == true) ...[
                                         Builder(
                                           builder: (context) {
-                                            final adv = double.tryParse(downPayCtrl.text) ?? 0.0;
+                                            final adv =
+                                                double.tryParse(
+                                                  downPayCtrl.text,
+                                                ) ??
+                                                0.0;
                                             String? error;
                                             if (downPayCtrl.text.isNotEmpty) {
                                               if (adv < 0) {
-                                                error = 'لا يمكن إدخال دفعة سالبة';
-                                              } else if (adv > grandTotal + 0.01) {
-                                                error = 'المبلغ (${adv.fmt}) يتجاوز إجمالي الفاتورة (${grandTotal.fmt})';
+                                                error =
+                                                    'لا يمكن إدخال دفعة سالبة';
+                                              } else if (adv >
+                                                  grandTotal + 0.01) {
+                                                error =
+                                                    'المبلغ (${adv.fmt}) يتجاوز إجمالي الفاتورة (${grandTotal.fmt})';
                                               }
                                             }
                                             return TextField(
                                               controller: downPayCtrl,
-                                              keyboardType: TextInputType.number,
+                                              keyboardType:
+                                                  TextInputType.number,
                                               decoration: InputDecoration(
-                                                labelText: 'الدفعة المقدمة (تُخصم من الإجمالي)',
+                                                labelText:
+                                                    'الدفعة المقدمة (تُخصم من الإجمالي)',
                                                 errorText: error,
-                                                helperText: 'الحد الأقصى المسموح: ${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
+                                                helperText:
+                                                    'الحد الأقصى المسموح: ${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
                                               ),
                                               onChanged: (_) => setSt(() {}),
                                             );
@@ -4507,8 +4860,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     // 5. Image Attachment
                                     AppImageAttachmentPicker(
                                       initialPath: photoPath,
-                                      label: 'صورة فاتورة الشراء من المورد / وصل الاستلام',
-                                      onImageChanged: (p) => setSt(() => photoPath = p),
+                                      label:
+                                          'صورة فاتورة الشراء من المورد / وصل الاستلام',
+                                      onImageChanged: (p) =>
+                                          setSt(() => photoPath = p),
                                     ),
                                     const SizedBox(height: 24),
 
@@ -4518,22 +4873,33 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         Expanded(
                                           child: ElevatedButton.icon(
                                             style: ElevatedButton.styleFrom(
-                                              backgroundColor: AppColors.successGreen,
+                                              backgroundColor:
+                                                  AppColors.successGreen,
                                               foregroundColor: Colors.white,
-                                              padding: const EdgeInsets.symmetric(vertical: 14),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 14,
+                                                  ),
                                             ),
                                             onPressed: submitInvoice,
-                                            icon: const Icon(Icons.check_circle_outline),
+                                            icon: const Icon(
+                                              Icons.check_circle_outline,
+                                            ),
                                             label: const Text(
                                               'اعتماد وحفظ الفاتورة',
-                                              style: TextStyle(fontWeight: FontWeight.bold),
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                             ),
                                           ),
                                         ),
                                         const SizedBox(width: 12),
                                         OutlinedButton(
                                           style: OutlinedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 14,
+                                              horizontal: 20,
+                                            ),
                                           ),
                                           onPressed: () => Navigator.pop(ctx),
                                           child: const Text('إلغاء'),
@@ -4558,7 +4924,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: AppColors.panelBorder),
+                                border: Border.all(
+                                  color: AppColors.panelBorder,
+                                ),
                               ),
                               padding: const EdgeInsets.all(16),
                               child: Column(
@@ -4566,11 +4934,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                 children: [
                                   // Header
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Row(
                                         children: const [
-                                          Icon(Icons.receipt_long_rounded, color: AppColors.accentPrimary),
+                                          Icon(
+                                            Icons.receipt_long_rounded,
+                                            color: AppColors.accentPrimary,
+                                          ),
                                           SizedBox(width: 8),
                                           Text(
                                             'أصناف وبنود الفاتورة',
@@ -4590,7 +4962,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           color: draftItems.isNotEmpty
                                               ? AppColors.chipBgBlue
                                               : const Color(0xFFF1F5F9),
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
                                         child: Text(
                                           '${draftItems.length} صنف',
@@ -4624,7 +4998,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   'لم تتم إضافة أي أصناف حتى الآن',
                                                   style: TextStyle(
                                                     fontWeight: FontWeight.bold,
-                                                    color: AppColors.brandSecondaryText,
+                                                    color: AppColors
+                                                        .brandSecondaryText,
                                                   ),
                                                 ),
                                                 SizedBox(height: 4),
@@ -4645,42 +5020,57 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               final it = draftItems[idx];
                                               final isMeter = it.isMeterItem;
                                               return Card(
-                                                margin: const EdgeInsets.only(bottom: 8),
+                                                margin: const EdgeInsets.only(
+                                                  bottom: 8,
+                                                ),
                                                 elevation: 0,
                                                 shape: RoundedRectangleBorder(
-                                                  borderRadius: BorderRadius.circular(8),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
                                                   side: BorderSide(
-                                                    color: AppColors.panelBorder,
+                                                    color:
+                                                        AppColors.panelBorder,
                                                   ),
                                                 ),
                                                 child: ListTile(
                                                   dense: true,
                                                   leading: Container(
-                                                    padding: const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 4,
-                                                    ),
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 4,
+                                                        ),
                                                     decoration: BoxDecoration(
                                                       color: isMeter
                                                           ? AppColors.chipBgBlue
-                                                          : AppColors.chipBgAmber,
-                                                      borderRadius: BorderRadius.circular(6),
+                                                          : AppColors
+                                                                .chipBgAmber,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            6,
+                                                          ),
                                                     ),
                                                     child: Text(
-                                                      isMeter ? 'أمتار' : 'بلوك',
+                                                      isMeter
+                                                          ? 'أمتار'
+                                                          : 'بلوك',
                                                       style: TextStyle(
                                                         fontSize: 11,
-                                                        fontWeight: FontWeight.bold,
+                                                        fontWeight:
+                                                            FontWeight.bold,
                                                         color: isMeter
-                                                            ? AppColors.accentPrimary
-                                                            : AppColors.partnersEquityAccent,
+                                                            ? AppColors
+                                                                  .accentPrimary
+                                                            : AppColors
+                                                                  .partnersEquityAccent,
                                                       ),
                                                     ),
                                                   ),
                                                   title: Text(
                                                     it.description,
                                                     style: const TextStyle(
-                                                      fontWeight: FontWeight.bold,
+                                                      fontWeight:
+                                                          FontWeight.bold,
                                                       fontSize: 13,
                                                     ),
                                                   ),
@@ -4692,12 +5082,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   trailing: IconButton(
                                                     icon: const Icon(
                                                       Icons.delete_outline,
-                                                      color: AppColors.dangerWaste,
+                                                      color:
+                                                          AppColors.dangerWaste,
                                                       size: 20,
                                                     ),
                                                     tooltip: 'حذف البند',
                                                     onPressed: () => setSt(
-                                                      () => draftItems.removeAt(idx),
+                                                      () => draftItems.removeAt(
+                                                        idx,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
@@ -4714,29 +5107,49 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFF8FAFC),
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: AppColors.panelBorder),
+                                      border: Border.all(
+                                        color: AppColors.panelBorder,
+                                      ),
                                     ),
                                     child: Column(
                                       children: [
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
                                           children: [
-                                            const Text('إجمالي قيمة المواد:', style: TextStyle(fontSize: 12)),
+                                            const Text(
+                                              'إجمالي قيمة المواد:',
+                                              style: TextStyle(fontSize: 12),
+                                            ),
                                             Text(
                                               '${itemsTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
-                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
                                             ),
                                           ],
                                         ),
                                         if (discount > 0) ...[
                                           const SizedBox(height: 4),
                                           Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
-                                              const Text('الخصم المكتسب:', style: TextStyle(fontSize: 12, color: AppColors.successGreen)),
+                                              const Text(
+                                                'الخصم المكتسب:',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: AppColors.successGreen,
+                                                ),
+                                              ),
                                               Text(
                                                 '-${discount.fmt} ${AppCurrency.symbol(invCurrency)}',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.successGreen),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                  color: AppColors.successGreen,
+                                                ),
                                               ),
                                             ],
                                           ),
@@ -4744,18 +5157,24 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         if (shipping > 0) ...[
                                           const SizedBox(height: 4),
                                           Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
                                               const Text(
                                                 'الشحن (مرسمل على المواد):',
-                                                style: TextStyle(fontSize: 11, color: AppColors.brandSecondaryText),
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: AppColors
+                                                      .brandSecondaryText,
+                                                ),
                                               ),
                                               Text(
                                                 '${shipping.fmt} ${AppCurrency.symbol(invCurrency)}',
                                                 style: const TextStyle(
                                                   fontSize: 12,
                                                   fontWeight: FontWeight.bold,
-                                                  color: AppColors.accentPrimary,
+                                                  color:
+                                                      AppColors.accentPrimary,
                                                 ),
                                               ),
                                             ],
@@ -4763,11 +5182,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         ],
                                         const Divider(height: 14),
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
                                           children: [
                                             const Text(
                                               'صافي إجمالي الفاتورة:',
-                                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                              ),
                                             ),
                                             Row(
                                               children: [
@@ -4776,79 +5199,130 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   style: const TextStyle(
                                                     fontWeight: FontWeight.bold,
                                                     fontSize: 16,
-                                                    color: AppColors.accentPrimary,
+                                                    color:
+                                                        AppColors.accentPrimary,
                                                   ),
                                                 ),
                                                 const SizedBox(width: 6),
-                                                CurrencyBadge(currency: invCurrency),
+                                                CurrencyBadge(
+                                                  currency: invCurrency,
+                                                ),
                                               ],
                                             ),
                                           ],
                                         ),
                                         const SizedBox(height: 8),
                                         Align(
-                                          alignment: AlignmentDirectional.centerEnd,
+                                          alignment:
+                                              AlignmentDirectional.centerEnd,
                                           child: TextButton.icon(
                                             style: TextButton.styleFrom(
-                                              foregroundColor: const Color(0xFF4F46E5),
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 4,
+                                              foregroundColor: const Color(
+                                                0xFF4F46E5,
                                               ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 4,
+                                                  ),
                                             ),
                                             onPressed: () {
                                               final currentNet = grandTotal;
-                                              final truncated = currentNet.truncateToDouble();
-                                              final diff = currentNet - truncated;
+                                              final truncated = currentNet
+                                                  .truncateToDouble();
+                                              final diff =
+                                                  currentNet - truncated;
                                               if (diff > 0.0001) {
                                                 final curDisc =
-                                                    double.tryParse(discountCtrl.text) ?? 0.0;
-                                                discountCtrl.text = (curDisc + diff).fmt;
+                                                    double.tryParse(
+                                                      discountCtrl.text,
+                                                    ) ??
+                                                    0.0;
+                                                discountCtrl.text =
+                                                    (curDisc + diff).fmt;
                                                 if (cashInvoice) {
-                                                  downPayCtrl.text = truncated.fmt;
+                                                  downPayCtrl.text =
+                                                      truncated.fmt;
                                                 }
                                                 setSt(() {});
                                               }
                                             },
-                                            icon: const Icon(Icons.content_cut_rounded, size: 14),
+                                            icon: const Icon(
+                                              Icons.content_cut_rounded,
+                                              size: 14,
+                                            ),
                                             label: const Text(
                                               'تجاهل القروش (Ignore Cents)',
-                                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                             ),
                                           ),
                                         ),
                                         if (cashInvoice) ...[
                                           const Divider(height: 10),
                                           Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
-                                              const Text('المسدد بالكامل من الصندوق:', style: TextStyle(fontSize: 12, color: AppColors.successGreen)),
+                                              const Text(
+                                                'المسدد بالكامل من الصندوق:',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: AppColors.successGreen,
+                                                ),
+                                              ),
                                               Text(
                                                 '${grandTotal.fmt} ${AppCurrency.symbol(invCurrency)}',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.successGreen),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                  color: AppColors.successGreen,
+                                                ),
                                               ),
                                             ],
                                           ),
                                         ] else if (wantsPay == true) ...[
                                           const Divider(height: 10),
                                           Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
-                                              const Text('الدفعة المسددة مقدماً:', style: TextStyle(fontSize: 12)),
+                                              const Text(
+                                                'الدفعة المسددة مقدماً:',
+                                                style: TextStyle(fontSize: 12),
+                                              ),
                                               Text(
                                                 '${downPay.fmt} ${AppCurrency.symbol(invCurrency)}',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.accentPrimary),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                  color:
+                                                      AppColors.accentPrimary,
+                                                ),
                                               ),
                                             ],
                                           ),
                                           const SizedBox(height: 4),
                                           Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
-                                              const Text('المتبقي بذمة المورد:', style: TextStyle(fontSize: 12, color: AppColors.dangerWaste)),
+                                              const Text(
+                                                'المتبقي بذمة المورد:',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: AppColors.dangerWaste,
+                                                ),
+                                              ),
                                               Text(
                                                 '${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(invCurrency)}',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.dangerWaste),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 14,
+                                                  color: AppColors.dangerWaste,
+                                                ),
                                               ),
                                             ],
                                           ),
@@ -4881,8 +5355,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   }) {
     String editMeterUnit = item.meterUnit;
     final descCtrl = TextEditingController(text: item.description);
-    final lenCtrl = TextEditingController(text: item.lengthCm > 0 ? item.lengthCm.fmt : '');
-    final widCtrl = TextEditingController(text: item.widthCm > 0 ? item.widthCm.fmt : '');
+    final lenCtrl = TextEditingController(
+      text: item.lengthCm > 0 ? item.lengthCm.fmt : '',
+    );
+    final widCtrl = TextEditingController(
+      text: item.widthCm > 0 ? item.widthCm.fmt : '',
+    );
     final heiCtrl = TextEditingController(
       text: item.heightCm > 0
           ? item.heightCm.fmt
@@ -4892,23 +5370,46 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final unitPriceCtrl = TextEditingController(text: item.unitPrice.fmt);
 
     double lookupPredefinedThickness() {
-      final whMatches = erp.factoryWarehouse.where((w) => w.id == item.itemId).toList();
+      final whMatches = erp.factoryWarehouse
+          .where((w) => w.id == item.itemId)
+          .toList();
       if (whMatches.isNotEmpty) return whMatches.first.thicknessCm;
-      final typeMatches = erp.factoryWarehouse.where((w) => w.typeName == item.typeName).toList();
+      final typeMatches = erp.factoryWarehouse
+          .where((w) => w.typeName == item.typeName)
+          .toList();
       if (typeMatches.isNotEmpty) return typeMatches.first.thicknessCm;
-      return item.thicknessCm > 0 ? item.thicknessCm : (item.heightCm > 0 ? item.heightCm : 2.0);
+      return item.thicknessCm > 0
+          ? item.thicknessCm
+          : (item.heightCm > 0 ? item.heightCm : 2.0);
     }
 
     double lookupCubicPrice() {
-      final whMatches = erp.factoryWarehouse.where((w) => w.id == item.itemId).toList();
+      final whMatches = erp.factoryWarehouse
+          .where((w) => w.id == item.itemId)
+          .toList();
       if (whMatches.isNotEmpty) {
         final wh = whMatches.first;
-        if (wh.category == 'متر مكعب' && wh.recommendedSalePrice > 0) return wh.recommendedSalePrice;
-        final cMatches = erp.factoryWarehouse.where((w) => w.typeName.trim() == wh.typeName.trim() && w.category == 'متر مكعب' && w.recommendedSalePrice > 0).toList();
+        if (wh.category == 'متر مكعب' && wh.recommendedSalePrice > 0)
+          return wh.recommendedSalePrice;
+        final cMatches = erp.factoryWarehouse
+            .where(
+              (w) =>
+                  w.typeName.trim() == wh.typeName.trim() &&
+                  w.category == 'متر مكعب' &&
+                  w.recommendedSalePrice > 0,
+            )
+            .toList();
         if (cMatches.isNotEmpty) return cMatches.first.recommendedSalePrice;
         return wh.recommendedSalePrice;
       }
-      final typeMatches = erp.factoryWarehouse.where((w) => w.typeName.trim() == item.typeName.trim() && w.category == 'متر مكعب' && w.recommendedSalePrice > 0).toList();
+      final typeMatches = erp.factoryWarehouse
+          .where(
+            (w) =>
+                w.typeName.trim() == item.typeName.trim() &&
+                w.category == 'متر مكعب' &&
+                w.recommendedSalePrice > 0,
+          )
+          .toList();
       if (typeMatches.isNotEmpty) return typeMatches.first.recommendedSalePrice;
       return item.unitPrice;
     }
@@ -4925,12 +5426,16 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           final double up = double.tryParse(unitPriceCtrl.text) ?? 0.0;
 
           final double calculatedVolumeOrArea = isCube
-              ? ((l > 0 && w > 0 && h > 0 && q > 0) ? (l / 100.0) * (w / 100.0) * (h / 100.0) * q : 0.0)
+              ? ((l > 0 && w > 0 && h > 0 && q > 0)
+                    ? (l / 100.0) * (w / 100.0) * (h / 100.0) * q
+                    : 0.0)
               : ((l > 0 && w > 0 && q > 0) ? (l / 100.0) * (w / 100.0) * q : q);
           final double lineTotal = calculatedVolumeOrArea * up;
 
           return Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Container(
               width: 540,
               padding: const EdgeInsets.all(20),
@@ -4945,12 +5450,19 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.edit_note_rounded, color: AppColors.accentPrimary, size: 26),
+                        const Icon(
+                          Icons.edit_note_rounded,
+                          color: AppColors.accentPrimary,
+                          size: 26,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'تعديل بند: ${item.description}',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                         ),
                         IconButton(
@@ -4962,7 +5474,13 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     const Divider(height: 20),
                     Row(
                       children: [
-                        const Text('وحدة القياس / البيع:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        const Text(
+                          'وحدة القياس / البيع:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
                         const SizedBox(width: 12),
                         ChoiceChip(
                           label: const Text('متر مربع (م²)'),
@@ -4996,7 +5514,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     const SizedBox(height: 12),
                     TextField(
                       controller: descCtrl,
-                      decoration: const InputDecoration(labelText: 'وصف البند', isDense: true),
+                      decoration: const InputDecoration(
+                        labelText: 'وصف البند',
+                        isDense: true,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -5004,8 +5525,13 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         Expanded(
                           child: TextField(
                             controller: lenCtrl,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: const InputDecoration(labelText: 'الطول (سم)', isDense: true),
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'الطول (سم)',
+                              isDense: true,
+                            ),
                             onChanged: (_) => setSt(() {}),
                           ),
                         ),
@@ -5013,8 +5539,13 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         Expanded(
                           child: TextField(
                             controller: widCtrl,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: const InputDecoration(labelText: 'العرض (سم)', isDense: true),
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'العرض (سم)',
+                              isDense: true,
+                            ),
                             onChanged: (_) => setSt(() {}),
                           ),
                         ),
@@ -5023,8 +5554,14 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           Expanded(
                             child: TextField(
                               controller: heiCtrl,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              decoration: const InputDecoration(labelText: 'الارتفاع = السماكة (سم)', isDense: true),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              decoration: const InputDecoration(
+                                labelText: 'الارتفاع = السماكة (سم)',
+                                isDense: true,
+                              ),
                               onChanged: (_) => setSt(() {}),
                             ),
                           ),
@@ -5037,8 +5574,13 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         Expanded(
                           child: TextField(
                             controller: qtyCtrl,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: const InputDecoration(labelText: 'الكمية (العدد)', isDense: true),
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'الكمية (العدد)',
+                              isDense: true,
+                            ),
                             onChanged: (_) => setSt(() {}),
                           ),
                         ),
@@ -5046,9 +5588,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         Expanded(
                           child: TextField(
                             controller: unitPriceCtrl,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
                             decoration: InputDecoration(
-                              labelText: 'سعر بيع المتر (${isCube ? "م³" : "م²"} \$)',
+                              labelText:
+                                  'سعر بيع المتر (${isCube ? "م³" : "م²"} \$)',
                               isDense: true,
                             ),
                             onChanged: (_) => setSt(() {}),
@@ -5058,7 +5603,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     ),
                     const SizedBox(height: 14),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF0FDF4),
                         borderRadius: BorderRadius.circular(8),
@@ -5072,18 +5620,29 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             children: [
                               Text(
                                 'الأمتار المحسوبة: ${calculatedVolumeOrArea.fmt} ${isCube ? "م³" : "م²"}',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF166534)),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: Color(0xFF166534),
+                                ),
                               ),
                               if (isCube)
                                 Text(
-                                  'الحجم = ${(l/100).fmt}م × ${(w/100).fmt}م × ${(h/100).fmt}م × ${q.fmt} قطع',
-                                  style: const TextStyle(fontSize: 11, color: Color(0xFF15803D)),
+                                  'الحجم = ${(l / 100).fmt}م × ${(w / 100).fmt}م × ${(h / 100).fmt}م × ${q.fmt} قطع',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF15803D),
+                                  ),
                                 ),
                             ],
                           ),
                           Text(
                             'الإجمالي: ${lineTotal.fmt} \$',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF15803D)),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Color(0xFF15803D),
+                            ),
                           ),
                         ],
                       ),
@@ -5104,14 +5663,18 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           ),
                           onPressed: () {
                             final updated = item.copyWith(
-                              description: descCtrl.text.trim().isNotEmpty ? descCtrl.text.trim() : item.description,
+                              description: descCtrl.text.trim().isNotEmpty
+                                  ? descCtrl.text.trim()
+                                  : item.description,
                               lengthCm: l,
                               widthCm: w,
                               heightCm: isCube ? h : 0.0,
                               quantity: q,
                               unitPrice: up,
                               meterUnit: editMeterUnit,
-                              thicknessCm: isCube && h > 0 ? h : item.thicknessCm,
+                              thicknessCm: isCube && h > 0
+                                  ? h
+                                  : item.thicknessCm,
                             );
                             onSave(updated);
                             Navigator.pop(ctx);
@@ -5235,9 +5798,14 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       if (item.category == 'متر مكعب' && item.recommendedSalePrice > 0) {
         return item.recommendedSalePrice;
       }
-      final matches = erp.factoryWarehouse.where(
-        (w) => w.typeName.trim() == item.typeName.trim() && w.category == 'متر مكعب' && w.recommendedSalePrice > 0,
-      ).toList();
+      final matches = erp.factoryWarehouse
+          .where(
+            (w) =>
+                w.typeName.trim() == item.typeName.trim() &&
+                w.category == 'متر مكعب' &&
+                w.recommendedSalePrice > 0,
+          )
+          .toList();
       if (matches.isNotEmpty) {
         return matches.first.recommendedSalePrice;
       }
@@ -5292,7 +5860,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           final FactoryWarehouseModel? wh = matches.isEmpty
               ? null
               : matches.first;
-          final bool isCube = selectedItemMeterUnit == 'متر مكعب' || wh?.category == 'متر مكعب';
+          final bool isCube =
+              selectedItemMeterUnit == 'متر مكعب' || wh?.category == 'متر مكعب';
 
           // Auto-populate price per meter and height from Factory Warehouse interface if empty
           if (wh != null) {
@@ -5325,7 +5894,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
 
           void autoCalcServicePrice() {
             if (selectedServiceId == null) return;
-            final srvMatches = erp.services.where((s) => s.id == selectedServiceId).toList();
+            final srvMatches = erp.services
+                .where((s) => s.id == selectedServiceId)
+                .toList();
             if (srvMatches.isEmpty) return;
             final srv = srvMatches.first;
 
@@ -5336,11 +5907,13 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             if (curLenM > 0 && curQty > 0) {
               final double calc = curLenM * curQty * srv.unitRate;
               servicePriceCtrl.text = calc.toStringAsFixed(2);
-              serviceNotesCtrl.text = 'طول ${curLenM.fmt}م × ${curQty.fmt} قطع × ${srv.unitRate.fmt}\$';
+              serviceNotesCtrl.text =
+                  'طول ${curLenM.fmt}م × ${curQty.fmt} قطع × ${srv.unitRate.fmt}\$';
             } else if (curQty > 0) {
               final double calc = curQty * srv.unitRate;
               servicePriceCtrl.text = calc.toStringAsFixed(2);
-              serviceNotesCtrl.text = '${curQty.fmt} قطع × ${srv.unitRate.fmt}\$';
+              serviceNotesCtrl.text =
+                  '${curQty.fmt} قطع × ${srv.unitRate.fmt}\$';
             } else {
               servicePriceCtrl.text = srv.unitRate.toStringAsFixed(2);
               serviceNotesCtrl.text = 'سعر الوحدة: ${srv.unitRate.fmt}\$';
@@ -5393,9 +5966,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               return;
             }
             if (draftItems.isEmpty) {
-              setSt(
-                () => formError = 'أضف صنفاً واحداً على الأقل بزر +.',
-              );
+              setSt(() => formError = 'أضف صنفاً واحداً على الأقل بزر +.');
               return;
             }
             if (deliverByUs == null) {
@@ -5403,8 +5974,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               return;
             }
             if (salesDiscount < 0 ||
-                salesDiscount >
-                    itemsTotal + itemsServicesTotal + shipping) {
+                salesDiscount > itemsTotal + itemsServicesTotal + shipping) {
               setSt(
                 () => formError =
                     'قيمة خصم المبيعات يجب أن تكون بين صفر وإجمالي الفاتورة.',
@@ -5421,20 +5991,26 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             if (assignedOrder != null) {
               final dep = assignedOrder!.depositAmount;
               if (advance < dep - 0.01) {
-                setSt(() => formError =
-                    'خطأ: إجمالي الدفعة المحصلة (${advance.fmt}) لا يمكن أن يقل عن العربون المحجوز مسبقاً (${dep.fmt} ${AppCurrency.symbol(posCurrency)}).');
+                setSt(
+                  () => formError =
+                      'خطأ: إجمالي الدفعة المحصلة (${advance.fmt}) لا يمكن أن يقل عن العربون المحجوز مسبقاً (${dep.fmt} ${AppCurrency.symbol(posCurrency)}).',
+                );
                 return;
               }
               if (advance > grandTotal + 0.01) {
                 final maxAdd = (grandTotal - dep).clamp(0.0, double.infinity);
-                setSt(() => formError =
-                    'خطأ: إجمالي الدفعات (العربون ${dep.fmt} + الدفعة الجديدة) يتجاوز إجمالي الفاتورة (${grandTotal.fmt}). الحد الأقصى للدفعة الإضافية: ${maxAdd.fmt} ${AppCurrency.symbol(posCurrency)}.');
+                setSt(
+                  () => formError =
+                      'خطأ: إجمالي الدفعات (العربون ${dep.fmt} + الدفعة الجديدة) يتجاوز إجمالي الفاتورة (${grandTotal.fmt}). الحد الأقصى للدفعة الإضافية: ${maxAdd.fmt} ${AppCurrency.symbol(posCurrency)}.',
+                );
                 return;
               }
             } else {
               if (advance > grandTotal + 0.01) {
-                setSt(() => formError =
-                    'خطأ: المبلغ المدخل (${advance.fmt}) يتجاوز إجمالي قيمة الفاتورة (${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}).');
+                setSt(
+                  () => formError =
+                      'خطأ: المبلغ المدخل (${advance.fmt}) يتجاوز إجمالي قيمة الفاتورة (${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}).',
+                );
                 return;
               }
             }
@@ -5444,8 +6020,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             );
             final newInvoice = FactoryInvoiceModel(
               id: 'fi_pos_${DateTime.now().millisecondsSinceEpoch}',
-              invoiceNo:
-                  'FAC-POS-${erp.factoryInvoices.length + 101}',
+              invoiceNo: 'FAC-POS-${erp.factoryInvoices.length + 101}',
               date: DateTime.now(),
               partyId: client.id,
               partyName: client.name,
@@ -5460,10 +6035,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               currency: posCurrency,
             );
             final created = assignedOrder != null
-                ? erp.assignFactoryOrderToPOSInvoice(
-                    assignedOrder!,
-                    newInvoice,
-                  )
+                ? erp.assignFactoryOrderToPOSInvoice(assignedOrder!, newInvoice)
                 : erp.addFactoryPOSInvoice(newInvoice);
             if (!created) {
               setSt(
@@ -5479,10 +6051,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   assignedOrder != null
                       ? 'تم حفظ الفاتورة وإسناد طلبية المصنع (${assignedOrder!.orderNo}) ونقل العربون إلى الصندوق الرئيسي بنجاح.'
                       : cashInvoice
-                          ? 'تم إصدار فاتورة البيع النقدية وتحصيلها بالكامل في الصندوق الرئيسي.'
-                          : advance >= grandTotal - 0.01
-                              ? 'تم حفظ الفاتورة مدفوعة بالكامل وتسجيلها في قسم المدفوعة.'
-                              : 'تم حفظ الفاتورة وتسجيلها في قسم التحصيل المعلق.',
+                      ? 'تم إصدار فاتورة البيع النقدية وتحصيلها بالكامل في الصندوق الرئيسي.'
+                      : advance >= grandTotal - 0.01
+                      ? 'تم حفظ الفاتورة مدفوعة بالكامل وتسجيلها في قسم المدفوعة.'
+                      : 'تم حفظ الفاتورة وتسجيلها في قسم التحصيل المعلق.',
                 ),
                 backgroundColor: AppColors.successGreen,
               ),
@@ -5490,7 +6062,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           }
 
           return Dialog(
-            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 20,
+            ),
             child: Container(
               width: math.min(screenWidth * 0.95, 1200),
               height: math.min(screenHeight * 0.92, 850),
@@ -5527,12 +6102,11 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                             cashInvoice
                                 ? 'إنشاء فاتورة بيع نقدية لمعتمد'
                                 : 'إنشاء فاتورة مصنع لمعتمد',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.titleLarge?.copyWith(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
                           ),
                           if (cashInvoice) ...[
                             const SizedBox(width: 10),
@@ -5609,175 +6183,231 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFAFAFA),
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: AppColors.panelBorder),
+                                border: Border.all(
+                                  color: AppColors.panelBorder,
+                                ),
                               ),
                               padding: const EdgeInsets.all(16),
                               child: SingleChildScrollView(
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
                                     // Factory Order Assignment Section
-                                    Builder(builder: (context) {
-                                      final pendingOrders = erp.factoryOrders
-                                          .where((o) => o.status == 'قيد التنفيذ')
-                                          .toList();
+                                    Builder(
+                                      builder: (context) {
+                                        final pendingOrders = erp.factoryOrders
+                                            .where(
+                                              (o) => o.status == 'قيد التنفيذ',
+                                            )
+                                            .toList();
 
-                                      if (assignedOrder != null) {
-                                        return Container(
-                                          margin: const EdgeInsets.only(bottom: 16),
-                                          padding: const EdgeInsets.all(12),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFEFF6FF),
-                                            borderRadius: BorderRadius.circular(8),
-                                            border: Border.all(color: const Color(0xFF93C5FD)),
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.spaceBetween,
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      const Icon(Icons.link_rounded,
-                                                          color: Color(0xFF2563EB), size: 22),
-                                                      const SizedBox(width: 8),
-                                                      Text(
-                                                        'إسناد طلبية: ${assignedOrder!.orderNo} (${assignedOrder!.clientName})',
-                                                        style: const TextStyle(
-                                                          fontWeight: FontWeight.bold,
-                                                          color: Color(0xFF1E40AF),
+                                        if (assignedOrder != null) {
+                                          return Container(
+                                            margin: const EdgeInsets.only(
+                                              bottom: 16,
+                                            ),
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFEFF6FF),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: const Color(0xFF93C5FD),
+                                              ),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment
+                                                          .spaceBetween,
+                                                  children: [
+                                                    Row(
+                                                      children: [
+                                                        const Icon(
+                                                          Icons.link_rounded,
+                                                          color: Color(
+                                                            0xFF2563EB,
+                                                          ),
+                                                          size: 22,
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 8,
+                                                        ),
+                                                        Text(
+                                                          'إسناد طلبية: ${assignedOrder!.orderNo} (${assignedOrder!.clientName})',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                color: Color(
+                                                                  0xFF1E40AF,
+                                                                ),
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    TextButton.icon(
+                                                      style:
+                                                          TextButton.styleFrom(
+                                                            foregroundColor:
+                                                                AppColors
+                                                                    .dangerWaste,
+                                                          ),
+                                                      onPressed: () {
+                                                        setSt(() {
+                                                          assignedOrder = null;
+                                                        });
+                                                      },
+                                                      icon: const Icon(
+                                                        Icons.link_off_rounded,
+                                                        size: 16,
+                                                      ),
+                                                      label: const Text(
+                                                        'إلغاء الربط',
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Row(
+                                                  children: [
+                                                    const Text(
+                                                      'العربون المحجوز في صندوق الطلبيات: ',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: Color(
+                                                          0xFF1E3A8A,
                                                         ),
                                                       ),
-                                                    ],
-                                                  ),
-                                                  TextButton.icon(
-                                                    style: TextButton.styleFrom(
-                                                      foregroundColor: AppColors.dangerWaste,
                                                     ),
-                                                    onPressed: () {
-                                                      setSt(() {
-                                                        assignedOrder = null;
-                                                      });
-                                                    },
-                                                    icon: const Icon(
-                                                      Icons.link_off_rounded,
-                                                      size: 16,
+                                                    Text(
+                                                      '${assignedOrder!.depositAmount.fmt} ${assignedOrder!.currencySymbol}',
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 13,
+                                                        color: AppColors
+                                                            .orderDepositBoxAccent,
+                                                      ),
                                                     ),
-                                                    label: const Text('إلغاء الربط'),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Row(
-                                                children: [
-                                                  const Text(
-                                                    'العربون المحجوز في صندوق الطلبيات: ',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: Color(0xFF1E3A8A),
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    '${assignedOrder!.depositAmount.fmt} ${assignedOrder!.currencySymbol}',
-                                                    style: const TextStyle(
-                                                      fontWeight: FontWeight.bold,
-                                                      fontSize: 13,
-                                                      color: AppColors.orderDepositBoxAccent,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              const Text(
-                                                '• تم استيراد أصناف الطلبية، ويمكنك تعديل المقاسات، والأسعار، أو إضافة بنود وخدمات.\n'
-                                                '• عند حفظ الفاتورة، سيتم تحويل العربون تلقائياً إلى الصندوق الرئيسي وتحديث حالة الطلبية.',
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: Color(0xFF3B82F6),
-                                                  height: 1.4,
+                                                  ],
                                                 ),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      } else if (pendingOrders.isNotEmpty) {
-                                        return Container(
-                                          margin: const EdgeInsets.only(bottom: 16),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 8,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFF8FAFC),
-                                            borderRadius: BorderRadius.circular(8),
-                                            border: Border.all(color: AppColors.panelBorder),
-                                          ),
-                                          child: DropdownButtonFormField<String>(
-                                            decoration: const InputDecoration(
-                                              labelText:
-                                                  '📥 إسناد من طلبية مصنع معلقة (اختياري)',
-                                              prefixIcon: Icon(
-                                                Icons.file_download_outlined,
-                                                color: AppColors.orderDepositBoxAccent,
-                                              ),
-                                              isDense: true,
-                                              border: InputBorder.none,
+                                                const SizedBox(height: 4),
+                                                const Text(
+                                                  '• تم استيراد أصناف الطلبية، ويمكنك تعديل المقاسات، والأسعار، أو إضافة بنود وخدمات.\n'
+                                                  '• عند حفظ الفاتورة، سيتم تحويل العربون تلقائياً إلى الصندوق الرئيسي وتحديث حالة الطلبية.',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: Color(0xFF3B82F6),
+                                                    height: 1.4,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                            items: pendingOrders
-                                                .map((ord) => DropdownMenuItem(
+                                          );
+                                        } else if (pendingOrders.isNotEmpty) {
+                                          return Container(
+                                            margin: const EdgeInsets.only(
+                                              bottom: 16,
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 8,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF8FAFC),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: AppColors.panelBorder,
+                                              ),
+                                            ),
+                                            child: DropdownButtonFormField<String>(
+                                              decoration: const InputDecoration(
+                                                labelText:
+                                                    '📥 إسناد من طلبية مصنع معلقة (اختياري)',
+                                                prefixIcon: Icon(
+                                                  Icons.file_download_outlined,
+                                                  color: AppColors
+                                                      .orderDepositBoxAccent,
+                                                ),
+                                                isDense: true,
+                                                border: InputBorder.none,
+                                              ),
+                                              items: pendingOrders
+                                                  .map(
+                                                    (ord) => DropdownMenuItem(
                                                       value: ord.id,
                                                       child: Text(
                                                         '${ord.orderNo} • ${ord.clientName} (${ord.totalArea.fmt} م) • عربون: ${ord.depositAmount.fmt} ${ord.currencySymbol}',
                                                       ),
-                                                    ))
-                                                .toList(),
-                                            onChanged: (ordId) {
-                                              if (ordId == null) return;
-                                              final ord = pendingOrders
-                                                  .firstWhere((o) => o.id == ordId);
-                                              setSt(() {
-                                                assignedOrder = ord;
-                                                final matchClient = approvedClients
-                                                    .where(
-                                                      (c) =>
-                                                          c.id == ord.partyId ||
-                                                          c.name == ord.clientName,
-                                                    )
-                                                    .toList();
-                                                if (matchClient.isNotEmpty) {
-                                                  selectedClientId = matchClient.first.id;
-                                                }
-                                                posCurrency = ord.currency;
-                                                draftItems.clear();
-                                                draftItems.addAll(ord.items);
-                                                deliverByUs = ord.isGoodsDelivered;
-                                                if (ord.shippingFee > 0) {
-                                                  shippingCtrl.text = ord.shippingFee.fmt;
-                                                }
-                                                if (ord.discountAmount > 0) {
-                                                  salesDiscountCtrl.text =
-                                                      ord.discountAmount.fmt;
-                                                }
-                                                downPayCtrl.text = ord.depositAmount > 0
-                                                    ? ord.depositAmount.fmt
-                                                    : '';
-                                                if (ord.photoPath.isNotEmpty) {
-                                                  photoCtrl.text = ord.photoPath;
-                                                }
-                                              });
-                                            },
-                                          ),
-                                        );
-                                      }
-                                      return const SizedBox.shrink();
-                                    }),
+                                                    ),
+                                                  )
+                                                  .toList(),
+                                              onChanged: (ordId) {
+                                                if (ordId == null) return;
+                                                final ord = pendingOrders
+                                                    .firstWhere(
+                                                      (o) => o.id == ordId,
+                                                    );
+                                                setSt(() {
+                                                  assignedOrder = ord;
+                                                  final matchClient = approvedClients
+                                                      .where(
+                                                        (c) =>
+                                                            c.id ==
+                                                                ord.partyId ||
+                                                            c.name ==
+                                                                ord.clientName,
+                                                      )
+                                                      .toList();
+                                                  if (matchClient.isNotEmpty) {
+                                                    selectedClientId =
+                                                        matchClient.first.id;
+                                                  }
+                                                  posCurrency = ord.currency;
+                                                  draftItems.clear();
+                                                  draftItems.addAll(ord.items);
+                                                  deliverByUs =
+                                                      ord.isGoodsDelivered;
+                                                  if (ord.shippingFee > 0) {
+                                                    shippingCtrl.text =
+                                                        ord.shippingFee.fmt;
+                                                  }
+                                                  if (ord.discountAmount > 0) {
+                                                    salesDiscountCtrl.text =
+                                                        ord.discountAmount.fmt;
+                                                  }
+                                                  downPayCtrl.text =
+                                                      ord.depositAmount > 0
+                                                      ? ord.depositAmount.fmt
+                                                      : '';
+                                                  if (ord
+                                                      .photoPath
+                                                      .isNotEmpty) {
+                                                    photoCtrl.text =
+                                                        ord.photoPath;
+                                                  }
+                                                });
+                                              },
+                                            ),
+                                          );
+                                        }
+                                        return const SizedBox.shrink();
+                                      },
+                                    ),
 
                                     // 1. Approved client searchable + inline add.
                                     const Text(
                                       '1. المعتمد (قائمة قابلة للبحث):',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                     const SizedBox(height: 8),
                                     Row(
@@ -5789,15 +6419,20 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               prefixIcon: Icon(Icons.search),
                                               isDense: true,
                                             ),
-                                            onChanged: (v) =>
-                                                setSt(() => clientSearch = v.trim()),
+                                            onChanged: (v) => setSt(
+                                              () => clientSearch = v.trim(),
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(width: 8),
                                         OutlinedButton.icon(
-                                          onPressed: () =>
-                                              refreshAfterAdd(() => _showAddClientDialog(erp)),
-                                          icon: const Icon(Icons.person_add_alt_1, size: 18),
+                                          onPressed: () => refreshAfterAdd(
+                                            () => _showAddClientDialog(erp),
+                                          ),
+                                          icon: const Icon(
+                                            Icons.person_add_alt_1,
+                                            size: 18,
+                                          ),
                                           label: const Text('معتمد جديد +'),
                                         ),
                                       ],
@@ -5806,7 +6441,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     DropdownButtonFormField<String>(
                                       initialValue: clientValue,
                                       isExpanded: true,
-                                      decoration: const InputDecoration(labelText: 'المعتمد'),
+                                      decoration: const InputDecoration(
+                                        labelText: 'المعتمد',
+                                      ),
                                       items: clientsFiltered
                                           .map(
                                             (c) => DropdownMenuItem(
@@ -5815,30 +6452,36 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                             ),
                                           )
                                           .toList(),
-                                      onChanged: (v) => setSt(() => selectedClientId = v),
+                                      onChanged: (v) =>
+                                          setSt(() => selectedClientId = v),
                                     ),
                                     const SizedBox(height: 16),
 
                                     // 2. Factory Warehouse Goods
                                     const Text(
                                       '2. تفاصيل الصنف من مستودع المصنع:',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                     const SizedBox(height: 8),
                                     TextField(
                                       decoration: const InputDecoration(
-                                        labelText: 'بحث صنف المستودع (النوع والدرجة)...',
+                                        labelText:
+                                            'بحث صنف المستودع (النوع والدرجة)...',
                                         prefixIcon: Icon(Icons.search),
                                         isDense: true,
                                       ),
-                                      onChanged: (v) => setSt(() => goodsSearch = v.trim()),
+                                      onChanged: (v) =>
+                                          setSt(() => goodsSearch = v.trim()),
                                     ),
                                     const SizedBox(height: 8),
                                     DropdownButtonFormField<String>(
                                       initialValue: goodsValue,
                                       isExpanded: true,
                                       decoration: const InputDecoration(
-                                        labelText: 'نوع البضاعة حسب مستودع المصنع',
+                                        labelText:
+                                            'نوع البضاعة حسب مستودع المصنع',
                                       ),
                                       items: goodsFiltered
                                           .map(
@@ -5854,18 +6497,38 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         setSt(() {
                                           selectedWhId = v;
                                           if (v != null) {
-                                            final mList = erp.factoryWarehouse.where((g) => g.id == v).toList();
+                                            final mList = erp.factoryWarehouse
+                                                .where((g) => g.id == v)
+                                                .toList();
                                             if (mList.isNotEmpty) {
                                               final selWh = mList.first;
-                                              selectedItemMeterUnit = selWh.category == 'متر مكعب' ? 'متر مكعب' : 'متر مربع';
-                                              if (selectedItemMeterUnit == 'متر مكعب') {
-                                                heightCtrl.text = selWh.thicknessCm.fmt;
-                                                final cp = getFactoryCubicSellingPrice(selWh);
-                                                unitPriceCtrl.text = cp > 0 ? cp.fmt : (selWh.recommendedSalePrice > 0 ? selWh.recommendedSalePrice.fmt : '');
+                                              selectedItemMeterUnit =
+                                                  selWh.category == 'متر مكعب'
+                                                  ? 'متر مكعب'
+                                                  : 'متر مربع';
+                                              if (selectedItemMeterUnit ==
+                                                  'متر مكعب') {
+                                                heightCtrl.text =
+                                                    selWh.thicknessCm.fmt;
+                                                final cp =
+                                                    getFactoryCubicSellingPrice(
+                                                      selWh,
+                                                    );
+                                                unitPriceCtrl.text = cp > 0
+                                                    ? cp.fmt
+                                                    : (selWh.recommendedSalePrice >
+                                                              0
+                                                          ? selWh
+                                                                .recommendedSalePrice
+                                                                .fmt
+                                                          : '');
                                               } else {
                                                 heightCtrl.clear();
-                                                if (selWh.recommendedSalePrice > 0) {
-                                                  unitPriceCtrl.text = selWh.recommendedSalePrice.fmt;
+                                                if (selWh.recommendedSalePrice >
+                                                    0) {
+                                                  unitPriceCtrl.text = selWh
+                                                      .recommendedSalePrice
+                                                      .fmt;
                                                 }
                                               }
                                             }
@@ -5878,14 +6541,19 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     if (wh == null)
                                       const Text(
                                         'اختر الصنف من القائمة أعلاه لإدخال القياسات والأسعار.',
-                                        style: TextStyle(color: AppColors.brandSecondaryText),
+                                        style: TextStyle(
+                                          color: AppColors.brandSecondaryText,
+                                        ),
                                       ),
                                     if (wh != null) ...[
                                       Row(
                                         children: [
                                           const Text(
                                             'وحدة القياس / البيع:',
-                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12,
+                                            ),
                                           ),
                                           const SizedBox(width: 12),
                                           ChoiceChip(
@@ -5894,10 +6562,14 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                             onSelected: (sel) {
                                               if (sel) {
                                                 setSt(() {
-                                                  selectedItemMeterUnit = 'متر مربع';
+                                                  selectedItemMeterUnit =
+                                                      'متر مربع';
                                                   heightCtrl.clear();
-                                                  if (wh.recommendedSalePrice > 0) {
-                                                    unitPriceCtrl.text = wh.recommendedSalePrice.fmt;
+                                                  if (wh.recommendedSalePrice >
+                                                      0) {
+                                                    unitPriceCtrl.text = wh
+                                                        .recommendedSalePrice
+                                                        .fmt;
                                                   }
                                                 });
                                               }
@@ -5907,14 +6579,22 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           ChoiceChip(
                                             label: const Text('متر مكعب (م³)'),
                                             selected: isCube,
-                                            selectedColor: const Color(0xFFDCFCE7),
+                                            selectedColor: const Color(
+                                              0xFFDCFCE7,
+                                            ),
                                             onSelected: (sel) {
                                               if (sel) {
                                                 setSt(() {
-                                                  selectedItemMeterUnit = 'متر مكعب';
-                                                  heightCtrl.text = wh.thicknessCm.fmt;
-                                                  final cp = getFactoryCubicSellingPrice(wh);
-                                                  if (cp > 0) unitPriceCtrl.text = cp.fmt;
+                                                  selectedItemMeterUnit =
+                                                      'متر مكعب';
+                                                  heightCtrl.text =
+                                                      wh.thicknessCm.fmt;
+                                                  final cp =
+                                                      getFactoryCubicSellingPrice(
+                                                        wh,
+                                                      );
+                                                  if (cp > 0)
+                                                    unitPriceCtrl.text = cp.fmt;
                                                 });
                                               }
                                             },
@@ -5927,7 +6607,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           Expanded(
                                             child: TextField(
                                               controller: lengthCtrl,
-                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                    decimal: true,
+                                                  ),
                                               decoration: const InputDecoration(
                                                 labelText: 'الطول (سم)',
                                               ),
@@ -5941,7 +6624,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           Expanded(
                                             child: TextField(
                                               controller: widthCtrl,
-                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                    decimal: true,
+                                                  ),
                                               decoration: const InputDecoration(
                                                 labelText: 'العرض (سم)',
                                               ),
@@ -5953,10 +6639,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                             Expanded(
                                               child: TextField(
                                                 controller: heightCtrl,
-                                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                keyboardType:
+                                                    const TextInputType.numberWithOptions(
+                                                      decimal: true,
+                                                    ),
                                                 decoration: InputDecoration(
-                                                  labelText: 'الارتفاع = السماكة (سم)',
-                                                  helperText: 'سماكة المادة: ${wh.thicknessCm.fmt} سم',
+                                                  labelText:
+                                                      'الارتفاع = السماكة (سم)',
+                                                  helperText:
+                                                      'سماكة المادة: ${wh.thicknessCm.fmt} سم',
                                                 ),
                                                 onChanged: (_) => setSt(() {}),
                                               ),
@@ -5970,7 +6661,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           Expanded(
                                             child: TextField(
                                               controller: qtyCtrl,
-                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                    decimal: true,
+                                                  ),
                                               decoration: const InputDecoration(
                                                 labelText: 'الكمية (العدد)',
                                               ),
@@ -5984,14 +6678,19 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           Expanded(
                                             child: TextField(
                                               controller: unitPriceCtrl,
-                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                    decimal: true,
+                                                  ),
                                               decoration: InputDecoration(
-                                                labelText: 'سعر بيع المتر (${isCube ? "م³" : "م²"} \$)',
+                                                labelText:
+                                                    'سعر بيع المتر (${isCube ? "م³" : "م²"} \$)',
                                                 helperText: isCube
                                                     ? 'سعر المتر المكعب: ${getFactoryCubicSellingPrice(wh).fmt} \$'
-                                                    : (wh.recommendedSalePrice > 0
-                                                        ? 'سعر المستودع: ${wh.recommendedSalePrice.fmt} \$'
-                                                        : null),
+                                                    : (wh.recommendedSalePrice >
+                                                              0
+                                                          ? 'سعر المستودع: ${wh.recommendedSalePrice.fmt} \$'
+                                                          : null),
                                               ),
                                               onChanged: (_) => setSt(() {}),
                                             ),
@@ -5999,16 +6698,19 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 12,
-                                                vertical: 10,
-                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 10,
+                                                  ),
                                               decoration: BoxDecoration(
                                                 color: AppColors.chipBgBlue,
-                                                borderRadius: BorderRadius.circular(8),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
                                               ),
                                               child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   const Text(
@@ -6016,15 +6718,18 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                     style: TextStyle(
                                                       fontSize: 10,
                                                       color: Color(0xFF64748B),
-                                                      fontWeight: FontWeight.bold,
+                                                      fontWeight:
+                                                          FontWeight.bold,
                                                     ),
                                                   ),
                                                   Text(
                                                     '${draftTotal.fmt} \$',
                                                     style: const TextStyle(
-                                                      fontWeight: FontWeight.bold,
+                                                      fontWeight:
+                                                          FontWeight.bold,
                                                       fontSize: 14,
-                                                      color: AppColors.accentPrimary,
+                                                      color: AppColors
+                                                          .accentPrimary,
                                                     ),
                                                   ),
                                                 ],
@@ -6037,11 +6742,19 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
 
                                       // Calculated number of meters preview
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 10,
+                                        ),
                                         decoration: BoxDecoration(
                                           color: const Color(0xFFF0FDF4),
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: const Color(0xFF86EFAC), width: 1.2),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0xFF86EFAC),
+                                            width: 1.2,
+                                          ),
                                         ),
                                         child: Row(
                                           children: [
@@ -6049,32 +6762,46 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               padding: const EdgeInsets.all(6),
                                               decoration: BoxDecoration(
                                                 color: const Color(0xFFDCFCE7),
-                                                borderRadius: BorderRadius.circular(6),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
                                               ),
-                                              child: const Icon(Icons.straighten_rounded, color: Color(0xFF15803D), size: 22),
+                                              child: const Icon(
+                                                Icons.straighten_rounded,
+                                                color: Color(0xFF15803D),
+                                                size: 22,
+                                              ),
                                             ),
                                             const SizedBox(width: 12),
                                             Expanded(
                                               child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
                                                 children: [
                                                   Row(
-                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .spaceBetween,
                                                     children: [
                                                       const Text(
                                                         'إجمالي الأمتار المحسوبة للبند:',
                                                         style: TextStyle(
                                                           fontSize: 13,
-                                                          fontWeight: FontWeight.bold,
-                                                          color: Color(0xFF166534),
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Color(
+                                                            0xFF166534,
+                                                          ),
                                                         ),
                                                       ),
                                                       Text(
                                                         '${area.fmt} ${isCube ? "متر مكعب (م³)" : "متر مربع (م²)"}',
                                                         style: const TextStyle(
                                                           fontSize: 16,
-                                                          fontWeight: FontWeight.w900,
-                                                          color: Color(0xFF15803D),
+                                                          fontWeight:
+                                                              FontWeight.w900,
+                                                          color: Color(
+                                                            0xFF15803D,
+                                                          ),
                                                         ),
                                                       ),
                                                     ],
@@ -6086,8 +6813,18 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                         : 'أدخل الطول والعرض والعدد لاحتساب إجمالي الأمتار تلقائياً',
                                                     style: TextStyle(
                                                       fontSize: 11,
-                                                      color: (l > 0 && w > 0 && q > 0) ? const Color(0xFF166534) : const Color(0xFF64748B),
-                                                      fontWeight: FontWeight.w600,
+                                                      color:
+                                                          (l > 0 &&
+                                                              w > 0 &&
+                                                              q > 0)
+                                                          ? const Color(
+                                                              0xFF166534,
+                                                            )
+                                                          : const Color(
+                                                              0xFF64748B,
+                                                            ),
+                                                      fontWeight:
+                                                          FontWeight.w600,
                                                     ),
                                                   ),
                                                 ],
@@ -6103,7 +6840,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         setSt: setSt,
                                         erp: erp,
                                         serviceSearch: serviceSearch,
-                                        onSearchChanged: (v) => setSt(() => serviceSearch = v),
+                                        onSearchChanged: (v) =>
+                                            setSt(() => serviceSearch = v),
                                         serviceValue: serviceValue,
                                         servicesFiltered: servicesFiltered,
                                         onServiceChanged: (v) {
@@ -6119,29 +6857,39 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         draftServicesTotal: draftServicesTotal,
                                         curLengthM: l > 0 ? (l / 100.0) : 0.0,
                                         curQuantity: q,
-                                        onError: (err) => setSt(() => formError = err),
+                                        onError: (err) =>
+                                            setSt(() => formError = err),
                                       ),
                                       const SizedBox(height: 8),
                                       Align(
-                                        alignment: AlignmentDirectional.centerStart,
+                                        alignment:
+                                            AlignmentDirectional.centerStart,
                                         child: ElevatedButton.icon(
                                           onPressed: () {
                                             if (selectedClientId == null) {
-                                              setSt(() => formError = 'اختر المعتمد أولاً.');
+                                              setSt(
+                                                () => formError =
+                                                    'اختر المعتمد أولاً.',
+                                              );
                                               return;
                                             }
                                             if (area <= 0) {
                                               setSt(
-                                                () => formError = 'أدخل أبعاداً وكمية صحيحة.',
+                                                () => formError =
+                                                    'أدخل أبعاداً وكمية صحيحة.',
                                               );
                                               return;
                                             }
                                             if (price < 0) {
-                                              setSt(() => formError = 'أدخل سعر وحدة صحيح.');
+                                              setSt(
+                                                () => formError =
+                                                    'أدخل سعر وحدة صحيح.',
+                                              );
                                               return;
                                             }
                                             final available =
-                                                wh.availableQty - draftedFor(wh.id);
+                                                wh.availableQty -
+                                                draftedFor(wh.id);
                                             if (area > available + 0.0001) {
                                               setSt(
                                                 () => formError =
@@ -6165,10 +6913,16 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   unitPrice: price,
                                                   unitCost: wh.netCostPerUnit,
                                                   isGranite: wh.isGranite,
-                                                  services: List.of(draftServices),
+                                                  services: List.of(
+                                                    draftServices,
+                                                  ),
                                                   thicknessCm: wh.thicknessCm,
-                                                  meterUnit: isCube ? 'متر مكعب' : 'متر مربع',
-                                                  itemCategory: isCube ? 'متر مكعب' : 'meter',
+                                                  meterUnit: isCube
+                                                      ? 'متر مكعب'
+                                                      : 'متر مربع',
+                                                  itemCategory: isCube
+                                                      ? 'متر مكعب'
+                                                      : 'meter',
                                                 ),
                                               );
                                               draftServices.clear();
@@ -6181,7 +6935,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                             });
                                           },
                                           icon: const Icon(Icons.add),
-                                          label: const Text('إضافة الصنف للفاتورة +'),
+                                          label: const Text(
+                                            'إضافة الصنف للفاتورة +',
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -6191,12 +6947,20 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
                                           color: const Color(0xFFFEF2F2),
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0xFFFCA5A5),
+                                          ),
                                         ),
                                         child: Row(
                                           children: [
-                                            const Icon(Icons.error_outline, color: AppColors.dangerWaste, size: 18),
+                                            const Icon(
+                                              Icons.error_outline,
+                                              color: AppColors.dangerWaste,
+                                              size: 18,
+                                            ),
                                             const SizedBox(width: 8),
                                             Expanded(
                                               child: Text(
@@ -6217,38 +6981,51 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     // 3. Delivery options
                                     const Text(
                                       '3. خيار التوصيل:',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                     Row(
                                       children: [
                                         Expanded(
                                           child: InkWell(
-                                            onTap: () => setSt(() => deliverByUs = false),
+                                            onTap: () => setSt(
+                                              () => deliverByUs = false,
+                                            ),
                                             child: Row(
                                               children: [
                                                 Radio<bool>(
                                                   value: false,
                                                   groupValue: deliverByUs,
-                                                  onChanged: (v) =>
-                                                      setSt(() => deliverByUs = v),
+                                                  onChanged: (v) => setSt(
+                                                    () => deliverByUs = v,
+                                                  ),
                                                 ),
-                                                const Expanded(child: Text('الزبون يستلم النقل')),
+                                                const Expanded(
+                                                  child: Text(
+                                                    'الزبون يستلم النقل',
+                                                  ),
+                                                ),
                                               ],
                                             ),
                                           ),
                                         ),
                                         Expanded(
                                           child: InkWell(
-                                            onTap: () => setSt(() => deliverByUs = true),
+                                            onTap: () =>
+                                                setSt(() => deliverByUs = true),
                                             child: Row(
                                               children: [
                                                 Radio<bool>(
                                                   value: true,
                                                   groupValue: deliverByUs,
-                                                  onChanged: (v) =>
-                                                      setSt(() => deliverByUs = v),
+                                                  onChanged: (v) => setSt(
+                                                    () => deliverByUs = v,
+                                                  ),
                                                 ),
-                                                const Expanded(child: Text('نوصّل نحن')),
+                                                const Expanded(
+                                                  child: Text('نوصّل نحن'),
+                                                ),
                                               ],
                                             ),
                                           ),
@@ -6260,7 +7037,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         controller: shippingCtrl,
                                         keyboardType: TextInputType.number,
                                         decoration: const InputDecoration(
-                                          labelText: 'تكلفة التوصيل / الشحن (\$)',
+                                          labelText:
+                                              'تكلفة التوصيل / الشحن (\$)',
                                           isDense: true,
                                         ),
                                         onChanged: (_) => setSt(() {}),
@@ -6270,22 +7048,27 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     // 4. Financial & Payment settings
                                     const Text(
                                       '4. الشروط المالية والعملة:',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                     const SizedBox(height: 8),
                                     CurrencySelector(
                                       value: posCurrency,
                                       dense: true,
-                                      onChanged: (v) => setSt(() => posCurrency = v),
+                                      onChanged: (v) =>
+                                          setSt(() => posCurrency = v),
                                     ),
                                     const SizedBox(height: 8),
                                     TextField(
                                       controller: salesDiscountCtrl,
-                                      keyboardType: const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                            decimal: true,
+                                          ),
                                       decoration: const InputDecoration(
-                                        labelText: 'خصم المبيعات المسموح (اختياري)',
+                                        labelText:
+                                            'خصم المبيعات المسموح (اختياري)',
                                       ),
                                       onChanged: (_) => setSt(() {}),
                                     ),
@@ -6295,8 +7078,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         padding: const EdgeInsets.all(10),
                                         decoration: BoxDecoration(
                                           color: const Color(0xFFF0FDF4),
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: const Color(0xFF86EFAC)),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0xFF86EFAC),
+                                          ),
                                         ),
                                         child: Text(
                                           'فاتورة بيع نقدية: سيتم تحصيل كامل الإجمالي (${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}) إلى الصندوق الرئيسي فوراً.',
@@ -6313,61 +7100,89 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           String? errorText;
                                           if (downPayCtrl.text.isNotEmpty) {
                                             if (downPay < 0) {
-                                              errorText = 'لا يمكن إدخال دفعة سالبة';
+                                              errorText =
+                                                  'لا يمكن إدخال دفعة سالبة';
                                             } else if (assignedOrder != null) {
-                                              final dep = assignedOrder!.depositAmount;
+                                              final dep =
+                                                  assignedOrder!.depositAmount;
                                               if (downPay < dep - 0.01) {
-                                                errorText = 'أقل من العربون المسبق (${dep.fmt})';
-                                              } else if (downPay > grandTotal + 0.01) {
-                                                errorText = 'المجموع (${downPay.fmt}) يتجاوز إجمالي الفاتورة (${grandTotal.fmt})';
+                                                errorText =
+                                                    'أقل من العربون المسبق (${dep.fmt})';
+                                              } else if (downPay >
+                                                  grandTotal + 0.01) {
+                                                errorText =
+                                                    'المجموع (${downPay.fmt}) يتجاوز إجمالي الفاتورة (${grandTotal.fmt})';
                                               }
                                             } else {
                                               if (downPay > grandTotal + 0.01) {
-                                                errorText = 'الدفعة (${downPay.fmt}) تتجاوز إجمالي الفاتورة (${grandTotal.fmt})';
+                                                errorText =
+                                                    'الدفعة (${downPay.fmt}) تتجاوز إجمالي الفاتورة (${grandTotal.fmt})';
                                               }
                                             }
                                           }
                                           return Column(
-                                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.stretch,
                                             children: [
                                               TextField(
                                                 controller: downPayCtrl,
-                                                keyboardType: TextInputType.number,
+                                                keyboardType:
+                                                    TextInputType.number,
                                                 decoration: InputDecoration(
-                                                  labelText: assignedOrder != null
+                                                  labelText:
+                                                      assignedOrder != null
                                                       ? 'إجمالي الدفعات (العربون المحجوز + دفعة جديدة)'
                                                       : 'الدفعة الأولى / المقدمة (إن وجدت)',
                                                   isDense: true,
                                                   errorText: errorText,
-                                                  helperText: assignedOrder != null
+                                                  helperText:
+                                                      assignedOrder != null
                                                       ? 'العربون: ${assignedOrder!.depositAmount.fmt} • الحد الأقصى المسموح: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}'
                                                       : 'الحد الأقصى المسموح: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
                                                 ),
                                                 onChanged: (_) => setSt(() {}),
                                               ),
-                                              if (downPayCtrl.text.isNotEmpty) ...[
+                                              if (downPayCtrl
+                                                  .text
+                                                  .isNotEmpty) ...[
                                                 const SizedBox(height: 6),
                                                 Row(
-                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment
+                                                          .spaceBetween,
                                                   children: [
                                                     Text(
                                                       'المتبقي على المعتمد: ${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}',
                                                       style: TextStyle(
-                                                        fontWeight: FontWeight.bold,
-                                                        color: downPay > grandTotal + 0.01
-                                                            ? AppColors.dangerWaste
-                                                            : (grandTotal - downPay <= 0.01
-                                                                ? AppColors.successGreen
-                                                                : AppColors.dangerWaste),
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color:
+                                                            downPay >
+                                                                grandTotal +
+                                                                    0.01
+                                                            ? AppColors
+                                                                  .dangerWaste
+                                                            : (grandTotal -
+                                                                          downPay <=
+                                                                      0.01
+                                                                  ? AppColors
+                                                                        .successGreen
+                                                                  : AppColors
+                                                                        .dangerWaste),
                                                       ),
                                                     ),
-                                                    if (assignedOrder != null && downPay >= assignedOrder!.depositAmount)
+                                                    if (assignedOrder != null &&
+                                                        downPay >=
+                                                            assignedOrder!
+                                                                .depositAmount)
                                                       Text(
                                                         'دفعة إضافية الآن: ${(downPay - assignedOrder!.depositAmount).fmt} ${AppCurrency.symbol(posCurrency)}',
                                                         style: const TextStyle(
                                                           fontSize: 11,
-                                                          color: AppColors.accentPrimary,
-                                                          fontWeight: FontWeight.bold,
+                                                          color: AppColors
+                                                              .accentPrimary,
+                                                          fontWeight:
+                                                              FontWeight.bold,
                                                         ),
                                                       ),
                                                   ],
@@ -6395,22 +7210,33 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         Expanded(
                                           child: ElevatedButton.icon(
                                             style: ElevatedButton.styleFrom(
-                                              backgroundColor: AppColors.accentPrimary,
+                                              backgroundColor:
+                                                  AppColors.accentPrimary,
                                               foregroundColor: Colors.white,
-                                              padding: const EdgeInsets.symmetric(vertical: 14),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 14,
+                                                  ),
                                             ),
                                             onPressed: submitInvoice,
-                                            icon: const Icon(Icons.check_circle_outline),
+                                            icon: const Icon(
+                                              Icons.check_circle_outline,
+                                            ),
                                             label: const Text(
                                               'إصدار وحفظ الفاتورة',
-                                              style: TextStyle(fontWeight: FontWeight.bold),
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                             ),
                                           ),
                                         ),
                                         const SizedBox(width: 12),
                                         OutlinedButton(
                                           style: OutlinedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 14,
+                                              horizontal: 20,
+                                            ),
                                           ),
                                           onPressed: () => Navigator.pop(ctx),
                                           child: const Text('إلغاء'),
@@ -6435,7 +7261,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: AppColors.panelBorder),
+                                border: Border.all(
+                                  color: AppColors.panelBorder,
+                                ),
                               ),
                               padding: const EdgeInsets.all(16),
                               child: Column(
@@ -6443,11 +7271,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                 children: [
                                   // Header
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Row(
                                         children: const [
-                                          Icon(Icons.receipt_long_rounded, color: AppColors.accentPrimary),
+                                          Icon(
+                                            Icons.receipt_long_rounded,
+                                            color: AppColors.accentPrimary,
+                                          ),
                                           SizedBox(width: 8),
                                           Text(
                                             'أصناف وبنود الفاتورة',
@@ -6467,7 +7299,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           color: draftItems.isNotEmpty
                                               ? AppColors.chipBgBlue
                                               : const Color(0xFFF1F5F9),
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
                                         child: Text(
                                           '${draftItems.length} صنف',
@@ -6501,7 +7335,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   'لم تتم إضافة أي أصناف حتى الآن',
                                                   style: TextStyle(
                                                     fontWeight: FontWeight.bold,
-                                                    color: AppColors.brandSecondaryText,
+                                                    color: AppColors
+                                                        .brandSecondaryText,
                                                   ),
                                                 ),
                                                 SizedBox(height: 4),
@@ -6520,37 +7355,56 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                             itemCount: draftItems.length,
                                             itemBuilder: (context, idx) {
                                               final it = draftItems[idx];
-                                              final isCube = it.meterUnit == "متر مكعب" || it.heightCm > 0;
+                                              final isCube =
+                                                  it.meterUnit == "متر مكعب" ||
+                                                  it.heightCm > 0;
                                               return Card(
-                                                margin: const EdgeInsets.only(bottom: 8),
+                                                margin: const EdgeInsets.only(
+                                                  bottom: 8,
+                                                ),
                                                 elevation: 0,
                                                 shape: RoundedRectangleBorder(
-                                                  borderRadius: BorderRadius.circular(8),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
                                                   side: BorderSide(
-                                                    color: AppColors.panelBorder,
+                                                    color:
+                                                        AppColors.panelBorder,
                                                   ),
                                                 ),
                                                 child: ExpansionTile(
-                                                  tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                                                  childrenPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                                  tilePadding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 2,
+                                                      ),
+                                                  childrenPadding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 4,
+                                                      ),
                                                   title: Text(
                                                     it.description,
                                                     style: const TextStyle(
-                                                      fontWeight: FontWeight.bold,
+                                                      fontWeight:
+                                                          FontWeight.bold,
                                                       fontSize: 13,
                                                     ),
                                                   ),
                                                   subtitle: Text(
                                                     '${it.calculatedArea.fmt} ${isCube ? "م³" : "م²"} × ${it.unitPrice.fmt}\$ + خدمات ${it.servicesTotal.fmt}\$ = ${it.grandTotal.fmt}\$',
-                                                    style: const TextStyle(fontSize: 11),
+                                                    style: const TextStyle(
+                                                      fontSize: 11,
+                                                    ),
                                                   ),
                                                   trailing: Row(
-                                                    mainAxisSize: MainAxisSize.min,
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
                                                     children: [
                                                       IconButton(
                                                         icon: const Icon(
                                                           Icons.edit_outlined,
-                                                          color: AppColors.accentPrimary,
+                                                          color: AppColors
+                                                              .accentPrimary,
                                                           size: 18,
                                                         ),
                                                         tooltip: 'تعديل الصنف',
@@ -6559,21 +7413,25 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                             context: context,
                                                             item: it,
                                                             erp: erp,
-                                                            onSave: (updated) => setSt(() {
-                                                              draftItems[idx] = updated;
-                                                            }),
+                                                            onSave: (updated) =>
+                                                                setSt(() {
+                                                                  draftItems[idx] =
+                                                                      updated;
+                                                                }),
                                                           );
                                                         },
                                                       ),
                                                       IconButton(
                                                         icon: const Icon(
                                                           Icons.delete_outline,
-                                                          color: AppColors.dangerWaste,
+                                                          color: AppColors
+                                                              .dangerWaste,
                                                           size: 18,
                                                         ),
                                                         tooltip: 'حذف الصنف',
                                                         onPressed: () => setSt(
-                                                          () => draftItems.removeAt(idx),
+                                                          () => draftItems
+                                                              .removeAt(idx),
                                                         ),
                                                       ),
                                                     ],
@@ -6581,25 +7439,50 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   children: [
                                                     if (it.services.isEmpty)
                                                       const Padding(
-                                                        padding: EdgeInsets.symmetric(vertical: 4),
+                                                        padding:
+                                                            EdgeInsets.symmetric(
+                                                              vertical: 4,
+                                                            ),
                                                         child: Text(
                                                           'لا توجد خدمات مرفقة بهذا البند',
-                                                          style: TextStyle(fontSize: 11, color: AppColors.brandSecondaryText),
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            color: AppColors
+                                                                .brandSecondaryText,
+                                                          ),
                                                         ),
                                                       )
                                                     else
                                                       ...it.services.map(
                                                         (s) => ListTile(
                                                           dense: true,
-                                                          contentPadding: EdgeInsets.zero,
-                                                          title: Text(s.serviceName, style: const TextStyle(fontSize: 12)),
-                                                          subtitle: Text(s.notes.isEmpty ? '—' : s.notes, style: const TextStyle(fontSize: 10)),
+                                                          contentPadding:
+                                                              EdgeInsets.zero,
+                                                          title: Text(
+                                                            s.serviceName,
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 12,
+                                                                ),
+                                                          ),
+                                                          subtitle: Text(
+                                                            s.notes.isEmpty
+                                                                ? '—'
+                                                                : s.notes,
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 10,
+                                                                ),
+                                                          ),
                                                           trailing: Text(
                                                             '${s.price.fmt}\$',
-                                                            style: const TextStyle(
-                                                              fontWeight: FontWeight.bold,
-                                                              fontSize: 11,
-                                                            ),
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                  fontSize: 11,
+                                                                ),
                                                           ),
                                                         ),
                                                       ),
@@ -6618,40 +7501,63 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFF8FAFC),
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: AppColors.panelBorder),
+                                      border: Border.all(
+                                        color: AppColors.panelBorder,
+                                      ),
                                     ),
                                     child: Column(
                                       children: [
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
                                           children: [
-                                            const Text('إجمالي الأمتار المباعة:', style: TextStyle(fontSize: 12)),
+                                            const Text(
+                                              'إجمالي الأمتار المباعة:',
+                                              style: TextStyle(fontSize: 12),
+                                            ),
                                             Text(
                                               '${draftItems.fold(0.0, (s, it) => s + it.calculatedArea).fmt} م',
-                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
                                             ),
                                           ],
                                         ),
                                         const SizedBox(height: 4),
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
                                           children: [
-                                            const Text('إجمالي قيمة البضاعة:', style: TextStyle(fontSize: 12)),
+                                            const Text(
+                                              'إجمالي قيمة البضاعة:',
+                                              style: TextStyle(fontSize: 12),
+                                            ),
                                             Text(
                                               '${itemsTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
                                             ),
                                           ],
                                         ),
                                         if (itemsServicesTotal > 0) ...[
                                           const SizedBox(height: 4),
                                           Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
-                                              const Text('إجمالي الخدمات المرفقة:', style: TextStyle(fontSize: 12)),
+                                              const Text(
+                                                'إجمالي الخدمات المرفقة:',
+                                                style: TextStyle(fontSize: 12),
+                                              ),
                                               Text(
                                                 '${itemsServicesTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                ),
                                               ),
                                             ],
                                           ),
@@ -6659,15 +7565,20 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         if (shipping > 0) ...[
                                           const SizedBox(height: 4),
                                           Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
-                                              const Text('تكلفة التوصيل:', style: TextStyle(fontSize: 12)),
+                                              const Text(
+                                                'تكلفة التوصيل:',
+                                                style: TextStyle(fontSize: 12),
+                                              ),
                                               Text(
                                                 '${shipping.fmt} ${AppCurrency.symbol(posCurrency)}',
                                                 style: const TextStyle(
                                                   fontSize: 12,
                                                   fontWeight: FontWeight.bold,
-                                                  color: AppColors.accentPrimary,
+                                                  color:
+                                                      AppColors.accentPrimary,
                                                 ),
                                               ),
                                             ],
@@ -6676,23 +7587,38 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         if (salesDiscount > 0) ...[
                                           const SizedBox(height: 4),
                                           Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
-                                              const Text('خصم المبيعات الممنوح:', style: TextStyle(fontSize: 12, color: AppColors.dangerWaste)),
+                                              const Text(
+                                                'خصم المبيعات الممنوح:',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: AppColors.dangerWaste,
+                                                ),
+                                              ),
                                               Text(
                                                 '-${salesDiscount.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.dangerWaste),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                  color: AppColors.dangerWaste,
+                                                ),
                                               ),
                                             ],
                                           ),
                                         ],
                                         const Divider(height: 14),
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
                                           children: [
                                             const Text(
                                               'صافي إجمالي الفاتورة:',
-                                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                              ),
                                             ),
                                             Row(
                                               children: [
@@ -6701,78 +7627,127 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   style: const TextStyle(
                                                     fontWeight: FontWeight.bold,
                                                     fontSize: 16,
-                                                    color: AppColors.accentPrimary,
+                                                    color:
+                                                        AppColors.accentPrimary,
                                                   ),
                                                 ),
                                                 const SizedBox(width: 6),
-                                                CurrencyBadge(currency: posCurrency),
+                                                CurrencyBadge(
+                                                  currency: posCurrency,
+                                                ),
                                               ],
                                             ),
                                           ],
                                         ),
                                         const SizedBox(height: 8),
                                         Align(
-                                          alignment: AlignmentDirectional.centerEnd,
+                                          alignment:
+                                              AlignmentDirectional.centerEnd,
                                           child: TextButton.icon(
                                             style: TextButton.styleFrom(
-                                              foregroundColor: const Color(0xFF4F46E5),
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 4,
+                                              foregroundColor: const Color(
+                                                0xFF4F46E5,
                                               ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 4,
+                                                  ),
                                             ),
                                             onPressed: () {
                                               final currentNet = grandTotal;
-                                              final truncated = currentNet.truncateToDouble();
-                                              final diff = currentNet - truncated;
+                                              final truncated = currentNet
+                                                  .truncateToDouble();
+                                              final diff =
+                                                  currentNet - truncated;
                                               if (diff > 0.0001) {
-                                                final newDisc = salesDiscount + diff;
-                                                salesDiscountCtrl.text = newDisc.fmt;
+                                                final newDisc =
+                                                    salesDiscount + diff;
+                                                salesDiscountCtrl.text =
+                                                    newDisc.fmt;
                                                 if (cashInvoice) {
-                                                  downPayCtrl.text = truncated.fmt;
+                                                  downPayCtrl.text =
+                                                      truncated.fmt;
                                                 }
                                                 setSt(() {});
                                               }
                                             },
-                                            icon: const Icon(Icons.content_cut_rounded, size: 14),
+                                            icon: const Icon(
+                                              Icons.content_cut_rounded,
+                                              size: 14,
+                                            ),
                                             label: const Text(
                                               'تجاهل القروش (Ignore Cents)',
-                                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                             ),
                                           ),
                                         ),
                                         if (cashInvoice) ...[
                                           const Divider(height: 10),
                                           Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
-                                              const Text('المحصل فوراً في الصندوق:', style: TextStyle(fontSize: 12, color: AppColors.successGreen)),
+                                              const Text(
+                                                'المحصل فوراً في الصندوق:',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: AppColors.successGreen,
+                                                ),
+                                              ),
                                               Text(
                                                 '${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.successGreen),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                  color: AppColors.successGreen,
+                                                ),
                                               ),
                                             ],
                                           ),
                                         ] else if (downPay > 0) ...[
                                           const Divider(height: 10),
                                           Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
-                                              const Text('الدفعة المستلمة / العربون:', style: TextStyle(fontSize: 12)),
+                                              const Text(
+                                                'الدفعة المستلمة / العربون:',
+                                                style: TextStyle(fontSize: 12),
+                                              ),
                                               Text(
                                                 '${downPay.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.accentPrimary),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                  color:
+                                                      AppColors.accentPrimary,
+                                                ),
                                               ),
                                             ],
                                           ),
                                           const SizedBox(height: 4),
                                           Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
-                                              const Text('المتبقي على المعتمد:', style: TextStyle(fontSize: 12, color: AppColors.dangerWaste)),
+                                              const Text(
+                                                'المتبقي على المعتمد:',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: AppColors.dangerWaste,
+                                                ),
+                                              ),
                                               Text(
                                                 '${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.dangerWaste),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 14,
+                                                  color: AppColors.dangerWaste,
+                                                ),
                                               ),
                                             ],
                                           ),
@@ -6814,7 +7789,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     required double curQuantity,
     required ValueChanged<String> onError,
   }) {
-    final ServiceItemModel? selectedSrv = (selectedServiceId != null &&
+    final ServiceItemModel? selectedSrv =
+        (selectedServiceId != null &&
             erp.services.any((s) => s.id == selectedServiceId))
         ? erp.services.firstWhere((s) => s.id == selectedServiceId)
         : null;
@@ -6834,10 +7810,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             children: const [
               Text(
                 'خدمات ملحقة بهذا الصنف (من شاشة الخدمات):',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12.5,
-                ),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
               ),
               Text(
                 'المعادلة: (الطول × العدد × سعر الخدمة)',
@@ -6870,9 +7843,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 .map(
                   (s) => DropdownMenuItem(
                     value: s.id,
-                    child: Text(
-                      '${s.name} (${s.unitRate}\$ للمتر)',
-                    ),
+                    child: Text('${s.name} (${s.unitRate}\$ للمتر)'),
                   ),
                 )
                 .toList(),
@@ -6935,7 +7906,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               Expanded(
                 child: TextField(
                   controller: servicePriceCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   decoration: const InputDecoration(
                     labelText: 'سعر الخدمة الإجمالي (\$)',
                     isDense: true,
@@ -6960,8 +7933,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     onError('اختر الخدمة أولاً.');
                     return;
                   }
-                  final price =
-                      double.tryParse(servicePriceCtrl.text) ?? 0.0;
+                  final price = double.tryParse(servicePriceCtrl.text) ?? 0.0;
                   if (price <= 0) {
                     onError('أدخل سعر الخدمة أو تأكد من إدخال الطول والكمية.');
                     return;
@@ -6974,7 +7946,11 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                       : '';
                   final userNote = serviceNotesCtrl.text.trim();
                   final finalNote = userNote.isNotEmpty
-                      ? (userNote.contains('طول') ? userNote : (autoFormula.isNotEmpty ? '$autoFormula • $userNote' : userNote))
+                      ? (userNote.contains('طول')
+                            ? userNote
+                            : (autoFormula.isNotEmpty
+                                  ? '$autoFormula • $userNote'
+                                  : userNote))
                       : autoFormula;
 
                   setSt(() {
@@ -6998,7 +7974,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             ...draftServices.asMap().entries.map(
               (e) => Container(
                 margin: const EdgeInsets.symmetric(vertical: 3),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(6),
@@ -7036,9 +8015,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                         size: 18,
                         color: AppColors.dangerWaste,
                       ),
-                      onPressed: () => setSt(
-                        () => draftServices.removeAt(e.key),
-                      ),
+                      onPressed: () =>
+                          setSt(() => draftServices.removeAt(e.key)),
                     ),
                   ],
                 ),
@@ -7057,5 +8035,4 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       ),
     );
   }
-
 }
