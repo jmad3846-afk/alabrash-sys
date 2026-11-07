@@ -4505,6 +4505,44 @@ class ERPProvider extends ChangeNotifier {
   double get clientsProjectDebtsSyp => clients
       .where((c) => c.clientType == 'مشروع معمل')
       .fold(0.0, (s, c) => s + c.debtBalanceSyp);
+
+  /// Historical opening-entry balances that should be visible in the
+  /// dashboard's person debt summaries and their detail dialogs.
+  List<LegacyFinancialRecordModel> legacyFinancialRecordsFor(
+    String category, {
+    String? clientType,
+  }) => openingEntry.legacyFinancials.where((record) {
+    if (record.category != category || record.amount <= 0) return false;
+    if (category != 'clients' || clientType == null) return true;
+    final matchingClient = clients.where((client) {
+      if (record.partyId.isNotEmpty) return client.id == record.partyId;
+      return client.name.trim() == record.name.trim();
+    }).firstOrNull;
+    return matchingClient?.clientType == clientType;
+  }).toList();
+
+  double legacyFinancialTotal(
+    String category,
+    String? currency, {
+    String? clientType,
+  }) => legacyFinancialRecordsFor(category, clientType: clientType)
+      .where((record) => record.currency == AppCurrency.normalize(currency))
+      .fold<double>(0, (sum, record) => sum + record.amount);
+
+  double legacyBalanceForParty(
+    String category,
+    String partyId,
+    String partyName,
+    String? currency,
+  ) => openingEntry.legacyFinancials
+      .where(
+        (record) =>
+            record.category == category &&
+            record.belongsTo(partyId, partyName) &&
+            record.currency == AppCurrency.normalize(currency),
+      )
+      .fold<double>(0, (sum, record) => sum + record.amount);
+
   double clientsApprovedDebtsOf(String? currency) => clients
       .where((c) => c.clientType == 'معتمد مصنع')
       .fold(0.0, (s, c) => s + c.debtOf(currency));

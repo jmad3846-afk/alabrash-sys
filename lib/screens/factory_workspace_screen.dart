@@ -1287,7 +1287,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
-                                            'الذمة المستحقة: ${s.dualDebt}',
+                                            'الذمة المستحقة: ${AppCurrency.dual(s.debtBalance + erp.legacyBalanceForParty('suppliers', s.id, s.name, AppCurrency.usd), s.debtBalanceSyp + erp.legacyBalanceForParty('suppliers', s.id, s.name, AppCurrency.syp))}',
                                             style: const TextStyle(
                                               fontWeight: FontWeight.bold,
                                               color: AppColors.dangerWaste,
@@ -1368,7 +1368,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
-                                            'الديون المستحقة: ${c.dualDebt}',
+                                            'الديون المستحقة: ${AppCurrency.dual(c.debtBalance + erp.legacyBalanceForParty('clients', c.id, c.name, AppCurrency.usd), c.debtBalanceSyp + erp.legacyBalanceForParty('clients', c.id, c.name, AppCurrency.syp))}',
                                             style: const TextStyle(
                                               fontWeight: FontWeight.bold,
                                               color: AppColors.accentPrimary,

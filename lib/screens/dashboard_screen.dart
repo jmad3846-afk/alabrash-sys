@@ -120,8 +120,18 @@ class DashboardScreen extends StatelessWidget {
                 MetricCard(
                   title: 'تحليلات المصنع • لنا من معتمدين',
                   value: AppCurrency.dual(
-                    erp.clientsApprovedDebtsOf(AppCurrency.usd),
-                    erp.clientsApprovedDebtsOf(AppCurrency.syp),
+                    erp.clientsApprovedDebtsOf(AppCurrency.usd) +
+                        erp.legacyFinancialTotal(
+                          'clients',
+                          AppCurrency.usd,
+                          clientType: 'معتمد مصنع',
+                        ),
+                    erp.clientsApprovedDebtsOf(AppCurrency.syp) +
+                        erp.legacyFinancialTotal(
+                          'clients',
+                          AppCurrency.syp,
+                          clientType: 'معتمد مصنع',
+                        ),
                   ),
                   subtitle: 'انقر لفتح القائمة التفصيلية للمعتمدين',
                   icon: Icons.factory_rounded,
@@ -140,8 +150,14 @@ class DashboardScreen extends StatelessWidget {
                 MetricCard(
                   title: 'المستحقات • علينا عمال وموردين',
                   value: AppCurrency.dual(
-                    erp.suppliersTotalDebts + erp.workersTotalDebts,
-                    erp.suppliersTotalDebtsSyp + erp.workersTotalDebtsSyp,
+                    erp.suppliersTotalDebts +
+                        erp.legacyFinancialTotal('suppliers', AppCurrency.usd) +
+                        erp.workersTotalDebts +
+                        erp.legacyFinancialTotal('employees', AppCurrency.usd),
+                    erp.suppliersTotalDebtsSyp +
+                        erp.legacyFinancialTotal('suppliers', AppCurrency.syp) +
+                        erp.workersTotalDebtsSyp +
+                        erp.legacyFinancialTotal('employees', AppCurrency.syp),
                   ),
                   subtitle: 'انقر لفتح تبويبات الموردين والعمالة',
                   icon: Icons.outbox_rounded,
@@ -159,8 +175,18 @@ class DashboardScreen extends StatelessWidget {
                 MetricCard(
                   title: 'تحليلات المعمل • لنا زبائن',
                   value: AppCurrency.dual(
-                    erp.clientsRetailDebts,
-                    erp.clientsRetailDebtsSyp,
+                    erp.clientsRetailDebts +
+                        erp.legacyFinancialTotal(
+                          'clients',
+                          AppCurrency.usd,
+                          clientType: 'زبون معمل',
+                        ),
+                    erp.clientsRetailDebtsSyp +
+                        erp.legacyFinancialTotal(
+                          'clients',
+                          AppCurrency.syp,
+                          clientType: 'زبون معمل',
+                        ),
                   ),
                   subtitle: 'انقر لعرض ديون الزبائن الجزافية',
                   icon: Icons.storefront_rounded,
