@@ -11,6 +11,7 @@ import '../widgets/a4_invoice_print_dialog.dart';
 import '../widgets/app_image_attachment.dart';
 import '../widgets/factory_order_dialogs.dart';
 import 'accounting_screens.dart';
+import 'factory_service_invoices_screen.dart';
 
 class FactoryWorkspaceScreen extends StatefulWidget {
   final Function(int navIndex) onNavigateToCutting;
@@ -144,7 +145,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   @override
   void initState() {
     super.initState();
-    _navTabController = TabController(length: 11, vsync: this);
+    _navTabController = TabController(length: 12, vsync: this);
   }
 
   @override
@@ -180,6 +181,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 Tab(text: '9. طلبيات المصنع (Orders)'),
                 Tab(text: '10. المرتجعات والمسموحات'),
                 Tab(text: '11. الفواتير النقدية'),
+                Tab(text: '12. فواتير الخدمات وأجور القص'),
               ],
             ),
           ),
@@ -200,6 +202,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 _buildSubTab9FactoryOrders(erp),
                 const ReturnsAllowancesScreen(factoryOnly: true),
                 _buildCashFactoryInvoices(erp),
+                const FactoryServiceInvoicesScreen(),
               ],
             ),
           ),

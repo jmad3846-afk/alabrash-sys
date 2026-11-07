@@ -4077,3 +4077,97 @@ class RevenueRecordModel {
         date: DateTime.parse(json['date'] as String),
       );
 }
+
+class ServiceInvoiceItemModel {
+  final String id;
+  final String serviceName;
+  final String customDescription;
+  final double quantity;
+  final double unitPrice;
+
+  const ServiceInvoiceItemModel({
+    required this.id,
+    required this.serviceName,
+    required this.customDescription,
+    required this.quantity,
+    required this.unitPrice,
+  });
+
+  double get totalPrice => quantity * unitPrice;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'serviceName': serviceName,
+    'customDescription': customDescription,
+    'quantity': quantity,
+    'unitPrice': unitPrice,
+    'totalPrice': totalPrice,
+  };
+
+  factory ServiceInvoiceItemModel.fromJson(Map<String, dynamic> json) =>
+      ServiceInvoiceItemModel(
+        id: json['id'] as String,
+        serviceName: json['serviceName'] as String,
+        customDescription: json['customDescription'] as String? ?? '',
+        quantity: (json['quantity'] as num).toDouble(),
+        unitPrice: (json['unitPrice'] as num).toDouble(),
+      );
+}
+
+/// Credit invoice for labor performed on customer-owned stone. It deliberately
+/// contains no stock or inventory references.
+class ServiceInvoiceModel {
+  final String id;
+  final String invoiceNumber;
+  final String clientId;
+  final String clientName;
+  final DateTime invoiceDate;
+  final String currency;
+  final List<ServiceInvoiceItemModel> items;
+  final String notes;
+
+  const ServiceInvoiceModel({
+    required this.id,
+    required this.invoiceNumber,
+    required this.clientId,
+    required this.clientName,
+    required this.invoiceDate,
+    required this.currency,
+    required this.items,
+    this.notes = '',
+  });
+
+  double get totalAmount => items.fold(0, (sum, item) => sum + item.totalPrice);
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'invoiceNumber': invoiceNumber,
+    'clientId': clientId,
+    'clientName': clientName,
+    'invoiceDate': invoiceDate.toIso8601String(),
+    'currency': AppCurrency.normalize(currency),
+    'items': items.map((item) => item.toJson()).toList(),
+    'notes': notes,
+    'totalAmount': totalAmount,
+  };
+
+  factory ServiceInvoiceModel.fromJson(Map<String, dynamic> json) =>
+      ServiceInvoiceModel(
+        id: json['id'] as String,
+        invoiceNumber: json['invoiceNumber'] as String,
+        clientId: json['clientId'] as String,
+        clientName: json['clientName'] as String? ?? '',
+        invoiceDate:
+            DateTime.tryParse(json['invoiceDate'] as String? ?? '') ??
+            DateTime.now(),
+        currency: AppCurrency.normalize(json['currency']),
+        items: (json['items'] as List? ?? [])
+            .map(
+              (item) => ServiceInvoiceItemModel.fromJson(
+                Map<String, dynamic>.from(item as Map),
+              ),
+            )
+            .toList(),
+        notes: json['notes'] as String? ?? '',
+      );
+}

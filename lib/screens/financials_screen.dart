@@ -2272,6 +2272,11 @@ class _FinancialsScreenState extends State<FinancialsScreen>
               c.clientType == 'زبون عادي' ||
               erp.workshopInvoices.any(
                 (i) => i.clientName.trim() == c.name.trim(),
+              ) ||
+              erp.serviceInvoices.any(
+                (invoice) =>
+                    invoice.clientId == c.id ||
+                    invoice.clientName.trim() == c.name.trim(),
               ),
         )
         .toList();
@@ -2444,7 +2449,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
               erp: erp,
             );
             final invs = statement.items
-                .where((i) => i.category.startsWith('فاتورة مبيعات'))
+                .where((i) => i.category.startsWith('فاتورة'))
                 .toList();
             return Card(
               margin: const EdgeInsets.only(bottom: 12),

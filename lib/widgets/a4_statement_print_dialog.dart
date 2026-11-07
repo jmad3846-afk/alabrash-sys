@@ -398,6 +398,10 @@ class A4StatementData {
           double.infinity,
         );
         currentRunning -= debtReduction;
+      } else if (it.category == 'فاتورة خدمات - أجور قص مصنع') {
+        // Service invoices post the full debit on issue. Later customer
+        // collections appear as separate credit rows in the statement.
+        currentRunning += it.totalAmount;
       } else {
         // Master invoice increases running balance by its historical unpaid remaining balance
         currentRunning += it.remainingAmount;
@@ -939,6 +943,71 @@ class A4StatementData {
       );
     }
 
+    final serviceInvoices =
+        erp.serviceInvoices
+            .where(
+              (invoice) =>
+                  invoice.clientId == client.id ||
+                  (invoice.clientId.isEmpty &&
+                      invoice.clientName.trim() == client.name.trim()),
+            )
+            .toList()
+          ..sort((a, b) => a.invoiceDate.compareTo(b.invoiceDate));
+    for (final invoice in serviceInvoices) {
+      final paidAmount = client.payments
+          .where(
+            (payment) =>
+                (payment['allocations'] as Map?)?.containsKey(invoice.id) ??
+                false,
+          )
+          .fold<double>(
+            0,
+            (sum, payment) =>
+                sum +
+                (((payment['allocations'] as Map)[invoice.id] as num?)
+                        ?.toDouble() ??
+                    0),
+          );
+      final remaining = (invoice.totalAmount - paidAmount).clamp(
+        0.0,
+        double.infinity,
+      );
+      items.add(
+        A4StatementLineItem(
+          index: idx++,
+          date: invoice.invoiceDate,
+          documentNo: invoice.invoiceNumber,
+          description: invoice.items
+              .map((item) => item.serviceName)
+              .join(' • '),
+          category: 'فاتورة خدمات - أجور قص مصنع',
+          currency: invoice.currency,
+          totalAmount: invoice.totalAmount,
+          paidAmount: paidAmount,
+          remainingAmount: remaining,
+          status: remaining <= 0.01
+              ? 'مسددة بالكامل'
+              : (paidAmount > 0.01 ? 'مسددة جزئياً' : 'مستحق التحصيل'),
+          details: invoice.items
+              .map(
+                (item) => A4StatementDetailLine(
+                  description: item.serviceName,
+                  item: item.serviceName,
+                  specifications: item.customDescription,
+                  type: 'خدمة',
+                  length: '—',
+                  width: '—',
+                  quantityText: item.quantity.fmt,
+                  unitPrice: item.unitPrice,
+                  servicesText: '—',
+                  total: item.totalPrice,
+                ),
+              )
+              .toList(),
+        ),
+      );
+    }
+
     final workshop = erp.workshopInvoices
         .where(
           (i) =>
@@ -968,14 +1037,20 @@ class A4StatementData {
       );
       for (var n = 0; n < items.length; n++) {
         final item = items[n];
+        if (item.category == 'فاتورة خدمات - أجور قص مصنع') continue;
         final factory = invs
             .where((i) => i.invoiceNo == item.documentNo)
             .firstOrNull;
         final lab = workshop
             .where((i) => i.invoiceNo == item.documentNo)
             .firstOrNull;
+        final service = serviceInvoices
+            .where((invoice) => invoice.invoiceNumber == item.documentNo)
+            .firstOrNull;
         final id = item.category == 'فاتورة مبيعات - مصنع'
             ? factory?.id
+            : item.category == 'فاتورة خدمات - أجور قص مصنع'
+            ? service?.id
             : lab?.id;
         final amount = (allocations[id] as num? ?? 0).toDouble();
         if (amount > 0) {

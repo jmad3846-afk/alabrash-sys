@@ -180,6 +180,7 @@ class ERPProvider extends ChangeNotifier {
   List<FactoryWarehouseModel> factoryWarehouse = [];
   List<CuttingOperationModel> cuttingOperations = [];
   List<FactoryInvoiceModel> factoryInvoices = [];
+  List<ServiceInvoiceModel> serviceInvoices = [];
   List<FactoryOrderModel> factoryOrders = [];
 
   // Workshop Workspace lists
@@ -2777,6 +2778,56 @@ class ERPProvider extends ChangeNotifier {
     refresh();
   }
 
+  String nextServiceInvoiceNumber(DateTime date) {
+    final dateKey = intl.DateFormat('yyyyMMdd').format(date);
+    final prefix = 'SRV-$dateKey-';
+    final used = serviceInvoices
+        .where((invoice) => invoice.invoiceNumber.startsWith(prefix))
+        .map(
+          (invoice) =>
+              int.tryParse(invoice.invoiceNumber.substring(prefix.length)) ?? 0,
+        )
+        .fold<int>(
+          0,
+          (maxValue, number) => number > maxValue ? number : maxValue,
+        );
+    return '$prefix${(used + 1).toString().padLeft(4, '0')}';
+  }
+
+  bool addFactoryServiceInvoice(ServiceInvoiceModel invoice) {
+    final client = clients
+        .where((item) => item.id == invoice.clientId)
+        .firstOrNull;
+    final total = invoice.totalAmount;
+    if (client == null ||
+        invoice.invoiceNumber.trim().isEmpty ||
+        invoice.items.isEmpty ||
+        !total.isFinite ||
+        total <= 0 ||
+        serviceInvoices.any(
+          (existing) =>
+              existing.id == invoice.id ||
+              existing.invoiceNumber == invoice.invoiceNumber,
+        ) ||
+        invoice.items.any(
+          (item) =>
+              item.serviceName.trim().isEmpty ||
+              item.customDescription.trim().isEmpty ||
+              !item.quantity.isFinite ||
+              item.quantity <= 0 ||
+              !item.unitPrice.isFinite ||
+              item.unitPrice < 0,
+        )) {
+      return false;
+    }
+
+    serviceInvoices.add(invoice);
+    client.addDebt(invoice.currency, total);
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
   double revenuePageEarningsOf(String? currency) => revenueRecords
       .where((r) => r.currency == AppCurrency.normalize(currency))
       .fold<double>(0, (sum, r) => sum + r.amount);
@@ -4729,13 +4780,19 @@ class ERPProvider extends ChangeNotifier {
   }
 
   // Posted sales represent delivery or pickup. Collections only settle receivables.
-  double totalFactoryRevenueOf(String? currency) => factoryInvoices
-      .where(
-        (i) =>
-            i.invoiceType == 'بيع_معتمد' &&
-            i.currency == AppCurrency.normalize(currency),
-      )
-      .fold(0.0, (sum, i) => sum + i.grandTotal);
+  double totalFactoryRevenueOf(String? currency) =>
+      factoryInvoices
+          .where(
+            (i) =>
+                i.invoiceType == 'بيع_معتمد' &&
+                i.currency == AppCurrency.normalize(currency),
+          )
+          .fold(0.0, (sum, i) => sum + i.grandTotal) +
+      serviceInvoices
+          .where(
+            (invoice) => invoice.currency == AppCurrency.normalize(currency),
+          )
+          .fold<double>(0, (sum, invoice) => sum + invoice.totalAmount);
 
   double totalWorkshopRevenueOf(String? currency) => workshopInvoices
       .where((i) => i.currency == AppCurrency.normalize(currency))
@@ -4793,13 +4850,19 @@ class ERPProvider extends ChangeNotifier {
         workshopServiceRevenueOf(currency);
   }
 
-  double factoryServiceRevenueOf(String? currency) => factoryInvoices
-      .where(
-        (i) =>
-            i.invoiceType == 'بيع_معتمد' &&
-            i.currency == AppCurrency.normalize(currency),
-      )
-      .fold(0.0, (sum, i) => sum + i.servicesTotal + i.itemsServicesTotal);
+  double factoryServiceRevenueOf(String? currency) =>
+      factoryInvoices
+          .where(
+            (i) =>
+                i.invoiceType == 'بيع_معتمد' &&
+                i.currency == AppCurrency.normalize(currency),
+          )
+          .fold(0.0, (sum, i) => sum + i.servicesTotal + i.itemsServicesTotal) +
+      serviceInvoices
+          .where(
+            (invoice) => invoice.currency == AppCurrency.normalize(currency),
+          )
+          .fold<double>(0, (sum, invoice) => sum + invoice.totalAmount);
   double workshopServiceRevenueOf(String? currency) => workshopInvoices
       .where((i) => i.currency == AppCurrency.normalize(currency))
       .fold(0.0, (sum, i) => sum + i.servicesTotal);
@@ -8749,20 +8812,51 @@ class ERPProvider extends ChangeNotifier {
         allocations[inv.id] = settlePart;
         remainingToSettle -= settlePart;
       }
-      if (remainingToSettle > 0.001) {
-        if (acctCurr == AppCurrency.usd) {
-          if (client.clientType == 'معتمد مصنع') {
-            unallocatedFactoryCollectionsUsd += remainingToSettle;
-          } else {
-            unallocatedWorkshopCollectionsUsd += remainingToSettle;
-          }
+    }
+
+    // Service invoices are receivables too. Allocate collections against them
+    // FIFO after factory/workshop invoices so the client statement can show
+    // each service invoice and its later payment rows.
+    final openServiceInvoices =
+        serviceInvoices
+            .where(
+              (invoice) =>
+                  invoice.clientId == client.id &&
+                  AppCurrency.normalize(invoice.currency) == acctCurr,
+            )
+            .toList()
+          ..sort((a, b) => a.invoiceDate.compareTo(b.invoiceDate));
+    for (final invoice in openServiceInvoices) {
+      if (remainingToSettle <= 0.001) break;
+      final alreadyPaid = client.payments.fold<double>(
+        0,
+        (sum, payment) =>
+            sum +
+            (((payment['allocations'] as Map?)?[invoice.id] as num?)
+                    ?.toDouble() ??
+                0),
+      );
+      final due = (invoice.totalAmount - alreadyPaid).clamp(
+        0.0,
+        double.infinity,
+      );
+      if (due <= 0.01) continue;
+      final settlePart = remainingToSettle.clamp(0.0, due).toDouble();
+      allocations[invoice.id] = settlePart;
+      remainingToSettle -= settlePart;
+    }
+
+    if (remainingToSettle > 0.001) {
+      if (acctCurr == AppCurrency.usd) {
+        if (client.clientType == 'معتمد مصنع') {
+          unallocatedFactoryCollectionsUsd += remainingToSettle;
         } else {
-          if (client.clientType == 'معتمد مصنع') {
-            unallocatedFactoryCollectionsSyp += remainingToSettle;
-          } else {
-            unallocatedWorkshopCollectionsSyp += remainingToSettle;
-          }
+          unallocatedWorkshopCollectionsUsd += remainingToSettle;
         }
+      } else if (client.clientType == 'معتمد مصنع') {
+        unallocatedFactoryCollectionsSyp += remainingToSettle;
+      } else {
+        unallocatedWorkshopCollectionsSyp += remainingToSettle;
       }
     }
 
@@ -9373,6 +9467,7 @@ class ERPProvider extends ChangeNotifier {
     factoryWarehouse.clear();
     cuttingOperations.clear();
     factoryInvoices.clear();
+    serviceInvoices.clear();
     factoryOrders.clear();
     workshopStock.clear();
     simpleTailorings.clear();
@@ -9538,6 +9633,10 @@ class ERPProvider extends ChangeNotifier {
       await prefs.setString(
         'factoryInvoices',
         jsonEncode(factoryInvoices.map((invoice) => invoice.toJson()).toList()),
+      );
+      await prefs.setString(
+        'serviceInvoices',
+        jsonEncode(serviceInvoices.map((invoice) => invoice.toJson()).toList()),
       );
       await prefs.setString(
         'workshopInvoices',
@@ -9751,6 +9850,20 @@ class ERPProvider extends ChangeNotifier {
             .map((item) => FactoryInvoiceModel.fromJson(item))
             .toList();
       }
+      final serviceInvoicesJson = prefs.getString('serviceInvoices');
+      if (serviceInvoicesJson != null) {
+        try {
+          serviceInvoices = (jsonDecode(serviceInvoicesJson) as List)
+              .map(
+                (item) => ServiceInvoiceModel.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList();
+        } catch (_) {
+          serviceInvoices = [];
+        }
+      }
       final workshopInvoicesJson = prefs.getString('workshopInvoices');
       if (workshopInvoicesJson != null) {
         workshopInvoices = (jsonDecode(workshopInvoicesJson) as List)
@@ -9770,10 +9883,19 @@ class ERPProvider extends ChangeNotifier {
         final wrkInvs = workshopInvoices
             .where((i) => i.clientName.trim() == client.name.trim())
             .toList();
+        final serviceInvs = serviceInvoices
+            .where(
+              (invoice) =>
+                  invoice.clientId == client.id ||
+                  invoice.clientName.trim() == client.name.trim(),
+            )
+            .toList();
         if (facInvs.isNotEmpty) {
           client.currencyClassification = facInvs.last.currency;
         } else if (wrkInvs.isNotEmpty) {
           client.currencyClassification = wrkInvs.last.currency;
+        } else if (serviceInvs.isNotEmpty) {
+          client.currencyClassification = serviceInvs.last.currency;
         }
       }
       final workshopProjectsJson = prefs.getString('workshopProjects');
@@ -10083,6 +10205,7 @@ class ERPProvider extends ChangeNotifier {
         'factoryWarehouse': factoryWarehouse.map((w) => w.toJson()).toList(),
         'cuttingOperations': cuttingOperations.map((c) => c.toJson()).toList(),
         'factoryInvoices': factoryInvoices.map((inv) => inv.toJson()).toList(),
+        'serviceInvoices': serviceInvoices.map((inv) => inv.toJson()).toList(),
         'factoryOrders': factoryOrders.map((o) => o.toJson()).toList(),
       },
       'workshop': {
@@ -10406,6 +10529,14 @@ class ERPProvider extends ChangeNotifier {
           .map(
             (item) =>
                 FactoryInvoiceModel.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .toList();
+    }
+    if (fac['serviceInvoices'] is List) {
+      serviceInvoices = (fac['serviceInvoices'] as List)
+          .map(
+            (item) =>
+                ServiceInvoiceModel.fromJson(Map<String, dynamic>.from(item)),
           )
           .toList();
     }
@@ -10753,6 +10884,34 @@ class ERPProvider extends ChangeNotifier {
             ),
           );
         }
+      }
+    }
+
+    // 2. Workshop Invoices
+    for (final invoice in serviceInvoices.where(
+      (item) => sameDay(item.invoiceDate),
+    )) {
+      sales.add(
+        DailyReportInvoiceSummary(
+          invoiceNo: invoice.invoiceNumber,
+          module: 'المصنع - خدمات',
+          type: 'مبيعات خدمات',
+          paymentType: 'آجل',
+          partyName: invoice.clientName,
+          totalAmount: invoice.totalAmount,
+          paidAmount: 0,
+          remainingAmount: invoice.totalAmount,
+          currency: invoice.currency,
+          itemsSummary: invoice.items
+              .map((item) => '${item.serviceName}: ${item.customDescription}')
+              .join(' • '),
+          time: invoice.invoiceDate,
+        ),
+      );
+      if (AppCurrency.isSyp(invoice.currency)) {
+        totalSalesSyp += invoice.totalAmount;
+      } else {
+        totalSalesUsd += invoice.totalAmount;
       }
     }
 
