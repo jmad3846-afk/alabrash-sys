@@ -5443,13 +5443,53 @@ class ERPProvider extends ChangeNotifier {
         .fold<double>(0, (sum, expense) => sum + expense.amount);
   }
 
+  /// Service value generated during a period, used only in the monthly
+  /// operating cost coverage comparison. Service revenue remains recognized
+  /// through the normal revenue calculations.
+  double serviceRevenueForPeriodOf(
+    String? currency, {
+    DateTime? start,
+    DateTime? end,
+  }) {
+    final c = AppCurrency.normalize(currency);
+    var total = serviceInvoices
+        .where(
+          (invoice) =>
+              invoice.currency == c &&
+              _isInFinancialPeriod(invoice.invoiceDate, start: start, end: end),
+        )
+        .fold<double>(0, (sum, invoice) => sum + invoice.totalAmount);
+
+    for (final invoice in factoryInvoices.where(
+      (invoice) =>
+          invoice.invoiceType == 'بيع_معتمد' &&
+          invoice.currency == c &&
+          _isInFinancialPeriod(invoice.date, start: start, end: end),
+    )) {
+      total += invoice.servicesTotal + invoice.itemsServicesTotal;
+    }
+    for (final invoice in workshopInvoices.where(
+      (invoice) =>
+          invoice.currency == c &&
+          _isInFinancialPeriod(invoice.date, start: start, end: end),
+    )) {
+      total += _workshopInvoiceLines(invoice).fold<double>(
+        0,
+        (sum, item) => sum + item.servicesTotal,
+      );
+    }
+    return total;
+  }
+
   /// Positive values are operating-cost savings; negative values are deficits.
+  /// The comparison pool combines the 9% cutting allowance with service value.
   double operatingCostVarianceOf(
     String? currency, {
     DateTime? start,
     DateTime? end,
   }) =>
-      collectedStandardCuttingOverheadOf(currency, start: start, end: end) -
+      collectedStandardCuttingOverheadOf(currency, start: start, end: end) +
+      serviceRevenueForPeriodOf(currency, start: start, end: end) -
       operatingExpensesForPeriodOf(currency, start: start, end: end);
 
   double totalDirectExpensesOf(String? currency) {
@@ -6989,6 +7029,78 @@ class ERPProvider extends ChangeNotifier {
     return true;
   }
 
+  bool updateWorkshopOrder(String orderId, WorkshopOrderModel updated) {
+    final index = workshopOrders.indexWhere((order) => order.id == orderId);
+    if (index < 0 || updated.id != orderId) return false;
+    final old = workshopOrders[index];
+    if (old.status != 'قيد التنفيذ' || old.isCompleted || old.isSpecialRefund ||
+        updated.currency != old.currency || updated.depositAmount < 0 ||
+        updated.depositAmount > updated.agreedPrice + .001 ||
+        updated.items.isEmpty) return false;
+    final delta = updated.depositAmount - old.depositAmount;
+    if (delta < 0 && cashOf('order', old.currency) + .0001 < -delta) {
+      return false;
+    }
+
+    for (final item in old.items) {
+      _restoreWorkshopOrderItemStock(item);
+    }
+    final required = <String, double>{};
+    final replacementItems = <WorkshopInvoiceItem>[];
+    for (final item in updated.items) {
+      final key = '${item.sourceType}:${item.sourceId}:${item.sourceLineItemId}';
+      final needed = (required[key] ?? 0) + item.quantity;
+      var available = double.infinity;
+      if (item.sourceType == 'بيع خياطة بسيطة' || item.sourceType == 'تفصيل بسيط') {
+        final t = _firstOrNull(simpleTailorings.where((x) => x.id == item.sourceId));
+        if (t == null) available = 0;
+        else if (item.sourceLineItemId.isEmpty) available = t.quantity;
+        else {
+          final line = _firstOrNull(t.lineItems.where((x) => x.id == item.sourceLineItemId));
+          if (line == null) available = 0;
+          else {
+            available = line.quantity;
+            final area = (line.lengthCm / 100) * (line.widthCm / 100) *
+                (line.category == 'متر مكعب' && line.heightCm > 0 ? line.heightCm / 100 : 1);
+            if (area > 0) available *= area;
+          }
+        }
+      } else if (item.sourceType == 'بيع خياطة معقدة' || item.sourceType == 'تفصيل معقد') {
+        available = _firstOrNull(complexTailorings.where((x) => x.id == item.sourceId))?.quantity ?? 0;
+      } else if (item.sourceType == 'بيع مواد خام من المعمل' || item.sourceType == 'مواد خام') {
+        available = _firstOrNull(workshopStock.where((x) => x.id == item.sourceId))?.availableQty ?? 0;
+      } else if (item.sourceType == 'بيع قطع إضافية' || item.sourceType == 'قطع زائدة') {
+        final scrap = _firstOrNull(scrapItems.where((x) => x.id == item.sourceId));
+        available = scrap != null && !scrap.isSold ? 1 : 0;
+      }
+      if (item.quantity <= 0 || needed > available + .000001) {
+        for (final previous in old.items) {
+          _deductWorkshopOrderItemStock(previous);
+        }
+        return false;
+      }
+      required[key] = needed;
+      replacementItems.add(_priceWorkshopItem(item, updated.currency));
+    }
+    if (delta < 0 && !takeCash('order', old.currency, -delta)) {
+      for (final item in old.items) {
+        _deductWorkshopOrderItemStock(item);
+      }
+      return false;
+    }
+    if (delta > 0) addCash('order', old.currency, delta);
+    updated.items
+      ..clear()
+      ..addAll(replacementItems);
+    for (final item in updated.items) {
+      _deductWorkshopOrderItemStock(item);
+    }
+    workshopOrders[index] = updated;
+    notifyListeners();
+    saveToDisk();
+    return true;
+  }
+
   /// Comprehensive Workshop Order Cancellation Workflow:
   /// Option A (isCompleted == false):
   ///   - Refund deposit from isolated Order Safe to customer.
@@ -7645,6 +7757,66 @@ class ERPProvider extends ChangeNotifier {
     }
     notifyListeners();
     saveToDisk();
+  }
+
+  bool updateFactoryOrder(String orderId, FactoryOrderModel updated) {
+    final index = factoryOrders.indexWhere((order) => order.id == orderId);
+    if (index < 0 || updated.id != orderId) return false;
+    final old = factoryOrders[index];
+    if (old.status != 'قيد التنفيذ' || old.isCompleted ||
+        old.assignedInvoiceId.isNotEmpty || updated.currency != old.currency ||
+        updated.depositAmount < 0 ||
+        updated.depositAmount > updated.grandTotal + .001 ||
+        updated.items.isEmpty) return false;
+    final delta = updated.depositAmount - old.depositAmount;
+    if (delta < 0 && cashOf('order', old.currency) + .0001 < -delta) {
+      return false;
+    }
+
+    for (final item in old.items) {
+      _restoreFactoryOrderItemStock(item);
+    }
+    final requested = <String, double>{};
+    final replacementItems = <FactoryInvoiceItem>[];
+    for (final item in updated.items) {
+      final stock = _firstOrNull(factoryWarehouse.where(
+            (w) => w.currency == old.currency && w.matchesId(item.itemId),
+          )) ??
+          _firstOrNull(factoryWarehouse.where(
+            (w) => w.currency == old.currency &&
+                (w.typeName == item.description || w.typeName == item.typeName),
+          ));
+      final needed = (requested[stock?.id ?? ''] ?? 0) + item.calculatedArea;
+      if (stock == null || item.calculatedArea <= 0 ||
+          needed > stock.availableQty + .000001) {
+        for (final previous in old.items) {
+          _deductFactoryOrderItemStock(previous);
+        }
+        return false;
+      }
+      requested[stock.id] = needed;
+      replacementItems.add(item.copyWith(
+        unitCost: stock.netCostPerUnit,
+        batchUnitsPerUnit: Map.of(stock.batchUnitsPerUnit),
+      ));
+    }
+    if (delta < 0 && !takeCash('order', old.currency, -delta)) {
+      for (final item in old.items) {
+        _deductFactoryOrderItemStock(item);
+      }
+      return false;
+    }
+    if (delta > 0) addCash('order', old.currency, delta);
+    updated.items
+      ..clear()
+      ..addAll(replacementItems);
+    for (final item in updated.items) {
+      _deductFactoryOrderItemStock(item);
+    }
+    factoryOrders[index] = updated;
+    notifyListeners();
+    saveToDisk();
+    return true;
   }
 
   void cancelFactoryOrder({

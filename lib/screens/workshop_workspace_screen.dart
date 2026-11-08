@@ -1475,6 +1475,16 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                               ],
                             ),
                             const SizedBox(width: 12),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.accentPrimary,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                              onPressed: () => _showAddOrderDialog(erp, existingOrder: ord),
+                              icon: const Icon(Icons.edit_outlined, size: 16),
+                              label: const Text('تعديل الطلبية'),
+                            ),
+                            const SizedBox(width: 8),
                             ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF2563EB),
@@ -6706,19 +6716,26 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     );
   }
 
-  void _showAddOrderDialog(ERPProvider erp) {
-    String orderCurrency = AppCurrency.usd;
-    final nameCtrl = TextEditingController();
-    final phoneCtrl = TextEditingController();
+  void _showAddOrderDialog(ERPProvider erp, {WorkshopOrderModel? existingOrder}) {
+    String orderCurrency = existingOrder?.currency ?? AppCurrency.usd;
+    final nameCtrl = TextEditingController(text: existingOrder?.clientName ?? '');
+    final phoneCtrl = TextEditingController(text: existingOrder?.clientPhone ?? '');
     String approvedClientSearch = '';
-    String? selectedApprovedClientId;
-    final depositCtrl = TextEditingController();
-    final photoCtrl = TextEditingController();
+    String? selectedApprovedClientId = erp.clients
+        .where((client) => client.clientType == 'معتمد مصنع' &&
+            (client.name == existingOrder?.clientName || client.phone == existingOrder?.clientPhone))
+        .firstOrNull?.id;
+    final depositCtrl = TextEditingController(text: existingOrder?.depositAmount.fmt ?? '');
+    final photoCtrl = TextEditingController(text: existingOrder?.photoPath ?? '');
     String? formError;
+    bool showAdditionalInformation = false;
     String? itemError;
 
     // Items inside this order
-    final List<WorkshopInvoiceItem> draftItems = [];
+    final List<WorkshopInvoiceItem> draftItems = existingOrder?.items
+            .map((item) => WorkshopInvoiceItem.fromJson(item.toJson()))
+            .toList() ??
+        [];
 
     // Current item being configured
     String itemSourceType = 'بيع خياطة بسيطة';
@@ -6755,8 +6772,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
         builder: (ctx, setSt) {
           final dialogWidth = MediaQuery.of(
             ctx,
-          ).size.width.clamp(900.0, 1280.0);
-          final dialogHeight = MediaQuery.of(ctx).size.height * 0.90;
+          ).size.width - 32;
+          final dialogHeight = MediaQuery.of(ctx).size.height - 32;
           final approvedClients = erp.clients
               .where((client) => client.clientType == 'معتمد مصنع')
               .toList();
@@ -6838,8 +6855,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
 
           return Dialog(
             insetPadding: const EdgeInsets.symmetric(
-              horizontal: 20,
-              vertical: 20,
+              horizontal: 8,
+              vertical: 8,
             ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -8448,69 +8465,6 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                         ),
                                       ),
 
-                                      const SizedBox(height: 16),
-
-                                      // Section 3: Deposit (Mandatory) & Attachment
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFF8FAFC),
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                          border: Border.all(
-                                            color: const Color(0xFFE2E8F0),
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                const Icon(
-                                                  Icons.savings_outlined,
-                                                  size: 18,
-                                                  color: AppColors
-                                                      .orderDepositBoxAccent,
-                                                ),
-                                                const SizedBox(width: 6),
-                                                const Text(
-                                                  'العربون والدفعة المقدمة (إلزامي للطلبية)',
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 8),
-                                            TextField(
-                                              controller: depositCtrl,
-                                              keyboardType:
-                                                  const TextInputType.numberWithOptions(
-                                                    decimal: true,
-                                                  ),
-                                              decoration: InputDecoration(
-                                                labelText:
-                                                    'مبلغ العربون / الدفعة الأولى (إلزامي) (${AppCurrency.symbol(orderCurrency)})',
-                                                isDense: true,
-                                                helperText:
-                                                    'يُودع في صندوق الطلبيات المعزول ولا يُرحل للصندوق الرئيسي إلا عند إصدار الفاتورة.',
-                                              ),
-                                              onChanged: (_) => setSt(() {}),
-                                            ),
-                                            const SizedBox(height: 12),
-                                            AppImageAttachmentPicker(
-                                              initialPath: photoCtrl.text,
-                                              label: 'صورة الطلبية / المخطط',
-                                              onImageChanged: (p) => setSt(
-                                                () => photoCtrl.text = p,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
                                     ],
                                   ),
                                 ),
@@ -9008,6 +8962,90 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                             ],
                                           ),
 
+                                          const SizedBox(height: 10),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: OutlinedButton.icon(
+                                              onPressed: () => setSt(
+                                                () => showAdditionalInformation =
+                                                    !showAdditionalInformation,
+                                              ),
+                                              icon: Icon(
+                                                showAdditionalInformation
+                                                    ? Icons.expand_less_rounded
+                                                    : Icons.expand_more_rounded,
+                                              ),
+                                              label: Text(
+                                                showAdditionalInformation
+                                                    ? 'إخفاء المعلومات الإضافية'
+                                                    : 'Additional Information / معلومات إضافية',
+                                              ),
+                                            ),
+                                          ),
+                                          if (showAdditionalInformation) ...[
+                                            const SizedBox(height: 8),
+                                            // Section 3: Optional Deposit & Attachment
+                                            Container(
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFF8FAFC),
+                                                borderRadius: BorderRadius.circular(
+                                                  10,
+                                                ),
+                                                border: Border.all(
+                                                  color: const Color(0xFFE2E8F0),
+                                                ),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      const Icon(
+                                                        Icons.savings_outlined,
+                                                        size: 18,
+                                                        color: AppColors
+                                                            .orderDepositBoxAccent,
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      const Text(
+                                                        'Deposit / Down Payment (العربون والدفعة المقدمة) • اختياري',
+                                                        style: TextStyle(
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 13,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  TextField(
+                                                    controller: depositCtrl,
+                                                    keyboardType:
+                                                        const TextInputType.numberWithOptions(
+                                                          decimal: true,
+                                                        ),
+                                                    decoration: InputDecoration(
+                                                      labelText:
+                                                          'مبلغ العربون / الدفعة الأولى (اختياري) (${AppCurrency.symbol(orderCurrency)})',
+                                                      isDense: true,
+                                                      helperText:
+                                                          'يُودع في صندوق الطلبيات المعزول ولا يُرحل للصندوق الرئيسي إلا عند إصدار الفاتورة.',
+                                                    ),
+                                                    onChanged: (_) => setSt(() {}),
+                                                  ),
+                                                  const SizedBox(height: 12),
+                                                  AppImageAttachmentPicker(
+                                                    initialPath: photoCtrl.text,
+                                                    label: 'صورة الطلبية / المخطط',
+                                                    onImageChanged: (p) => setSt(
+                                                      () => photoCtrl.text = p,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
                                           if (formError != null) ...[
                                             const SizedBox(height: 8),
                                             Text(
@@ -9060,10 +9098,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       depositCtrl.text,
                                                     ) ??
                                                     0.0;
-                                                if (dep <= 0) {
+                                                if (dep < 0) {
                                                   setSt(
                                                     () => formError =
-                                                        'يجب إدخال قيمة العربون (أكبر من صفر).',
+                                                        'لا يمكن أن يكون العربون سالباً.',
                                                   );
                                                   return;
                                                 }
@@ -9076,10 +9114,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                 }
 
                                                 final order = WorkshopOrderModel(
-                                                  id: 'order_${DateTime.now().millisecondsSinceEpoch}',
-                                                  orderNo:
+                                                  id: existingOrder?.id ?? 'order_${DateTime.now().millisecondsSinceEpoch}',
+                                                  orderNo: existingOrder?.orderNo ??
                                                       'ORD-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
-                                                  date: DateTime.now(),
+                                                  date: existingOrder?.date ?? DateTime.now(),
                                                   clientName: nameCtrl.text
                                                       .trim(),
                                                   clientPhone: phoneCtrl.text
@@ -9095,20 +9133,33 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                   depositAmount: dep,
                                                   photoPath: photoCtrl.text
                                                       .trim(),
-                                                  status: 'قيد التنفيذ',
+                                                  status: existingOrder?.status ?? 'قيد التنفيذ',
                                                   currency: orderCurrency,
                                                   items: List.of(draftItems),
                                                 );
 
-                                                erp.createWorkshopOrder(order);
+                                                final bool saved;
+                                                if (existingOrder == null) {
+                                                  erp.createWorkshopOrder(order);
+                                                  saved = true;
+                                                } else {
+                                                  saved = erp.updateWorkshopOrder(existingOrder.id, order);
+                                                }
+                                                if (!saved) {
+                                                  setSt(() => formError =
+                                                      'تعذر حفظ التعديل. تحقق من توفر المواد والعربون.');
+                                                  return;
+                                                }
 
                                                 Navigator.pop(ctx);
                                                 ScaffoldMessenger.of(
                                                   context,
                                                 ).showSnackBar(
-                                                  const SnackBar(
+                                                  SnackBar(
                                                     content: Text(
-                                                      'تم تسجيل الطلبية وحفظ العربون في صندوق الطلبيات بنجاح.',
+                                                      existingOrder == null
+                                                          ? 'تم تسجيل الطلبية وحفظ العربون في صندوق الطلبيات بنجاح.'
+                                                          : 'تم حفظ تعديلات الطلبية بنجاح.',
                                                     ),
                                                     backgroundColor:
                                                         AppColors.successGreen,
@@ -9168,6 +9219,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     final cashCtrl = TextEditingController(text: '0');
     final photoCtrl = TextEditingController();
     String? formError;
+    bool showAdditionalInformation = false;
     String? itemError;
     String? linkedOrderId; // ID of the order linked to this invoice if imported
 
@@ -9277,8 +9329,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
         builder: (ctx, setSt) {
           final dialogWidth = MediaQuery.of(
             ctx,
-          ).size.width.clamp(900.0, 1280.0);
-          final dialogHeight = MediaQuery.of(ctx).size.height * 0.90;
+          ).size.width - 32;
+          final dialogHeight = MediaQuery.of(ctx).size.height - 32;
 
           // Active orders grouped by customer name
           final activeOrders = erp.workshopOrders
@@ -9357,8 +9409,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
 
           return Dialog(
             insetPadding: const EdgeInsets.symmetric(
-              horizontal: 20,
-              vertical: 20,
+              horizontal: 8,
+              vertical: 8,
             ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -11441,236 +11493,6 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                         ),
                                       ),
 
-                                      const SizedBox(height: 16),
-
-                                      // Section 3: Discounts & Payments Settings
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFF8FAFC),
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                          border: Border.all(
-                                            color: const Color(0xFFE2E8F0),
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                const Icon(
-                                                  Icons.payments_outlined,
-                                                  size: 18,
-                                                  color:
-                                                      AppColors.accentPrimary,
-                                                ),
-                                                const SizedBox(width: 6),
-                                                const Text(
-                                                  'الخصم والدفعات النقدية للفاتورة',
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: TextField(
-                                                    controller:
-                                                        salesDiscountCtrl,
-                                                    keyboardType:
-                                                        const TextInputType.numberWithOptions(
-                                                          decimal: true,
-                                                        ),
-                                                    decoration:
-                                                        const InputDecoration(
-                                                          labelText:
-                                                              'خصم المبيعات المسموح',
-                                                          isDense: true,
-                                                        ),
-                                                    onChanged: (_) => setSt(
-                                                      () =>
-                                                          recomputeInvoiceFinancials(),
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                ElevatedButton.icon(
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor:
-                                                        const Color(0xFF4F46E5),
-                                                    foregroundColor:
-                                                        Colors.white,
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 10,
-                                                          vertical: 8,
-                                                        ),
-                                                  ),
-                                                  onPressed: () {
-                                                    final currentNet =
-                                                        (itemsTotal +
-                                                                servicesTotal -
-                                                                salesDiscount)
-                                                            .clamp(
-                                                              0.0,
-                                                              double.infinity,
-                                                            );
-                                                    final truncated = currentNet
-                                                        .truncateToDouble();
-                                                    final diff =
-                                                        currentNet - truncated;
-                                                    if (diff > 0.0001) {
-                                                      salesDiscountCtrl.text =
-                                                          (salesDiscount + diff)
-                                                              .fmt;
-                                                      recomputeInvoiceFinancials();
-                                                      setSt(() {});
-                                                    }
-                                                  },
-                                                  icon: const Icon(
-                                                    Icons.content_cut_rounded,
-                                                    size: 14,
-                                                  ),
-                                                  label: const Text(
-                                                    'تجاهل القروش',
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 8),
-                                            if (cashInvoice) ...[
-                                              Container(
-                                                padding: const EdgeInsets.all(
-                                                  8,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(
-                                                    0xFFDCFCE7,
-                                                  ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(6),
-                                                ),
-                                                child: const Text(
-                                                  'فاتورة نقدية: تُسدد بالكامل نقداً فور الإصدار بعد خصم عربون الطلبيات إن وجد.',
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    color:
-                                                        AppColors.successGreen,
-                                                    fontSize: 11,
-                                                  ),
-                                                ),
-                                              ),
-                                            ] else ...[
-                                              Builder(
-                                                builder: (context) {
-                                                  final curDep =
-                                                      double.tryParse(
-                                                        depositCtrl.text,
-                                                      ) ??
-                                                      0.0;
-                                                  final curCash =
-                                                      double.tryParse(
-                                                        cashCtrl.text,
-                                                      ) ??
-                                                      0.0;
-                                                  String? depError;
-                                                  String? cashError;
-                                                  if (depositCtrl
-                                                      .text
-                                                      .isNotEmpty) {
-                                                    if (curDep < 0) {
-                                                      depError =
-                                                          'لا يمكن أن يكون سالباً';
-                                                    } else if (curDep >
-                                                        grandTotal + 0.01) {
-                                                      depError =
-                                                          'العربون يتجاوز إجمالي الفاتورة';
-                                                    }
-                                                  }
-                                                  if (cashCtrl
-                                                      .text
-                                                      .isNotEmpty) {
-                                                    if (curCash < 0) {
-                                                      cashError =
-                                                          'لا يمكن أن يكون سالباً';
-                                                    } else if (curDep +
-                                                            curCash >
-                                                        grandTotal + 0.01) {
-                                                      cashError =
-                                                          'المجموع يتجاوز الفاتورة (${grandTotal.fmt})';
-                                                    }
-                                                  }
-                                                  return Row(
-                                                    children: [
-                                                      Expanded(
-                                                        child: TextField(
-                                                          controller:
-                                                              depositCtrl,
-                                                          keyboardType:
-                                                              const TextInputType.numberWithOptions(
-                                                                decimal: true,
-                                                              ),
-                                                          decoration: InputDecoration(
-                                                            labelText:
-                                                                'العربون المخصوم (\$)',
-                                                            isDense: true,
-                                                            errorText: depError,
-                                                            helperText:
-                                                                'الحد الأقصى: ${grandTotal.fmt}',
-                                                          ),
-                                                          onChanged: (_) => setSt(
-                                                            () =>
-                                                                recomputeInvoiceFinancials(),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 8),
-                                                      Expanded(
-                                                        child: TextField(
-                                                          controller: cashCtrl,
-                                                          keyboardType:
-                                                              const TextInputType.numberWithOptions(
-                                                                decimal: true,
-                                                              ),
-                                                          decoration: InputDecoration(
-                                                            labelText:
-                                                                'النقد المدفوع الآن (\$)',
-                                                            isDense: true,
-                                                            errorText:
-                                                                cashError,
-                                                            helperText:
-                                                                'أقصى نقد إضافي: ${(grandTotal - curDep).clamp(0.0, double.infinity).fmt}',
-                                                          ),
-                                                          onChanged: (_) =>
-                                                              setSt(() {}),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  );
-                                                },
-                                              ),
-                                            ],
-                                            const SizedBox(height: 12),
-                                            AppImageAttachmentPicker(
-                                              initialPath: photoCtrl.text,
-                                              label: 'صورة الفاتورة / الوصل',
-                                              onImageChanged: (p) => setSt(
-                                                () => photoCtrl.text = p,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
                                     ],
                                   ),
                                 ),
@@ -12347,6 +12169,251 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                             ],
                                           ),
 
+                                          SizedBox(height: 10),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: OutlinedButton.icon(
+                                              onPressed: () => setSt(() =>
+                                                  showAdditionalInformation = !showAdditionalInformation),
+                                              icon: Icon(showAdditionalInformation
+                                                  ? Icons.expand_less_rounded
+                                                  : Icons.expand_more_rounded),
+                                              label: Text(showAdditionalInformation
+                                                  ? 'إخفاء المعلومات الإضافية'
+                                                  : 'Additional Information / معلومات إضافية'),
+                                            ),
+                                          ),
+                                          if (showAdditionalInformation) ...[
+                                            const SizedBox(height: 8),
+                                      // Section 3: Discounts & Payments Settings
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF8FAFC),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0xFFE2E8F0),
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                const Icon(
+                                                  Icons.payments_outlined,
+                                                  size: 18,
+                                                  color:
+                                                      AppColors.accentPrimary,
+                                                ),
+                                                const SizedBox(width: 6),
+                                                const Text(
+                                                  'الخصم والدفعات النقدية للفاتورة',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: TextField(
+                                                    controller:
+                                                        salesDiscountCtrl,
+                                                    keyboardType:
+                                                        const TextInputType.numberWithOptions(
+                                                          decimal: true,
+                                                        ),
+                                                    decoration:
+                                                        const InputDecoration(
+                                                          labelText:
+                                                              'خصم المبيعات المسموح',
+                                                          isDense: true,
+                                                        ),
+                                                    onChanged: (_) => setSt(
+                                                      () =>
+                                                          recomputeInvoiceFinancials(),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                ElevatedButton.icon(
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor:
+                                                        const Color(0xFF4F46E5),
+                                                    foregroundColor:
+                                                        Colors.white,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 10,
+                                                          vertical: 8,
+                                                        ),
+                                                  ),
+                                                  onPressed: () {
+                                                    final currentNet =
+                                                        (itemsTotal +
+                                                                servicesTotal -
+                                                                salesDiscount)
+                                                            .clamp(
+                                                              0.0,
+                                                              double.infinity,
+                                                            );
+                                                    final truncated = currentNet
+                                                        .truncateToDouble();
+                                                    final diff =
+                                                        currentNet - truncated;
+                                                    if (diff > 0.0001) {
+                                                      salesDiscountCtrl.text =
+                                                          (salesDiscount + diff)
+                                                              .fmt;
+                                                      recomputeInvoiceFinancials();
+                                                      setSt(() {});
+                                                    }
+                                                  },
+                                                  icon: const Icon(
+                                                    Icons.content_cut_rounded,
+                                                    size: 14,
+                                                  ),
+                                                  label: const Text(
+                                                    'تجاهل القروش',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            if (cashInvoice) ...[
+                                              Container(
+                                                padding: const EdgeInsets.all(
+                                                  8,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(
+                                                    0xFFDCFCE7,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                ),
+                                                child: const Text(
+                                                  'فاتورة نقدية: تُسدد بالكامل نقداً فور الإصدار بعد خصم عربون الطلبيات إن وجد.',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    color:
+                                                        AppColors.successGreen,
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                              ),
+                                            ] else ...[
+                                              Builder(
+                                                builder: (context) {
+                                                  final curDep =
+                                                      double.tryParse(
+                                                        depositCtrl.text,
+                                                      ) ??
+                                                      0.0;
+                                                  final curCash =
+                                                      double.tryParse(
+                                                        cashCtrl.text,
+                                                      ) ??
+                                                      0.0;
+                                                  String? depError;
+                                                  String? cashError;
+                                                  if (depositCtrl
+                                                      .text
+                                                      .isNotEmpty) {
+                                                    if (curDep < 0) {
+                                                      depError =
+                                                          'لا يمكن أن يكون سالباً';
+                                                    } else if (curDep >
+                                                        grandTotal + 0.01) {
+                                                      depError =
+                                                          'العربون يتجاوز إجمالي الفاتورة';
+                                                    }
+                                                  }
+                                                  if (cashCtrl
+                                                      .text
+                                                      .isNotEmpty) {
+                                                    if (curCash < 0) {
+                                                      cashError =
+                                                          'لا يمكن أن يكون سالباً';
+                                                    } else if (curDep +
+                                                            curCash >
+                                                        grandTotal + 0.01) {
+                                                      cashError =
+                                                          'المجموع يتجاوز الفاتورة (${grandTotal.fmt})';
+                                                    }
+                                                  }
+                                                  return Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: TextField(
+                                                          controller:
+                                                              depositCtrl,
+                                                          keyboardType:
+                                                              const TextInputType.numberWithOptions(
+                                                                decimal: true,
+                                                              ),
+                                                          decoration: InputDecoration(
+                                                            labelText:
+                                                                'العربون المخصوم (\$)',
+                                                            isDense: true,
+                                                            errorText: depError,
+                                                            helperText:
+                                                                'الحد الأقصى: ${grandTotal.fmt}',
+                                                          ),
+                                                          onChanged: (_) => setSt(
+                                                            () =>
+                                                                recomputeInvoiceFinancials(),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      Expanded(
+                                                        child: TextField(
+                                                          controller: cashCtrl,
+                                                          keyboardType:
+                                                              const TextInputType.numberWithOptions(
+                                                                decimal: true,
+                                                              ),
+                                                          decoration: InputDecoration(
+                                                            labelText:
+                                                                'النقد المدفوع الآن (\$)',
+                                                            isDense: true,
+                                                            errorText:
+                                                                cashError,
+                                                            helperText:
+                                                                'أقصى نقد إضافي: ${(grandTotal - curDep).clamp(0.0, double.infinity).fmt}',
+                                                          ),
+                                                          onChanged: (_) =>
+                                                              setSt(() {}),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  );
+                                                },
+                                              ),
+                                            ],
+                                            const SizedBox(height: 12),
+                                            AppImageAttachmentPicker(
+                                              initialPath: photoCtrl.text,
+                                              label: 'صورة الفاتورة / الوصل',
+                                              onImageChanged: (p) => setSt(
+                                                () => photoCtrl.text = p,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                          ],
                                           if (formError != null) ...[
                                             const SizedBox(height: 8),
                                             Text(

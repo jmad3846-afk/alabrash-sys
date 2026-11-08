@@ -3102,6 +3102,26 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
 
                                         if (isInProgress) ...[
                                           const SizedBox(width: 10),
+                                          OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: AppColors.accentPrimary,
+                                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                            ),
+                                            onPressed: () => showAddFactoryOrderDialog(
+                                              context,
+                                              erp,
+                                              existingOrder: ord,
+                                              onEditItem: (item, onSave) => _showEditFactoryDraftItemModal(
+                                                context: context,
+                                                item: item,
+                                                erp: erp,
+                                                onSave: onSave,
+                                              ),
+                                            ),
+                                            icon: const Icon(Icons.edit_outlined, size: 18),
+                                            label: const Text('تعديل الطلبية'),
+                                          ),
+                                          const SizedBox(width: 10),
                                           // Assign to POS invoice button
                                           ElevatedButton.icon(
                                             style: ElevatedButton.styleFrom(
@@ -3752,12 +3772,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
 
           return Dialog(
             insetPadding: const EdgeInsets.symmetric(
-              horizontal: 20,
-              vertical: 20,
+              horizontal: 8,
+              vertical: 8,
             ),
             child: Container(
-              width: math.min(screenWidth * 0.95, 1200),
-              height: math.min(screenHeight * 0.92, 850),
+              width: math.min(screenWidth - 16, 1600),
+              height: math.min(screenHeight - 16, 1200),
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -5791,6 +5811,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     // Services attached to the item currently being built.
     String? selectedServiceId;
     String serviceSearch = '';
+    bool? itemHasServices;
+    bool showAdditionalFields = false;
     final servicePriceCtrl = TextEditingController();
     final serviceNotesCtrl = TextEditingController();
     final List<ServiceAttachment> draftServices = [];
@@ -6066,12 +6088,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
 
           return Dialog(
             insetPadding: const EdgeInsets.symmetric(
-              horizontal: 20,
-              vertical: 20,
+              horizontal: 8,
+              vertical: 8,
             ),
             child: Container(
-              width: math.min(screenWidth * 0.95, 1200),
-              height: math.min(screenHeight * 0.92, 850),
+              width: math.min(screenWidth - 16, 1600),
+              height: math.min(screenHeight - 16, 1200),
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -6441,22 +6463,30 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                       ],
                                     ),
                                     const SizedBox(height: 8),
-                                    DropdownButtonFormField<String>(
-                                      initialValue: clientValue,
-                                      isExpanded: true,
-                                      decoration: const InputDecoration(
-                                        labelText: 'المعتمد',
-                                      ),
-                                      items: clientsFiltered
-                                          .map(
-                                            (c) => DropdownMenuItem(
-                                              value: c.id,
-                                              child: Text(c.name),
-                                            ),
-                                          )
-                                          .toList(),
-                                      onChanged: (v) =>
-                                          setSt(() => selectedClientId = v),
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: DropdownButtonFormField<String>(
+                                            initialValue: clientValue,
+                                            isExpanded: true,
+                                            decoration: const InputDecoration(labelText: 'المعتمد'),
+                                            items: clientsFiltered
+                                                .map((c) => DropdownMenuItem(value: c.id, child: Text(c.name)))
+                                                .toList(),
+                                            onChanged: (v) => setSt(() => selectedClientId = v),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        SizedBox(
+                                          width: 190,
+                                          child: CurrencySelector(
+                                            value: posCurrency,
+                                            dense: true,
+                                            onChanged: (v) => setSt(() => posCurrency = v),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                     const SizedBox(height: 16),
 
@@ -6499,6 +6529,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                       onChanged: (v) {
                                         setSt(() {
                                           selectedWhId = v;
+                                          itemHasServices = null;
+                                          selectedServiceId = null;
+                                          serviceSearch = '';
+                                          servicePriceCtrl.clear();
+                                          serviceNotesCtrl.clear();
+                                          draftServices.clear();
                                           if (v != null) {
                                             final mList = erp.factoryWarehouse
                                                 .where((g) => g.id == v)
@@ -6839,7 +6875,36 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                       const SizedBox(height: 12),
 
                                       // Attach services to warehouse item
-                                      _buildServicesAttachmentSection(
+                                      if (itemHasServices == null)
+                                        Container(
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFFFFBEB),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: const Color(0xFFFDE68A)),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              const Expanded(
+                                                child: Text(
+                                                  'هل هذا الصنف مرتبط بخدمة؟',
+                                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                                ),
+                                              ),
+                                              TextButton(
+                                                onPressed: () => setSt(() => itemHasServices = false),
+                                                child: const Text('لا'),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              ElevatedButton(
+                                                onPressed: () => setSt(() => itemHasServices = true),
+                                                child: const Text('نعم'),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      if (itemHasServices == true)
+                                        _buildServicesAttachmentSection(
                                         setSt: setSt,
                                         erp: erp,
                                         serviceSearch: serviceSearch,
@@ -6929,6 +6994,11 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                 ),
                                               );
                                               draftServices.clear();
+                                              itemHasServices = null;
+                                              selectedServiceId = null;
+                                              serviceSearch = '';
+                                              servicePriceCtrl.clear();
+                                              serviceNotesCtrl.clear();
                                               lengthCtrl.clear();
                                               widthCtrl.clear();
                                               heightCtrl.clear();
@@ -6981,221 +7051,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     ],
                                     const SizedBox(height: 16),
 
-                                    // 3. Delivery options
-                                    const Text(
-                                      '3. خيار التوصيل:',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: InkWell(
-                                            onTap: () => setSt(
-                                              () => deliverByUs = false,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Radio<bool>(
-                                                  value: false,
-                                                  groupValue: deliverByUs,
-                                                  onChanged: (v) => setSt(
-                                                    () => deliverByUs = v,
-                                                  ),
-                                                ),
-                                                const Expanded(
-                                                  child: Text(
-                                                    'الزبون يستلم النقل',
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: InkWell(
-                                            onTap: () =>
-                                                setSt(() => deliverByUs = true),
-                                            child: Row(
-                                              children: [
-                                                Radio<bool>(
-                                                  value: true,
-                                                  groupValue: deliverByUs,
-                                                  onChanged: (v) => setSt(
-                                                    () => deliverByUs = v,
-                                                  ),
-                                                ),
-                                                const Expanded(
-                                                  child: Text('نوصّل نحن'),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    if (deliverByUs == true)
-                                      TextField(
-                                        controller: shippingCtrl,
-                                        keyboardType: TextInputType.number,
-                                        decoration: const InputDecoration(
-                                          labelText:
-                                              'تكلفة التوصيل / الشحن (\$)',
-                                          isDense: true,
-                                        ),
-                                        onChanged: (_) => setSt(() {}),
-                                      ),
-                                    const SizedBox(height: 16),
-
-                                    // 4. Financial & Payment settings
-                                    const Text(
-                                      '4. الشروط المالية والعملة:',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    CurrencySelector(
-                                      value: posCurrency,
-                                      dense: true,
-                                      onChanged: (v) =>
-                                          setSt(() => posCurrency = v),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    TextField(
-                                      controller: salesDiscountCtrl,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                            decimal: true,
-                                          ),
-                                      decoration: const InputDecoration(
-                                        labelText:
-                                            'خصم المبيعات المسموح (اختياري)',
-                                      ),
-                                      onChanged: (_) => setSt(() {}),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    if (cashInvoice)
-                                      Container(
-                                        padding: const EdgeInsets.all(10),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFF0FDF4),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          border: Border.all(
-                                            color: const Color(0xFF86EFAC),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          'فاتورة بيع نقدية: سيتم تحصيل كامل الإجمالي (${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}) إلى الصندوق الرئيسي فوراً.',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF166534),
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      )
-                                    else ...[
-                                      Builder(
-                                        builder: (context) {
-                                          String? errorText;
-                                          if (downPayCtrl.text.isNotEmpty) {
-                                            if (downPay < 0) {
-                                              errorText =
-                                                  'لا يمكن إدخال دفعة سالبة';
-                                            } else if (assignedOrder != null) {
-                                              final dep =
-                                                  assignedOrder!.depositAmount;
-                                              if (downPay < dep - 0.01) {
-                                                errorText =
-                                                    'أقل من العربون المسبق (${dep.fmt})';
-                                              } else if (downPay >
-                                                  grandTotal + 0.01) {
-                                                errorText =
-                                                    'المجموع (${downPay.fmt}) يتجاوز إجمالي الفاتورة (${grandTotal.fmt})';
-                                              }
-                                            } else {
-                                              if (downPay > grandTotal + 0.01) {
-                                                errorText =
-                                                    'الدفعة (${downPay.fmt}) تتجاوز إجمالي الفاتورة (${grandTotal.fmt})';
-                                              }
-                                            }
-                                          }
-                                          return Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.stretch,
-                                            children: [
-                                              TextField(
-                                                controller: downPayCtrl,
-                                                keyboardType:
-                                                    TextInputType.number,
-                                                decoration: InputDecoration(
-                                                  labelText:
-                                                      assignedOrder != null
-                                                      ? 'إجمالي الدفعات (العربون المحجوز + دفعة جديدة)'
-                                                      : 'الدفعة الأولى / المقدمة (إن وجدت)',
-                                                  isDense: true,
-                                                  errorText: errorText,
-                                                  helperText:
-                                                      assignedOrder != null
-                                                      ? 'العربون: ${assignedOrder!.depositAmount.fmt} • الحد الأقصى المسموح: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}'
-                                                      : 'الحد الأقصى المسموح: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                ),
-                                                onChanged: (_) => setSt(() {}),
-                                              ),
-                                              if (downPayCtrl
-                                                  .text
-                                                  .isNotEmpty) ...[
-                                                const SizedBox(height: 6),
-                                                Row(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment
-                                                          .spaceBetween,
-                                                  children: [
-                                                    Text(
-                                                      'المتبقي على المعتمد: ${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color:
-                                                            downPay >
-                                                                grandTotal +
-                                                                    0.01
-                                                            ? AppColors
-                                                                  .dangerWaste
-                                                            : (grandTotal -
-                                                                          downPay <=
-                                                                      0.01
-                                                                  ? AppColors
-                                                                        .successGreen
-                                                                  : AppColors
-                                                                        .dangerWaste),
-                                                      ),
-                                                    ),
-                                                    if (assignedOrder != null &&
-                                                        downPay >=
-                                                            assignedOrder!
-                                                                .depositAmount)
-                                                      Text(
-                                                        'دفعة إضافية الآن: ${(downPay - assignedOrder!.depositAmount).fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                        style: const TextStyle(
-                                                          fontSize: 11,
-                                                          color: AppColors
-                                                              .accentPrimary,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ],
-                                          );
-                                        },
-                                      ),
-                                    ],
+                                    // Delivery, discount, and down payment are in Additional Fields below the invoice totals.
                                     const SizedBox(height: 16),
 
                                     // 5. Image Attachment
@@ -7688,6 +7544,106 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                             ),
                                           ),
                                         ),
+                                        const SizedBox(height: 4),
+                                        Align(
+                                          alignment: AlignmentDirectional.centerStart,
+                                          child: TextButton.icon(
+                                            onPressed: () => setSt(
+                                              () => showAdditionalFields = !showAdditionalFields,
+                                            ),
+                                            icon: Icon(showAdditionalFields
+                                                ? Icons.expand_less_rounded
+                                                : Icons.tune_rounded),
+                                            label: Text(showAdditionalFields
+                                                ? 'إخفاء الحقول الإضافية'
+                                                : 'الحقول الإضافية'),
+                                          ),
+                                        ),
+                                        if (showAdditionalFields) ...[
+                                          const SizedBox(height: 8),
+                                          Container(
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF8FAFC),
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: AppColors.panelBorder),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                                              children: [
+                                                const Text('التوصيل', style: TextStyle(fontWeight: FontWeight.bold)),
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: RadioListTile<bool>(
+                                                        contentPadding: EdgeInsets.zero,
+                                                        dense: true,
+                                                        title: const Text('الزبون يستلم', style: TextStyle(fontSize: 12)),
+                                                        value: false,
+                                                        groupValue: deliverByUs,
+                                                        onChanged: (v) => setSt(() => deliverByUs = v),
+                                                      ),
+                                                    ),
+                                                    Expanded(
+                                                      child: RadioListTile<bool>(
+                                                        contentPadding: EdgeInsets.zero,
+                                                        dense: true,
+                                                        title: const Text('نوصّل نحن', style: TextStyle(fontSize: 12)),
+                                                        value: true,
+                                                        groupValue: deliverByUs,
+                                                        onChanged: (v) => setSt(() => deliverByUs = v),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                if (deliverByUs == true)
+                                                  TextField(
+                                                    controller: shippingCtrl,
+                                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                    decoration: const InputDecoration(labelText: 'تكلفة التوصيل / الشحن', isDense: true),
+                                                    onChanged: (_) => setSt(() {}),
+                                                  ),
+                                                const SizedBox(height: 8),
+                                                TextField(
+                                                  controller: salesDiscountCtrl,
+                                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                  decoration: const InputDecoration(labelText: 'خصم المبيعات الممنوح', isDense: true),
+                                                  onChanged: (_) => setSt(() {}),
+                                                ),
+                                                if (cashInvoice)
+                                                  Padding(
+                                                    padding: const EdgeInsets.only(top: 8),
+                                                    child: Text(
+                                                      'فاتورة بيع نقدية: سيتم تحصيل كامل الإجمالي (${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}) إلى الصندوق الرئيسي فوراً.',
+                                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF166534), fontSize: 12),
+                                                    ),
+                                                  )
+                                                else ...[
+                                                  const SizedBox(height: 8),
+                                                  TextField(
+                                                    controller: downPayCtrl,
+                                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                    decoration: InputDecoration(
+                                                      labelText: assignedOrder != null
+                                                          ? 'إجمالي الدفعات (العربون المحجوز + دفعة جديدة)'
+                                                          : 'الدفعة المقدمة',
+                                                      isDense: true,
+                                                      helperText: assignedOrder != null
+                                                          ? 'العربون: ${assignedOrder!.depositAmount.fmt} • الحد الأقصى: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}'
+                                                          : 'الحد الأقصى: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                    ),
+                                                    onChanged: (_) => setSt(() {}),
+                                                  ),
+                                                  if (downPayCtrl.text.isNotEmpty)
+                                                    Padding(
+                                                      padding: const EdgeInsets.only(top: 6),
+                                                      child: Text('المتبقي على المعتمد: ${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}'),
+                                                    ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                         if (cashInvoice) ...[
                                           const Divider(height: 10),
                                           Row(

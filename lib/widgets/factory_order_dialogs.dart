@@ -11,7 +11,10 @@ import 'a4_invoice_print_dialog.dart';
 void showAddFactoryOrderDialog(
   BuildContext context,
   ERPProvider erp, {
+  FactoryOrderModel? existingOrder,
   void Function(FactoryOrderModel)? onOrderCreated,
+  void Function(FactoryInvoiceItem item, void Function(FactoryInvoiceItem) onSave)?
+  onEditItem,
 }) {
   final approvedClients = erp.clients
       .where((c) => c.clientType == 'معتمد مصنع')
@@ -44,7 +47,7 @@ void showAddFactoryOrderDialog(
     return;
   }
 
-  String? selectedClientId;
+  String? selectedClientId = existingOrder?.partyId;
   String clientSearch = '';
   String? selectedWhId;
   String goodsSearch = '';
@@ -53,22 +56,30 @@ void showAddFactoryOrderDialog(
   final heightCtrl = TextEditingController();
   final qtyCtrl = TextEditingController();
   final unitPriceCtrl = TextEditingController();
-  final depositCtrl = TextEditingController();
-  final salesDiscountCtrl = TextEditingController(text: '0');
-  final shippingCtrl = TextEditingController();
-  final photoCtrl = TextEditingController();
-  bool? deliverByUs;
+  final depositCtrl = TextEditingController(
+    text: existingOrder?.depositAmount.fmt ?? '',
+  );
+  final salesDiscountCtrl = TextEditingController(
+    text: existingOrder?.discountAmount.fmt ?? '0',
+  );
+  final shippingCtrl = TextEditingController(
+    text: existingOrder?.shippingFee.fmt ?? '',
+  );
+  final photoCtrl = TextEditingController(text: existingOrder?.photoPath ?? '');
+  bool? deliverByUs = existingOrder?.isGoodsDelivered;
   String? formError;
-  String orderCurrency = AppCurrency.usd;
+  String orderCurrency = existingOrder?.currency ?? AppCurrency.usd;
 
-  final List<FactoryInvoiceItem> draftItems = [];
+  final List<FactoryInvoiceItem> draftItems =
+      existingOrder?.items.map((item) => item.copyWith()).toList() ?? [];
 
   // Services attached to the item currently being built
   String? selectedServiceId;
   String serviceSearch = '';
   final servicePriceCtrl = TextEditingController();
   final serviceNotesCtrl = TextEditingController();
-  final List<ServiceAttachment> draftServices = [];
+  final List<ServiceAttachment> draftServices =
+      existingOrder?.services.toList() ?? [];
   String selectedItemMeterUnit = 'متر مربع';
 
   double getFactoryCubicSellingPrice(FactoryWarehouseModel item) {
@@ -232,14 +243,13 @@ void showAddFactoryOrderDialog(
             .fold(0.0, (s, it) => s + it.calculatedArea);
 
         return Dialog(
+          insetPadding: const EdgeInsets.all(8),
           child: Container(
-            width: 780,
-            padding: const EdgeInsets.all(24),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+            width: MediaQuery.of(ctx).size.width - 32,
+            height: MediaQuery.of(ctx).size.height - 32,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -263,15 +273,17 @@ void showAddFactoryOrderDialog(
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
-                                children: const [
+                                children: [
                                   Text(
-                                    'إضافة طلبية مصنع جديدة (Factory Order)',
+                                    existingOrder == null
+                                        ? 'إضافة طلبية مصنع جديدة (Factory Order)'
+                                        : 'تعديل طلبية المصنع (${existingOrder.orderNo})',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 17,
                                     ),
                                   ),
-                                  Text(
+                                  const Text(
                                     'تخضع لبنية فاتورة مبيعات المعتمدين وتتضمن عربوناً يودع في صندوق الطلبيات المعزول',
                                     style: TextStyle(
                                       fontSize: 11,
@@ -291,7 +303,28 @@ void showAddFactoryOrderDialog(
                     ],
                   ),
                   const Divider(height: 20),
-
+                Expanded(
+                  child: Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          flex: 5,
+                          child: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Container(
+                              color: Colors.white,
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                  const Text(
+                    'بيانات العميل وإضافة البنود',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
                   // 1. Approved client searchable dropdown
                   const Text(
                     '1. المعتمد / الزبون (Approved Client):',
@@ -862,6 +895,29 @@ void showAddFactoryOrderDialog(
                     ),
                   ],
 
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const VerticalDivider(width: 1, thickness: 1),
+                        Expanded(
+                          flex: 5,
+                          child: Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Container(
+                              color: const Color(0xFFF8FAFC),
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                  const Text(
+                    'بنود الطلبية والملخص',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
                   if (formError != null) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -908,13 +964,27 @@ void showAddFactoryOrderDialog(
                         subtitle: Text(
                           '${e.value.calculatedArea.fmt} ${e.value.heightCm > 5 ? "م³" : "م²"} × ${e.value.unitPrice}\$ + خدمات ${e.value.servicesTotal.fmt}\$ = ${e.value.grandTotal.fmt}\$',
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            color: AppColors.dangerWaste,
-                          ),
-                          onPressed: () =>
-                              setSt(() => draftItems.removeAt(e.key)),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (onEditItem != null)
+                              IconButton(
+                                tooltip: 'تعديل البند',
+                                icon: const Icon(Icons.edit_outlined),
+                                onPressed: () => onEditItem!(e.value, (updated) {
+                                  setSt(() => draftItems[e.key] = updated);
+                                }),
+                              ),
+                            IconButton(
+                              tooltip: 'حذف البند',
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: AppColors.dangerWaste,
+                              ),
+                              onPressed: () =>
+                                  setSt(() => draftItems.removeAt(e.key)),
+                            ),
+                          ],
                         ),
                         children: [
                           ...e.value.services.map(
@@ -1186,9 +1256,11 @@ void showAddFactoryOrderDialog(
                       );
 
                       final order = FactoryOrderModel(
-                        id: 'fo_${DateTime.now().millisecondsSinceEpoch}',
-                        orderNo: 'FORD-${erp.factoryOrders.length + 101}',
-                        date: DateTime.now(),
+                        id: existingOrder?.id ??
+                            'fo_${DateTime.now().millisecondsSinceEpoch}',
+                        orderNo: existingOrder?.orderNo ??
+                            'FORD-${erp.factoryOrders.length + 101}',
+                        date: existingOrder?.date ?? DateTime.now(),
                         partyId: client.id,
                         clientName: client.name,
                         clientPhone: client.phone,
@@ -1199,9 +1271,21 @@ void showAddFactoryOrderDialog(
                         depositAmount: deposit,
                         photoPath: photoCtrl.text.trim(),
                         currency: orderCurrency,
+                        status: existingOrder?.status ?? 'قيد التنفيذ',
                       );
 
-                      erp.createFactoryOrder(order);
+                      final bool saved;
+                      if (existingOrder == null) {
+                        erp.createFactoryOrder(order);
+                        saved = true;
+                      } else {
+                        saved = erp.updateFactoryOrder(existingOrder.id, order);
+                      }
+                      if (!saved) {
+                        setSt(() => formError =
+                            'تعذر حفظ التعديل. تحقق من توفر المخزون والعربون.');
+                        return;
+                      }
                       Navigator.pop(ctx);
 
                       if (onOrderCreated != null) {
@@ -1209,19 +1293,36 @@ void showAddFactoryOrderDialog(
                       }
 
                       // Show immediate confirmation & workshop print preview dialog
-                      showFactoryOrderSuccessDialog(context, order);
+                      if (existingOrder == null) {
+                        showFactoryOrderSuccessDialog(context, order);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('تم حفظ تعديلات الطلبية بنجاح.')),
+                        );
+                      }
                     },
                     icon: const Icon(Icons.check_circle_rounded),
-                    label: const Text(
-                      'حفظ وتأكيد طلبية المصنع وإيداع العربون',
+                    label: Text(
+                      existingOrder == null
+                          ? 'حفظ وتأكيد طلبية المصنع وإيداع العربون'
+                          : 'حفظ تعديلات الطلبية',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
                       ),
                     ),
                   ),
-                ],
-              ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         );
