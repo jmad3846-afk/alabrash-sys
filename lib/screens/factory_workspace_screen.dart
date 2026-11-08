@@ -7051,18 +7051,6 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     ],
                                     const SizedBox(height: 16),
 
-                                    // Delivery, discount, and down payment are in Additional Fields below the invoice totals.
-                                    const SizedBox(height: 16),
-
-                                    // 5. Image Attachment
-                                    AppImageAttachmentPicker(
-                                      initialPath: photoCtrl.text,
-                                      label: 'صورة الفاتورة / إشعار الاستلام',
-                                      onImageChanged: (p) =>
-                                          setSt(() => photoCtrl.text = p),
-                                    ),
-                                    const SizedBox(height: 24),
-
                                     // Action buttons
                                     Row(
                                       children: [
@@ -7355,363 +7343,375 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                   const SizedBox(height: 12),
 
                                   // Invoice Live Totals Summary Card
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF8FAFC),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: AppColors.panelBorder,
-                                      ),
-                                    ),
-                                    child: Column(
-                                      children: [
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            const Text(
-                                              'إجمالي الأمتار المباعة:',
-                                              style: TextStyle(fontSize: 12),
-                                            ),
-                                            Text(
-                                              '${draftItems.fold(0.0, (s, it) => s + it.calculatedArea).fmt} م',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                          ],
+                                  Flexible(
+                                    fit: FlexFit.loose,
+                                    child: SingleChildScrollView(
+                                      child: Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF8FAFC),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: AppColors.panelBorder,
+                                          ),
                                         ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
+                                        child: Column(
                                           children: [
-                                            const Text(
-                                              'إجمالي قيمة البضاعة:',
-                                              style: TextStyle(fontSize: 12),
-                                            ),
-                                            Text(
-                                              '${itemsTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        if (itemsServicesTotal > 0) ...[
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text(
-                                                'إجمالي الخدمات المرفقة:',
-                                                style: TextStyle(fontSize: 12),
-                                              ),
-                                              Text(
-                                                '${itemsServicesTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                        if (shipping > 0) ...[
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text(
-                                                'تكلفة التوصيل:',
-                                                style: TextStyle(fontSize: 12),
-                                              ),
-                                              Text(
-                                                '${shipping.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.bold,
-                                                  color:
-                                                      AppColors.accentPrimary,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                        if (salesDiscount > 0) ...[
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text(
-                                                'خصم المبيعات الممنوح:',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: AppColors.dangerWaste,
-                                                ),
-                                              ),
-                                              Text(
-                                                '-${salesDiscount.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13,
-                                                  color: AppColors.dangerWaste,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                        const Divider(height: 14),
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            const Text(
-                                              'صافي إجمالي الفاتورة:',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 14,
-                                              ),
-                                            ),
                                             Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.spaceBetween,
                                               children: [
+                                                const Text(
+                                                  'إجمالي الأمتار المباعة:',
+                                                  style: TextStyle(fontSize: 12),
+                                                ),
                                                 Text(
-                                                  '${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                  '${draftItems.fold(0.0, (s, it) => s + it.calculatedArea).fmt} م',
                                                   style: const TextStyle(
                                                     fontWeight: FontWeight.bold,
-                                                    fontSize: 16,
-                                                    color:
-                                                        AppColors.accentPrimary,
+                                                    fontSize: 13,
                                                   ),
-                                                ),
-                                                const SizedBox(width: 6),
-                                                CurrencyBadge(
-                                                  currency: posCurrency,
                                                 ),
                                               ],
                                             ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Align(
-                                          alignment:
-                                              AlignmentDirectional.centerEnd,
-                                          child: TextButton.icon(
-                                            style: TextButton.styleFrom(
-                                              foregroundColor: const Color(
-                                                0xFF4F46E5,
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 4,
-                                                  ),
-                                            ),
-                                            onPressed: () {
-                                              final currentNet = grandTotal;
-                                              final truncated = currentNet
-                                                  .truncateToDouble();
-                                              final diff =
-                                                  currentNet - truncated;
-                                              if (diff > 0.0001) {
-                                                final newDisc =
-                                                    salesDiscount + diff;
-                                                salesDiscountCtrl.text =
-                                                    newDisc.fmt;
-                                                if (cashInvoice) {
-                                                  downPayCtrl.text =
-                                                      truncated.fmt;
-                                                }
-                                                setSt(() {});
-                                              }
-                                            },
-                                            icon: const Icon(
-                                              Icons.content_cut_rounded,
-                                              size: 14,
-                                            ),
-                                            label: const Text(
-                                              'تجاهل القروش (Ignore Cents)',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Align(
-                                          alignment: AlignmentDirectional.centerStart,
-                                          child: TextButton.icon(
-                                            onPressed: () => setSt(
-                                              () => showAdditionalFields = !showAdditionalFields,
-                                            ),
-                                            icon: Icon(showAdditionalFields
-                                                ? Icons.expand_less_rounded
-                                                : Icons.tune_rounded),
-                                            label: Text(showAdditionalFields
-                                                ? 'إخفاء الحقول الإضافية'
-                                                : 'الحقول الإضافية'),
-                                          ),
-                                        ),
-                                        if (showAdditionalFields) ...[
-                                          const SizedBox(height: 8),
-                                          Container(
-                                            padding: const EdgeInsets.all(10),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFF8FAFC),
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: AppColors.panelBorder),
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.spaceBetween,
                                               children: [
-                                                const Text('التوصيل', style: TextStyle(fontWeight: FontWeight.bold)),
+                                                const Text(
+                                                  'إجمالي قيمة البضاعة:',
+                                                  style: TextStyle(fontSize: 12),
+                                                ),
+                                                Text(
+                                                  '${itemsTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            if (itemsServicesTotal > 0) ...[
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  const Text(
+                                                    'إجمالي الخدمات المرفقة:',
+                                                    style: TextStyle(fontSize: 12),
+                                                  ),
+                                                  Text(
+                                                    '${itemsServicesTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                            if (shipping > 0) ...[
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  const Text(
+                                                    'تكلفة التوصيل:',
+                                                    style: TextStyle(fontSize: 12),
+                                                  ),
+                                                  Text(
+                                                    '${shipping.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                    style: const TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.bold,
+                                                      color:
+                                                          AppColors.accentPrimary,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                            if (salesDiscount > 0) ...[
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  const Text(
+                                                    'خصم المبيعات الممنوح:',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: AppColors.dangerWaste,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '-${salesDiscount.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 13,
+                                                      color: AppColors.dangerWaste,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                            const Divider(height: 14),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                const Text(
+                                                  'صافي إجمالي الفاتورة:',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
                                                 Row(
                                                   children: [
-                                                    Expanded(
-                                                      child: RadioListTile<bool>(
-                                                        contentPadding: EdgeInsets.zero,
-                                                        dense: true,
-                                                        title: const Text('الزبون يستلم', style: TextStyle(fontSize: 12)),
-                                                        value: false,
-                                                        groupValue: deliverByUs,
-                                                        onChanged: (v) => setSt(() => deliverByUs = v),
+                                                    Text(
+                                                      '${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                      style: const TextStyle(
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 16,
+                                                        color:
+                                                            AppColors.accentPrimary,
                                                       ),
                                                     ),
-                                                    Expanded(
-                                                      child: RadioListTile<bool>(
-                                                        contentPadding: EdgeInsets.zero,
-                                                        dense: true,
-                                                        title: const Text('نوصّل نحن', style: TextStyle(fontSize: 12)),
-                                                        value: true,
-                                                        groupValue: deliverByUs,
-                                                        onChanged: (v) => setSt(() => deliverByUs = v),
-                                                      ),
+                                                    const SizedBox(width: 6),
+                                                    CurrencyBadge(
+                                                      currency: posCurrency,
                                                     ),
                                                   ],
                                                 ),
-                                                if (deliverByUs == true)
-                                                  TextField(
-                                                    controller: shippingCtrl,
-                                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                                    decoration: const InputDecoration(labelText: 'تكلفة التوصيل / الشحن', isDense: true),
-                                                    onChanged: (_) => setSt(() {}),
-                                                  ),
-                                                const SizedBox(height: 8),
-                                                TextField(
-                                                  controller: salesDiscountCtrl,
-                                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                                  decoration: const InputDecoration(labelText: 'خصم المبيعات الممنوح', isDense: true),
-                                                  onChanged: (_) => setSt(() {}),
-                                                ),
-                                                if (cashInvoice)
-                                                  Padding(
-                                                    padding: const EdgeInsets.only(top: 8),
-                                                    child: Text(
-                                                      'فاتورة بيع نقدية: سيتم تحصيل كامل الإجمالي (${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}) إلى الصندوق الرئيسي فوراً.',
-                                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF166534), fontSize: 12),
-                                                    ),
-                                                  )
-                                                else ...[
-                                                  const SizedBox(height: 8),
-                                                  TextField(
-                                                    controller: downPayCtrl,
-                                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                                    decoration: InputDecoration(
-                                                      labelText: assignedOrder != null
-                                                          ? 'إجمالي الدفعات (العربون المحجوز + دفعة جديدة)'
-                                                          : 'الدفعة المقدمة',
-                                                      isDense: true,
-                                                      helperText: assignedOrder != null
-                                                          ? 'العربون: ${assignedOrder!.depositAmount.fmt} • الحد الأقصى: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}'
-                                                          : 'الحد الأقصى: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                    ),
-                                                    onChanged: (_) => setSt(() {}),
-                                                  ),
-                                                  if (downPayCtrl.text.isNotEmpty)
-                                                    Padding(
-                                                      padding: const EdgeInsets.only(top: 6),
-                                                      child: Text('المتبقي على المعتمد: ${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}'),
-                                                    ),
-                                                ],
                                               ],
                                             ),
-                                          ),
-                                        ],
-                                        if (cashInvoice) ...[
-                                          const Divider(height: 10),
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text(
-                                                'المحصل فوراً في الصندوق:',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: AppColors.successGreen,
+                                            const SizedBox(height: 8),
+                                            Align(
+                                              alignment:
+                                                  AlignmentDirectional.centerEnd,
+                                              child: TextButton.icon(
+                                                style: TextButton.styleFrom(
+                                                  foregroundColor: const Color(
+                                                    0xFF4F46E5,
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
+                                                ),
+                                                onPressed: () {
+                                                  final currentNet = grandTotal;
+                                                  final truncated = currentNet
+                                                      .truncateToDouble();
+                                                  final diff =
+                                                      currentNet - truncated;
+                                                  if (diff > 0.0001) {
+                                                    final newDisc =
+                                                        salesDiscount + diff;
+                                                    salesDiscountCtrl.text =
+                                                        newDisc.fmt;
+                                                    if (cashInvoice) {
+                                                      downPayCtrl.text =
+                                                          truncated.fmt;
+                                                    }
+                                                    setSt(() {});
+                                                  }
+                                                },
+                                                icon: const Icon(
+                                                  Icons.content_cut_rounded,
+                                                  size: 14,
+                                                ),
+                                                label: const Text(
+                                                  'تجاهل القروش (Ignore Cents)',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
                                                 ),
                                               ),
-                                              Text(
-                                                '${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13,
-                                                  color: AppColors.successGreen,
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Align(
+                                              alignment: AlignmentDirectional.centerStart,
+                                              child: TextButton.icon(
+                                                onPressed: () => setSt(
+                                                  () => showAdditionalFields = !showAdditionalFields,
+                                                ),
+                                                icon: Icon(showAdditionalFields
+                                                    ? Icons.expand_less_rounded
+                                                    : Icons.tune_rounded),
+                                                label: Text(showAdditionalFields
+                                                    ? 'إخفاء الحقول الإضافية'
+                                                    : 'الحقول الإضافية'),
+                                              ),
+                                            ),
+                                            if (showAdditionalFields) ...[
+                                              const SizedBox(height: 8),
+                                              Container(
+                                                padding: const EdgeInsets.all(10),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFF8FAFC),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(color: AppColors.panelBorder),
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                                  children: [
+                                                    const Text('التوصيل', style: TextStyle(fontWeight: FontWeight.bold)),
+                                                    Row(
+                                                      children: [
+                                                        Expanded(
+                                                          child: RadioListTile<bool>(
+                                                            contentPadding: EdgeInsets.zero,
+                                                            dense: true,
+                                                            title: const Text('الزبون يستلم', style: TextStyle(fontSize: 12)),
+                                                            value: false,
+                                                            groupValue: deliverByUs,
+                                                            onChanged: (v) => setSt(() => deliverByUs = v),
+                                                          ),
+                                                        ),
+                                                        Expanded(
+                                                          child: RadioListTile<bool>(
+                                                            contentPadding: EdgeInsets.zero,
+                                                            dense: true,
+                                                            title: const Text('نوصّل نحن', style: TextStyle(fontSize: 12)),
+                                                            value: true,
+                                                            groupValue: deliverByUs,
+                                                            onChanged: (v) => setSt(() => deliverByUs = v),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    if (deliverByUs == true)
+                                                      TextField(
+                                                        controller: shippingCtrl,
+                                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                        decoration: const InputDecoration(labelText: 'تكلفة التوصيل / الشحن', isDense: true),
+                                                        onChanged: (_) => setSt(() {}),
+                                                      ),
+                                                    const SizedBox(height: 8),
+                                                    TextField(
+                                                      controller: salesDiscountCtrl,
+                                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                      decoration: const InputDecoration(labelText: 'خصم المبيعات الممنوح', isDense: true),
+                                                      onChanged: (_) => setSt(() {}),
+                                                    ),
+                                                    if (cashInvoice)
+                                                      Padding(
+                                                        padding: const EdgeInsets.only(top: 8),
+                                                        child: Text(
+                                                          'فاتورة بيع نقدية: سيتم تحصيل كامل الإجمالي (${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}) إلى الصندوق الرئيسي فوراً.',
+                                                          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF166534), fontSize: 12),
+                                                        ),
+                                                      )
+                                                    else ...[
+                                                      const SizedBox(height: 8),
+                                                      TextField(
+                                                        controller: downPayCtrl,
+                                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                        decoration: InputDecoration(
+                                                          labelText: assignedOrder != null
+                                                              ? 'إجمالي الدفعات (العربون المحجوز + دفعة جديدة)'
+                                                              : 'الدفعة المقدمة',
+                                                          isDense: true,
+                                                          helperText: assignedOrder != null
+                                                              ? 'العربون: ${assignedOrder!.depositAmount.fmt} • الحد الأقصى: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}'
+                                                              : 'الحد الأقصى: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                        ),
+                                                        onChanged: (_) => setSt(() {}),
+                                                      ),
+                                                      if (downPayCtrl.text.isNotEmpty)
+                                                        Padding(
+                                                          padding: const EdgeInsets.only(top: 6),
+                                                          child: Text('المتبقي على المعتمد: ${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}'),
+                                                        ),
+                                                    ],
+                                                    const SizedBox(height: 10),
+                                                    AppImageAttachmentPicker(
+                                                      initialPath: photoCtrl.text,
+                                                      label: 'صورة الفاتورة / إشعار الاستلام',
+                                                      onImageChanged: (p) =>
+                                                          setSt(() => photoCtrl.text = p),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
                                             ],
-                                          ),
-                                        ] else if (downPay > 0) ...[
-                                          const Divider(height: 10),
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text(
-                                                'الدفعة المستلمة / العربون:',
-                                                style: TextStyle(fontSize: 12),
+                                            if (cashInvoice) ...[
+                                              const Divider(height: 10),
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  const Text(
+                                                    'المحصل فوراً في الصندوق:',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: AppColors.successGreen,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 13,
+                                                      color: AppColors.successGreen,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
-                                              Text(
-                                                '${downPay.fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13,
-                                                  color:
-                                                      AppColors.accentPrimary,
-                                                ),
+                                            ] else if (downPay > 0) ...[
+                                              const Divider(height: 10),
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  const Text(
+                                                    'الدفعة المستلمة / العربون:',
+                                                    style: TextStyle(fontSize: 12),
+                                                  ),
+                                                  Text(
+                                                    '${downPay.fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 13,
+                                                      color:
+                                                          AppColors.accentPrimary,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  const Text(
+                                                    'المتبقي على المعتمد:',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: AppColors.dangerWaste,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}',
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 14,
+                                                      color: AppColors.dangerWaste,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ],
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text(
-                                                'المتبقي على المعتمد:',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: AppColors.dangerWaste,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 14,
-                                                  color: AppColors.dangerWaste,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ],
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ],
