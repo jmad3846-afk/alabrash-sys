@@ -120,6 +120,7 @@ class A4InvoiceData {
   final double grandTotal;
   final double paidAmount;
   final double remainingBalance;
+  final double totalSquareMeters;
   final String notes;
   final bool isGoodsDelivered;
   final bool hasFulfillmentSection;
@@ -143,6 +144,7 @@ class A4InvoiceData {
     required this.grandTotal,
     required this.paidAmount,
     required this.remainingBalance,
+    this.totalSquareMeters = 0.0,
     this.notes = '',
     this.isGoodsDelivered = true,
     this.hasFulfillmentSection = false,
@@ -219,6 +221,18 @@ class A4InvoiceData {
       grandTotal: inv.grandTotal,
       paidAmount: inv.advancePayment,
       remainingBalance: inv.remainingBalance,
+      totalSquareMeters: isPurchase
+          ? 0.0
+          : inv.items.fold(
+              0.0,
+              (sum, item) => sum +
+                  ((item.isMeterItem ||
+                              (item.lengthCm > 0 && item.widthCm > 0)) &&
+                          !item.isCubicMeter &&
+                          item.meterUnit == 'متر مربع'
+                      ? item.calculatedArea
+                      : 0.0),
+            ),
       notes: isPurchase
           ? (inv.isGoodsDelivered
               ? 'شحنة واصلة للمصنع'
@@ -290,6 +304,16 @@ class A4InvoiceData {
       grandTotal: ord.grandTotal,
       paidAmount: ord.depositAmount,
       remainingBalance: ord.remainingBalance,
+      totalSquareMeters: ord.items.fold(
+        0.0,
+        (sum, item) => sum +
+            ((item.isMeterItem ||
+                        (item.lengthCm > 0 && item.widthCm > 0)) &&
+                    !item.isCubicMeter &&
+                    item.meterUnit == 'متر مربع'
+                ? item.calculatedArea
+                : 0.0),
+      ),
       notes: ord.isGoodsDelivered
           ? 'التوصيل: نوصّل نحن (${ord.shippingFee.fmt} ${ord.currencySymbol})'
           : 'التوصيل: الزبون يستلم النقل من أرض المصنع',
@@ -390,6 +414,13 @@ class A4InvoiceData {
       ));
     }
 
+    final customDimMatch = RegExp(r'(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)')
+        .firstMatch(ord.customDimensionsText);
+    final customSquareMeters = customDimMatch == null
+        ? 0.0
+        : ((double.tryParse(customDimMatch.group(1)!) ?? 0.0) *
+                (double.tryParse(customDimMatch.group(2)!) ?? 0.0)) /
+            10000.0;
     final subtotal = ord.items.isNotEmpty
         ? ord.items.fold(0.0, (s, i) => s + i.agreedPrice)
         : ord.agreedPrice;
@@ -412,6 +443,13 @@ class A4InvoiceData {
       grandTotal: ord.agreedPrice,
       paidAmount: ord.depositAmount,
       remainingBalance: (ord.agreedPrice - ord.depositAmount).clamp(0.0, double.infinity),
+      totalSquareMeters: ord.items.isNotEmpty
+          ? ord.items.fold(
+              0.0,
+              (sum, item) => sum +
+                  (item.unitCategory == 'متر مربع' ? item.calculatedArea : 0.0),
+            )
+          : customSquareMeters,
       notes: ord.photoPath.isNotEmpty
           ? 'مرفق صورة / مخطط تنفيذي خاص بالطلبية في الورشة'
           : 'أمر تشغيل وتفصيل ورشة المعمل',
@@ -517,6 +555,13 @@ class A4InvoiceData {
       grandTotal: inv.grandTotal,
       paidAmount: inv.cashPaidNow + inv.depositDeducted,
       remainingBalance: inv.remainingBalance,
+      totalSquareMeters: inv.items.isNotEmpty
+          ? inv.items.fold(
+              0.0,
+              (sum, item) => sum +
+                  (item.unitCategory == 'متر مربع' ? item.calculatedArea : 0.0),
+            )
+          : (inv.sourceUnitCategory == 'متر مربع' ? inv.sourceQuantity : 0.0),
       notes: 'المصدر: ${inv.sourceType} • ${inv.isGranite ? "جرانيت طبيعي" : "رخام طبيعي"}',
       isGoodsDelivered: true,
       hasFulfillmentSection: true,
@@ -1279,6 +1324,8 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
           // 3. Fulfillment Items Table (Repeated line items for cutting and fulfillment)
           _buildFulfillmentItemsTable(inv),
           const SizedBox(height: 16),
+          _buildAreaTotalBanner(inv),
+          const SizedBox(height: 12),
 
           // Bottom System Footer Line (Signatures section removed as requested)
           _buildSystemFooterLine(
@@ -1347,6 +1394,8 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
           _buildFulfillmentMetaBanner(inv, isCompact: true),
           const SizedBox(height: 10),
           _buildFulfillmentItemsTable(inv),
+          const SizedBox(height: 8),
+          _buildAreaTotalBanner(inv),
           const SizedBox(height: 14),
 
           // Bottom System Footer Line
@@ -1881,8 +1930,46 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
               isBold: true,
               color: inv.remainingBalance > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
             ),
+            _buildTotalRow(
+              'إجمالي المساحة المستهلكة:',
+              '${inv.totalSquareMeters.fmt} م²',
+              isBold: true,
+              color: const Color(0xFF0F766E),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildAreaTotalBanner(A4InvoiceData inv) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDFA),
+        border: Border.all(color: const Color(0xFF99F6E4)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text(
+            'إجمالي المساحة المستهلكة:',
+            style: TextStyle(
+              fontSize: 11,
+              color: Color(0xFF0F766E),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          Text(
+            '${inv.totalSquareMeters.fmt} م²',
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF0F766E),
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
       ),
     );
   }
