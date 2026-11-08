@@ -68,6 +68,7 @@ void showAddFactoryOrderDialog(
   final photoCtrl = TextEditingController(text: existingOrder?.photoPath ?? '');
   bool? deliverByUs = existingOrder?.isGoodsDelivered;
   String? formError;
+  bool showAdditionalInformation = false;
   String orderCurrency = existingOrder?.currency ?? AppCurrency.usd;
 
   final List<FactoryInvoiceItem> draftItems =
@@ -347,25 +348,40 @@ void showAddFactoryOrderDialog(
                     ],
                   ),
                   const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: clientValue,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'اختر المعتمد',
-                    ),
-                    items: clientsFiltered
-                        .map(
-                          (c) => DropdownMenuItem(
-                            value: c.id,
-                            child: Text(
-                              c.location.isEmpty
-                                  ? c.name
-                                  : '${c.name} • ${c.location}',
-                            ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          initialValue: clientValue,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'اختر المعتمد',
                           ),
-                        )
-                        .toList(),
-                    onChanged: (v) => setSt(() => selectedClientId = v),
+                          items: clientsFiltered
+                              .map(
+                                (c) => DropdownMenuItem(
+                                  value: c.id,
+                                  child: Text(
+                                    c.location.isEmpty
+                                        ? c.name
+                                        : '${c.name} • ${c.location}',
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) => setSt(() => selectedClientId = v),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 150,
+                        child: CurrencySelector(
+                          value: orderCurrency,
+                          dense: true,
+                          onChanged: (v) => setSt(() => orderCurrency = v),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
 
@@ -1006,7 +1022,7 @@ void showAddFactoryOrderDialog(
                   ),
                   const SizedBox(height: 16),
 
-                  // 3. Totals, Currency, Deposit & Delivery
+                  // Order pricing summary
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
@@ -1015,211 +1031,77 @@ void showAddFactoryOrderDialog(
                       border: Border.all(color: AppColors.panelBorder),
                     ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: CurrencySelector(
-                                value: orderCurrency,
-                                dense: true,
-                                onChanged: (v) =>
-                                    setSt(() => orderCurrency = v),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextField(
-                                controller: salesDiscountCtrl,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: const InputDecoration(
-                                  labelText: 'خصم مبيعات مسموح (اختياري)',
-                                  isDense: true,
-                                ),
-                                onChanged: (_) => setSt(() {}),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'إجمالي قيمة الطلبية (بضاعة + خدمات):',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              '${grandTotal.fmt} ${AppCurrency.symbol(orderCurrency)}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 16,
-                                color: AppColors.accentPrimary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const Divider(height: 20),
-
-                        // CRITICAL MANDATORY FIELD: Deposit / Down payment
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppColors.orderDepositBoxAccent.withValues(
-                              alpha: 0.08,
-                            ),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: AppColors.orderDepositBoxAccent.withValues(
-                                alpha: 0.3,
-                              ),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: const [
-                                  Icon(
-                                    Icons.savings_rounded,
-                                    color: AppColors.orderDepositBoxAccent,
-                                    size: 20,
-                                  ),
-                                  SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'العربون / الدفعة المقدمة (Deposit / Down Payment):',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.orderDepositBoxAccent,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              const Text(
-                                'يتم إيداع العربون حصرياً في "صندوق الطلبيات المعزول"، ويتم خصم الأمتار المستهلكة من مستودع المصنع.',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xFF475569),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              TextField(
-                                controller: depositCtrl,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: InputDecoration(
-                                  labelText:
-                                      'قيمة العربون (${AppCurrency.symbol(orderCurrency)}) *',
-                                  isDense: true,
-                                  prefixIcon: const Icon(
-                                    Icons.attach_money_rounded,
-                                    color: AppColors.orderDepositBoxAccent,
-                                  ),
-                                ),
-                                onChanged: (_) => setSt(() {}),
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'المتبقي على الزبون عند الاستلام:',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: remaining > 0
-                                          ? AppColors.dangerWaste
-                                          : AppColors.successGreen,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${remaining.fmt} ${AppCurrency.symbol(orderCurrency)}',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                      color: remaining > 0
-                                          ? AppColors.dangerWaste
-                                          : AppColors.successGreen,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Delivery options
-                        const Text(
-                          'خيارات التوصيل والشحن:',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: InkWell(
-                                onTap: () => setSt(() => deliverByUs = false),
-                                child: Row(
-                                  children: [
-                                    Radio<bool>(
-                                      value: false,
-                                      groupValue: deliverByUs,
-                                      onChanged: (v) =>
-                                          setSt(() => deliverByUs = v),
-                                    ),
-                                    const Text('الزبون يستلم النقل'),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: InkWell(
-                                onTap: () => setSt(() => deliverByUs = true),
-                                child: Row(
-                                  children: [
-                                    Radio<bool>(
-                                      value: true,
-                                      groupValue: deliverByUs,
-                                      onChanged: (v) =>
-                                          setSt(() => deliverByUs = v),
-                                    ),
-                                    const Text('نوصّل نحن'),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (deliverByUs == true)
-                          TextField(
-                            controller: shippingCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'تكلفة التوصيل / الشحن (\$)',
-                              isDense: true,
-                            ),
-                            onChanged: (_) => setSt(() {}),
-                          ),
-                        const SizedBox(height: 12),
-                        AppImageAttachmentPicker(
-                          initialPath: photoCtrl.text,
-                          label: 'صورة الطلبية / المخطط الفني',
-                          onImageChanged: (p) =>
-                              setSt(() => photoCtrl.text = p),
-                        ),
+                        const Text('ملخص الطلبية', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        const SizedBox(height: 10),
+                        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('إجمالي الأصناف'), Text('${itemsTotal.fmt} ${AppCurrency.symbol(orderCurrency)}')]),
+                        if (itemsServicesTotal > 0) ...[
+                          const SizedBox(height: 4),
+                          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('إجمالي الخدمات'), Text('${itemsServicesTotal.fmt} ${AppCurrency.symbol(orderCurrency)}')]),
+                        ],
+                        if (shipping > 0) ...[
+                          const SizedBox(height: 4),
+                          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('التوصيل والشحن'), Text('${shipping.fmt} ${AppCurrency.symbol(orderCurrency)}')]),
+                        ],
+                        if (salesDiscount > 0) ...[
+                          const SizedBox(height: 4),
+                          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('خصم المبيعات', style: TextStyle(color: AppColors.dangerWaste)), Text('-${salesDiscount.fmt} ${AppCurrency.symbol(orderCurrency)}', style: const TextStyle(color: AppColors.dangerWaste))]),
+                        ],
+                        const Divider(height: 18),
+                        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('إجمالي قيمة الطلبية', style: TextStyle(fontWeight: FontWeight.bold)), Text('${grandTotal.fmt} ${AppCurrency.symbol(orderCurrency)}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: AppColors.accentPrimary))]),
+                        const SizedBox(height: 6),
+                        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('العربون / الدفعة المقدمة'), Text('${deposit.fmt} ${AppCurrency.symbol(orderCurrency)}')]),
+                        const SizedBox(height: 4),
+                        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('المتبقي عند الاستلام', style: TextStyle(fontWeight: FontWeight.bold)), Text('${remaining.fmt} ${AppCurrency.symbol(orderCurrency)}', style: TextStyle(fontWeight: FontWeight.bold, color: remaining > 0 ? AppColors.dangerWaste : AppColors.successGreen))]),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => setSt(() => showAdditionalInformation = !showAdditionalInformation),
+                      icon: Icon(showAdditionalInformation ? Icons.expand_less_rounded : Icons.tune_rounded),
+                      label: Text(showAdditionalInformation ? 'إخفاء المعلومات الإضافية' : 'Additional Information / معلومات إضافية'),
+                    ),
+                  ),
+                  if (showAdditionalInformation) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.panelBorder)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text('حقول إضافية', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          TextField(controller: salesDiscountCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'خصم المبيعات', isDense: true), onChanged: (_) => setSt(() {})),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(color: AppColors.orderDepositBoxAccent.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.orderDepositBoxAccent.withValues(alpha: 0.3))),
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                              const Text('العربون / الدفعة المقدمة', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.orderDepositBoxAccent)),
+                              const SizedBox(height: 6),
+                              TextField(controller: depositCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: 'قيمة العربون (${AppCurrency.symbol(orderCurrency)})', isDense: true), onChanged: (_) => setSt(() {})),
+                              const SizedBox(height: 6),
+                              Text('يُودع في صندوق الطلبيات المعزول. المتبقي: ${remaining.fmt} ${AppCurrency.symbol(orderCurrency)}', style: const TextStyle(fontSize: 11, color: Color(0xFF475569))),
+                            ]),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text('خيار التوصيل', style: TextStyle(fontWeight: FontWeight.bold)),
+                          Row(children: [
+                            Expanded(child: RadioListTile<bool>(contentPadding: EdgeInsets.zero, dense: true, title: const Text('الزبون يستلم', style: TextStyle(fontSize: 12)), value: false, groupValue: deliverByUs, onChanged: (v) => setSt(() => deliverByUs = v))),
+                            Expanded(child: RadioListTile<bool>(contentPadding: EdgeInsets.zero, dense: true, title: const Text('نوصّل نحن', style: TextStyle(fontSize: 12)), value: true, groupValue: deliverByUs, onChanged: (v) => setSt(() => deliverByUs = v))),
+                          ]),
+                          if (deliverByUs == true) TextField(controller: shippingCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'تكلفة التوصيل / الشحن', isDense: true), onChanged: (_) => setSt(() {})),
+                          const SizedBox(height: 10),
+                          AppImageAttachmentPicker(initialPath: photoCtrl.text, label: 'صورة الطلبية / المخطط الفني', onImageChanged: (p) => setSt(() => photoCtrl.text = p)),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
 
                   ElevatedButton.icon(
