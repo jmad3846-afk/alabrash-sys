@@ -13,13 +13,13 @@ class SystemResetModal extends StatefulWidget {
 }
 
 class _SystemResetModalState extends State<SystemResetModal> {
+  static const String _resetPassword = 'aldeeeeen54321';
   final TextEditingController _confirmController = TextEditingController();
   bool _isWiping = false;
   String? _error;
 
   bool get _isUnlocked {
-    final v = _confirmController.text.trim();
-    return v == 'تصفير' || v.toUpperCase() == 'RESET';
+    return _confirmController.text == _resetPassword;
   }
 
   @override
@@ -106,7 +106,7 @@ class _SystemResetModalState extends State<SystemResetModal> {
               ),
               const SizedBox(height: 18),
 
-              // EXTRA SAFETY MECHANISM: typed confirmation
+              // EXTRA SAFETY MECHANISM: password confirmation
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -118,7 +118,7 @@ class _SystemResetModalState extends State<SystemResetModal> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'لتفعيل زر التأكيد، اكتب كلمة الأمان  "تصفير"  أو  "RESET"  في الحقل أدناه:',
+                      'لتفعيل زر التأكيد، أدخل كلمة المرور في الحقل أدناه:',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 12.5,
@@ -130,13 +130,14 @@ class _SystemResetModalState extends State<SystemResetModal> {
                       controller: _confirmController,
                       enabled: !_isWiping,
                       autofocus: true,
+                      obscureText: true,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         letterSpacing: 2,
                       ),
                       decoration: const InputDecoration(
-                        hintText: 'اكتب: تصفير  أو  RESET',
+                        hintText: 'أدخل كلمة المرور',
                       ),
                       onChanged: (_) => setState(() {}),
                       onSubmitted: (_) => _executeReset(),
@@ -180,7 +181,7 @@ class _SystemResetModalState extends State<SystemResetModal> {
                   ),
                   const SizedBox(width: 12),
 
-                  // Button 2: Confirm (danger, disabled until safety word typed)
+                  // Button 2: Confirm (danger, disabled until password entered)
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
