@@ -63,6 +63,18 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
   String _workshopInvoicesSearch = '';
   String _workshopInvoicesCurrency = 'ALL';
 
+  double _workshopServiceCost({
+    required double lengthCm,
+    required double quantity,
+    required double unitRate,
+  }) {
+    if (lengthCm > 0 && quantity > 0) {
+      return (lengthCm / 100.0) * quantity * unitRate;
+    }
+    if (quantity > 0) return quantity * unitRate;
+    return unitRate;
+  }
+
   // Cash Invoices (Tab 8) search/filter
   final TextEditingController _cashInvoicesSearchCtrl = TextEditingController();
   String _cashInvoicesSearch = '';
@@ -6563,7 +6575,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                         (s) => s.id == v,
                                       );
                                       editServicePriceCtrl.text =
-                                          srv.unitRate.fmt;
+                                          _workshopServiceCost(
+                                            lengthCm: l,
+                                            quantity: cnt,
+                                            unitRate: srv.unitRate,
+                                          ).fmt;
                                     }
                                   }),
                                 ),
@@ -6836,6 +6852,29 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
               servicesFiltered.any((s) => s.id == selectedServiceId)
               ? selectedServiceId
               : null;
+
+          void autoCalculateServicePrice(ServiceItemModel service) {
+            var lengthCm = itemSourceType == 'بيع مواد خام من المعمل' ? rl : 0.0;
+            final quantity = itemSourceType == 'بيع مواد خام من المعمل'
+                ? rq
+                : (double.tryParse(itemQtyCtrl.text) ?? 0.0);
+            if (itemSourceType == 'بيع خياطة بسيطة' &&
+                selectedRecordId != null &&
+                selectedLineItemId != null) {
+              final tailoring = erp.simpleTailorings.firstWhere(
+                (item) => item.id == selectedRecordId,
+              );
+              final lineItem = tailoring.lineItems.firstWhere(
+                (item) => item.id == selectedLineItemId,
+              );
+              lengthCm = lineItem.lengthCm;
+            }
+            servicePriceCtrl.text = _workshopServiceCost(
+              lengthCm: lengthCm,
+              quantity: quantity,
+              unitRate: service.unitRate,
+            ).fmt;
+          }
 
           // Totals calculation
           final double itemsTotal = draftItems.fold(
@@ -8074,8 +8113,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                             .firstWhere(
                                                               (s) => s.id == v,
                                                             );
-                                                        servicePriceCtrl.text =
-                                                            srv.unitRate.fmt;
+                                                        autoCalculateServicePrice(
+                                                          srv,
+                                                        );
                                                       }
                                                     }),
                                                   ),
@@ -9389,6 +9429,29 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
               servicesFiltered.any((s) => s.id == selectedServiceId)
               ? selectedServiceId
               : null;
+
+          void autoCalculateServicePrice(ServiceItemModel service) {
+            var lengthCm = itemSourceType == 'بيع مواد خام من المعمل' ? rl : 0.0;
+            final quantity = itemSourceType == 'بيع مواد خام من المعمل'
+                ? rq
+                : (double.tryParse(itemQtyCtrl.text) ?? 0.0);
+            if (itemSourceType == 'بيع خياطة بسيطة' &&
+                selectedRecordId != null &&
+                selectedLineItemId != null) {
+              final tailoring = erp.simpleTailorings.firstWhere(
+                (item) => item.id == selectedRecordId,
+              );
+              final lineItem = tailoring.lineItems.firstWhere(
+                (item) => item.id == selectedLineItemId,
+              );
+              lengthCm = lineItem.lengthCm;
+            }
+            servicePriceCtrl.text = _workshopServiceCost(
+              lengthCm: lengthCm,
+              quantity: quantity,
+              unitRate: service.unitRate,
+            ).fmt;
+          }
 
           // Totals calculation
           final double itemsTotal = draftItems.fold(
@@ -11009,10 +11072,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                                   (s) =>
                                                                       s.id == v,
                                                                 );
-                                                            servicePriceCtrl
-                                                                .text = srv
-                                                                .unitRate
-                                                                .fmt;
+                                                            autoCalculateServicePrice(
+                                                              srv,
+                                                            );
                                                           }
                                                         },
                                                       ),

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
@@ -8,12 +9,66 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const String appSecret = 'FactoryProcurement_Secret_Core_Key_9988';
 
+/// Encodes and verifies keys in the `YYYY-MM-DD-HASH` format.
+class LicenseKeyCodec {
+  static final _keyPattern = RegExp(
+    r'^(\d{4})-(\d{2})-(\d{2})-([A-F0-9]{10})$',
+  );
+
+  const LicenseKeyCodec(this._secret);
+
+  final String _secret;
+
+  String generate(String rawDeviceId, DateTime expirationDate) {
+    final expiryDate = _utcDate(expirationDate);
+    final expiryText = _dateOnly(expiryDate);
+    final deviceId = _cleanDeviceId(rawDeviceId);
+    return '$expiryText-${_signature(deviceId, expiryText)}';
+  }
+
+  DecodedLicense? decodeAndVerify(String input, String rawDeviceId) {
+    final match = _keyPattern.firstMatch(input.trim().toUpperCase());
+    if (match == null) return null;
+
+    final expiryText = '${match.group(1)}-${match.group(2)}-${match.group(3)}';
+    final expiryDate = DateTime.tryParse(expiryText);
+    if (expiryDate == null || _dateOnly(expiryDate) != expiryText) return null;
+
+    final deviceId = _cleanDeviceId(rawDeviceId);
+    if (_signature(deviceId, expiryText) != match.group(4)) return null;
+
+    return DecodedLicense(_utcDate(expiryDate));
+  }
+
+  String _signature(String deviceId, String expiryText) {
+    final digest = Hmac(
+      sha256,
+      utf8.encode(_secret),
+    ).convert(utf8.encode('$deviceId|$expiryText'));
+    return digest.toString().substring(0, 10).toUpperCase();
+  }
+}
+
+class DecodedLicense {
+  const DecodedLicense(this.expiryDateUtc);
+
+  final DateTime expiryDateUtc;
+}
+
 class LicenseService {
   static const _deviceIdKey = 'license_device_id_v1';
-  static const _expiryKey = 'license_expiry_v1';
+  static const _expiryKey = 'license_expiry_date_utc_v2';
+  static const _legacyExpiryKey = 'license_expiry_v1';
 
-  String cleanDeviceId(String rawDeviceId) =>
-      rawDeviceId.replaceAll(RegExp(r'[{}]'), '').trim();
+  LicenseService({DateTime Function()? now}) : _now = now ?? DateTime.now;
+
+  final DateTime Function() _now;
+
+  String cleanDeviceId(String rawDeviceId) => _cleanDeviceId(rawDeviceId);
+
+  /// Used by the separate license generator with the same key format.
+  String generateActivationKey(String rawDeviceId, DateTime expirationDate) =>
+      LicenseKeyCodec(appSecret).generate(rawDeviceId, expirationDate);
 
   Future<String> getDeviceId() async {
     final deviceInfo = DeviceInfoPlugin();
@@ -32,8 +87,7 @@ class LicenseService {
         if (id != null && id.isNotEmpty) return cleanDeviceId(id);
       }
     } catch (_) {
-      // Fall back to an installation-specific identifier if the platform
-      // doesn't expose a stable identifier.
+      // Fall back to an installation-specific identifier.
     }
 
     final prefs = await SharedPreferences.getInstance();
@@ -53,63 +107,79 @@ class LicenseService {
 
   Future<DateTime?> getValidExpiry() async {
     final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getString(_expiryKey);
-    if (value == null) return null;
-    final expiry = DateTime.tryParse(value);
-    if (expiry == null || !_isCurrentOrFutureDate(expiry)) {
+    final storedValue =
+        prefs.getString(_expiryKey) ?? prefs.getString(_legacyExpiryKey);
+    if (storedValue == null) return null;
+
+    final expiryDate = _parseUtcDate(storedValue);
+    if (expiryDate == null ||
+        !_isCurrentDateValid(expiryDate, source: 'stored activation')) {
       await prefs.remove(_expiryKey);
+      await prefs.remove(_legacyExpiryKey);
       return null;
     }
-    return expiry;
+
+    if (storedValue != _dateOnly(expiryDate)) {
+      await prefs.setString(_expiryKey, _dateOnly(expiryDate));
+      await prefs.remove(_legacyExpiryKey);
+    }
+    return expiryDate;
   }
 
   Future<ActivationResult> activate(String input, String rawDeviceId) async {
-    final deviceId = cleanDeviceId(rawDeviceId);
-    final parts = input.trim().toUpperCase().split('-');
-    if (parts.length != 4 ||
-        !RegExp(r'^\d{4}$').hasMatch(parts[0]) ||
-        !RegExp(r'^\d{2}$').hasMatch(parts[1]) ||
-        !RegExp(r'^\d{2}$').hasMatch(parts[2]) ||
-        !RegExp(r'^[A-F0-9]{10}$').hasMatch(parts[3])) {
-      return ActivationResult.invalid;
-    }
-
-    final expiryText = '${parts[0]}-${parts[1]}-${parts[2]}';
-    final expiry = DateTime.tryParse(expiryText);
-    if (expiry == null || _dateOnly(expiry) != expiryText) {
-      return ActivationResult.invalid;
-    }
-    if (!_isCurrentOrFutureDate(expiry)) return ActivationResult.expired;
     if (appSecret.isEmpty || appSecret.contains('PLACEHOLDER')) {
       return ActivationResult.notConfigured;
     }
 
-    final message = '$deviceId|$expiryText';
-    final digest = Hmac(
-      sha256,
-      utf8.encode(appSecret),
-    ).convert(utf8.encode(message));
-    final signature = digest
-        .toString()
-        .replaceAll('-', '')
-        .substring(0, 10)
-        .toUpperCase();
-    if (signature != parts[3]) return ActivationResult.invalid;
+    final license = LicenseKeyCodec(
+      appSecret,
+    ).decodeAndVerify(input, cleanDeviceId(rawDeviceId));
+    if (license == null) {
+      _log('activation rejected: invalid date, format, or hash');
+      return ActivationResult.invalid;
+    }
+    if (!_isCurrentDateValid(license.expiryDateUtc, source: 'activation key')) {
+      return ActivationResult.expired;
+    }
 
     final prefs = await SharedPreferences.getInstance();
+    final expiryText = _dateOnly(license.expiryDateUtc);
     await prefs.setString(_expiryKey, expiryText);
+    await prefs.remove(_legacyExpiryKey);
+    _log('activation saved: expirationDateUtc=$expiryText');
     return ActivationResult.activated;
   }
 
-  bool _isCurrentOrFutureDate(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final expiryDay = DateTime(date.year, date.month, date.day);
-    return !expiryDay.isBefore(today);
+  bool _isCurrentDateValid(DateTime expiryDateUtc, {required String source}) {
+    final currentDateUtc = _utcDate(_now());
+    final isValid = !currentDateUtc.isAfter(expiryDateUtc);
+    _log(
+      '$source validation: currentDateUtc=${_dateOnly(currentDateUtc)} '
+      'expirationDateUtc=${_dateOnly(expiryDateUtc)} '
+      'currentDateOnOrBeforeExpiry=$isValid',
+    );
+    return isValid;
   }
 
-  String _dateOnly(DateTime date) =>
-      '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  void _log(String message) => developer.log(message, name: 'LicenseService');
 }
+
+DateTime? _parseUtcDate(String value) {
+  if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) return null;
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null || _dateOnly(parsed) != value) return null;
+  return _utcDate(parsed);
+}
+
+DateTime _utcDate(DateTime value) {
+  final utc = value.toUtc();
+  return DateTime.utc(utc.year, utc.month, utc.day);
+}
+
+String _dateOnly(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
+String _cleanDeviceId(String rawDeviceId) =>
+    rawDeviceId.replaceAll(RegExp(r'[{}]'), '').trim();
 
 enum ActivationResult { activated, invalid, expired, notConfigured }
