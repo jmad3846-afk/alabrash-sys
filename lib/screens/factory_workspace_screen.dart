@@ -5375,6 +5375,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     required FactoryInvoiceItem item,
     required ERPProvider erp,
     required void Function(FactoryInvoiceItem updatedItem) onSave,
+    bool startWithServices = false,
   }) {
     String editMeterUnit = item.meterUnit;
     final descCtrl = TextEditingController(text: item.description);
@@ -5391,6 +5392,11 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     );
     final qtyCtrl = TextEditingController(text: item.quantity.fmt);
     final unitPriceCtrl = TextEditingController(text: item.unitPrice.fmt);
+    var hasServices = item.services.isNotEmpty || startWithServices;
+    final editServices = List<ServiceAttachment>.of(item.services);
+    String? selectedServiceId;
+    final servicePriceCtrl = TextEditingController();
+    final serviceNotesCtrl = TextEditingController();
 
     double lookupPredefinedThickness() {
       final whMatches = erp.factoryWarehouse
@@ -5625,6 +5631,125 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                       ],
                     ),
                     const SizedBox(height: 14),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('إرفاق خدمات بهذا الصنف'),
+                      subtitle: Text(
+                        hasServices
+                            ? 'اختر الخدمة وأضفها لهذا الصف فقط'
+                            : 'فعّل الخيار لإظهار خدمات هذا الصف',
+                      ),
+                      value: hasServices,
+                      onChanged: (value) => setSt(() {
+                        hasServices = value;
+                        if (!value) editServices.clear();
+                      }),
+                    ),
+                    if (hasServices) ...[
+                      DropdownButtonFormField<String>(
+                        value: selectedServiceId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'الخدمة',
+                          isDense: true,
+                        ),
+                        items: erp.services
+                            .map(
+                              (service) => DropdownMenuItem(
+                                value: service.id,
+                                child: Text(
+                                  '${service.name} (${service.unitRate.fmt}\$)',
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) => setSt(() {
+                          selectedServiceId = value;
+                          if (value == null) return;
+                          final service = erp.services.firstWhere(
+                            (candidate) => candidate.id == value,
+                          );
+                          servicePriceCtrl.text =
+                              ((l > 0 && q > 0)
+                                      ? (l / 100.0) * q * service.unitRate
+                                      : q * service.unitRate)
+                                  .fmt;
+                        }),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: servicePriceCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              decoration: const InputDecoration(
+                                labelText: 'تكلفة الخدمة',
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: serviceNotesCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'ملاحظات الخدمة',
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton.filled(
+                            tooltip: 'إضافة الخدمة',
+                            icon: const Icon(Icons.add),
+                            onPressed: selectedServiceId == null
+                                ? null
+                                : () => setSt(() {
+                                    final service = erp.services.firstWhere(
+                                      (candidate) =>
+                                          candidate.id == selectedServiceId,
+                                    );
+                                    final price =
+                                        double.tryParse(servicePriceCtrl.text) ??
+                                        0.0;
+                                    if (price <= 0) return;
+                                    editServices.add(
+                                      ServiceAttachment(
+                                        serviceName: service.name,
+                                        price: price,
+                                        notes: serviceNotesCtrl.text.trim(),
+                                      ),
+                                    );
+                                    selectedServiceId = null;
+                                    servicePriceCtrl.clear();
+                                    serviceNotesCtrl.clear();
+                                  }),
+                          ),
+                        ],
+                      ),
+                      if (editServices.isNotEmpty)
+                        Wrap(
+                          spacing: 6,
+                          children: editServices
+                              .asMap()
+                              .entries
+                              .map(
+                                (entry) => InputChip(
+                                  label: Text(
+                                    '${entry.value.serviceName}: ${entry.value.price.fmt}\$',
+                                  ),
+                                  onDeleted: () => setSt(
+                                    () => editServices.removeAt(entry.key),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                    ],
+                    const SizedBox(height: 14),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -5698,6 +5823,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                               thicknessCm: isCube && h > 0
                                   ? h
                                   : item.thicknessCm,
+                              services: List.of(editServices),
                             );
                             onSave(updated);
                             Navigator.pop(ctx);
@@ -5807,6 +5933,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final List<FactoryInvoiceItem> draftItems = initialOrder != null
         ? List.of(initialOrder.items)
         : [];
+    final Set<int> selectedDraftRows = <int>{};
 
     // Services attached to the item currently being built.
     String? selectedServiceId;
@@ -5992,6 +6119,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             }
             if (draftItems.isEmpty) {
               setSt(() => formError = 'أضف صنفاً واحداً على الأقل بزر +.');
+              return;
+            }
+            if (draftItems.any(
+              (item) => item.itemId.isEmpty || item.calculatedArea <= 0,
+            )) {
+              setSt(
+                () => formError =
+                    'أكمل اختيار المادة والأبعاد والكمية لكل صف قبل حفظ الفاتورة.',
+              );
               return;
             }
             if (deliverByUs == null) {
@@ -6196,12 +6332,12 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   // Right Side = Added Line Items
                   Expanded(
                     child: Row(
-                      textDirection: TextDirection.ltr,
+                      textDirection: TextDirection.rtl,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         // LEFT SIDE: Input Fields
                         Expanded(
-                          flex: 6,
+                          flex: 4,
                           child: Directionality(
                             textDirection: TextDirection.rtl,
                             child: Container(
@@ -6576,6 +6712,49 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         });
                                       },
                                     ),
+                                    if (selectedDraftRows.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      OutlinedButton.icon(
+                                        onPressed: wh == null
+                                            ? null
+                                            : () => setSt(() {
+                                                for (final rowIndex
+                                                    in selectedDraftRows) {
+                                                  final row =
+                                                      draftItems[rowIndex];
+                                                  draftItems[rowIndex] =
+                                                      row.copyWith(
+                                                        itemId: wh.id,
+                                                        description:
+                                                            '${wh.typeName} ${wh.grade} ${wh.thicknessCm}سم',
+                                                        typeName: wh.typeName,
+                                                        grade: wh.grade,
+                                                        unitPrice: wh
+                                                            .recommendedSalePrice,
+                                                        unitCost:
+                                                            wh.netCostPerUnit,
+                                                        isGranite: wh.isGranite,
+                                                        thicknessCm:
+                                                            wh.thicknessCm,
+                                                        meterUnit: wh.category ==
+                                                                'متر مكعب'
+                                                            ? 'متر مكعب'
+                                                            : 'متر مربع',
+                                                        itemCategory: wh.category ==
+                                                                'متر مكعب'
+                                                            ? 'متر مكعب'
+                                                            : 'meter',
+                                                      );
+                                                }
+                                                selectedDraftRows.clear();
+                                                formError = null;
+                                              }),
+                                        icon: const Icon(Icons.playlist_add_check),
+                                        label: Text(
+                                          'تطبيق المادة على ${selectedDraftRows.length} صف محدد',
+                                        ),
+                                      ),
+                                    ],
                                     const SizedBox(height: 8),
                                     if (wh == null)
                                       const Text(
@@ -6584,7 +6763,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           color: AppColors.brandSecondaryText,
                                         ),
                                       ),
-                                    if (wh != null) ...[
+                                    if (false && wh != null) ...[
                                       Row(
                                         children: [
                                           const Text(
@@ -7101,7 +7280,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
 
                         // RIGHT SIDE: Added Line Items & Live Invoice Summary
                         Expanded(
-                          flex: 5,
+                          flex: 8,
                           child: Directionality(
                             textDirection: TextDirection.rtl,
                             child: Container(
@@ -7137,29 +7316,51 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           ),
                                         ],
                                       ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: draftItems.isNotEmpty
-                                              ? AppColors.chipBgBlue
-                                              : const Color(0xFFF1F5F9),
-                                          borderRadius: BorderRadius.circular(
-                                            12,
+                                      Row(
+                                        children: [
+                                          ElevatedButton.icon(
+                                            onPressed: () => setSt(() {
+                                              draftItems.add(
+                                                FactoryInvoiceItem(
+                                                  itemId: '',
+                                                  description:
+                                                      'صف جديد — اختر المادة',
+                                                  quantity: 0,
+                                                  unitPrice: 0,
+                                                  unitCost: 0,
+                                                  itemCategory: 'meter',
+                                                ),
+                                              );
+                                            }),
+                                            icon: const Icon(Icons.add, size: 18),
+                                            label: const Text('إضافة صف'),
                                           ),
-                                        ),
-                                        child: Text(
-                                          '${draftItems.length} صنف',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                            color: draftItems.isNotEmpty
-                                                ? AppColors.accentPrimary
-                                                : AppColors.brandSecondaryText,
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: draftItems.isNotEmpty
+                                                  ? AppColors.chipBgBlue
+                                                  : const Color(0xFFF1F5F9),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              '${draftItems.length} صنف',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: draftItems.isNotEmpty
+                                                    ? AppColors.accentPrimary
+                                                    : AppColors
+                                                          .brandSecondaryText,
+                                              ),
+                                            ),
                                           ),
-                                        ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -7188,7 +7389,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                 ),
                                                 SizedBox(height: 4),
                                                 Text(
-                                                  'حدد صنف البضاعة والمقاسات من جهة المدخلات (يساراً)\nثم اضغط "إضافة الصنف" لإدراجه في الفاتورة.',
+                                                  'أضف صفوفاً فارغة من الأعلى، ثم حدّدها لتطبيق المادة من لوحة الإدخال (يميناً).',
                                                   textAlign: TextAlign.center,
                                                   style: TextStyle(
                                                     fontSize: 12,
@@ -7219,6 +7420,21 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   ),
                                                 ),
                                                 child: ExpansionTile(
+                                                  leading: Tooltip(
+                                                    message:
+                                                        'تحديد للتطبيق الجماعي للمادة',
+                                                    child: Checkbox(
+                                                      value: selectedDraftRows
+                                                          .contains(idx),
+                                                      onChanged: (_) => setSt(() {
+                                                        if (!selectedDraftRows
+                                                            .add(idx)) {
+                                                          selectedDraftRows
+                                                              .remove(idx);
+                                                        }
+                                                      }),
+                                                    ),
+                                                  ),
                                                   tilePadding:
                                                       const EdgeInsets.symmetric(
                                                         horizontal: 12,
@@ -7229,13 +7445,144 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                         horizontal: 12,
                                                         vertical: 4,
                                                       ),
-                                                  title: Text(
-                                                    it.description,
-                                                    style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 13,
-                                                    ),
+                                                  title: Row(
+                                                    children: [
+                                                      Expanded(
+                                                        flex: 2,
+                                                        child: Text(
+                                                          it.description,
+                                                          overflow:
+                                                              TextOverflow.ellipsis,
+                                                          style:
+                                                              const TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                fontSize: 12,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      SizedBox(
+                                                        width: 100,
+                                                        child: TextFormField(
+                                                          initialValue:
+                                                              it.lengthCm > 0
+                                                              ? it.lengthCm.fmt
+                                                              : '',
+                                                          keyboardType:
+                                                              const TextInputType.numberWithOptions(
+                                                                decimal: true,
+                                                              ),
+                                                          decoration:
+                                                              const InputDecoration(
+                                                                labelText:
+                                                                    'الطول',
+                                                                isDense: true,
+                                                              ),
+                                                          onChanged: (value) =>
+                                                              setSt(() {
+                                                                draftItems[idx] =
+                                                                    it.copyWith(
+                                                                      lengthCm: double.tryParse(
+                                                                            value,
+                                                                          ) ??
+                                                                          0,
+                                                                    );
+                                                              }),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      SizedBox(
+                                                        width: 100,
+                                                        child: TextFormField(
+                                                          initialValue:
+                                                              it.widthCm > 0
+                                                              ? it.widthCm.fmt
+                                                              : '',
+                                                          keyboardType:
+                                                              const TextInputType.numberWithOptions(
+                                                                decimal: true,
+                                                              ),
+                                                          decoration:
+                                                              const InputDecoration(
+                                                                labelText:
+                                                                    'العرض',
+                                                                isDense: true,
+                                                              ),
+                                                          onChanged: (value) =>
+                                                              setSt(() {
+                                                                draftItems[idx] =
+                                                                    it.copyWith(
+                                                                      widthCm: double.tryParse(
+                                                                            value,
+                                                                          ) ??
+                                                                          0,
+                                                                    );
+                                                              }),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      SizedBox(
+                                                        width: 90,
+                                                        child: TextFormField(
+                                                          initialValue:
+                                                              it.quantity > 0
+                                                              ? it.quantity.fmt
+                                                              : '',
+                                                          keyboardType:
+                                                              const TextInputType.numberWithOptions(
+                                                                decimal: true,
+                                                              ),
+                                                          decoration:
+                                                              const InputDecoration(
+                                                                labelText:
+                                                                    'العدد',
+                                                                isDense: true,
+                                                              ),
+                                                          onChanged: (value) =>
+                                                              setSt(() {
+                                                                draftItems[idx] =
+                                                                    it.copyWith(
+                                                                      quantity: double.tryParse(
+                                                                            value,
+                                                                          ) ??
+                                                                          0,
+                                                                    );
+                                                              }),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      SizedBox(
+                                                        width: 110,
+                                                        child: TextFormField(
+                                                          initialValue:
+                                                              it.unitPrice > 0
+                                                              ? it.unitPrice.fmt
+                                                              : '',
+                                                          keyboardType:
+                                                              const TextInputType.numberWithOptions(
+                                                                decimal: true,
+                                                              ),
+                                                          decoration:
+                                                              const InputDecoration(
+                                                                labelText:
+                                                                    'السعر',
+                                                                isDense: true,
+                                                              ),
+                                                          onChanged: (value) =>
+                                                              setSt(() {
+                                                                draftItems[idx] =
+                                                                    it.copyWith(
+                                                                      unitPrice: double.tryParse(
+                                                                            value,
+                                                                          ) ??
+                                                                          0,
+                                                                    );
+                                                              }),
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ),
                                                   subtitle: Text(
                                                     '${it.calculatedArea.fmt} ${isCube ? "م³" : "م²"} × ${it.unitPrice.fmt}\$ + خدمات ${it.servicesTotal.fmt}\$ = ${it.grandTotal.fmt}\$',
@@ -7247,6 +7594,38 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                     mainAxisSize:
                                                         MainAxisSize.min,
                                                     children: [
+                                                      Tooltip(
+                                                        message:
+                                                            'هل توجد خدمة مرفقة؟',
+                                                        child: Switch.adaptive(
+                                                          value: it
+                                                              .services
+                                                              .isNotEmpty,
+                                                          onChanged: (enabled) {
+                                                            if (!enabled) {
+                                                              setSt(() {
+                                                                draftItems[idx] =
+                                                                    it.copyWith(
+                                                                      services: [],
+                                                                    );
+                                                              });
+                                                              return;
+                                                            }
+                                                            _showEditFactoryDraftItemModal(
+                                                              context: context,
+                                                              item: it,
+                                                              erp: erp,
+                                                              startWithServices:
+                                                                  true,
+                                                              onSave: (updated) =>
+                                                                  setSt(() {
+                                                                    draftItems[idx] =
+                                                                        updated;
+                                                                  }),
+                                                            );
+                                                          },
+                                                        ),
+                                                      ),
                                                       IconButton(
                                                         icon: const Icon(
                                                           Icons.edit_outlined,
@@ -7276,10 +7655,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                           size: 18,
                                                         ),
                                                         tooltip: 'حذف الصنف',
-                                                        onPressed: () => setSt(
-                                                          () => draftItems
-                                                              .removeAt(idx),
-                                                        ),
+                                                        onPressed: () => setSt(() {
+                                                          draftItems.removeAt(idx);
+                                                          selectedDraftRows.clear();
+                                                        }),
                                                       ),
                                                     ],
                                                   ),
