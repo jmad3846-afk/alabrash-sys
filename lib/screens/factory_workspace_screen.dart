@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
@@ -12,6 +13,24 @@ import '../widgets/app_image_attachment.dart';
 import '../widgets/factory_order_dialogs.dart';
 import 'accounting_screens.dart';
 import 'factory_service_invoices_screen.dart';
+
+/// Per-row field controllers and Tab focus nodes for the factory dealer
+/// (POS) invoice builder. Kept index-aligned with the draftItems list so
+/// keyboard Tab can cycle exclusively through [Length, Width, Height,
+/// Quantity, Price] of the item rows.
+class _PosDraftRowEdit {
+  final lenCtrl = TextEditingController();
+  final widCtrl = TextEditingController();
+  final heiCtrl = TextEditingController();
+  final qtyCtrl = TextEditingController();
+  final priceCtrl = TextEditingController();
+
+  final lenFocus = FocusNode(debugLabel: 'pos-row-len');
+  final widFocus = FocusNode(debugLabel: 'pos-row-wid');
+  final heiFocus = FocusNode(debugLabel: 'pos-row-hei');
+  final qtyFocus = FocusNode(debugLabel: 'pos-row-qty');
+  final priceFocus = FocusNode(debugLabel: 'pos-row-price');
+}
 
 class FactoryWorkspaceScreen extends StatefulWidget {
   final Function(int navIndex) onNavigateToCutting;
@@ -5398,51 +5417,6 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     final servicePriceCtrl = TextEditingController();
     final serviceNotesCtrl = TextEditingController();
 
-    double lookupPredefinedThickness() {
-      final whMatches = erp.factoryWarehouse
-          .where((w) => w.id == item.itemId)
-          .toList();
-      if (whMatches.isNotEmpty) return whMatches.first.thicknessCm;
-      final typeMatches = erp.factoryWarehouse
-          .where((w) => w.typeName == item.typeName)
-          .toList();
-      if (typeMatches.isNotEmpty) return typeMatches.first.thicknessCm;
-      return item.thicknessCm > 0
-          ? item.thicknessCm
-          : (item.heightCm > 0 ? item.heightCm : 2.0);
-    }
-
-    double lookupCubicPrice() {
-      final whMatches = erp.factoryWarehouse
-          .where((w) => w.id == item.itemId)
-          .toList();
-      if (whMatches.isNotEmpty) {
-        final wh = whMatches.first;
-        if (wh.category == 'متر مكعب' && wh.recommendedSalePrice > 0)
-          return wh.recommendedSalePrice;
-        final cMatches = erp.factoryWarehouse
-            .where(
-              (w) =>
-                  w.typeName.trim() == wh.typeName.trim() &&
-                  w.category == 'متر مكعب' &&
-                  w.recommendedSalePrice > 0,
-            )
-            .toList();
-        if (cMatches.isNotEmpty) return cMatches.first.recommendedSalePrice;
-        return wh.recommendedSalePrice;
-      }
-      final typeMatches = erp.factoryWarehouse
-          .where(
-            (w) =>
-                w.typeName.trim() == item.typeName.trim() &&
-                w.category == 'متر مكعب' &&
-                w.recommendedSalePrice > 0,
-          )
-          .toList();
-      if (typeMatches.isNotEmpty) return typeMatches.first.recommendedSalePrice;
-      return item.unitPrice;
-    }
-
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -5504,39 +5478,34 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                     Row(
                       children: [
                         const Text(
-                          'وحدة القياس / البيع:',
+                          'وحدة البيع (حسب سماكة المادة > 5سم):',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        ChoiceChip(
-                          label: const Text('متر مربع (م²)'),
-                          selected: editMeterUnit == 'متر مربع',
-                          onSelected: (sel) {
-                            if (sel) {
-                              setSt(() {
-                                editMeterUnit = 'متر مربع';
-                              });
-                            }
-                          },
-                        ),
                         const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: const Text('متر مكعب (م³)'),
-                          selected: editMeterUnit == 'متر مكعب',
-                          selectedColor: const Color(0xFFDCFCE7),
-                          onSelected: (sel) {
-                            if (sel) {
-                              setSt(() {
-                                editMeterUnit = 'متر مكعب';
-                                heiCtrl.text = lookupPredefinedThickness().fmt;
-                                final cp = lookupCubicPrice();
-                                if (cp > 0) unitPriceCtrl.text = cp.fmt;
-                              });
-                            }
-                          },
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isCube
+                                ? const Color(0xFFDCFCE7)
+                                : const Color(0xFFE0F2FE),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            isCube ? 'متر مكعب (م³)' : 'متر مربع (م²)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isCube
+                                  ? const Color(0xFF15803D)
+                                  : const Color(0xFF1E40AF),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -5935,6 +5904,40 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
         : [];
     final Set<int> selectedDraftRows = <int>{};
 
+    // Per-row field controllers + Tab focus nodes, kept index-aligned with
+    // draftItems so Tab cycles only through the item value fields.
+    final rowEdits = <_PosDraftRowEdit>[];
+    void syncRowEdit(int idx, FactoryInvoiceItem it) {
+      final edit = rowEdits[idx];
+      void push(TextEditingController c, double v) {
+        final text = v > 0 ? v.fmt : '';
+        if (c.text != text) c.text = text;
+      }
+      push(edit.lenCtrl, it.lengthCm);
+      push(edit.widCtrl, it.widthCm);
+      push(edit.heiCtrl, it.heightCm);
+      push(edit.qtyCtrl, it.quantity);
+      push(edit.priceCtrl, it.unitPrice);
+    }
+
+    void rebuildRowEdits() {
+      rowEdits.clear();
+      for (var i = 0; i < draftItems.length; i++) {
+        rowEdits.add(_PosDraftRowEdit());
+      }
+      for (var i = 0; i < draftItems.length; i++) {
+        syncRowEdit(i, draftItems[i]);
+      }
+    }
+
+    rebuildRowEdits();
+
+    // Bulk service application (select rows + apply one service to all).
+    String? bulkServiceId;
+    final bulkSvcPriceCtrl = TextEditingController();
+    final bulkSvcNotesCtrl = TextEditingController();
+    String? bulkSvcError;
+
     // Services attached to the item currently being built.
     String? selectedServiceId;
     String serviceSearch = '';
@@ -5978,6 +5981,42 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
         return (l / 100.0) * (w / 100.0) * (h / 100.0) * q;
       }
       return (l / 100.0) * (w / 100.0) * q;
+    }
+
+    // ---- Tab navigation restricted to the item value fields ----
+    // Tab / Shift+Tab cycle only through [Length, Width, Height, Quantity,
+    // Price] of the bound item rows (Height participates only when enabled
+    // on m³ rows), and never move focus to any other field of the dialog.
+    List<FocusNode> posInvoiceTabNodes() {
+      final nodes = <FocusNode>[];
+      for (var i = 0; i < draftItems.length; i++) {
+        final it = draftItems[i];
+        if (it.itemId.isEmpty) continue;
+        final edit = rowEdits[i];
+        nodes.add(edit.lenFocus);
+        nodes.add(edit.widFocus);
+        if (it.meterUnit == 'متر مكعب' || it.heightCm > 0) {
+          nodes.add(edit.heiFocus);
+        }
+        nodes.add(edit.qtyFocus);
+        nodes.add(edit.priceFocus);
+      }
+      return nodes;
+    }
+
+    void movePosInvoiceTabFocus({required bool forward}) {
+      final nodes = posInvoiceTabNodes();
+      if (nodes.isEmpty) return;
+      final current = FocusManager.instance.primaryFocus;
+      final idx = current == null ? -1 : nodes.indexOf(current);
+      if (idx == -1) {
+        nodes.first.requestFocus();
+        return;
+      }
+      final next = forward
+          ? (idx + 1) % nodes.length
+          : (idx - 1 + nodes.length) % nodes.length;
+      nodes[next].requestFocus();
     }
 
     showDialog(
@@ -6222,7 +6261,238 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
             );
           }
 
-          return Dialog(
+          // ---- Bulk service application on the selected rows ----
+          final bulkSvcTargets = selectedDraftRows
+              .where(
+                (i) =>
+                    i < draftItems.length && draftItems[i].itemId.isNotEmpty,
+              )
+              .toList();
+
+          void applyBulkService() {
+            if (bulkServiceId == null) {
+              setSt(() => bulkSvcError = 'يرجى اختيار الخدمة المراد تطبيقها.');
+              return;
+            }
+            if (bulkSvcTargets.isEmpty) {
+              setSt(
+                () => bulkSvcError =
+                    'يرجى تحديد بنود مرتبطة بمادة (☑) قبل تطبيق الخدمة.',
+              );
+              return;
+            }
+            final srv = erp.services.firstWhere((s) => s.id == bulkServiceId);
+            final fixed = double.tryParse(bulkSvcPriceCtrl.text.trim()) ?? 0.0;
+            setSt(() {
+              for (final i in bulkSvcTargets) {
+                final it = draftItems[i];
+                // Automatic per-item rule: length(m) × quantity × unit
+                // rate; a fixed price, when given, overrides it uniformly.
+                final rawPrice = fixed > 0
+                    ? fixed
+                    : (it.lengthCm > 0 && it.quantity > 0
+                          ? (it.lengthCm / 100.0) * it.quantity * srv.unitRate
+                          : it.quantity > 0
+                          ? it.quantity * srv.unitRate
+                          : srv.unitRate);
+                final price = double.tryParse(rawPrice.fmt) ?? rawPrice;
+                draftItems[i] = it.copyWith(
+                  services: [
+                    ...it.services,
+                    ServiceAttachment(
+                      serviceName: srv.name,
+                      price: price,
+                      notes: bulkSvcNotesCtrl.text.trim(),
+                    ),
+                  ],
+                );
+              }
+              bulkServiceId = null;
+              bulkSvcPriceCtrl.clear();
+              bulkSvcNotesCtrl.clear();
+              bulkSvcError = null;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'تم تطبيق خدمة «${srv.name}» على ${bulkSvcTargets.length} بند محدد.',
+                ),
+                backgroundColor: AppColors.successGreen,
+              ),
+            );
+          }
+
+          Widget bulkServicePanel() {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDFA),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF5EEAD4)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.handyman_rounded,
+                        size: 18,
+                        color: Color(0xFF0F766E),
+                      ),
+                      const SizedBox(width: 6),
+                      const Expanded(
+                        child: Text(
+                          'تطبيق خدمة على البنود المحددة',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      if (bulkSvcTargets.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFCCFBF1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${bulkSvcTargets.length} بند محدد',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF115E59),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'يُحسب سعر الخدمة لكل بند تلقائياً (الطول بالمتر × العدد × سعر وحدة الخدمة)؛ أدخل سعراً موحداً لتثبيته على الكل. يبقى تعيين الخدمات الفردية لكل بند كما هو.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.brandSecondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: bulkServiceId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'اختر الخدمة',
+                      isDense: true,
+                    ),
+                    items: erp.services
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s.id,
+                            child: Text('${s.name} (${s.unitRate.fmt}\$)'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setSt(() {
+                      bulkServiceId = v;
+                      bulkSvcError = null;
+                    }),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: bulkSvcPriceCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'سعر موحّد (\$) اختياري',
+                            helperText: 'فارغ = حساب تلقائي لكل بند',
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: bulkSvcNotesCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'ملاحظات الخدمة (اختياري)',
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F766E),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed:
+                        bulkSvcTargets.isEmpty ? null : applyBulkService,
+                    icon: const Icon(Icons.add_task_rounded, size: 18),
+                    label: Text(
+                      'تطبيق الخدمة على البنود المحددة (${bulkSvcTargets.length})',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  if (bulkSvcError != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      bulkSvcError!,
+                      style: const TextStyle(
+                        color: AppColors.dangerWaste,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }
+
+          // ---------- Body ----------
+          // Tab / Shift+Tab are captured for the whole dialog and redirected
+          // ONLY through the item value fields (Length, Width, Height,
+          // Quantity, Price) of the bound rows.
+          return Shortcuts(
+            shortcuts: const <ShortcutActivator, Intent>{
+              SingleActivator(LogicalKeyboardKey.tab): NextFocusIntent(),
+              SingleActivator(LogicalKeyboardKey.tab, shift: true):
+                  PreviousFocusIntent(),
+            },
+            child: Actions(
+              actions: <Type, Action<Intent>>{
+                NextFocusIntent: CallbackAction<NextFocusIntent>(
+                  onInvoke: (_) {
+                    movePosInvoiceTabFocus(forward: true);
+                    return null;
+                  },
+                ),
+                PreviousFocusIntent: CallbackAction<PreviousFocusIntent>(
+                  onInvoke: (_) {
+                    movePosInvoiceTabFocus(forward: false);
+                    return null;
+                  },
+                ),
+              },
+              child: Dialog(
             insetPadding: const EdgeInsets.symmetric(
               horizontal: 8,
               vertical: 8,
@@ -6534,6 +6804,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   posCurrency = ord.currency;
                                                   draftItems.clear();
                                                   draftItems.addAll(ord.items);
+                                                  rebuildRowEdits();
                                                   deliverByUs =
                                                       ord.isGoodsDelivered;
                                                   if (ord.shippingFee > 0) {
@@ -6722,6 +6993,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                     in selectedDraftRows) {
                                                   final row =
                                                       draftItems[rowIndex];
+                                                  final isCubeWh =
+                                                      wh.category == 'متر مكعب';
                                                   draftItems[rowIndex] =
                                                       row.copyWith(
                                                         itemId: wh.id,
@@ -6729,22 +7002,40 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                             '${wh.typeName} ${wh.grade} ${wh.thicknessCm}سم',
                                                         typeName: wh.typeName,
                                                         grade: wh.grade,
-                                                        unitPrice: wh
-                                                            .recommendedSalePrice,
+                                                        unitPrice: isCubeWh
+                                                            ? (getFactoryCubicSellingPrice(
+                                                                  wh,
+                                                                ) >
+                                                                0
+                                                                    ? getFactoryCubicSellingPrice(
+                                                                          wh,
+                                                                        )
+                                                                    : wh
+                                                                          .recommendedSalePrice)
+                                                            : wh
+                                                                  .recommendedSalePrice,
                                                         unitCost:
                                                             wh.netCostPerUnit,
                                                         isGranite: wh.isGranite,
                                                         thicknessCm:
                                                             wh.thicknessCm,
-                                                        meterUnit: wh.category ==
-                                                                'متر مكعب'
+                                                        // >5cm materials sell by
+                                                        // volume: activate the
+                                                        // height = thickness.
+                                                        heightCm: isCubeWh
+                                                            ? wh.thicknessCm
+                                                            : row.heightCm,
+                                                        meterUnit: isCubeWh
                                                             ? 'متر مكعب'
                                                             : 'متر مربع',
-                                                        itemCategory: wh.category ==
-                                                                'متر مكعب'
+                                                        itemCategory: isCubeWh
                                                             ? 'متر مكعب'
                                                             : 'meter',
                                                       );
+                                                  syncRowEdit(
+                                                    rowIndex,
+                                                    draftItems[rowIndex],
+                                                  );
                                                 }
                                                 selectedDraftRows.clear();
                                                 formError = null;
@@ -7228,6 +7519,13 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         ),
                                       ),
                                     ],
+                                    // Bulk service panel: shown on the second
+                                    // selection — rows already bound to a
+                                    // material/type — right above the save
+                                    // button.
+                                    if (bulkSvcTargets.isNotEmpty)
+                                      bulkServicePanel(),
+
                                     const SizedBox(height: 16),
 
                                     // Action buttons
@@ -7331,6 +7629,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                   itemCategory: 'meter',
                                                 ),
                                               );
+                                              rowEdits.add(_PosDraftRowEdit());
                                             }),
                                             icon: const Icon(Icons.add, size: 18),
                                             label: const Text('إضافة صف'),
@@ -7365,7 +7664,6 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                     ],
                                   ),
                                   const SizedBox(height: 12),
-
                                   // Scrollable Added Items List
                                   Expanded(
                                     child: draftItems.isEmpty
@@ -7406,6 +7704,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               final isCube =
                                                   it.meterUnit == "متر مكعب" ||
                                                   it.heightCm > 0;
+                                              final rowEdit = rowEdits[idx];
                                               return Card(
                                                 margin: const EdgeInsets.only(
                                                   bottom: 8,
@@ -7422,7 +7721,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                 child: ExpansionTile(
                                                   leading: Tooltip(
                                                     message:
-                                                        'تحديد للتطبيق الجماعي للمادة',
+                                                        'تحديد للتطبيق الجماعي للمادة أو الخدمة',
                                                     child: Checkbox(
                                                       value: selectedDraftRows
                                                           .contains(idx),
@@ -7466,10 +7765,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                       SizedBox(
                                                         width: 100,
                                                         child: TextFormField(
-                                                          initialValue:
-                                                              it.lengthCm > 0
-                                                              ? it.lengthCm.fmt
-                                                              : '',
+                                                          controller:
+                                                              rowEdit.lenCtrl,
+                                                          focusNode:
+                                                              rowEdit.lenFocus,
                                                           keyboardType:
                                                               const TextInputType.numberWithOptions(
                                                                 decimal: true,
@@ -7496,10 +7795,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                       SizedBox(
                                                         width: 100,
                                                         child: TextFormField(
-                                                          initialValue:
-                                                              it.widthCm > 0
-                                                              ? it.widthCm.fmt
-                                                              : '',
+                                                          controller:
+                                                              rowEdit.widCtrl,
+                                                          focusNode:
+                                                              rowEdit.widFocus,
                                                           keyboardType:
                                                               const TextInputType.numberWithOptions(
                                                                 decimal: true,
@@ -7524,12 +7823,47 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                       ),
                                                       const SizedBox(width: 6),
                                                       SizedBox(
+                                                        width: 100,
+                                                        child: TextFormField(
+                                                          controller:
+                                                              rowEdit.heiCtrl,
+                                                          focusNode:
+                                                              rowEdit.heiFocus,
+                                                          // السماكة تُفعَّل
+                                                          // تلقائياً للمواد
+                                                          // التي سماكتها
+                                                          // أكبر من 5 سم.
+                                                          enabled: isCube,
+                                                          keyboardType:
+                                                              const TextInputType.numberWithOptions(
+                                                                decimal: true,
+                                                              ),
+                                                          decoration:
+                                                              const InputDecoration(
+                                                                labelText:
+                                                                    'الارتفاع',
+                                                                isDense: true,
+                                                              ),
+                                                          onChanged: (value) =>
+                                                              setSt(() {
+                                                                draftItems[idx] =
+                                                                    it.copyWith(
+                                                                      heightCm: double.tryParse(
+                                                                            value,
+                                                                          ) ??
+                                                                          0,
+                                                                    );
+                                                              }),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      SizedBox(
                                                         width: 90,
                                                         child: TextFormField(
-                                                          initialValue:
-                                                              it.quantity > 0
-                                                              ? it.quantity.fmt
-                                                              : '',
+                                                          controller:
+                                                              rowEdit.qtyCtrl,
+                                                          focusNode:
+                                                              rowEdit.qtyFocus,
                                                           keyboardType:
                                                               const TextInputType.numberWithOptions(
                                                                 decimal: true,
@@ -7556,10 +7890,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                       SizedBox(
                                                         width: 110,
                                                         child: TextFormField(
-                                                          initialValue:
-                                                              it.unitPrice > 0
-                                                              ? it.unitPrice.fmt
-                                                              : '',
+                                                          controller:
+                                                              rowEdit.priceCtrl,
+                                                          focusNode:
+                                                              rowEdit.priceFocus,
                                                           keyboardType:
                                                               const TextInputType.numberWithOptions(
                                                                 decimal: true,
@@ -7621,6 +7955,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                                   setSt(() {
                                                                     draftItems[idx] =
                                                                         updated;
+                                                                    syncRowEdit(
+                                                                      idx,
+                                                                      updated,
+                                                                    );
                                                                   }),
                                                             );
                                                           },
@@ -7643,6 +7981,10 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                                 setSt(() {
                                                                   draftItems[idx] =
                                                                       updated;
+                                                                  syncRowEdit(
+                                                                    idx,
+                                                                    updated,
+                                                                  );
                                                                 }),
                                                           );
                                                         },
@@ -7657,6 +7999,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                         tooltip: 'حذف الصنف',
                                                         onPressed: () => setSt(() {
                                                           draftItems.removeAt(idx);
+                                                          rowEdits.removeAt(idx);
                                                           selectedDraftRows.clear();
                                                         }),
                                                       ),
@@ -8104,6 +8447,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                 ],
               ),
             ),
+            ),
+          ),
           );
         },
       ),
