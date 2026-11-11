@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
@@ -35,10 +36,7 @@ double workshopInvoiceServiceCost({
 
 /// Resolves the cubic-meter selling price of a workshop stock material
 /// (identical lookup chain as the previous invoice/order builders).
-double workshopInvoiceCubicSellingPrice(
-  ERPProvider erp,
-  WorkshopStockModel w,
-) {
+double workshopInvoiceCubicSellingPrice(ERPProvider erp, WorkshopStockModel w) {
   if (w.category == 'متر مكعب' && w.recommendedSalePrice > 0)
     return w.recommendedSalePrice;
   final exactWorkshop = erp.workshopStock
@@ -50,8 +48,7 @@ double workshopInvoiceCubicSellingPrice(
             s.recommendedSalePrice > 0,
       )
       .toList();
-  if (exactWorkshop.isNotEmpty)
-    return exactWorkshop.first.recommendedSalePrice;
+  if (exactWorkshop.isNotEmpty) return exactWorkshop.first.recommendedSalePrice;
   final matches = erp.workshopStock
       .where(
         (s) =>
@@ -88,8 +85,7 @@ double workshopInvoiceCubicSellingPrice(
 /// Mutable draft state of a single invoice line row (left section).
 class _InvoiceRow {
   static int _seq = 0;
-  final String id =
-      'wii_${DateTime.now().microsecondsSinceEpoch}_${_seq++}';
+  final String id = 'wii_${DateTime.now().microsecondsSinceEpoch}_${_seq++}';
 
   // Bulk-selection checkbox (used while the row is still blank).
   bool selected = false;
@@ -107,6 +103,13 @@ class _InvoiceRow {
   final heiCtrl = TextEditingController();
   final qtyCtrl = TextEditingController(text: '1');
   final priceCtrl = TextEditingController(text: '0');
+
+  // Tab-navigation focus nodes for the item value fields only.
+  final lenFocus = FocusNode(debugLabel: 'row-len');
+  final widFocus = FocusNode(debugLabel: 'row-wid');
+  final heiFocus = FocusNode(debugLabel: 'row-hei');
+  final qtyFocus = FocusNode(debugLabel: 'row-qty');
+  final priceFocus = FocusNode(debugLabel: 'row-price');
 
   String unitCategory = 'متر مربع';
   bool isGranite = false;
@@ -139,7 +142,8 @@ class _InvoiceRow {
   /// Area/volume in meters for a raw-material row (0 otherwise).
   double get rawArea {
     if (!isRaw || qty <= 0) return 0.0;
-    if (isCube) return hei > 0 ? (len / 100) * (wid / 100) * (hei / 100) * qty : 0.0;
+    if (isCube)
+      return hei > 0 ? (len / 100) * (wid / 100) * (hei / 100) * qty : 0.0;
     return hasDims ? (len / 100) * (wid / 100) * qty : 0.0;
   }
 
@@ -298,9 +302,7 @@ void showWorkshopInvoiceDialog(
     );
 
     if (cashInvoice) {
-      cashCtrl.text = (grandTotal - curDeposit)
-          .clamp(0.0, double.infinity)
-          .fmt;
+      cashCtrl.text = (grandTotal - curDeposit).clamp(0.0, double.infinity).fmt;
     } else {
       if (cashCtrl.text.isEmpty || cashCtrl.text == '0') {
         cashCtrl.text = (grandTotal - curDeposit)
@@ -317,6 +319,38 @@ void showWorkshopInvoiceDialog(
     assignLineItemId = null;
     rawSearch = '';
     batchError = null;
+  }
+
+  // ---- Tab navigation restricted to the item value fields ----
+  // Tab / Shift+Tab cycle only through [Length, Width, Height, Quantity,
+  // Price] of the assigned rows (Height participates only on m³ rows), and
+  // never move focus to any other field inside the invoice dialog.
+  List<FocusNode> invoiceTabNodes() {
+    final nodes = <FocusNode>[];
+    for (final r in rows) {
+      if (!r.assigned) continue;
+      nodes.add(r.lenFocus);
+      nodes.add(r.widFocus);
+      if (r.isCube) nodes.add(r.heiFocus);
+      nodes.add(r.qtyFocus);
+      nodes.add(r.priceFocus);
+    }
+    return nodes;
+  }
+
+  void moveInvoiceTabFocus({required bool forward}) {
+    final nodes = invoiceTabNodes();
+    if (nodes.isEmpty) return;
+    final current = FocusManager.instance.primaryFocus;
+    final idx = current == null ? -1 : nodes.indexOf(current);
+    if (idx == -1) {
+      nodes.first.requestFocus();
+      return;
+    }
+    final next = forward
+        ? (idx + 1) % nodes.length
+        : (idx - 1 + nodes.length) % nodes.length;
+    nodes[next].requestFocus();
   }
 
   showDialog(
@@ -417,11 +451,11 @@ void showWorkshopInvoiceDialog(
                 r.lenCtrl.text = it.lengthCm > 0 ? it.lengthCm.fmt : '';
                 r.widCtrl.text = it.widthCm > 0 ? it.widthCm.fmt : '';
                 r.heiCtrl.text = it.heightCm > 0 ? it.heightCm.fmt : '';
-                r.qtyCtrl.text = (it.sourceType == 'بيع مواد خام من المعمل' &&
-                        it.count > 0
-                    ? it.count
-                    : it.quantity)
-                    .fmt;
+                r.qtyCtrl.text =
+                    (it.sourceType == 'بيع مواد خام من المعمل' && it.count > 0
+                            ? it.count
+                            : it.quantity)
+                        .fmt;
                 r.priceCtrl.text = it.unitPrice.fmt;
                 r.services.addAll(it.services);
                 if (r.services.isNotEmpty) r.hasService = true;
@@ -472,8 +506,7 @@ void showWorkshopInvoiceDialog(
 
           if (assignRecordId == null) {
             setSt(
-              () => batchError =
-                  assignType == 'بيع مواد خام من المعمل'
+              () => batchError = assignType == 'بيع مواد خام من المعمل'
                   ? 'يرجى اختيار المادة الخام من مواد المعمل.'
                   : 'يرجى اختيار السجل أو التفصيل المراد إضافته.',
             );
@@ -497,20 +530,22 @@ void showWorkshopInvoiceDialog(
                 r.netCostPerUnit = w.netCostPerUnit;
                 r.flatNetCost = -1;
                 r.depositAmount = 0.0;
-                r.descCtrl.text =
-                    '${w.typeName} ${w.grade} ${w.thicknessCm}سم';
+                r.descCtrl.text = '${w.typeName} ${w.grade} ${w.thicknessCm}سم';
                 r.lenCtrl.clear();
                 r.widCtrl.clear();
                 if (w.category == 'متر مكعب') {
                   r.heiCtrl.text = w.thicknessCm.fmt;
-                  r.priceCtrl.text =
-                      workshopInvoiceCubicSellingPrice(erp, w).fmt;
+                  r.priceCtrl.text = workshopInvoiceCubicSellingPrice(
+                    erp,
+                    w,
+                  ).fmt;
                 } else {
                   r.heiCtrl.clear();
-                  r.priceCtrl.text = (w.recommendedSalePrice > 0
-                          ? w.recommendedSalePrice
-                          : w.netCostPerUnit * 1.3)
-                      .fmt;
+                  r.priceCtrl.text =
+                      (w.recommendedSalePrice > 0
+                              ? w.recommendedSalePrice
+                              : w.netCostPerUnit * 1.3)
+                          .fmt;
                 }
                 r.qtyCtrl.text = '1';
               }
@@ -550,9 +585,9 @@ void showWorkshopInvoiceDialog(
                 r.qtyCtrl.text = '1';
                 r.priceCtrl.text =
                     (li != null && li.sellingPricePerMeter > 0
-                        ? li.sellingPricePerMeter
-                        : t.sellingPrice)
-                    .fmt;
+                            ? li.sellingPricePerMeter
+                            : t.sellingPrice)
+                        .fmt;
               }
             case 'بيع خياطة معقدة':
               final t = erp.complexTailorings.firstWhere(
@@ -599,10 +634,12 @@ void showWorkshopInvoiceDialog(
                 final m = RegExp(
                   r'(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)',
                 ).firstMatch(s.description);
-                r.lenCtrl.text =
-                    m != null ? (double.tryParse(m.group(1)!) ?? 0).fmt : '';
-                r.widCtrl.text =
-                    m != null ? (double.tryParse(m.group(2)!) ?? 0).fmt : '';
+                r.lenCtrl.text = m != null
+                    ? (double.tryParse(m.group(1)!) ?? 0).fmt
+                    : '';
+                r.widCtrl.text = m != null
+                    ? (double.tryParse(m.group(2)!) ?? 0).fmt
+                    : '';
                 r.heiCtrl.clear();
                 r.qtyCtrl.text = '1';
                 r.priceCtrl.text = s.sellingPrice.fmt;
@@ -632,8 +669,7 @@ void showWorkshopInvoiceDialog(
             return;
           }
           final srv = erp.services.firstWhere((s) => s.id == batchServiceId);
-          final fixed =
-              double.tryParse(batchSvcPriceCtrl.text.trim()) ?? 0.0;
+          final fixed = double.tryParse(batchSvcPriceCtrl.text.trim()) ?? 0.0;
           setSt(() {
             for (final r in selectedAssignedRows) {
               // Default: per-item rule (length × quantity × unit rate).
@@ -641,13 +677,13 @@ void showWorkshopInvoiceDialog(
               final price = fixed > 0
                   ? fixed
                   : (double.tryParse(
-                        workshopInvoiceServiceCost(
-                          lengthCm: r.len,
-                          quantity: r.qty,
-                          unitRate: srv.unitRate,
-                        ).fmt,
-                      ) ??
-                      0.0);
+                          workshopInvoiceServiceCost(
+                            lengthCm: r.len,
+                            quantity: r.qty,
+                            unitRate: srv.unitRate,
+                          ).fmt,
+                        ) ??
+                        0.0);
               r.hasService = true;
               r.services.add(
                 ServiceAttachment(
@@ -677,6 +713,7 @@ void showWorkshopInvoiceDialog(
           _InvoiceRow r,
           TextEditingController c,
           String label, {
+          required FocusNode focusNode,
           double width = 140,
           bool enabled = true,
           String? helper,
@@ -685,6 +722,7 @@ void showWorkshopInvoiceDialog(
             width: width,
             child: TextField(
               controller: c,
+              focusNode: focusNode,
               enabled: enabled && r.assigned,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
@@ -932,7 +970,10 @@ void showWorkshopInvoiceDialog(
                         });
                       },
                       icon: const Icon(Icons.add, size: 14),
-                      label: const Text('إرفاق', style: TextStyle(fontSize: 12)),
+                      label: const Text(
+                        'إرفاق',
+                        style: TextStyle(fontSize: 12),
+                      ),
                     ),
                   ],
                 ),
@@ -943,9 +984,7 @@ void showWorkshopInvoiceDialog(
                     runSpacing: 4,
                     children: r.services.asMap().entries.map((e) {
                       return Chip(
-                        labelPadding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                        ),
+                        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
                         visualDensity: VisualDensity.compact,
                         backgroundColor: Colors.white,
                         label: Text(
@@ -967,13 +1006,12 @@ void showWorkshopInvoiceDialog(
         }
 
         Widget itemRow(_InvoiceRow r, int idx) {
-          final rawMaterial =
-              r.assigned && r.isRaw
-                  ? erp.workshopStock
-                        .where((w) => w.id == r.sourceId)
-                        .toList()
-                        .firstOrNull
-                  : null;
+          final rawMaterial = r.assigned && r.isRaw
+              ? erp.workshopStock
+                    .where((w) => w.id == r.sourceId)
+                    .toList()
+                    .firstOrNull
+              : null;
           return Container(
             decoration: BoxDecoration(
               color: r.assigned ? Colors.white : const Color(0xFFFFFBEB),
@@ -1098,14 +1136,27 @@ void showWorkshopInvoiceDialog(
                     constraints: const BoxConstraints(minWidth: 860),
                     child: Row(
                       children: [
-                        numField(r, r.lenCtrl, 'الطول (سم)', width: 150),
+                        numField(
+                          r,
+                          r.lenCtrl,
+                          'الطول (سم)',
+                          focusNode: r.lenFocus,
+                          width: 150,
+                        ),
                         const SizedBox(width: 10),
-                        numField(r, r.widCtrl, 'العرض (سم)', width: 150),
+                        numField(
+                          r,
+                          r.widCtrl,
+                          'العرض (سم)',
+                          focusNode: r.widFocus,
+                          width: 150,
+                        ),
                         const SizedBox(width: 10),
                         numField(
                           r,
                           r.heiCtrl,
                           'الارتفاع = السماكة (سم)',
+                          focusNode: r.heiFocus,
                           width: 170,
                           enabled: r.isCube,
                           helper: rawMaterial != null && r.isCube
@@ -1117,6 +1168,7 @@ void showWorkshopInvoiceDialog(
                           r,
                           r.qtyCtrl,
                           qtyLabel(r),
+                          focusNode: r.qtyFocus,
                           width: 170,
                         ),
                         const SizedBox(width: 10),
@@ -1124,9 +1176,9 @@ void showWorkshopInvoiceDialog(
                           r,
                           r.priceCtrl,
                           priceLabel(r),
+                          focusNode: r.priceFocus,
                           width: 190,
-                          helper:
-                              rawMaterial != null && r.isCube
+                          helper: rawMaterial != null && r.isCube
                               ? 'سعر المتر المكعب: ${workshopInvoiceCubicSellingPrice(erp, rawMaterial).fmt} \$'
                               : null,
                         ),
@@ -1258,7 +1310,8 @@ void showWorkshopInvoiceDialog(
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
                       isExpanded: true,
-                      value: approvedClientOptions().any(
+                      value:
+                          approvedClientOptions().any(
                             (c) => c.name == clientCtrl.text,
                           )
                           ? clientCtrl.text
@@ -1270,7 +1323,10 @@ void showWorkshopInvoiceDialog(
                       ),
                       items: approvedClientOptions()
                           .map(
-                            (c) => DropdownMenuItem(value: c.name, child: Text(c.name)),
+                            (c) => DropdownMenuItem(
+                              value: c.name,
+                              child: Text(c.name),
+                            ),
                           )
                           .toList(),
                       onChanged: (name) {
@@ -1429,7 +1485,10 @@ void showWorkshopInvoiceDialog(
                   else ...[
                     const Text(
                       'الطلبيات مجمعة بحسب اسم الزبون:',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String>(
@@ -1486,7 +1545,9 @@ void showWorkshopInvoiceDialog(
                               decoration: BoxDecoration(
                                 color: const Color(0xFFEFF6FF),
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                                border: Border.all(
+                                  color: const Color(0xFFBFDBFE),
+                                ),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1600,24 +1661,20 @@ void showWorkshopInvoiceDialog(
                                 'اختر البند المحدد من داخل هذه الخياطة للبيع (اختياري)',
                             isDense: true,
                           ),
-                          items: t.lineItems
-                              .map((li) {
-                                final pieceMeters =
-                                    (li.lengthCm > 0 && li.widthCm > 0)
-                                    ? (li.lengthCm / 100.0) *
-                                          (li.widthCm / 100.0)
-                                    : 1.0;
-                                final totalLiMeters = pieceMeters * li.quantity;
-                                return DropdownMenuItem(
-                                  value: li.id,
-                                  child: Text(
-                                    '${li.description} • الأبعاد: ${li.lengthCm}×${li.widthCm}سم • المتاح: ${totalLiMeters.fmt} م² (${li.quantity.fmt} قطع)',
-                                  ),
-                                );
-                              })
-                              .toList(),
-                          onChanged: (lv) =>
-                              setSt(() => assignLineItemId = lv),
+                          items: t.lineItems.map((li) {
+                            final pieceMeters =
+                                (li.lengthCm > 0 && li.widthCm > 0)
+                                ? (li.lengthCm / 100.0) * (li.widthCm / 100.0)
+                                : 1.0;
+                            final totalLiMeters = pieceMeters * li.quantity;
+                            return DropdownMenuItem(
+                              value: li.id,
+                              child: Text(
+                                '${li.description} • الأبعاد: ${li.lengthCm}×${li.widthCm}سم • المتاح: ${totalLiMeters.fmt} م² (${li.quantity.fmt} قطع)',
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (lv) => setSt(() => assignLineItemId = lv),
                         );
                       },
                     ),
@@ -1680,7 +1737,10 @@ void showWorkshopInvoiceDialog(
                     onPressed: selectedBlankRows.isEmpty
                         ? null
                         : assignTypeToSelectedRows,
-                    icon: const Icon(Icons.playlist_add_check_rounded, size: 18),
+                    icon: const Icon(
+                      Icons.playlist_add_check_rounded,
+                      size: 18,
+                    ),
                     label: Text(
                       'تعيين النوع للصفوف المحددة (${selectedBlankRows.length})',
                       style: const TextStyle(
@@ -1902,9 +1962,8 @@ void showWorkshopInvoiceDialog(
                           labelText: 'خصم المبيعات المسموح',
                           isDense: true,
                         ),
-                        onChanged: (_) => setSt(
-                          () => recomputeInvoiceFinancials(),
-                        ),
+                        onChanged: (_) =>
+                            setSt(() => recomputeInvoiceFinancials()),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1964,8 +2023,7 @@ void showWorkshopInvoiceDialog(
                 ] else ...[
                   Builder(
                     builder: (context) {
-                      final curDep =
-                          double.tryParse(depositCtrl.text) ?? 0.0;
+                      final curDep = double.tryParse(depositCtrl.text) ?? 0.0;
                       final curCash = double.tryParse(cashCtrl.text) ?? 0.0;
                       final itemsTotal = rows
                           .where((r) => r.assigned)
@@ -2010,9 +2068,8 @@ void showWorkshopInvoiceDialog(
                                 errorText: depError,
                                 helperText: 'الحد الأقصى: ${gt.fmt}',
                               ),
-                              onChanged: (_) => setSt(
-                                () => recomputeInvoiceFinancials(),
-                              ),
+                              onChanged: (_) =>
+                                  setSt(() => recomputeInvoiceFinancials()),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -2057,10 +2114,11 @@ void showWorkshopInvoiceDialog(
           final servicesTotal = rows
               .where((r) => r.assigned)
               .fold<double>(0.0, (s, r) => s + r.servicesTotal);
-          final salesDiscount =
-              double.tryParse(salesDiscountCtrl.text) ?? 0.0;
-          final grandTotal = (itemsTotal + servicesTotal - salesDiscount)
-              .clamp(0.0, double.infinity);
+          final salesDiscount = double.tryParse(salesDiscountCtrl.text) ?? 0.0;
+          final grandTotal = (itemsTotal + servicesTotal - salesDiscount).clamp(
+            0.0,
+            double.infinity,
+          );
           final totalDeposits = double.tryParse(depositCtrl.text) ?? 0.0;
           final cashPaid = double.tryParse(cashCtrl.text) ?? 0.0;
           final remaining = grandTotal - totalDeposits - cashPaid;
@@ -2192,9 +2250,7 @@ void showWorkshopInvoiceDialog(
         // ============ SAVE ============
         void saveInvoice() {
           if (rows.isEmpty) {
-            setSt(
-              () => formError = 'يجب إضافة صنف واحد على الأقل للفاتورة.',
-            );
+            setSt(() => formError = 'يجب إضافة صنف واحد على الأقل للفاتورة.');
             return;
           }
           final unassignedCount = rows.where((r) => !r.assigned).length;
@@ -2222,7 +2278,8 @@ void showWorkshopInvoiceDialog(
                   .where((w) => w.id == r.sourceId)
                   .toList();
               if (wMatches.isNotEmpty &&
-                  r.rawArea > getAvailableStockForRaw(wMatches.first) + 0.0001) {
+                  r.rawArea >
+                      getAvailableStockForRaw(wMatches.first) + 0.0001) {
                 setSt(
                   () => formError =
                       'بند $no (${r.effectiveDescription}): الكمية المطلوبة تتجاوز الرصيد المتاح.',
@@ -2277,10 +2334,11 @@ void showWorkshopInvoiceDialog(
             0.0,
             (s, i) => s + i.servicesTotal,
           );
-          final salesDiscount =
-              double.tryParse(salesDiscountCtrl.text) ?? 0.0;
-          final grandTotal = (itemsTotal + servicesTotal - salesDiscount)
-              .clamp(0.0, double.infinity);
+          final salesDiscount = double.tryParse(salesDiscountCtrl.text) ?? 0.0;
+          final grandTotal = (itemsTotal + servicesTotal - salesDiscount).clamp(
+            0.0,
+            double.infinity,
+          );
 
           if (salesDiscount < 0 || salesDiscount > itemsTotal + servicesTotal) {
             setSt(() => formError = 'قيمة خصم المبيعات غير صحيحة.');
@@ -2294,14 +2352,13 @@ void showWorkshopInvoiceDialog(
               : (double.tryParse(cashCtrl.text) ?? 0.0);
 
           if (deposit < 0) {
-            setSt(
-              () => formError = 'خطأ: قيمة العربون لا يمكن أن تكون سالبة.',
-            );
+            setSt(() => formError = 'خطأ: قيمة العربون لا يمكن أن تكون سالبة.');
             return;
           }
           if (cash < 0) {
             setSt(
-              () => formError = 'خطأ: قيمة النقد المدفوع لا يمكن أن تكون سالبة.',
+              () =>
+                  formError = 'خطأ: قيمة النقد المدفوع لا يمكن أن تكون سالبة.',
             );
             return;
           }
@@ -2340,10 +2397,7 @@ void showWorkshopInvoiceDialog(
             agreedPrice: itemsTotal,
             depositDeducted: deposit,
             cashPaidNow: cash,
-            netCost: draftItems.fold<double>(
-              0.0,
-              (s, i) => s + i.netCost,
-            ),
+            netCost: draftItems.fold<double>(0.0, (s, i) => s + i.netCost),
             salesDiscount: salesDiscount,
             services: draftItems.expand((i) => i.services).toList(),
             photoPath: photoCtrl.text.trim(),
@@ -2387,391 +2441,444 @@ void showWorkshopInvoiceDialog(
         }
 
         // ---------- Body ----------
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Container(
-            width: dialogWidth,
-            height: dialogHeight,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: [
-                // Top Header Bar
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 14,
-                  ),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(16),
-                    ),
-                    border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        cashInvoice
-                            ? Icons.point_of_sale_rounded
-                            : Icons.receipt_long_rounded,
-                        color: AppColors.accentPrimary,
-                        size: 24,
+        // Tab / Shift+Tab are captured for the whole dialog and redirected
+        // ONLY through the item value fields (Length, Width, Height,
+        // Quantity, Price) of the assigned rows.
+        return Shortcuts(
+          shortcuts: const <ShortcutActivator, Intent>{
+            SingleActivator(LogicalKeyboardKey.tab): NextFocusIntent(),
+            SingleActivator(LogicalKeyboardKey.tab, shift: true):
+                PreviousFocusIntent(),
+          },
+          child: Actions(
+            actions: <Type, Action<Intent>>{
+              NextFocusIntent: CallbackAction<NextFocusIntent>(
+                onInvoke: (_) {
+                  moveInvoiceTabFocus(forward: true);
+                  return null;
+                },
+              ),
+              PreviousFocusIntent: CallbackAction<PreviousFocusIntent>(
+                onInvoke: (_) {
+                  moveInvoiceTabFocus(forward: false);
+                  return null;
+                },
+              ),
+            },
+            child: Dialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 8,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Container(
+                width: dialogWidth,
+                height: dialogHeight,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    // Top Header Bar
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Text(
-                              cashInvoice
-                                  ? 'فاتورة بيع نقدية (مسددة بالكامل)'
-                                  : 'إنشاء فاتورة معمل',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 17,
-                                color: Color(0xFF0F172A),
-                              ),
-                            ),
-                            if (cashInvoice) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFDCFCE7),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Text(
-                                  'مبيعات نقدية',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.successGreen,
-                                  ),
-                                ),
-                              ),
-                            ],
-                            const SizedBox(width: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEEF2FF),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '$assignedCount بنود مضافة',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF4F46E5),
-                                ),
-                              ),
-                            ),
-                            if (blankRows.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFEF3C7),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  '${blankRows.length} صف فارغ',
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(16),
+                        ),
+                        border: Border(
+                          bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            cashInvoice
+                                ? Icons.point_of_sale_rounded
+                                : Icons.receipt_long_rounded,
+                            color: AppColors.accentPrimary,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Text(
+                                  cashInvoice
+                                      ? 'فاتورة بيع نقدية (مسددة بالكامل)'
+                                      : 'إنشاء فاتورة معمل',
                                   style: const TextStyle(
-                                    fontSize: 12,
                                     fontWeight: FontWeight.bold,
-                                    color: Color(0xFF92400E),
+                                    fontSize: 17,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                ),
+                                if (cashInvoice) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFDCFCE7),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: const Text(
+                                      'مبيعات نقدية',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.successGreen,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEEF2FF),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '$assignedCount بنود مضافة',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF4F46E5),
+                                    ),
+                                  ),
+                                ),
+                                if (blankRows.isNotEmpty) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFEF3C7),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      '${blankRows.length} صف فارغ',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF92400E),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded),
+                            tooltip: 'إغلاق',
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // DUAL-PANE MAIN BODY:
+                    // Left side  = Item rows + financial summary
+                    // Right side = Client, batch assignment, additional fields, save
+                    Expanded(
+                      child: Directionality(
+                        textDirection: TextDirection.ltr,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // ==========================================
+                            // LEFT SECTION: ITEM ROWS + FINANCIAL SUMMARY
+                            // (widest pane — items need clear visibility)
+                            // ==========================================
+                            Expanded(
+                              flex: 3,
+                              child: Directionality(
+                                textDirection: TextDirection.rtl,
+                                child: Container(
+                                  color: const Color(0xFFF8FAFC),
+                                  child: Column(
+                                    children: [
+                                      // Rows header + Add Item button
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 10,
+                                        ),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.white,
+                                          border: Border(
+                                            bottom: BorderSide(
+                                              color: Color(0xFFE2E8F0),
+                                            ),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.view_list_rounded,
+                                              size: 20,
+                                              color: AppColors.accentPrimary,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            const Expanded(
+                                              child: Text(
+                                                'بنود الفاتورة — حقول الأبعاد والكمية والسعر لكل بند',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 14,
+                                                  color: Color(0xFF0F172A),
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            if (rows.isNotEmpty) ...[
+                                              SizedBox(
+                                                height: 32,
+                                                child: TextButton.icon(
+                                                  style: TextButton.styleFrom(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                        ),
+                                                  ),
+                                                  onPressed: () => setSt(() {
+                                                    final allSel = rows.every(
+                                                      (r) => r.selected,
+                                                    );
+                                                    for (final r in rows) {
+                                                      r.selected = !allSel;
+                                                    }
+                                                  }),
+                                                  icon: const Icon(
+                                                    Icons.select_all_rounded,
+                                                    size: 16,
+                                                  ),
+                                                  label: Text(
+                                                    'تحديد الكل',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                            ],
+                                            ElevatedButton.icon(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: const Color(
+                                                  0xFF0F766E,
+                                                ),
+                                                foregroundColor: Colors.white,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 14,
+                                                      vertical: 10,
+                                                    ),
+                                              ),
+                                              onPressed: addBlankRow,
+                                              icon: const Icon(
+                                                Icons.add_rounded,
+                                              ),
+                                              label: const Text(
+                                                '+ إضافة بند',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+
+                                      // Item rows list
+                                      Expanded(
+                                        child: rows.isEmpty
+                                            ? Center(
+                                                child: Padding(
+                                                  padding: const EdgeInsets.all(
+                                                    24,
+                                                  ),
+                                                  child: Column(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .center,
+                                                    children: [
+                                                      Icon(
+                                                        Icons
+                                                            .receipt_long_outlined,
+                                                        size: 64,
+                                                        color: Colors
+                                                            .grey
+                                                            .shade400,
+                                                      ),
+                                                      const SizedBox(
+                                                        height: 12,
+                                                      ),
+                                                      const Text(
+                                                        'لم يتم إضافة أي صنف للفاتورة بعد',
+                                                        style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          fontSize: 16,
+                                                          color: Color(
+                                                            0xFF475569,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 6),
+                                                      const Text(
+                                                        'انقر "+ إضافة بند" لتوليد صفوف فارغة، ثم حدّدها وعيّن نوع البند دفعة واحدة من اللوحة اليمنى.',
+                                                        textAlign:
+                                                            TextAlign.center,
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          color: AppColors
+                                                              .brandSecondaryText,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              )
+                                            : ListView.separated(
+                                                padding: const EdgeInsets.all(
+                                                  12,
+                                                ),
+                                                itemCount: rows.length,
+                                                separatorBuilder: (_, __) =>
+                                                    const SizedBox(height: 10),
+                                                itemBuilder: (context, idx) =>
+                                                    itemRow(rows[idx], idx),
+                                              ),
+                                      ),
+
+                                      // Financial invoice summary (bottom-left)
+                                      summarySection(),
+                                    ],
                                   ),
                                 ),
                               ),
-                            ],
+                            ),
+
+                            const VerticalDivider(
+                              width: 1,
+                              thickness: 1,
+                              color: Color(0xFFCBD5E1),
+                            ),
+
+                            // ==========================================
+                            // RIGHT SECTION: CLIENT • BATCH • ADDITIONAL • SAVE
+                            // ==========================================
+                            Expanded(
+                              flex: 2,
+                              child: Directionality(
+                                textDirection: TextDirection.rtl,
+                                child: Container(
+                                  color: Colors.white,
+                                  child: Column(
+                                    children: [
+                                      Expanded(
+                                        child: SingleChildScrollView(
+                                          padding: const EdgeInsets.all(16),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.stretch,
+                                            children: [
+                                              clientCard(),
+                                              const SizedBox(height: 14),
+                                              batchCard(),
+                                              const SizedBox(height: 14),
+                                              serviceBatchCard(),
+                                              const SizedBox(height: 14),
+                                              additionalCard(),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      // Save invoice (bottom-right)
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: const BoxDecoration(
+                                          border: Border(
+                                            top: BorderSide(
+                                              color: Color(0xFFCBD5E1),
+                                            ),
+                                          ),
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            if (formError != null) ...[
+                                              Text(
+                                                formError!,
+                                                style: const TextStyle(
+                                                  color: AppColors.dangerWaste,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
+                                            ],
+                                            SizedBox(
+                                              width: double.infinity,
+                                              child: ElevatedButton(
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor:
+                                                      AppColors.accentPrimary,
+                                                  foregroundColor: Colors.white,
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        vertical: 14,
+                                                      ),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
+                                                  ),
+                                                ),
+                                                onPressed: saveInvoice,
+                                                child: Text(
+                                                  (cashInvoice
+                                                      ? 'إصدار فاتورة البيع النقدية وتحصيلها'
+                                                      : 'إصدار وحفظ فاتورة المعمل'),
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 15,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded),
-                        tooltip: 'إغلاق',
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // DUAL-PANE MAIN BODY:
-                // Left side  = Item rows + financial summary
-                // Right side = Client, batch assignment, additional fields, save
-                Expanded(
-                  child: Directionality(
-                    textDirection: TextDirection.ltr,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // ==========================================
-                        // LEFT SECTION: ITEM ROWS + FINANCIAL SUMMARY
-                        // (widest pane — items need clear visibility)
-                        // ==========================================
-                        Expanded(
-                          flex: 3,
-                          child: Directionality(
-                            textDirection: TextDirection.rtl,
-                            child: Container(
-                              color: const Color(0xFFF8FAFC),
-                              child: Column(
-                                children: [
-                                  // Rows header + Add Item button
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 10,
-                                    ),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.white,
-                                      border: Border(
-                                        bottom: BorderSide(
-                                          color: Color(0xFFE2E8F0),
-                                        ),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.view_list_rounded,
-                                          size: 20,
-                                          color: AppColors.accentPrimary,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        const Expanded(
-                                          child: Text(
-                                            'بنود الفاتورة — حقول الأبعاد والكمية والسعر لكل بند',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14,
-                                              color: Color(0xFF0F172A),
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        if (rows.isNotEmpty) ...[
-                                          SizedBox(
-                                            height: 32,
-                                            child: TextButton.icon(
-                                              style: TextButton.styleFrom(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                    ),
-                                              ),
-                                              onPressed: () => setSt(() {
-                                                final allSel = rows.every(
-                                                  (r) => r.selected,
-                                                );
-                                                for (final r in rows) {
-                                                  r.selected = !allSel;
-                                                }
-                                              }),
-                                              icon: const Icon(
-                                                Icons.select_all_rounded,
-                                                size: 16,
-                                              ),
-                                              label: Text(
-                                                'تحديد الكل',
-                                                style: TextStyle(fontSize: 12),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                        ],
-                                        ElevatedButton.icon(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor:
-                                                const Color(0xFF0F766E),
-                                            foregroundColor: Colors.white,
-                                            padding:
-                                                const EdgeInsets.symmetric(
-                                                  horizontal: 14,
-                                                  vertical: 10,
-                                                ),
-                                          ),
-                                          onPressed: addBlankRow,
-                                          icon: const Icon(Icons.add_rounded),
-                                          label: const Text(
-                                            '+ إضافة بند',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  // Item rows list
-                                  Expanded(
-                                    child: rows.isEmpty
-                                        ? Center(
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(24),
-                                              child: Column(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.center,
-                                                children: [
-                                                  Icon(
-                                                    Icons.receipt_long_outlined,
-                                                    size: 64,
-                                                    color: Colors.grey.shade400,
-                                                  ),
-                                                  const SizedBox(height: 12),
-                                                  const Text(
-                                                    'لم يتم إضافة أي صنف للفاتورة بعد',
-                                                    style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 16,
-                                                      color: Color(0xFF475569),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 6),
-                                                  const Text(
-                                                    'انقر "+ إضافة بند" لتوليد صفوف فارغة، ثم حدّدها وعيّن نوع البند دفعة واحدة من اللوحة اليمنى.',
-                                                    textAlign: TextAlign.center,
-                                                    style: TextStyle(
-                                                      fontSize: 13,
-                                                      color: AppColors
-                                                          .brandSecondaryText,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          )
-                                        : ListView.separated(
-                                            padding: const EdgeInsets.all(12),
-                                            itemCount: rows.length,
-                                            separatorBuilder: (_, __) =>
-                                                const SizedBox(height: 10),
-                                            itemBuilder: (context, idx) =>
-                                                itemRow(rows[idx], idx),
-                                          ),
-                                  ),
-
-                                  // Financial invoice summary (bottom-left)
-                                  summarySection(),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        const VerticalDivider(
-                          width: 1,
-                          thickness: 1,
-                          color: Color(0xFFCBD5E1),
-                        ),
-
-                        // ==========================================
-                        // RIGHT SECTION: CLIENT • BATCH • ADDITIONAL • SAVE
-                        // ==========================================
-                        Expanded(
-                          flex: 2,
-                          child: Directionality(
-                            textDirection: TextDirection.rtl,
-                            child: Container(
-                              color: Colors.white,
-                              child: Column(
-                                children: [
-                                  Expanded(
-                                    child: SingleChildScrollView(
-                                      padding: const EdgeInsets.all(16),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.stretch,
-                                        children: [
-                                          clientCard(),
-                                          const SizedBox(height: 14),
-                                          batchCard(),
-                                          const SizedBox(height: 14),
-                                          serviceBatchCard(),
-                                          const SizedBox(height: 14),
-                                          additionalCard(),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  // Save invoice (bottom-right)
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: const BoxDecoration(
-                                      border: Border(
-                                        top: BorderSide(color: Color(0xFFCBD5E1)),
-                                      ),
-                                    ),
-                                    child: Column(
-                                      children: [
-                                        if (formError != null) ...[
-                                          Text(
-                                            formError!,
-                                            style: const TextStyle(
-                                              color: AppColors.dangerWaste,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                        ],
-                                        SizedBox(
-                                          width: double.infinity,
-                                          child: ElevatedButton(
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor:
-                                                  AppColors.accentPrimary,
-                                              foregroundColor: Colors.white,
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    vertical: 14,
-                                                  ),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                              ),
-                                            ),
-                                            onPressed: saveInvoice,
-                                            child: Text(
-                                              (cashInvoice
-                                                  ? 'إصدار فاتورة البيع النقدية وتحصيلها'
-                                                  : 'إصدار وحفظ فاتورة المعمل'),
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 15,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         );
