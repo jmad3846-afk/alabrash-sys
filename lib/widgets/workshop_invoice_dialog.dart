@@ -1731,7 +1731,7 @@ void showWorkshopInvoiceDialog(
                           (w) => DropdownMenuItem(
                             value: w.id,
                             child: Text(
-                              '${w.typeName} ${w.grade} — المتاح: ${getAvailableStockForRaw(w).fmt} ${w.category == "متر مكعب" ? "م³" : "م²"} (سعر المتر: ${w.recommendedSalePrice.fmt}\$)',
+                               '${w.typeName} ${w.grade}${w.thicknessCm > 0 ? " • سماكة ${w.thicknessCm.fmt} سم" : ""} — المتاح: ${getAvailableStockForRaw(w).fmt} ${w.category == "متر مكعب" ? "م³" : "م²"} (سعر المتر: ${w.recommendedSalePrice.fmt}\$)',
                             ),
                           ),
                         )

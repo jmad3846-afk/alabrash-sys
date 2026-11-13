@@ -6075,10 +6075,6 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     );
   }
 
-  double getWorkshopCubicSellingPrice(ERPProvider erp, WorkshopStockModel w) {
-    return workshopInvoiceCubicSellingPrice(erp, w);
-  }
-
   void _showEditWorkshopDraftItemModal({
     required BuildContext context,
     required WorkshopInvoiceItem item,
@@ -6695,54 +6691,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     String? selectedRecordId = draft?['selectedRecordId'] as String?;
     String? selectedLineItemId = draft?['selectedLineItemId'] as String?;
     String recordSearch = draft?['recordSearch'] as String? ?? '';
-    final itemDescCtrl = TextEditingController(
-      text: draft?['itemDesc'] as String? ?? '',
-    );
-    final itemQtyCtrl = TextEditingController(
-      text: draft?['itemQty'] as String? ?? '1',
-    );
-    final itemUnitPriceCtrl = TextEditingController(
-      text: draft?['itemUnitPrice'] as String? ?? '0',
-    );
-    final itemAgreedCtrl = TextEditingController(
-      text: draft?['itemAgreed'] as String? ?? '0',
-    );
-    String itemUnitCat = draft?['itemUnitCat'] as String? ?? 'متر مربع';
-    bool itemIsGranite = draft?['itemIsGranite'] as bool? ?? false;
-    String itemPhoto = draft?['itemPhoto'] as String? ?? '';
 
     // Raw material specific inputs
     String? selectedRawId = draft?['selectedRawId'] as String?;
     String rawSearch = draft?['rawSearch'] as String? ?? '';
-    final rawLenCtrl = TextEditingController(
-      text: draft?['rawLen'] as String? ?? '',
-    );
-    final rawWidCtrl = TextEditingController(
-      text: draft?['rawWid'] as String? ?? '',
-    );
-    final rawHeiCtrl = TextEditingController(
-      text: draft?['rawHei'] as String? ?? '',
-    );
-    final rawQtyCtrl = TextEditingController(
-      text: draft?['rawQty'] as String? ?? '1',
-    );
-    final rawPriceCtrl = TextEditingController(
-      text: draft?['rawPrice'] as String? ?? '',
-    );
-
-    // Dedicated services for current item
-    final List<ServiceAttachment> currentItemServices =
-        ((draft?['currentItemServices'] as List?) ?? const [])
-            .map((m) =>
-                ServiceAttachment.fromJson(Map<String, dynamic>.from(m as Map)))
-            .toList();
-    String? selectedServiceId = draft?['selectedServiceId'] as String?;
-    final servicePriceCtrl = TextEditingController(
-      text: draft?['servicePrice'] as String? ?? '',
-    );
-    final serviceNotesCtrl = TextEditingController(
-      text: draft?['serviceNotes'] as String? ?? '',
-    );
     // ---- Bulk selection + inline row editing state ----
     // First selection: assign the item type/record to blank rows.
     // Second selection (typed rows): apply a service to all of them.
@@ -6854,24 +6806,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
       'selectedRecordId': selectedRecordId,
       'selectedLineItemId': selectedLineItemId,
       'recordSearch': recordSearch,
-      'itemDesc': itemDescCtrl.text,
-      'itemQty': itemQtyCtrl.text,
-      'itemUnitPrice': itemUnitPriceCtrl.text,
-      'itemAgreed': itemAgreedCtrl.text,
-      'itemUnitCat': itemUnitCat,
-      'itemIsGranite': itemIsGranite,
-      'itemPhoto': itemPhoto,
       'selectedRawId': selectedRawId,
       'rawSearch': rawSearch,
-      'rawLen': rawLenCtrl.text,
-      'rawWid': rawWidCtrl.text,
-      'rawHei': rawHeiCtrl.text,
-      'rawQty': rawQtyCtrl.text,
-      'rawPrice': rawPriceCtrl.text,
-      'currentItemServices': currentItemServices.map((s) => s.toJson()).toList(),
-      'selectedServiceId': selectedServiceId,
-      'servicePrice': servicePriceCtrl.text,
-      'serviceNotes': serviceNotesCtrl.text,
       'selectedRows': selectedDraftRows.toList(),
       'bulkServiceId': bulkServiceId,
       'bulkSvcPrice': bulkSvcPriceCtrl.text,
@@ -6974,55 +6910,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
               ? selectedRawId
               : null;
 
-          WorkshopStockModel? selectedRaw;
-          if (rawValue != null) {
-            final m = erp.workshopStock.where((w) => w.id == rawValue).toList();
-            if (m.isNotEmpty) selectedRaw = m.first;
-          }
-
-          final bool rawCube =
-              itemUnitCat == 'متر مكعب' || selectedRaw?.category == 'متر مكعب';
-          final double rl = double.tryParse(rawLenCtrl.text) ?? 0.0;
-          final double rw = double.tryParse(rawWidCtrl.text) ?? 0.0;
-          final double rh = double.tryParse(rawHeiCtrl.text) ?? 0.0;
-          final double rq = double.tryParse(rawQtyCtrl.text) ?? 0.0;
-          final double rp = double.tryParse(rawPriceCtrl.text) ?? 0.0;
-          double rawArea = 0.0;
-          if (selectedRaw != null && rl > 0 && rw > 0 && rq > 0) {
-            rawArea = rawCube && rh > 0
-                ? (rl / 100.0) * (rw / 100.0) * (rh / 100.0) * rq
-                : (rl / 100.0) * (rw / 100.0) * rq;
-          }
-
           // Services filtered
           final servicesFiltered = erp.services.toList();
-          final serviceValue =
-              servicesFiltered.any((s) => s.id == selectedServiceId)
-              ? selectedServiceId
-              : null;
-
-          void autoCalculateServicePrice(ServiceItemModel service) {
-            var lengthCm = itemSourceType == 'بيع مواد خام من المعمل' ? rl : 0.0;
-            final quantity = itemSourceType == 'بيع مواد خام من المعمل'
-                ? rq
-                : (double.tryParse(itemQtyCtrl.text) ?? 0.0);
-            if (itemSourceType == 'بيع خياطة بسيطة' &&
-                selectedRecordId != null &&
-                selectedLineItemId != null) {
-              final tailoring = erp.simpleTailorings.firstWhere(
-                (item) => item.id == selectedRecordId,
-              );
-              final lineItem = tailoring.lineItems.firstWhere(
-                (item) => item.id == selectedLineItemId,
-              );
-              lengthCm = lineItem.lengthCm;
-            }
-            servicePriceCtrl.text = _workshopServiceCost(
-              lengthCm: lengthCm,
-              quantity: quantity,
-              unitRate: service.unitRate,
-            ).fmt;
-          }
 
           // Totals calculation
           final double itemsTotal = draftItems.fold(
@@ -7880,7 +7769,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                           // LEFT COLUMN: INPUT FIELDS
                           // ==========================================
                           Expanded(
-                            flex: 5,
+                            flex: 4,
                             child: Directionality(
                               textDirection: TextDirection.rtl,
                               child: Container(
@@ -8107,15 +7996,6 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                 selectedRawId = null;
                                                 recordSearch = '';
                                                 rawSearch = '';
-                                                itemDescCtrl.clear();
-                                                itemQtyCtrl.text = '1';
-                                                itemUnitPriceCtrl.text = '0';
-                                                itemAgreedCtrl.text = '0';
-                                                rawLenCtrl.clear();
-                                                rawWidCtrl.clear();
-                                                rawHeiCtrl.clear();
-                                                rawQtyCtrl.text = '1';
-                                                rawPriceCtrl.clear();
                                                 itemError = null;
                                               }),
                                             ),
@@ -8154,304 +8034,15 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       (w) => DropdownMenuItem(
                                                         value: w.id,
                                                         child: Text(
-                                                          '${w.typeName} ${w.grade} — المتاح: ${w.availableQty.fmt} ${w.category == "متر مكعب" ? "م³" : "م²"} (سعر المتر: ${w.recommendedSalePrice.fmt}\$)',
+                                                           '${w.typeName} ${w.grade}${w.thicknessCm > 0 ? " • سماكة ${w.thicknessCm.fmt} سم" : ""} — المتاح: ${w.availableQty.fmt} ${w.category == "متر مكعب" ? "م³" : "م²"} (سعر المتر: ${w.recommendedSalePrice.fmt}\$)',
                                                         ),
                                                       ),
                                                     )
                                                     .toList(),
-                                                onChanged: (v) => setSt(() {
-                                                  selectedRawId = v;
-                                                  final newlySelected = erp
-                                                      .workshopStock
-                                                      .where((w) => w.id == v)
-                                                      .firstOrNull;
-                                                  if (newlySelected != null) {
-                                                    itemUnitCat =
-                                                        newlySelected.category;
-                                                    itemIsGranite =
-                                                        newlySelected.isGranite;
-                                                    final isCube =
-                                                        itemUnitCat ==
-                                                        'متر مكعب';
-                                                    if (isCube) {
-                                                      rawHeiCtrl.text =
-                                                          newlySelected
-                                                              .thicknessCm
-                                                              .fmt;
-                                                      final cp =
-                                                          getWorkshopCubicSellingPrice(
-                                                            erp,
-                                                            newlySelected,
-                                                          );
-                                                      rawPriceCtrl.text =
-                                                          cp.fmt;
-                                                    } else {
-                                                      rawHeiCtrl.clear();
-                                                      rawPriceCtrl.text =
-                                                          newlySelected
-                                                                  .recommendedSalePrice >
-                                                              0
-                                                          ? newlySelected
-                                                                .recommendedSalePrice
-                                                                .fmt
-                                                          : (newlySelected
-                                                                        .netCostPerUnit *
-                                                                    1.3)
-                                                                .fmt;
-                                                    }
-                                                  }
-                                                }),
+                                                onChanged: (v) => setSt(
+                                                  () => selectedRawId = v,
+                                                ),
                                               ),
-                                              if (selectedRaw != null) ...[
-                                                const SizedBox(height: 8),
-                                                    Row(
-                                                      children: [
-                                                        const Text(
-                                                          'وحدة البيع (تُشتق تلقائياً من سماكة المادة):',
-                                                          style: TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                            fontSize: 12,
-                                                          ),
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 8,
-                                                        ),
-                                                        Container(
-                                                          padding:
-                                                              const EdgeInsets.symmetric(
-                                                                horizontal: 8,
-                                                                vertical: 3,
-                                                              ),
-                                                          decoration: BoxDecoration(
-                                                            color: rawCube
-                                                                ? const Color(
-                                                                    0xFFDCFCE7,
-                                                                  )
-                                                                : const Color(
-                                                                    0xFFE0F2FE,
-                                                                  ),
-                                                            borderRadius:
-                                                                BorderRadius.circular(
-                                                                  6,
-                                                                ),
-                                                          ),
-                                                          child: Text(
-                                                            rawCube
-                                                                ? 'متر مكعب (م³)'
-                                                                : 'متر مربع (م²)',
-                                                            style: TextStyle(
-                                                              fontSize: 11,
-                                                              fontWeight:
-                                                                  FontWeight.bold,
-                                                              color: rawCube
-                                                                  ? const Color(
-                                                                      0xFF15803D,
-                                                                    )
-                                                                  : const Color(
-                                                                      0xFF1E40AF,
-                                                                    ),
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                const SizedBox(height: 8),
-                                                Row(
-                                                  children: [
-                                                    Expanded(
-                                                      child: TextField(
-                                                        controller: rawLenCtrl,
-                                                        keyboardType:
-                                                            TextInputType
-                                                                .number,
-                                                        decoration:
-                                                            const InputDecoration(
-                                                              labelText:
-                                                                  'الطول (سم)',
-                                                              isDense: true,
-                                                            ),
-                                                        onChanged: (_) => setSt(
-                                                          () {
-                                                            final p =
-                                                                double.tryParse(
-                                                                  rawPriceCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            itemAgreedCtrl
-                                                                    .text =
-                                                                (rawArea * p)
-                                                                    .fmt;
-                                                          },
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: TextField(
-                                                        controller: rawWidCtrl,
-                                                        keyboardType:
-                                                            TextInputType
-                                                                .number,
-                                                        decoration:
-                                                            const InputDecoration(
-                                                              labelText:
-                                                                  'العرض (سم)',
-                                                              isDense: true,
-                                                            ),
-                                                        onChanged: (_) => setSt(
-                                                          () {
-                                                            final p =
-                                                                double.tryParse(
-                                                                  rawPriceCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            itemAgreedCtrl
-                                                                    .text =
-                                                                (rawArea * p)
-                                                                    .fmt;
-                                                          },
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    if (rawCube) ...[
-                                                      const SizedBox(width: 8),
-                                                      Expanded(
-                                                        child: TextField(
-                                                          controller:
-                                                              rawHeiCtrl,
-                                                          keyboardType:
-                                                              TextInputType
-                                                                  .number,
-                                                          decoration: InputDecoration(
-                                                            labelText:
-                                                                'الارتفاع = السماكة (سم)',
-                                                            helperText:
-                                                                'سماكة المادة: ${selectedRaw.thicknessCm.fmt} سم',
-                                                            isDense: true,
-                                                          ),
-                                                          onChanged: (_) => setSt(
-                                                            () {
-                                                              final p =
-                                                                  double.tryParse(
-                                                                    rawPriceCtrl
-                                                                        .text,
-                                                                  ) ??
-                                                                  0;
-                                                              itemAgreedCtrl
-                                                                      .text =
-                                                                  (rawArea * p)
-                                                                      .fmt;
-                                                            },
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Row(
-                                                  children: [
-                                                    Expanded(
-                                                      child: TextField(
-                                                        controller: rawQtyCtrl,
-                                                        keyboardType:
-                                                            TextInputType
-                                                                .number,
-                                                        decoration:
-                                                            const InputDecoration(
-                                                              labelText:
-                                                                  'العدد / القطع',
-                                                              isDense: true,
-                                                            ),
-                                                        onChanged: (_) => setSt(
-                                                          () {
-                                                            final p =
-                                                                double.tryParse(
-                                                                  rawPriceCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            itemAgreedCtrl
-                                                                    .text =
-                                                                (rawArea * p)
-                                                                    .fmt;
-                                                          },
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: TextField(
-                                                        controller:
-                                                            rawPriceCtrl,
-                                                        keyboardType:
-                                                            TextInputType
-                                                                .number,
-                                                        decoration: InputDecoration(
-                                                          labelText:
-                                                              'سعر بيع المتر (${rawCube ? "م³" : "م²"} \$)',
-                                                          helperText: rawCube
-                                                              ? 'سعر المتر المكعب: ${getWorkshopCubicSellingPrice(erp, selectedRaw!).fmt} \$'
-                                                              : (selectedRaw.recommendedSalePrice >
-                                                                        0
-                                                                    ? 'سعر المستودع: ${selectedRaw.recommendedSalePrice.fmt} \$'
-                                                                    : null),
-                                                          isDense: true,
-                                                        ),
-                                                        onChanged: (_) => setSt(
-                                                          () {
-                                                            final p =
-                                                                double.tryParse(
-                                                                  rawPriceCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            itemAgreedCtrl
-                                                                    .text =
-                                                                (rawArea * p)
-                                                                    .fmt;
-                                                          },
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 8),
-                                                // Total Meters Price Field
-                                                TextField(
-                                                  controller: itemAgreedCtrl,
-                                                  readOnly: true,
-                                                  decoration: const InputDecoration(
-                                                    labelText:
-                                                        'إجمالي سعر الأمتار (\$)',
-                                                    isDense: true,
-                                                    prefixIcon: Icon(
-                                                      Icons.calculate_outlined,
-                                                      size: 18,
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  'الأمتار المحسوبة: ${rawArea.fmt} ${rawCube ? "م³" : "م²"} • المتاح: ${selectedRaw.availableQty.fmt}',
-                                                  style: const TextStyle(
-                                                    fontSize: 11,
-                                                    color:
-                                                        AppColors.accentPrimary,
-                                                  ),
-                                                ),
-                                                if (rawCube)
-                                                  Text(
-                                                    'الحجم = ${(rl / 100).fmt}م × ${(rw / 100).fmt}م × ${(rh / 100).fmt}م × ${rq.fmt} قطع = ${rawArea.fmt} م³',
-                                                    style: const TextStyle(
-                                                      fontSize: 11,
-                                                      color: Color(0xFF15803D),
-                                                    ),
-                                                  ),
-                                              ],
                                             ] else if (itemSourceType ==
                                                 'بيع خياطة بسيطة') ...[
                                               // Select Simple Tailoring
@@ -8477,43 +8068,6 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                 onChanged: (v) => setSt(() {
                                                   selectedRecordId = v;
                                                   selectedLineItemId = null;
-                                                  final t = erp.simpleTailorings
-                                                      .firstWhere(
-                                                        (x) => x.id == v,
-                                                      );
-                                                  itemPhoto = t.photoPath;
-                                                  itemIsGranite = t.isGranite;
-                                                  itemUnitCat = 'متر مربع';
-                                                  if (t.lineItems.isNotEmpty) {
-                                                    selectedLineItemId =
-                                                        t.lineItems.first.id;
-                                                    final li =
-                                                        t.lineItems.first;
-                                                    itemUnitPriceCtrl.text =
-                                                        (li.sellingPricePerMeter >
-                                                                    0
-                                                                ? li.sellingPricePerMeter
-                                                                : t.sellingPrice)
-                                                            .fmt;
-                                                    itemDescCtrl.text =
-                                                        '${t.name} - ${li.description}';
-                                                  } else {
-                                                    itemUnitPriceCtrl.text =
-                                                        t.sellingPrice.fmt;
-                                                    itemDescCtrl.text = t.name;
-                                                  }
-                                                  final q =
-                                                      double.tryParse(
-                                                        itemQtyCtrl.text,
-                                                      ) ??
-                                                      1.0;
-                                                  final up =
-                                                      double.tryParse(
-                                                        itemUnitPriceCtrl.text,
-                                                      ) ??
-                                                      0.0;
-                                                  itemAgreedCtrl.text =
-                                                      (q * up).fmt;
                                                 }),
                                               ),
                                               if (selectedRecordId != null) ...[
@@ -8559,129 +8113,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                           ),
                                                         );
                                                       }).toList(),
-                                                      onChanged: (lv) => setSt(() {
-                                                        selectedLineItemId = lv;
-                                                        if (lv != null) {
-                                                          final li = t.lineItems
-                                                              .firstWhere(
-                                                                (x) =>
-                                                                    x.id == lv,
-                                                              );
-                                                          itemDescCtrl.text =
-                                                              '${t.name} - ${li.description}';
-                                                          itemUnitPriceCtrl
-                                                                  .text =
-                                                              (li.sellingPricePerMeter >
-                                                                          0
-                                                                      ? li.sellingPricePerMeter
-                                                                      : t.sellingPrice)
-                                                                  .fmt;
-                                                          final q =
-                                                              double.tryParse(
-                                                                itemQtyCtrl
-                                                                    .text,
-                                                              ) ??
-                                                              1.0;
-                                                          final up =
-                                                              double.tryParse(
-                                                                itemUnitPriceCtrl
-                                                                    .text,
-                                                              ) ??
-                                                              0.0;
-                                                          itemAgreedCtrl.text =
-                                                              (q * up).fmt;
-                                                        }
-                                                      }),
+                                                      onChanged: (lv) => setSt(
+                                                        () => selectedLineItemId =
+                                                            lv,
+                                                      ),
                                                     );
                                                   },
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Row(
-                                                  children: [
-                                                    Expanded(
-                                                      child: TextField(
-                                                        controller: itemQtyCtrl,
-                                                        keyboardType:
-                                                            const TextInputType.numberWithOptions(
-                                                              decimal: true,
-                                                            ),
-                                                        decoration:
-                                                            const InputDecoration(
-                                                              labelText:
-                                                                  'الكمية المطلوبة بالمتر (م²)',
-                                                              isDense: true,
-                                                            ),
-                                                        onChanged: (_) => setSt(
-                                                          () {
-                                                            final q =
-                                                                double.tryParse(
-                                                                  itemQtyCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            final up =
-                                                                double.tryParse(
-                                                                  itemUnitPriceCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            itemAgreedCtrl
-                                                                    .text =
-                                                                (q * up).fmt;
-                                                          },
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: TextField(
-                                                        controller:
-                                                            itemUnitPriceCtrl,
-                                                        keyboardType:
-                                                            const TextInputType.numberWithOptions(
-                                                              decimal: true,
-                                                            ),
-                                                        decoration:
-                                                            const InputDecoration(
-                                                              labelText:
-                                                                  'سعر المتر الإفرادي (\$)',
-                                                              isDense: true,
-                                                            ),
-                                                        onChanged: (_) => setSt(
-                                                          () {
-                                                            final q =
-                                                                double.tryParse(
-                                                                  itemQtyCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            final up =
-                                                                double.tryParse(
-                                                                  itemUnitPriceCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            itemAgreedCtrl
-                                                                    .text =
-                                                                (q * up).fmt;
-                                                          },
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 8),
-                                                TextField(
-                                                  controller: itemAgreedCtrl,
-                                                  keyboardType:
-                                                      const TextInputType.numberWithOptions(
-                                                        decimal: true,
-                                                      ),
-                                                  decoration: const InputDecoration(
-                                                    labelText:
-                                                        'إجمالي سعر الأمتار (\$)',
-                                                    isDense: true,
-                                                  ),
                                                 ),
                                               ],
                                             ] else if (itemSourceType ==
@@ -8706,116 +8143,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       ),
                                                     )
                                                     .toList(),
-                                                onChanged: (v) => setSt(() {
-                                                  selectedRecordId = v;
-                                                  if (v != null) {
-                                                    final t = erp
-                                                        .complexTailorings
-                                                        .firstWhere(
-                                                          (x) => x.id == v,
-                                                        );
-                                                    itemDescCtrl.text = t.name;
-                                                    itemUnitPriceCtrl.text =
-                                                        t.sellingPrice.fmt;
-                                                    itemQtyCtrl.text = '1';
-                                                    itemAgreedCtrl.text =
-                                                        t.sellingPrice.fmt;
-                                                    itemUnitCat = 'قطعة';
-                                                    itemIsGranite = t.isGranite;
-                                                    itemPhoto = t.photoPath;
-                                                  }
-                                                }),
+                                                onChanged: (v) => setSt(
+                                                  () => selectedRecordId = v,
+                                                ),
                                               ),
-                                              if (selectedRecordId != null) ...[
-                                                const SizedBox(height: 8),
-                                                Row(
-                                                  children: [
-                                                    Expanded(
-                                                      child: TextField(
-                                                        controller: itemQtyCtrl,
-                                                        keyboardType:
-                                                            const TextInputType.numberWithOptions(
-                                                              decimal: true,
-                                                            ),
-                                                        decoration:
-                                                            const InputDecoration(
-                                                              labelText:
-                                                                  'عدد القطع',
-                                                              isDense: true,
-                                                            ),
-                                                        onChanged: (_) => setSt(
-                                                          () {
-                                                            final q =
-                                                                double.tryParse(
-                                                                  itemQtyCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            final up =
-                                                                double.tryParse(
-                                                                  itemUnitPriceCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            itemAgreedCtrl
-                                                                    .text =
-                                                                (q * up).fmt;
-                                                          },
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: TextField(
-                                                        controller:
-                                                            itemUnitPriceCtrl,
-                                                        keyboardType:
-                                                            const TextInputType.numberWithOptions(
-                                                              decimal: true,
-                                                            ),
-                                                        decoration:
-                                                            const InputDecoration(
-                                                              labelText:
-                                                                  'سعر القطعة الإفرادي (\$)',
-                                                              isDense: true,
-                                                            ),
-                                                        onChanged: (_) => setSt(
-                                                          () {
-                                                            final q =
-                                                                double.tryParse(
-                                                                  itemQtyCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            final up =
-                                                                double.tryParse(
-                                                                  itemUnitPriceCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            itemAgreedCtrl
-                                                                    .text =
-                                                                (q * up).fmt;
-                                                          },
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 8),
-                                                TextField(
-                                                  controller: itemAgreedCtrl,
-                                                  keyboardType:
-                                                      const TextInputType.numberWithOptions(
-                                                        decimal: true,
-                                                      ),
-                                                  decoration: const InputDecoration(
-                                                    labelText:
-                                                        'إجمالي السعر للقطع (\$)',
-                                                    isDense: true,
-                                                  ),
-                                                ),
-                                              ],
                                             ] else if (itemSourceType ==
                                                 'بيع قطع إضافية') ...[
                                               DropdownButtonFormField<String>(
@@ -8838,288 +8169,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       ),
                                                     )
                                                     .toList(),
-                                                onChanged: (v) => setSt(() {
-                                                  selectedRecordId = v;
-                                                  if (v != null) {
-                                                    final s = erp.scrapItems
-                                                        .firstWhere(
-                                                          (x) => x.id == v,
-                                                        );
-                                                    itemDescCtrl.text =
-                                                        s.description;
-                                                    itemUnitPriceCtrl.text =
-                                                        s.sellingPrice.fmt;
-                                                    itemAgreedCtrl.text =
-                                                        s.sellingPrice.fmt;
-                                                    itemQtyCtrl.text = '1';
-                                                    itemUnitCat = 'قطعة';
-                                                    itemPhoto = s.photoPath;
-                                                  }
-                                                }),
+                                                onChanged: (v) => setSt(
+                                                  () => selectedRecordId = v,
+                                                ),
                                               ),
-                                              if (selectedRecordId != null) ...[
-                                                const SizedBox(height: 8),
-                                                TextField(
-                                                  controller: itemDescCtrl,
-                                                  decoration:
-                                                      const InputDecoration(
-                                                        labelText:
-                                                            'وصف القطعة الإضافية',
-                                                        isDense: true,
-                                                      ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                TextField(
-                                                  controller: itemAgreedCtrl,
-                                                  keyboardType:
-                                                      const TextInputType.numberWithOptions(
-                                                        decimal: true,
-                                                      ),
-                                                  decoration:
-                                                      const InputDecoration(
-                                                        labelText: 'السعر (\$)',
-                                                        isDense: true,
-                                                      ),
-                                                ),
-                                              ],
                                             ],
 
-                                            const SizedBox(height: 12),
-
-                                            // 3. DEDICATED SERVICES FOR THIS ITEM
-                                            Container(
-                                              padding: const EdgeInsets.all(10),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFF1F5F9),
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                border: Border.all(
-                                                  color: const Color(
-                                                    0xFFCBD5E1,
-                                                  ),
-                                                ),
-                                              ),
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      const Icon(
-                                                        Icons.handyman_outlined,
-                                                        size: 16,
-                                                        color: AppColors
-                                                            .accentPrimary,
-                                                      ),
-                                                      const SizedBox(width: 6),
-                                                      const Expanded(
-                                                        child: Text(
-                                                          'خدمات مخصصة لهذا الصنف:',
-                                                          style: TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                            fontSize: 12,
-                                                            color: Color(
-                                                              0xFF0F172A,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      Text(
-                                                        'إجمالي خدمات الصنف: ${currentItemServices.fold<double>(0.0, (s, e) => s + e.price).fmt}\$',
-                                                        style: const TextStyle(
-                                                          fontSize: 11,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                          color: Color(
-                                                            0xFF2563EB,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 8),
-                                                  DropdownButtonFormField<
-                                                    String
-                                                  >(
-                                                    value: serviceValue,
-                                                    isExpanded: true,
-                                                    decoration:
-                                                        const InputDecoration(
-                                                          labelText:
-                                                              'اختر الخدمة',
-                                                          isDense: true,
-                                                        ),
-                                                    items: servicesFiltered
-                                                        .map(
-                                                          (
-                                                            s,
-                                                          ) => DropdownMenuItem(
-                                                            value: s.id,
-                                                            child: Text(
-                                                              '${s.name} (${s.unitRate}\$)',
-                                                            ),
-                                                          ),
-                                                        )
-                                                        .toList(),
-                                                    onChanged: (v) => setSt(() {
-                                                      selectedServiceId = v;
-                                                      if (v != null) {
-                                                        final srv = erp.services
-                                                            .firstWhere(
-                                                              (s) => s.id == v,
-                                                            );
-                                                        autoCalculateServicePrice(
-                                                          srv,
-                                                        );
-                                                      }
-                                                    }),
-                                                  ),
-                                                  const SizedBox(height: 6),
-                                                  Row(
-                                                    children: [
-                                                      Expanded(
-                                                        child: TextField(
-                                                          controller:
-                                                              servicePriceCtrl,
-                                                          keyboardType:
-                                                              const TextInputType.numberWithOptions(
-                                                                decimal: true,
-                                                              ),
-                                                          decoration:
-                                                              const InputDecoration(
-                                                                labelText:
-                                                                    'سعر الخدمة (\$)',
-                                                                isDense: true,
-                                                              ),
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 6),
-                                                      Expanded(
-                                                        flex: 2,
-                                                        child: TextField(
-                                                          controller:
-                                                              serviceNotesCtrl,
-                                                          decoration:
-                                                              const InputDecoration(
-                                                                labelText:
-                                                                    'ملاحظات (اختياري)',
-                                                                isDense: true,
-                                                              ),
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 6),
-                                                      ElevatedButton.icon(
-                                                        style: ElevatedButton.styleFrom(
-                                                          backgroundColor:
-                                                              const Color(
-                                                                0xFF2563EB,
-                                                              ),
-                                                          foregroundColor:
-                                                              Colors.white,
-                                                          padding:
-                                                              const EdgeInsets.symmetric(
-                                                                horizontal: 10,
-                                                                vertical: 8,
-                                                              ),
-                                                        ),
-                                                        onPressed: () {
-                                                          if (selectedServiceId ==
-                                                              null)
-                                                            return;
-                                                          final price =
-                                                              double.tryParse(
-                                                                servicePriceCtrl
-                                                                    .text,
-                                                              ) ??
-                                                              0.0;
-                                                          if (price <= 0)
-                                                            return;
-                                                          final srv = erp
-                                                              .services
-                                                              .firstWhere(
-                                                                (s) =>
-                                                                    s.id ==
-                                                                    selectedServiceId,
-                                                              );
-                                                          setSt(() {
-                                                            currentItemServices.add(
-                                                              ServiceAttachment(
-                                                                serviceName:
-                                                                    srv.name,
-                                                                price: price,
-                                                                notes:
-                                                                    serviceNotesCtrl
-                                                                        .text
-                                                                        .trim(),
-                                                              ),
-                                                            );
-                                                            selectedServiceId =
-                                                                null;
-                                                            servicePriceCtrl
-                                                                .clear();
-                                                            serviceNotesCtrl
-                                                                .clear();
-                                                          });
-                                                        },
-                                                        icon: const Icon(
-                                                          Icons.add,
-                                                          size: 14,
-                                                        ),
-                                                        label: const Text(
-                                                          'إرفاق',
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  if (currentItemServices
-                                                      .isNotEmpty) ...[
-                                                    const SizedBox(height: 8),
-                                                    Wrap(
-                                                      spacing: 6,
-                                                      runSpacing: 4,
-                                                      children: currentItemServices.asMap().entries.map((
-                                                        e,
-                                                      ) {
-                                                        return Chip(
-                                                          labelPadding:
-                                                              const EdgeInsets.symmetric(
-                                                                horizontal: 4,
-                                                              ),
-                                                          visualDensity:
-                                                              VisualDensity
-                                                                  .compact,
-                                                          backgroundColor:
-                                                              Colors.white,
-                                                          label: Text(
-                                                            '${e.value.serviceName}: ${e.value.price}\$',
-                                                            style:
-                                                                const TextStyle(
-                                                                  fontSize: 11,
-                                                                ),
-                                                          ),
-                                                          deleteIcon:
-                                                              const Icon(
-                                                                Icons.close,
-                                                                size: 14,
-                                                              ),
-                                                          onDeleted: () => setSt(
-                                                            () =>
-                                                                currentItemServices
-                                                                    .removeAt(
-                                                                      e.key,
-                                                                    ),
-                                                          ),
-                                                        );
-                                                      }).toList(),
-                                                    ),
-                                                  ],
-                                                ],
-                                              ),
-                                            ),
 
                                             if (itemError != null) ...[
                                               const SizedBox(height: 8),
@@ -9176,231 +8231,43 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                               ),
                                               const SizedBox(height: 12),
                                             ],
-                                            // BUTTON: ADD ITEM TO ORDER
-                                            SizedBox(
-                                              width: double.infinity,
-                                              child: ElevatedButton.icon(
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: const Color(
-                                                    0xFF0F766E,
-                                                  ),
-                                                  foregroundColor: Colors.white,
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        vertical: 12,
-                                                      ),
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
+                                            // صندوق تطبيق الخدمة الجماعية على
+                                            // البنود المحددة (التحديد الثاني).
+                                            if (bulkSvcTargets.isNotEmpty)
+                                              bulkServicePanel(),
+                                            if (selectedDraftRows.isEmpty)
+                                              Container(
+                                                padding: const EdgeInsets.all(10),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFEFF6FF),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  border: Border.all(
+                                                    color: const Color(0xFFBFDBFE),
                                                   ),
                                                 ),
-                                                onPressed: () {
-                                                  double itemQty = 1.0;
-                                                  double itemAgreed = 0.0;
-                                                  double itemNet = 0.0;
-                                                  double itemUnitPrice = 0.0;
-                                                  String itemDesc = itemDescCtrl
-                                                      .text
-                                                      .trim();
-
-                                                  double itemLen = 0.0;
-                                                  double itemWid = 0.0;
-                                                  double itemHei = 0.0;
-                                                  double itemCount = 1.0;
-
-                                                  if (itemSourceType ==
-                                                      'بيع مواد خام من المعمل') {
-                                                    if (selectedRaw == null ||
-                                                        rawArea <= 0) {
-                                                      setSt(
-                                                        () => itemError =
-                                                            'يرجى اختيار المادة وتحديد الأبعاد.',
-                                                      );
-                                                      return;
-                                                    }
-                                                    itemQty = rawArea;
-                                                    itemUnitPrice = rp;
-                                                    itemAgreed = rawArea * rp;
-                                                    itemNet =
-                                                        rawArea *
-                                                        selectedRaw
-                                                            .netCostPerUnit;
-                                                    itemDesc =
-                                                        '${selectedRaw.typeName} ${selectedRaw.grade} ${selectedRaw.thicknessCm}سم';
-                                                    itemLen = rl;
-                                                    itemWid = rw;
-                                                    itemHei = rawCube
-                                                        ? rh
-                                                        : 0.0;
-                                                    itemCount = rq > 0
-                                                        ? rq
-                                                        : 1.0;
-                                                  } else {
-                                                    if (selectedRecordId ==
-                                                        null) {
-                                                      setSt(
-                                                        () => itemError =
-                                                            'يرجى اختيار السجل أو التفصيل.',
-                                                      );
-                                                      return;
-                                                    }
-                                                    itemQty =
-                                                        double.tryParse(
-                                                          itemQtyCtrl.text,
-                                                        ) ??
-                                                        1.0;
-                                                    itemUnitPrice =
-                                                        double.tryParse(
-                                                          itemUnitPriceCtrl
-                                                              .text,
-                                                        ) ??
-                                                        0.0;
-                                                    itemAgreed =
-                                                        double.tryParse(
-                                                          itemAgreedCtrl.text,
-                                                        ) ??
-                                                        0.0;
-                                                    itemCount = itemQty;
-
-                                                    if (itemSourceType ==
-                                                        'بيع خياطة بسيطة') {
-                                                      final t = erp
-                                                          .simpleTailorings
-                                                          .firstWhere(
-                                                            (x) =>
-                                                                x.id ==
-                                                                selectedRecordId,
-                                                          );
-                                                      itemNet =
-                                                          (t.quantity > 0
-                                                              ? (t.totalNetCost /
-                                                                    t.quantity)
-                                                              : 0) *
-                                                          itemQty;
-                                                      if (selectedLineItemId !=
-                                                          null) {
-                                                        final liMatches = t
-                                                            .lineItems
-                                                            .where(
-                                                              (x) =>
-                                                                  x.id ==
-                                                                  selectedLineItemId,
-                                                            )
-                                                            .toList();
-                                                        if (liMatches
-                                                            .isNotEmpty) {
-                                                          final li =
-                                                              liMatches.first;
-                                                          itemLen = li.lengthCm;
-                                                          itemWid = li.widthCm;
-                                                          itemHei = li.heightCm;
-                                                        }
-                                                      }
-                                                      if (itemDesc.isEmpty)
-                                                        itemDesc = t.name;
-                                                    } else if (itemSourceType ==
-                                                        'بيع خياطة معقدة') {
-                                                      final t = erp
-                                                          .complexTailorings
-                                                          .firstWhere(
-                                                            (x) =>
-                                                                x.id ==
-                                                                selectedRecordId,
-                                                          );
-                                                      itemNet =
-                                                          (t.quantity > 0
-                                                              ? (t.totalNetCost /
-                                                                    t.quantity)
-                                                              : 0) *
-                                                          itemQty;
-                                                      if (itemDesc.isEmpty)
-                                                        itemDesc = t.name;
-                                                    } else if (itemSourceType ==
-                                                        'بيع قطع إضافية') {
-                                                      final s = erp.scrapItems
-                                                          .firstWhere(
-                                                            (x) =>
-                                                                x.id ==
-                                                                selectedRecordId,
-                                                          );
-                                                      itemNet = s.baseCost;
-                                                      if (itemDesc.isEmpty)
-                                                        itemDesc =
-                                                            s.description;
-                                                    }
-                                                  }
-
-                                                  final newItem = WorkshopInvoiceItem(
-                                                    id: 'woi_${DateTime.now().microsecondsSinceEpoch}',
-                                                    sourceType: itemSourceType,
-                                                    sourceId:
-                                                        itemSourceType ==
-                                                            'بيع مواد خام من المعمل'
-                                                        ? selectedRawId!
-                                                        : selectedRecordId!,
-                                                    sourceLineItemId:
-                                                        selectedLineItemId ??
-                                                        '',
-                                                    description: itemDesc,
-                                                    quantity: itemQty,
-                                                    unitCategory: rawCube
-                                                        ? 'متر مكعب'
-                                                        : itemUnitCat,
-                                                    unitPrice: itemUnitPrice,
-                                                    agreedPrice: itemAgreed,
-                                                    netCost: itemNet,
-                                                    depositAmount: 0.0,
-                                                    isGranite: itemIsGranite,
-                                                    services: List.of(
-                                                      currentItemServices,
+                                                child: const Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.info_outline_rounded,
+                                                      size: 18,
+                                                      color: Color(0xFF2563EB),
                                                     ),
-                                                    photoPath: itemPhoto,
-                                                    lengthCm: itemLen,
-                                                    widthCm: itemWid,
-                                                    heightCm: itemHei,
-                                                    count: itemCount,
-                                                  );
-
-                                                  setSt(() {
-                                                    draftItems.add(newItem);
-                                                    final newIdx = draftItems.length - 1;
-                                                    rowEdits.add(_WsOrderRowEdit());
-                                                    syncRowEdit(newIdx, draftItems[newIdx]);
-                                                    selectedRecordId = null;
-                                                    selectedLineItemId = null;
-                                                    selectedRawId = null;
-                                                    recordSearch = '';
-                                                    rawSearch = '';
-                                                    itemUnitCat = 'متر مربع';
-                                                    currentItemServices.clear();
-                                                    itemDescCtrl.clear();
-                                                    itemQtyCtrl.text = '1';
-                                                    itemUnitPriceCtrl.text =
-                                                        '0';
-                                                    itemAgreedCtrl.text = '0';
-                                                    rawLenCtrl.clear();
-                                                    rawWidCtrl.clear();
-                                                    rawHeiCtrl.clear();
-                                                    rawPriceCtrl.clear();
-                                                    itemError = null;
-                                                    formError = null;
-                                                  });
-                                                },
-                                                icon: const Icon(
-                                                  Icons.add_task_rounded,
-                                                  size: 18,
-                                                ),
-                                                label: const Text(
-                                                  '+ إضافة هذا الصنف إلى الطلبية',
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 13,
-                                                  ),
+                                                    SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        'طريقة الإضافة الجديدة: انقر «إضافة بند» في القسم الأيمن لتوليد صفوف فارغة، حدّدها (☑)، اختر النوع والسجل أعلاه ثم اضغط «تعيين النوع للصفوف المحددة». الأبعاد والكمية والسعر تُعدَّل داخل كل صف مباشرة، والخدمات تُضاف من صندوق الخدمة أعلاه.',
+                                                        style: TextStyle(
+                                                          fontSize: 11.5,
+                                                          color: Color(0xFF1E40AF),
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
-                                            ),
                                           ],
                                         ),
                                       ),
@@ -9738,12 +8605,6 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                               ),
                                             ),
                                           ],
-                  // صندوق تطبيق الخدمة الجماعية - يظهر عند التحديد الثاني
-                  // (بنود معيّن نوعها) مباشرة فوق زر الحفظ.
-                  if (bulkSvcTargets.isNotEmpty) ...[
-                    bulkServicePanel(),
-                    const SizedBox(height: 10),
-                  ],
                                           if (formError != null) ...[
                                             const SizedBox(height: 8),
                                             Text(
