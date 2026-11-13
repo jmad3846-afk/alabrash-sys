@@ -43,6 +43,34 @@ class A4InvoiceLineItem {
     required this.lineTotal,
   });
 
+  A4InvoiceLineItem copyWith({
+    int? index,
+    String? description,
+    String? gradeAndSpecs,
+    String? dimensionsText,
+    double? lengthCm,
+    double? widthCm,
+    double? heightCm,
+    double? count,
+    String? quantityText,
+    double? unitPrice,
+    String? servicesText,
+    double? lineTotal,
+  }) => A4InvoiceLineItem(
+    index: index ?? this.index,
+    description: description ?? this.description,
+    gradeAndSpecs: gradeAndSpecs ?? this.gradeAndSpecs,
+    dimensionsText: dimensionsText ?? this.dimensionsText,
+    lengthCm: lengthCm ?? this.lengthCm,
+    widthCm: widthCm ?? this.widthCm,
+    heightCm: heightCm ?? this.heightCm,
+    count: count ?? this.count,
+    quantityText: quantityText ?? this.quantityText,
+    unitPrice: unitPrice ?? this.unitPrice,
+    servicesText: servicesText ?? this.servicesText,
+    lineTotal: lineTotal ?? this.lineTotal,
+  );
+
   bool get hasDimensions {
     if (lengthCm != null && lengthCm! > 0 && widthCm != null && widthCm! > 0) {
       return true;
@@ -1745,114 +1773,10 @@ class _A4InvoicePrintDialogState extends State<A4InvoicePrintDialog> {
   // INVOICE TABLE (LIGHT HEADER, HIGH CONTRAST)
   // ==========================================================================
   Widget _buildItemsTable(A4InvoiceData inv) {
-    final hasDim = inv.hasDimensions;
-
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(5),
-        child: Table(
-          columnWidths: hasDim
-              ? const {
-                  0: FixedColumnWidth(28), // #
-                  1: FlexColumnWidth(2.4), // Description
-                  2: FlexColumnWidth(1.5), // Specs
-                  3: FlexColumnWidth(1.1), // Length
-                  4: FlexColumnWidth(1.1), // Width
-                  5: FlexColumnWidth(1.6), // Qty / Meters
-                  6: FlexColumnWidth(1.4), // Unit Price
-                  7: FlexColumnWidth(2.5), // Services & formula
-                  8: FlexColumnWidth(1.6), // Total
-                }
-              : const {
-                  0: FixedColumnWidth(30), // #
-                  1: FlexColumnWidth(2.6), // Description
-                  2: FlexColumnWidth(1.6), // Specs
-                  3: FlexColumnWidth(1.7), // Dimensions
-                  4: FlexColumnWidth(1.8), // Qty / Meters
-                  5: FlexColumnWidth(1.5), // Unit Price
-                  6: FlexColumnWidth(2.8), // Services & formula
-                  7: FlexColumnWidth(1.7), // Total
-                },
-          border: TableBorder.all(
-            color: const Color(0xFFCBD5E1),
-            width: 1,
-          ),
-          children: [
-            // Table Header Row: Light slate background, crisp dark text
-            TableRow(
-              decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
-              children: hasDim
-                  ? [
-                      const _TableHeaderCell('#'),
-                      const _TableHeaderCell('البيان والمادة'),
-                      const _TableHeaderCell('المواصفات والنوع'),
-                      const _TableHeaderCell('الطول (سم)'),
-                      const _TableHeaderCell('العرض (سم)'),
-                      _TableHeaderCell(inv.isWorkshopOrder ? 'الكمية (العدد)' : 'الكمية / الأمتار (م²)'),
-                      const _TableHeaderCell('سعر المتر / الوحدة'),
-                      const _TableHeaderCell('الخدمات الملحقة وحسابها'),
-                      const _TableHeaderCell('الإجمالي'),
-                    ]
-                  : [
-                      const _TableHeaderCell('#'),
-                      const _TableHeaderCell('البيان والمادة'),
-                      const _TableHeaderCell('المواصفات والنوع'),
-                      const _TableHeaderCell('الأبعاد (سم)'),
-                      _TableHeaderCell(inv.isWorkshopOrder ? 'الكمية (العدد)' : 'الكمية / الأمتار (م²)'),
-                      const _TableHeaderCell('سعر المتر / الوحدة'),
-                      const _TableHeaderCell('الخدمات الملحقة وحسابها'),
-                      const _TableHeaderCell('الإجمالي'),
-                    ],
-            ),
-
-            // Table Data Rows: Alternating white and soft tint
-            ...inv.items.map((it) {
-              final isEven = it.index % 2 == 0;
-              return TableRow(
-                decoration: BoxDecoration(
-                  color: isEven ? const Color(0xFFF8FAFC) : Colors.white,
-                ),
-                children: hasDim
-                    ? [
-                        _TableCell(it.index.toString(), isCenter: true),
-                        _TableCell(it.description, isBold: true),
-                        _TableCell(it.gradeAndSpecs),
-                        _TableCell(it.lengthDisplay, isCenter: true),
-                        _TableCell(it.widthDisplay, isCenter: true),
-                        _TableCell(it.quantityText, isCenter: true, isBold: true),
-                        _TableCell('${it.unitPrice.fmt} ${AppCurrency.symbol(inv.currency)}', isCenter: true),
-                        _TableCell(it.servicesText, isSmall: true),
-                        _TableCell(
-                          '${it.lineTotal.fmt} ${AppCurrency.symbol(inv.currency)}',
-                          isCenter: true,
-                          isBold: true,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ]
-                    : [
-                        _TableCell(it.index.toString(), isCenter: true),
-                        _TableCell(it.description, isBold: true),
-                        _TableCell(it.gradeAndSpecs),
-                        _TableCell(it.dimensionsText, isCenter: true),
-                        _TableCell(it.quantityText, isCenter: true, isBold: true),
-                        _TableCell('${it.unitPrice.fmt} ${AppCurrency.symbol(inv.currency)}', isCenter: true),
-                        _TableCell(it.servicesText, isSmall: true),
-                        _TableCell(
-                          '${it.lineTotal.fmt} ${AppCurrency.symbol(inv.currency)}',
-                          isCenter: true,
-                          isBold: true,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ],
-              );
-            }),
-          ],
-        ),
-      ),
+    return A4InvoiceItemsTable(
+      items: inv.items,
+      currency: inv.currency,
+      isWorkshopOrder: inv.isWorkshopOrder,
     );
   }
 
@@ -2319,6 +2243,145 @@ class _TableCell extends StatelessWidget {
           fontSize: isSmall ? 9.0 : 10.0,
           fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
           color: color ?? const Color(0xFF0F172A),
+        ),
+      ),
+    );
+  }
+}
+
+/// The exact invoice line-items table used by the A4 invoice print.
+/// Public so other documents (like the Account Statement) can render
+/// invoice details with an identical format, columns and layout.
+class A4InvoiceItemsTable extends StatelessWidget {
+  final List<A4InvoiceLineItem> items;
+  final String currency;
+  final bool isWorkshopOrder;
+
+  const A4InvoiceItemsTable({
+    super.key,
+    required this.items,
+    required this.currency,
+    this.isWorkshopOrder = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasDim = isWorkshopOrder || items.any((it) => it.hasDimensions);
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(5),
+        child: Table(
+          columnWidths: hasDim
+              ? const {
+                  0: FixedColumnWidth(28), // #
+                  1: FlexColumnWidth(2.4), // Description
+                  2: FlexColumnWidth(1.5), // Specs
+                  3: FlexColumnWidth(1.1), // Length
+                  4: FlexColumnWidth(1.1), // Width
+                  5: FlexColumnWidth(1.6), // Qty / Meters
+                  6: FlexColumnWidth(1.4), // Unit Price
+                  7: FlexColumnWidth(2.5), // Services & formula
+                  8: FlexColumnWidth(1.6), // Total
+                }
+              : const {
+                  0: FixedColumnWidth(30), // #
+                  1: FlexColumnWidth(2.6), // Description
+                  2: FlexColumnWidth(1.6), // Specs
+                  3: FlexColumnWidth(1.7), // Dimensions
+                  4: FlexColumnWidth(1.8), // Qty / Meters
+                  5: FlexColumnWidth(1.5), // Unit Price
+                  6: FlexColumnWidth(2.8), // Services & formula
+                  7: FlexColumnWidth(1.7), // Total
+                },
+          border: TableBorder.all(
+            color: const Color(0xFFCBD5E1),
+            width: 1,
+          ),
+          children: [
+            // Table Header Row: Light slate background, crisp dark text
+            TableRow(
+              decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
+              children: hasDim
+                  ? [
+                      const _TableHeaderCell('#'),
+                      const _TableHeaderCell('البيان والمادة'),
+                      const _TableHeaderCell('المواصفات والنوع'),
+                      const _TableHeaderCell('الطول (سم)'),
+                      const _TableHeaderCell('العرض (سم)'),
+                      _TableHeaderCell(
+                        isWorkshopOrder ? 'الكمية (العدد)' : 'الكمية / الأمتار (م²)',
+                      ),
+                      const _TableHeaderCell('سعر المتر / الوحدة'),
+                      const _TableHeaderCell('الخدمات الملحقة وحسابها'),
+                      const _TableHeaderCell('الإجمالي'),
+                    ]
+                  : [
+                      const _TableHeaderCell('#'),
+                      const _TableHeaderCell('البيان والمادة'),
+                      const _TableHeaderCell('المواصفات والنوع'),
+                      const _TableHeaderCell('الأبعاد (سم)'),
+                      _TableHeaderCell(
+                        isWorkshopOrder ? 'الكمية (العدد)' : 'الكمية / الأمتار (م²)',
+                      ),
+                      const _TableHeaderCell('سعر المتر / الوحدة'),
+                      const _TableHeaderCell('الخدمات الملحقة وحسابها'),
+                      const _TableHeaderCell('الإجمالي'),
+                    ],
+            ),
+
+            // Table Data Rows: Alternating white and soft tint
+            ...items.map((it) {
+              final isEven = it.index % 2 == 0;
+              return TableRow(
+                decoration: BoxDecoration(
+                  color: isEven ? const Color(0xFFF8FAFC) : Colors.white,
+                ),
+                children: hasDim
+                    ? [
+                        _TableCell(it.index.toString(), isCenter: true),
+                        _TableCell(it.description, isBold: true),
+                        _TableCell(it.gradeAndSpecs),
+                        _TableCell(it.lengthDisplay, isCenter: true),
+                        _TableCell(it.widthDisplay, isCenter: true),
+                        _TableCell(it.quantityText, isCenter: true, isBold: true),
+                        _TableCell(
+                          '${it.unitPrice.fmt} ${AppCurrency.symbol(currency)}',
+                          isCenter: true,
+                        ),
+                        _TableCell(it.servicesText, isSmall: true),
+                        _TableCell(
+                          '${it.lineTotal.fmt} ${AppCurrency.symbol(currency)}',
+                          isCenter: true,
+                          isBold: true,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ]
+                    : [
+                        _TableCell(it.index.toString(), isCenter: true),
+                        _TableCell(it.description, isBold: true),
+                        _TableCell(it.gradeAndSpecs),
+                        _TableCell(it.dimensionsText, isCenter: true),
+                        _TableCell(it.quantityText, isCenter: true, isBold: true),
+                        _TableCell(
+                          '${it.unitPrice.fmt} ${AppCurrency.symbol(currency)}',
+                          isCenter: true,
+                        ),
+                        _TableCell(it.servicesText, isSmall: true),
+                        _TableCell(
+                          '${it.lineTotal.fmt} ${AppCurrency.symbol(currency)}',
+                          isCenter: true,
+                          isBold: true,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ],
+              );
+            }),
+          ],
         ),
       ),
     );

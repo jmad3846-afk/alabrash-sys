@@ -12,150 +12,46 @@ import 'package:provider/provider.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../core/theme/app_theme.dart';
+import 'a4_invoice_print_dialog.dart';
 import 'a4_statement_invoice_selection_dialog.dart';
 
 /// Type of the entity for which the statement of account is generated.
 enum AccountStatementType { supplier, accreditedAgent, customer, project }
 
-/// One item line belonging to an invoice shown under it in the statement.
-class A4StatementDetailLine {
-  final String description;
-  final String item;
-  final String specifications;
-  final String type;
-  final String length;
-  final String width;
-  final String quantityText;
-  final double? unitPrice;
-  final String servicesText;
-  final double total;
-
-  const A4StatementDetailLine({
-    required this.description,
-    required this.item,
-    required this.specifications,
-    required this.type,
-    required this.length,
-    required this.width,
-    required this.quantityText,
-    required this.unitPrice,
-    required this.servicesText,
-    required this.total,
-  });
-}
-
-String _statementServicesText(
-  List<ServiceAttachment> services,
-  String currency,
-) {
-  if (services.isEmpty) return '—';
-  return services
-      .map((service) {
-        final notes = service.notes.trim();
-        final noteText = notes.isEmpty ? '' : ' ($notes)';
-        return '${service.serviceName}: ${service.price.fmt} ${AppCurrency.symbol(currency)}$noteText';
-      })
-      .join('\n');
-}
-
-List<A4StatementDetailLine> _factoryInvoiceDetails(
-  FactoryInvoiceModel inv, {
-  required bool isSale,
-}) {
-  if (inv.items.isEmpty) {
-    return [
-      A4StatementDetailLine(
-        description: 'تفاصيل المواد غير متاحة',
-        item: '—',
-        specifications: '—',
-        type: inv.invoiceType,
-        length: '—',
-        width: '—',
-        quantityText: '—',
-        unitPrice: null,
-        servicesText: _statementServicesText(inv.services, inv.currency),
-        total: inv.grandTotal,
-      ),
-    ];
-  }
-  return inv.items.asMap().entries.map((entry) {
-    final index = entry.key;
-    final it = entry.value;
-    final itemName = it.typeName.isNotEmpty ? it.typeName : it.description;
-    final materialType = it.isMeterItem
-        ? (it.meterUnit.isNotEmpty ? it.meterUnit : 'متر')
-        : (it.isTailoringItem ? 'تفصيل' : 'بلوك');
-    final specs = <String>[
-      if (it.grade.isNotEmpty) it.grade,
-      it.isGranite ? 'جرانيت' : 'رخام',
-      if (it.thicknessCm > 0) 'السماكة ${it.thicknessCm.fmt} سم',
-      if (it.heightCm > 0) 'الارتفاع ${it.heightCm.fmt} سم',
-    ].join(' • ');
-    final quantityText = it.isMeterItem
-        ? '${it.quantity.fmt} ${it.meterUnit.isNotEmpty ? it.meterUnit : "متر"}'
-        : isSale
-        ? '${it.calculatedArea.fmt} ${it.isCubicMeter || it.heightCm > 5 ? "م³" : "م²"} (${it.quantity.fmt} قطعة)'
-        : '${it.quantity.fmt} طن';
-    return A4StatementDetailLine(
-      description: it.description.isNotEmpty ? it.description : itemName,
-      item: itemName,
-      specifications: specs.isEmpty ? '—' : specs,
-      type: materialType,
-      length: it.lengthCm > 0 ? '${it.lengthCm.fmt} سم' : '—',
-      width: it.widthCm > 0 ? '${it.widthCm.fmt} سم' : '—',
-      quantityText: quantityText,
-      unitPrice: it.unitPrice,
-      servicesText: _statementServicesText([
-        ...it.services,
-        if (index == 0) ...inv.services,
-      ], inv.currency),
-      total: it.grandTotal,
+/// Builds the printable invoice line items for a factory invoice using the
+/// exact same adapter that feeds the A4 invoice print, then appends any
+/// invoice-level services into the first row's services cell so they stay
+/// visible inside the statement detail table.
+List<A4InvoiceLineItem> _factoryInvoiceDetails(FactoryInvoiceModel inv) {
+  final items = List<A4InvoiceLineItem>.from(
+    A4InvoiceData.fromFactoryInvoice(inv).items,
+  );
+  if (inv.services.isNotEmpty && items.isNotEmpty) {
+    final invoiceLevel = inv.services
+        .map((service) {
+          final notes = service.notes.trim();
+          final noteText = notes.isEmpty ? '' : ' ($notes)';
+          return '${service.serviceName}: ${service.price.fmt}\$$noteText';
+        })
+        .join('\n');
+    items[0] = items[0].copyWith(
+      servicesText: items[0].servicesText == '—'
+          ? invoiceLevel
+          : '${items[0].servicesText}\n$invoiceLevel',
     );
-  }).toList();
+  }
+  return items;
 }
 
-List<A4StatementDetailLine> _workshopInvoiceDetails(WorkshopInvoiceModel inv) {
-  if (inv.items.isEmpty) {
-    return [
-      A4StatementDetailLine(
-        description: inv.itemDescription.isEmpty
-            ? 'تفاصيل الصنف غير متاحة'
-            : inv.itemDescription,
-        item: inv.itemDescription.isEmpty ? 'صنف ورشة' : inv.itemDescription,
-        specifications: inv.isGranite ? 'جرانيت' : 'رخام',
-        type: inv.sourceType,
-        length: '—',
-        width: '—',
-        quantityText: '${inv.sourceQuantity.fmt} ${inv.sourceUnitCategory}',
-        unitPrice: inv.sourceQuantity > 0
-            ? inv.agreedPrice / inv.sourceQuantity
-            : inv.agreedPrice,
-        servicesText: _statementServicesText(inv.services, inv.currency),
-        total: inv.grandTotal,
-      ),
-    ];
-  }
-  return inv.items.map((it) {
-    final specs = <String>[
-      it.isGranite ? 'جرانيت' : 'رخام',
-      if (it.heightCm > 0) 'السماكة ${it.heightCm.fmt} سم',
-    ].join(' • ');
-    return A4StatementDetailLine(
-      description: inv.itemDescription.isNotEmpty
-          ? inv.itemDescription
-          : it.description,
-      item: it.description.isNotEmpty ? it.description : 'صنف ورشة',
-      specifications: specs,
-      type: it.sourceType,
-      length: it.lengthCm > 0 ? '${it.lengthCm.fmt} سم' : '—',
-      width: it.widthCm > 0 ? '${it.widthCm.fmt} سم' : '—',
-      quantityText: '${it.quantity.fmt} ${it.unitCategory}',
-      unitPrice: it.unitPrice > 0 ? it.unitPrice : it.agreedPrice,
-      servicesText: _statementServicesText(it.services, inv.currency),
-      total: it.grandTotal,
-    );
-  }).toList();
-}
+/// Builds the printable invoice line items for a workshop invoice using the
+/// exact same adapter that feeds the A4 invoice print.
+List<A4InvoiceLineItem> _workshopInvoiceDetails(WorkshopInvoiceModel inv) =>
+    A4InvoiceData.fromWorkshopInvoice(inv).items;
+
+/// Builds the printable invoice line items for a legacy return invoice using
+/// the exact same adapter that feeds the A4 invoice print.
+List<A4InvoiceLineItem> _returnInvoiceDetails(ReturnInvoiceModel ret) =>
+    A4InvoiceData.fromReturnInvoice(ret).items;
 
 /// A single movement/transaction row inside the Statement of Account table.
 class A4StatementLineItem {
@@ -173,7 +69,7 @@ class A4StatementLineItem {
   final bool isReturn;
   final String parentInvoiceNo;
   final String notes;
-  final List<A4StatementDetailLine> details;
+  final List<A4InvoiceLineItem> details;
 
   const A4StatementLineItem({
     required this.index,
@@ -212,7 +108,7 @@ class A4StatementLineItem {
     bool? isReturn,
     String? parentInvoiceNo,
     String? notes,
-    List<A4StatementDetailLine>? details,
+    List<A4InvoiceLineItem>? details,
   }) => A4StatementLineItem(
     index: index ?? this.index,
     date: date ?? this.date,
@@ -232,99 +128,26 @@ class A4StatementLineItem {
   );
 }
 
+/// Renders the line-item details of an invoice that belongs to a statement
+/// transaction row, using the exact same table format and layout as the
+/// printed A4 invoice (`A4InvoiceItemsTable`).
 class A4StatementInvoiceDetails extends StatelessWidget {
   final A4StatementLineItem lineItem;
 
   const A4StatementInvoiceDetails({super.key, required this.lineItem});
 
-  Widget _field(String label, String value, {bool isTotal = false}) {
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 8,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF64748B),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 9,
-                color: isTotal
-                    ? const Color(0xFF0F172A)
-                    : const Color(0xFF334155),
-                fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _fieldRow(List<(String, String)> fields, {int totalIndex = -1}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < fields.length; i++)
-          _field(fields[i].$1, fields[i].$2, isTotal: i == totalIndex),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsetsDirectional.only(start: 38, end: 10, bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(
+        start: 16,
+        end: 16,
+        top: 2,
+        bottom: 8,
       ),
-      child: Column(
-        children: [
-          ...lineItem.details.map(
-            (detail) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Column(
-                children: [
-                  _fieldRow([
-                    ('البيان / الوصف', detail.description),
-                    ('الصنف', detail.item),
-                    ('المواصفات', detail.specifications),
-                    ('النوع', detail.type),
-                    ('الطول', detail.length),
-                  ]),
-                  _fieldRow([
-                    ('العرض', detail.width),
-                    ('الكمية / الأمتار', detail.quantityText),
-                    (
-                      'سعر المتر / الوحدة',
-                      detail.unitPrice == null
-                          ? '—'
-                          : '${detail.unitPrice!.fmt} ${lineItem.currencySymbol}',
-                    ),
-                    ('الخدمات', detail.servicesText),
-                    (
-                      'السعر الإجمالي',
-                      '${detail.total.fmt} ${lineItem.currencySymbol}',
-                    ),
-                  ], totalIndex: 4),
-                  if (detail != lineItem.details.last)
-                    const Divider(height: 8, color: Color(0xFFCBD5E1)),
-                ],
-              ),
-            ),
-          ),
-        ],
+      child: A4InvoiceItemsTable(
+        items: lineItem.details,
+        currency: lineItem.currency,
       ),
     );
   }
@@ -545,50 +368,44 @@ class A4StatementData {
   String get dualCurrentBalance =>
       AppCurrency.dual(currentBalanceUsd, currentBalanceSyp);
 
-  static List<A4StatementDetailLine> _adjustmentDetails(
+  static List<A4InvoiceLineItem> _adjustmentDetails(
     AdjustmentInvoiceModel ret,
   ) {
     if (ret.lines.isNotEmpty) {
       return ret.lines
+          .asMap()
+          .entries
           .map(
-            (l) => A4StatementDetailLine(
-              description: l.description.isNotEmpty
-                  ? l.description
+            (entry) => A4InvoiceLineItem(
+              index: entry.key + 1,
+              description: entry.value.description.isNotEmpty
+                  ? entry.value.description
                   : 'صنف مرتجع',
-              item: l.description.isNotEmpty ? l.description : 'صنف مرتجع',
-              specifications: l.isDamaged ? 'تالف / هدر غير طبيعي' : 'سليم',
-              type: l.sourceType.isNotEmpty
-                  ? l.sourceType
-                  : (l.unit.isNotEmpty ? l.unit : 'مرتجع'),
-              length: '—',
-              width: '—',
+              gradeAndSpecs:
+                  '${entry.value.isDamaged ? "تالف / هدر غير طبيعي" : "سليم"} • '
+                  '${entry.value.sourceType.isNotEmpty ? entry.value.sourceType : (entry.value.unit.isNotEmpty ? entry.value.unit : "مرتجع")}',
               quantityText:
-                  '${l.quantity.fmt} ${l.unit.isNotEmpty ? l.unit : "وحدة"}',
-              unitPrice: l.unitPrice > 0
-                  ? l.unitPrice
-                  : (l.quantity > 0 ? l.amount / l.quantity : null),
-              servicesText: '—',
-              total: l.amount,
+                  '${entry.value.quantity.fmt} ${entry.value.unit.isNotEmpty ? entry.value.unit : "وحدة"}',
+              unitPrice: entry.value.unitPrice > 0
+                  ? entry.value.unitPrice
+                  : (entry.value.quantity > 0
+                        ? entry.value.amount / entry.value.quantity
+                        : 0.0),
+              lineTotal: entry.value.amount,
             ),
           )
           .toList();
     }
     return [
-      A4StatementDetailLine(
+      A4InvoiceLineItem(
+        index: 1,
         description: ret.itemDescription.isNotEmpty
             ? ret.itemDescription
             : (ret.description.isNotEmpty ? ret.description : 'إشعار مرتجع'),
-        item: ret.itemDescription.isNotEmpty
-            ? ret.itemDescription
-            : 'صنف مرتجع',
-        specifications: '—',
-        type: 'مرتجع',
-        length: '—',
-        width: '—',
+        gradeAndSpecs: 'مرتجع',
         quantityText: ret.quantity > 0 ? '${ret.quantity.fmt} وحدة' : '—',
         unitPrice: ret.quantity > 0 ? ret.amount / ret.quantity : ret.amount,
-        servicesText: '—',
-        total: ret.amount,
+        lineTotal: ret.amount,
       ),
     ];
   }
@@ -668,23 +485,7 @@ class A4StatementData {
       remainingAmount: 0.0,
       status: status,
       isReturn: true,
-      details: [
-        A4StatementDetailLine(
-          description: ret.itemDescription,
-          item: ret.itemDescription,
-          specifications: '—',
-          type: ret.returnType,
-          length: '—',
-          width: '—',
-          quantityText:
-              '${ret.quantity.fmt} ${ret.unit.isNotEmpty ? ret.unit : "وحدة"}',
-          unitPrice: ret.quantity > 0
-              ? ret.refundAmount / ret.quantity
-              : ret.refundAmount,
-          servicesText: '—',
-          total: ret.refundAmount,
-        ),
-      ],
+      details: _returnInvoiceDetails(ret),
     );
   }
 
@@ -776,7 +577,7 @@ class A4StatementData {
           remainingAmount: historicalRemaining,
           status: status,
           notes: inv.isGoodsDelivered ? 'واصلة' : 'غير واصلة (شحن مرسمل)',
-          details: _factoryInvoiceDetails(inv, isSale: false),
+          details: _factoryInvoiceDetails(inv),
         ),
       );
     }
@@ -938,7 +739,7 @@ class A4StatementData {
           paidAmount: inv.advancePayment,
           remainingAmount: historicalRemaining,
           status: status,
-          details: _factoryInvoiceDetails(inv, isSale: true),
+          details: _factoryInvoiceDetails(inv),
         ),
       );
     }
@@ -989,18 +790,18 @@ class A4StatementData {
               ? 'مسددة بالكامل'
               : (paidAmount > 0.01 ? 'مسددة جزئياً' : 'مستحق التحصيل'),
           details: invoice.items
+              .asMap()
+              .entries
               .map(
-                (item) => A4StatementDetailLine(
-                  description: item.serviceName,
-                  item: item.serviceName,
-                  specifications: item.customDescription,
-                  type: 'خدمة',
-                  length: '—',
-                  width: '—',
-                  quantityText: item.quantity.fmt,
-                  unitPrice: item.unitPrice,
-                  servicesText: '—',
-                  total: item.totalPrice,
+                (entry) => A4InvoiceLineItem(
+                  index: entry.key + 1,
+                  description: entry.value.serviceName,
+                  gradeAndSpecs: entry.value.customDescription.isEmpty
+                      ? 'خدمة'
+                      : entry.value.customDescription,
+                  quantityText: entry.value.quantity.fmt,
+                  unitPrice: entry.value.unitPrice,
+                  lineTotal: entry.value.totalPrice,
                 ),
               )
               .toList(),
@@ -1496,7 +1297,10 @@ class _A4StatementPrintDialogState extends State<A4StatementPrintDialog> {
     _paginate();
   }
 
-  double _rowWeight(A4StatementLineItem it) => 1.0 + 1.1 * it.details.length;
+  // Invoice details now render as the full printable invoice table:
+  // one header row plus one (possibly multi-line) row per item.
+  double _rowWeight(A4StatementLineItem it) =>
+      it.details.isEmpty ? 1.0 : 0.8 + 1.6 * it.details.length;
 
   void _paginate() {
     final allItems = widget.statementData.items;

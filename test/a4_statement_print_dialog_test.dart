@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:abaad/core/database/erp_provider.dart';
 import 'package:abaad/core/models/models.dart';
+import 'package:abaad/widgets/a4_invoice_print_dialog.dart';
 import 'package:abaad/widgets/a4_statement_print_dialog.dart';
 import 'package:abaad/widgets/a4_statement_invoice_selection_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,7 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('statement invoice details show all requested fields', (
+  testWidgets('statement invoice details render the printable invoice table', (
     tester,
   ) async {
     final lineItem = A4StatementLineItem(
@@ -23,17 +24,17 @@ void main() {
       remainingAmount: 120,
       status: 'مستحق التحصيل',
       details: const [
-        A4StatementDetailLine(
-          description: 'بيان الرخام',
-          item: 'رخام موغلا',
-          specifications: 'درجة أولى',
-          type: 'تفصيل',
-          length: '200 سم',
-          width: '60 سم',
-          quantityText: '1.2 متر مربع',
+        A4InvoiceLineItem(
+          index: 1,
+          description: 'رخام موغلا',
+          gradeAndSpecs: 'درجة أولى (جرانيت)',
+          dimensionsText: '200 × 60 سم',
+          lengthCm: 200,
+          widthCm: 60,
+          quantityText: '1.2 م²\n(1 قطعة)',
           unitPrice: 90,
           servicesText: 'قص: 12 \$',
-          total: 120,
+          lineTotal: 120,
         ),
       ],
     );
@@ -51,30 +52,27 @@ void main() {
       ),
     );
 
+    // The statement must show the exact invoice print table headers.
     for (final label in [
-      'البيان / الوصف',
-      'الصنف',
-      'المواصفات',
-      'النوع',
-      'الطول',
-      'العرض',
-      'الكمية / الأمتار',
+      '#',
+      'البيان والمادة',
+      'المواصفات والنوع',
+      'الطول (سم)',
+      'العرض (سم)',
+      'الكمية / الأمتار (م²)',
       'سعر المتر / الوحدة',
-      'الخدمات',
-      'السعر الإجمالي',
+      'الخدمات الملحقة وحسابها',
+      'الإجمالي',
     ]) {
       expect(find.text(label), findsOneWidget);
     }
     for (final value in [
-      'بيان الرخام',
       'رخام موغلا',
-      'درجة أولى',
-      'تفصيل',
+      'درجة أولى (جرانيت)',
       '200 سم',
       '60 سم',
-      '1.2 متر مربع',
-      '90 \$',
       'قص: 12 \$',
+      '90 \$',
       '120 \$',
     ]) {
       expect(find.text(value), findsWidgets);
@@ -120,17 +118,17 @@ void main() {
       erp: erp,
     ).items.single.details.single;
 
-    expect(factoryDetails.description, 'بيان الحجر');
-    expect(factoryDetails.item, 'رخام موغلا');
-    expect(factoryDetails.specifications, contains('درجة أولى'));
-    expect(factoryDetails.specifications, contains('جرانيت'));
-    expect(factoryDetails.type, 'بلوك');
-    expect(factoryDetails.length, '200 سم');
-    expect(factoryDetails.width, '60 سم');
-    expect(factoryDetails.quantityText, '1.2 م² (1 قطعة)');
+    // Must match A4InvoiceData.fromFactoryInvoice (the printed invoice table).
+    expect(factoryDetails.description, 'رخام موغلا');
+    expect(factoryDetails.gradeAndSpecs, 'درجة أولى (جرانيت)');
+    expect(factoryDetails.lengthCm, 200);
+    expect(factoryDetails.widthCm, 60);
+    expect(factoryDetails.lengthDisplay, '200 سم');
+    expect(factoryDetails.widthDisplay, '60 سم');
+    expect(factoryDetails.quantityText, '1.2 م²\n(1 قطعة)');
     expect(factoryDetails.unitPrice, 90);
-    expect(factoryDetails.servicesText, contains('قص: 12 \$'));
-    expect(factoryDetails.total, 120);
+    expect(factoryDetails.servicesText, 'قص: 12\$');
+    expect(factoryDetails.lineTotal, 120);
 
     erp.workshopInvoices = [
       WorkshopInvoiceModel(
@@ -165,17 +163,14 @@ void main() {
       erp: erp,
     ).items.singleWhere((i) => i.documentNo == 'W-001').details.single;
 
+    // Must match A4InvoiceData.fromWorkshopInvoice (the printed invoice table).
     expect(workshopDetails.description, 'مغسلة رخام');
-    expect(workshopDetails.item, 'مغسلة رخام');
-    expect(workshopDetails.specifications, contains('رخام'));
-    expect(workshopDetails.specifications, contains('2 سم'));
-    expect(workshopDetails.type, 'تفصيل بسيط');
-    expect(workshopDetails.length, '200 سم');
-    expect(workshopDetails.width, '60 سم');
-    expect(workshopDetails.quantityText, '1.2 متر مربع');
+    expect(workshopDetails.gradeAndSpecs, 'تفصيل بسيط');
+    expect(workshopDetails.dimensionsText, '200 × 60 سم');
+    expect(workshopDetails.quantityText, '1.2 م²');
     expect(workshopDetails.unitPrice, 75);
-    expect(workshopDetails.servicesText, contains('تلميع: 10 \$'));
-    expect(workshopDetails.total, 100);
+    expect(workshopDetails.servicesText, 'تلميع (10\$)');
+    expect(workshopDetails.lineTotal, 100);
   });
 
   testWidgets(
