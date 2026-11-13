@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/database/erp_provider.dart';
+import '../core/database/form_draft_store.dart';
 import '../core/models/models.dart';
 import '../core/theme/app_theme.dart';
 import 'app_image_attachment.dart';
@@ -211,6 +212,64 @@ class _InvoiceRow {
       count: count,
     );
   }
+
+  /// Full mutable snapshot of this row for the session draft store.
+  Map<String, dynamic> toDraft() => {
+    'selected': selected,
+    'assigned': assigned,
+    'sourceType': sourceType,
+    'sourceId': sourceId,
+    'sourceLineItemId': sourceLineItemId,
+    'desc': descCtrl.text,
+    'len': lenCtrl.text,
+    'wid': widCtrl.text,
+    'hei': heiCtrl.text,
+    'qty': qtyCtrl.text,
+    'price': priceCtrl.text,
+    'unitCategory': unitCategory,
+    'isGranite': isGranite,
+    'photoPath': photoPath,
+    'depositAmount': depositAmount,
+    'netCostPerUnit': netCostPerUnit,
+    'flatNetCost': flatNetCost,
+    'hasService': hasService,
+    'pickedServiceId': pickedServiceId,
+    'svcPrice': svcPriceCtrl.text,
+    'svcNotes': svcNotesCtrl.text,
+    'services': services.map((s) => s.toJson()).toList(),
+  };
+
+  /// Rebuilds a row from its draft snapshot.
+  static _InvoiceRow fromDraft(Map<String, dynamic> d) {
+    final r = _InvoiceRow();
+    r.selected = d['selected'] == true;
+    r.assigned = d['assigned'] == true;
+    r.sourceType = d['sourceType'] as String? ?? '';
+    r.sourceId = d['sourceId'] as String? ?? '';
+    r.sourceLineItemId = d['sourceLineItemId'] as String? ?? '';
+    r.descCtrl.text = d['desc'] as String? ?? '';
+    r.lenCtrl.text = d['len'] as String? ?? '';
+    r.widCtrl.text = d['wid'] as String? ?? '';
+    r.heiCtrl.text = d['hei'] as String? ?? '';
+    r.qtyCtrl.text = d['qty'] as String? ?? '';
+    r.priceCtrl.text = d['price'] as String? ?? '';
+    r.unitCategory = d['unitCategory'] as String? ?? 'متر مربع';
+    r.isGranite = d['isGranite'] == true;
+    r.photoPath = d['photoPath'] as String? ?? '';
+    r.depositAmount = (d['depositAmount'] as num?)?.toDouble() ?? 0.0;
+    r.netCostPerUnit = (d['netCostPerUnit'] as num?)?.toDouble() ?? 0.0;
+    r.flatNetCost = (d['flatNetCost'] as num?)?.toDouble() ?? -1;
+    r.hasService = d['hasService'] == true;
+    r.pickedServiceId = d['pickedServiceId'] as String?;
+    r.svcPriceCtrl.text = d['svcPrice'] as String? ?? '';
+    r.svcNotesCtrl.text = d['svcNotes'] as String? ?? '';
+    r.services.addAll(
+      ((d['services'] as List?) ?? const []).map(
+        (m) => ServiceAttachment.fromJson(Map<String, dynamic>.from(m as Map)),
+      ),
+    );
+    return r;
+  }
 }
 
 /// Opens the Workshop Invoice builder (فاتورة المعمل).
@@ -220,9 +279,19 @@ void showWorkshopInvoiceDialog(
   String? presetClientName,
   bool cashInvoice = false,
 }) {
-  String invCurrency = AppCurrency.usd;
-  final clientCtrl = TextEditingController(text: presetClientName ?? '');
-  String approvedClientSearch = '';
+  // ---- Auto-saved session draft: reopening this dialog restores the
+  // unsaved invoice state; saving or discarding clears it.
+  final draftKey = FormDraftStore.keyFor(
+    FormDraftStore.workshopInvoiceKey,
+    cashInvoice ? 'cash' : 'credit',
+  );
+  final draft = FormDraftStore.load(draftKey);
+
+  String invCurrency = draft?['currency'] as String? ?? AppCurrency.usd;
+  final clientCtrl = TextEditingController(
+    text: draft?['client'] as String? ?? presetClientName ?? '',
+  );
+  String approvedClientSearch = draft?['approvedClientSearch'] as String? ?? '';
   List<ClientModel> approvedClientOptions() => erp.clients
       .where(
         (c) =>
@@ -234,30 +303,70 @@ void showWorkshopInvoiceDialog(
       )
       .toList();
 
-  final salesDiscountCtrl = TextEditingController(text: '0');
-  final depositCtrl = TextEditingController(text: '0');
-  final cashCtrl = TextEditingController(text: '0');
-  final photoCtrl = TextEditingController();
+  final salesDiscountCtrl = TextEditingController(
+    text: draft?['salesDiscount'] as String? ?? '0',
+  );
+  final depositCtrl = TextEditingController(
+    text: draft?['deposit'] as String? ?? '0',
+  );
+  final cashCtrl = TextEditingController(
+    text: draft?['cash'] as String? ?? '0',
+  );
+  final photoCtrl = TextEditingController(
+    text: draft?['photo'] as String? ?? '',
+  );
   String? formError;
   String? batchError;
-  String? linkedOrderId; // ID of the order linked to this invoice if imported
+  // ID of the order linked to this invoice if imported (kept from the draft).
+  String? linkedOrderId = draft?['linkedOrderId'] as String?;
 
   // The item rows of this invoice (blank rows until a type is assigned).
-  final List<_InvoiceRow> rows = [];
+  final List<_InvoiceRow> rows =
+      ((draft?['rows'] as List?) ?? const [])
+          .map((m) => _InvoiceRow.fromDraft(Map<String, dynamic>.from(m as Map)))
+          .toList();
 
   // --- Batch / bulk assignment panel state (right section) ---
-  String assignType = 'طلب معمل';
-  String? assignOrderClient;
-  String? assignOrderId;
-  String rawSearch = '';
-  String? assignRecordId; // tailoring / scrap / raw stock id
-  String? assignLineItemId; // specific line item inside a simple tailoring
+  String assignType = draft?['assignType'] as String? ?? 'طلب معمل';
+  String? assignOrderClient = draft?['assignOrderClient'] as String?;
+  String? assignOrderId = draft?['assignOrderId'] as String?;
+  String rawSearch = draft?['rawSearch'] as String? ?? '';
+  String? assignRecordId = draft?['assignRecordId'] as String?; // tailoring / scrap / raw stock id
+  String? assignLineItemId = draft?['assignLineItemId'] as String?; // specific line item inside a simple tailoring
 
   // --- Bulk service assignment panel state (right section) ---
-  String? batchServiceId;
-  final batchSvcPriceCtrl = TextEditingController();
-  final batchSvcNotesCtrl = TextEditingController();
+  String? batchServiceId = draft?['batchServiceId'] as String?;
+  final batchSvcPriceCtrl = TextEditingController(
+    text: draft?['batchSvcPrice'] as String? ?? '',
+  );
+  final batchSvcNotesCtrl = TextEditingController(
+    text: draft?['batchSvcNotes'] as String? ?? '',
+  );
   String? batchSvcError;
+
+  // Snapshot of the entire live form state; called on every rebuild so any
+  // typed value, row, selection or panel choice survives an accidental
+  // close until the invoice is saved or the draft is discarded.
+  void persistDraft() => FormDraftStore.save(draftKey, () => {
+    'currency': invCurrency,
+    'client': clientCtrl.text,
+    'approvedClientSearch': approvedClientSearch,
+    'salesDiscount': salesDiscountCtrl.text,
+    'deposit': depositCtrl.text,
+    'cash': cashCtrl.text,
+    'photo': photoCtrl.text,
+    'linkedOrderId': linkedOrderId,
+    'rows': rows.map((r) => r.toDraft()).toList(),
+    'assignType': assignType,
+    'assignOrderClient': assignOrderClient,
+    'assignOrderId': assignOrderId,
+    'rawSearch': rawSearch,
+    'assignRecordId': assignRecordId,
+    'assignLineItemId': assignLineItemId,
+    'batchServiceId': batchServiceId,
+    'batchSvcPrice': batchSvcPriceCtrl.text,
+    'batchSvcNotes': batchSvcNotesCtrl.text,
+  });
 
   double getAvailableStockForRaw(WorkshopStockModel w) {
     final used = rows
@@ -353,11 +462,25 @@ void showWorkshopInvoiceDialog(
     nodes[next].requestFocus();
   }
 
+  if (draft != null) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تمت استعادة مسودة فاتورة المعمل غير المحفوظة تلقائياً.'),
+          backgroundColor: AppColors.accentPrimary,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    });
+  }
+
   showDialog(
     context: context,
     barrierDismissible: false,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSt) {
+        persistDraft();
         final dialogWidth = MediaQuery.of(ctx).size.width - 32;
         final dialogHeight = MediaQuery.of(ctx).size.height - 32;
 
@@ -2427,6 +2550,7 @@ void showWorkshopInvoiceDialog(
             }
           }
 
+          FormDraftStore.discard(draftKey);
           Navigator.pop(ctx);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -2584,9 +2708,24 @@ void showWorkshopInvoiceDialog(
                               ],
                             ),
                           ),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              FormDraftStore.discard(draftKey);
+                              Navigator.pop(ctx);
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.dangerWaste,
+                              side: const BorderSide(
+                                color: AppColors.dangerWaste,
+                              ),
+                            ),
+                            icon: const Icon(Icons.delete_sweep_rounded, size: 18),
+                            label: const Text('تجاهل المسودة'),
+                          ),
+                          const SizedBox(width: 6),
                           IconButton(
                             icon: const Icon(Icons.close_rounded),
-                            tooltip: 'إغلاق',
+                            tooltip: 'إغلاق (تبقى المسودة محفوظة)',
                             onPressed: () => Navigator.pop(ctx),
                           ),
                         ],

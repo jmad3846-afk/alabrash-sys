@@ -5,6 +5,7 @@ import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
+import '../core/database/form_draft_store.dart';
 import '../core/models/models.dart';
 import '../widgets/currency_selector.dart';
 import '../widgets/thermal_receipt_dialog.dart';
@@ -5858,9 +5859,19 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
 
     FactoryOrderModel? assignedOrder = initialOrder;
 
+    // ---- Auto-saved session draft: reopening this dialog restores the
+    // unsaved invoice state; saving or discarding clears it.
+    final draftKey = FormDraftStore.keyFor(
+      FormDraftStore.factoryInvoiceKey,
+      cashInvoice
+          ? 'cash'
+          : (initialOrder != null ? 'order:${initialOrder.id}' : 'credit'),
+    );
+    final draft = FormDraftStore.load(draftKey);
+
     // Multi-item approved-client invoice builder (Factory Warehouse goods).
-    String? selectedClientId;
-    if (initialOrder != null) {
+    String? selectedClientId = draft?['selectedClientId'] as String?;
+    if (selectedClientId == null && initialOrder != null) {
       final match = approvedClients
           .where(
             (c) =>
@@ -5870,39 +5881,65 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
           .toList();
       if (match.isNotEmpty) selectedClientId = match.first.id;
     }
-    String clientSearch = '';
-    String? selectedWhId;
-    String goodsSearch = '';
-    final lengthCtrl = TextEditingController();
-    final widthCtrl = TextEditingController();
-    final heightCtrl = TextEditingController();
-    final qtyCtrl = TextEditingController();
-    final unitPriceCtrl = TextEditingController();
+    String clientSearch = draft?['clientSearch'] as String? ?? '';
+    String? selectedWhId = draft?['selectedWhId'] as String?;
+    String goodsSearch = draft?['goodsSearch'] as String? ?? '';
+    final lengthCtrl = TextEditingController(
+      text: draft?['length'] as String? ?? '',
+    );
+    final widthCtrl = TextEditingController(
+      text: draft?['width'] as String? ?? '',
+    );
+    final heightCtrl = TextEditingController(
+      text: draft?['height'] as String? ?? '',
+    );
+    final qtyCtrl = TextEditingController(text: draft?['qty'] as String? ?? '');
+    final unitPriceCtrl = TextEditingController(
+      text: draft?['unitPrice'] as String? ?? '',
+    );
     final downPayCtrl = TextEditingController(
-      text: (initialOrder != null && initialOrder.depositAmount > 0)
-          ? initialOrder.depositAmount.fmt
-          : '',
+      text: draft?['downPay'] as String? ??
+          ((initialOrder != null && initialOrder.depositAmount > 0)
+              ? initialOrder.depositAmount.fmt
+              : ''),
     );
     final salesDiscountCtrl = TextEditingController(
-      text: (initialOrder != null && initialOrder.discountAmount > 0)
-          ? initialOrder.discountAmount.fmt
-          : '0',
+      text: draft?['salesDiscount'] as String? ??
+          ((initialOrder != null && initialOrder.discountAmount > 0)
+              ? initialOrder.discountAmount.fmt
+              : '0'),
     );
     final shippingCtrl = TextEditingController(
-      text: (initialOrder != null && initialOrder.shippingFee > 0)
-          ? initialOrder.shippingFee.fmt
-          : '',
+      text: draft?['shipping'] as String? ??
+          ((initialOrder != null && initialOrder.shippingFee > 0)
+              ? initialOrder.shippingFee.fmt
+              : ''),
     );
     final photoCtrl = TextEditingController(
-      text: initialOrder?.photoPath ?? '',
+      text: draft?['photo'] as String? ?? initialOrder?.photoPath ?? '',
     );
-    bool? deliverByUs = initialOrder?.isGoodsDelivered;
+    bool? deliverByUs = draft != null
+        ? draft['deliverByUs'] as bool?
+        : initialOrder?.isGoodsDelivered;
     String? formError;
 
-    final List<FactoryInvoiceItem> draftItems = initialOrder != null
+    final List<FactoryInvoiceItem> draftItems = draft != null
+        ? (draft['items'] as List)
+              .map(
+                (m) => FactoryInvoiceItem.fromJson(
+                  Map<String, dynamic>.from(m as Map),
+                ),
+              )
+              .toList()
+        : initialOrder != null
         ? List.of(initialOrder.items)
         : [];
-    final Set<int> selectedDraftRows = <int>{};
+    final Set<int> selectedDraftRows = <int>{
+      ...((draft?['selectedRows'] as List?)?.map(
+            (e) => (e as num).toInt(),
+          ) ??
+          const <int>[]),
+    };
 
     // Per-row field controllers + Tab focus nodes, kept index-aligned with
     // draftItems so Tab cycles only through the item value fields.
@@ -5933,21 +5970,70 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
     rebuildRowEdits();
 
     // Bulk service application (select rows + apply one service to all).
-    String? bulkServiceId;
-    final bulkSvcPriceCtrl = TextEditingController();
-    final bulkSvcNotesCtrl = TextEditingController();
+    String? bulkServiceId = draft?['bulkServiceId'] as String?;
+    final bulkSvcPriceCtrl = TextEditingController(
+      text: draft?['bulkSvcPrice'] as String? ?? '',
+    );
+    final bulkSvcNotesCtrl = TextEditingController(
+      text: draft?['bulkSvcNotes'] as String? ?? '',
+    );
     String? bulkSvcError;
 
     // Services attached to the item currently being built.
-    String? selectedServiceId;
-    String serviceSearch = '';
-    bool? itemHasServices;
-    bool showAdditionalFields = false;
-    final servicePriceCtrl = TextEditingController();
-    final serviceNotesCtrl = TextEditingController();
-    final List<ServiceAttachment> draftServices = [];
-    String posCurrency = initialOrder?.currency ?? AppCurrency.usd;
-    String selectedItemMeterUnit = 'متر مربع';
+    String? selectedServiceId = draft?['selectedServiceId'] as String?;
+    String serviceSearch = draft?['serviceSearch'] as String? ?? '';
+    bool? itemHasServices = draft?['itemHasServices'] as bool?;
+    bool showAdditionalFields = draft?['showAdditionalFields'] as bool? ?? false;
+    final servicePriceCtrl = TextEditingController(
+      text: draft?['servicePrice'] as String? ?? '',
+    );
+    final serviceNotesCtrl = TextEditingController(
+      text: draft?['serviceNotes'] as String? ?? '',
+    );
+    final List<ServiceAttachment> draftServices =
+        ((draft?['draftServices'] as List?) ?? const [])
+            .map((m) => ServiceAttachment.fromJson(Map<String, dynamic>.from(m as Map)))
+            .toList();
+    String posCurrency =
+        draft?['currency'] as String? ??
+        initialOrder?.currency ??
+        AppCurrency.usd;
+    String selectedItemMeterUnit =
+        draft?['meterUnit'] as String? ?? 'متر مربع';
+
+    // Snapshot of the entire live form state; called on every rebuild so
+    // typed values, rows, selections and toggles survive an accidental
+    // close until the invoice is saved or the draft is discarded.
+    void persistDraft() => FormDraftStore.save(draftKey, () => {
+      'selectedClientId': selectedClientId,
+      'clientSearch': clientSearch,
+      'selectedWhId': selectedWhId,
+      'goodsSearch': goodsSearch,
+      'length': lengthCtrl.text,
+      'width': widthCtrl.text,
+      'height': heightCtrl.text,
+      'qty': qtyCtrl.text,
+      'unitPrice': unitPriceCtrl.text,
+      'downPay': downPayCtrl.text,
+      'salesDiscount': salesDiscountCtrl.text,
+      'shipping': shippingCtrl.text,
+      'photo': photoCtrl.text,
+      'deliverByUs': deliverByUs,
+      'currency': posCurrency,
+      'meterUnit': selectedItemMeterUnit,
+      'selectedServiceId': selectedServiceId,
+      'serviceSearch': serviceSearch,
+      'itemHasServices': itemHasServices,
+      'showAdditionalFields': showAdditionalFields,
+      'servicePrice': servicePriceCtrl.text,
+      'serviceNotes': serviceNotesCtrl.text,
+      'draftServices': draftServices.map((s) => s.toJson()).toList(),
+      'bulkServiceId': bulkServiceId,
+      'bulkSvcPrice': bulkSvcPriceCtrl.text,
+      'bulkSvcNotes': bulkSvcNotesCtrl.text,
+      'selectedRows': selectedDraftRows.toList(),
+      'items': draftItems.map((it) => it.toJson()).toList(),
+    });
 
     double getFactoryCubicSellingPrice(FactoryWarehouseModel item) {
       if (item.category == 'متر مكعب' && item.recommendedSalePrice > 0) {
@@ -6019,10 +6105,24 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       nodes[next].requestFocus();
     }
 
+    if (draft != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تمت استعادة مسودة الفاتورة غير المحفوظة تلقائياً.'),
+            backgroundColor: AppColors.accentPrimary,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      });
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) {
+          persistDraft();
           final clientsFiltered = approvedClients
               .where(
                 (c) => clientSearch.isEmpty || c.name.contains(clientSearch),
@@ -6244,6 +6344,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               );
               return;
             }
+            FormDraftStore.discard(draftKey);
             Navigator.pop(ctx);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -6589,8 +6690,22 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                           ],
                         ],
                       ),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          FormDraftStore.discard(draftKey);
+                          Navigator.pop(ctx);
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.dangerWaste,
+                          side: const BorderSide(color: AppColors.dangerWaste),
+                        ),
+                        icon: const Icon(Icons.delete_sweep_rounded, size: 18),
+                        label: const Text('تجاهل المسودة'),
+                      ),
+                      const SizedBox(width: 6),
                       IconButton(
                         icon: const Icon(Icons.close_rounded),
+                        tooltip: 'إغلاق (تبقى المسودة محفوظة)',
                         onPressed: () => Navigator.pop(ctx),
                       ),
                     ],

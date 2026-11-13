@@ -4,6 +4,7 @@ import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
+import '../core/database/form_draft_store.dart';
 import '../core/models/models.dart';
 import '../widgets/currency_selector.dart';
 import '../widgets/thermal_receipt_dialog.dart';
@@ -6643,57 +6644,114 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
   }
 
   void _showAddOrderDialog(ERPProvider erp, {WorkshopOrderModel? existingOrder}) {
-    String orderCurrency = existingOrder?.currency ?? AppCurrency.usd;
-    final nameCtrl = TextEditingController(text: existingOrder?.clientName ?? '');
-    final phoneCtrl = TextEditingController(text: existingOrder?.clientPhone ?? '');
-    String approvedClientSearch = '';
-    String? selectedApprovedClientId = erp.clients
-        .where((client) => client.clientType == 'معتمد مصنع' &&
-            (client.name == existingOrder?.clientName || client.phone == existingOrder?.clientPhone))
-        .firstOrNull?.id;
-    final depositCtrl = TextEditingController(text: existingOrder?.depositAmount.fmt ?? '');
-    final photoCtrl = TextEditingController(text: existingOrder?.photoPath ?? '');
+    // ---- Auto-saved session draft: reopening this dialog restores the
+    // unsaved order state; saving or discarding clears it.
+    final draftKey = FormDraftStore.keyFor(
+      FormDraftStore.workshopOrderKey,
+      existingOrder == null ? 'new' : 'edit:${existingOrder.id}',
+    );
+    final draft = FormDraftStore.load(draftKey);
+
+    String orderCurrency =
+        draft?['currency'] as String? ?? existingOrder?.currency ?? AppCurrency.usd;
+    final nameCtrl = TextEditingController(
+      text: draft?['clientName'] as String? ?? existingOrder?.clientName ?? '',
+    );
+    final phoneCtrl = TextEditingController(
+      text: draft?['clientPhone'] as String? ?? existingOrder?.clientPhone ?? '',
+    );
+    String approvedClientSearch = draft?['clientSearch'] as String? ?? '';
+    String? selectedApprovedClientId =
+        draft?['selectedApprovedClientId'] as String? ??
+        erp.clients
+            .where((client) => client.clientType == 'معتمد مصنع' &&
+                (client.name == existingOrder?.clientName || client.phone == existingOrder?.clientPhone))
+            .firstOrNull?.id;
+    final depositCtrl = TextEditingController(
+      text: draft?['deposit'] as String? ?? existingOrder?.depositAmount.fmt ?? '',
+    );
+    final photoCtrl = TextEditingController(
+      text: draft?['photo'] as String? ?? existingOrder?.photoPath ?? '',
+    );
     String? formError;
-    bool showAdditionalInformation = false;
+    bool showAdditionalInformation = draft?['showAdditional'] as bool? ?? false;
     String? itemError;
 
     // Items inside this order
-    final List<WorkshopInvoiceItem> draftItems = existingOrder?.items
-            .map((item) => WorkshopInvoiceItem.fromJson(item.toJson()))
-            .toList() ??
-        [];
+    final List<WorkshopInvoiceItem> draftItems = draft != null
+        ? (draft['items'] as List)
+              .map((m) => WorkshopInvoiceItem.fromJson(
+                    Map<String, dynamic>.from(m as Map),
+                  ))
+              .toList()
+        : existingOrder?.items
+              .map((item) => WorkshopInvoiceItem.fromJson(item.toJson()))
+              .toList() ??
+              [];
 
     // Current item being configured
-    String itemSourceType = 'بيع خياطة بسيطة';
-    String? selectedRecordId;
-    String? selectedLineItemId;
-    String recordSearch = '';
-    final itemDescCtrl = TextEditingController();
-    final itemQtyCtrl = TextEditingController(text: '1');
-    final itemUnitPriceCtrl = TextEditingController(text: '0');
-    final itemAgreedCtrl = TextEditingController(text: '0');
-    String itemUnitCat = 'متر مربع';
-    bool itemIsGranite = false;
-    String itemPhoto = '';
+    String itemSourceType =
+        draft?['itemSourceType'] as String? ?? 'بيع خياطة بسيطة';
+    String? selectedRecordId = draft?['selectedRecordId'] as String?;
+    String? selectedLineItemId = draft?['selectedLineItemId'] as String?;
+    String recordSearch = draft?['recordSearch'] as String? ?? '';
+    final itemDescCtrl = TextEditingController(
+      text: draft?['itemDesc'] as String? ?? '',
+    );
+    final itemQtyCtrl = TextEditingController(
+      text: draft?['itemQty'] as String? ?? '1',
+    );
+    final itemUnitPriceCtrl = TextEditingController(
+      text: draft?['itemUnitPrice'] as String? ?? '0',
+    );
+    final itemAgreedCtrl = TextEditingController(
+      text: draft?['itemAgreed'] as String? ?? '0',
+    );
+    String itemUnitCat = draft?['itemUnitCat'] as String? ?? 'متر مربع';
+    bool itemIsGranite = draft?['itemIsGranite'] as bool? ?? false;
+    String itemPhoto = draft?['itemPhoto'] as String? ?? '';
 
     // Raw material specific inputs
-    String? selectedRawId;
-    String rawSearch = '';
-    final rawLenCtrl = TextEditingController();
-    final rawWidCtrl = TextEditingController();
-    final rawHeiCtrl = TextEditingController();
-    final rawQtyCtrl = TextEditingController(text: '1');
-    final rawPriceCtrl = TextEditingController();
+    String? selectedRawId = draft?['selectedRawId'] as String?;
+    String rawSearch = draft?['rawSearch'] as String? ?? '';
+    final rawLenCtrl = TextEditingController(
+      text: draft?['rawLen'] as String? ?? '',
+    );
+    final rawWidCtrl = TextEditingController(
+      text: draft?['rawWid'] as String? ?? '',
+    );
+    final rawHeiCtrl = TextEditingController(
+      text: draft?['rawHei'] as String? ?? '',
+    );
+    final rawQtyCtrl = TextEditingController(
+      text: draft?['rawQty'] as String? ?? '1',
+    );
+    final rawPriceCtrl = TextEditingController(
+      text: draft?['rawPrice'] as String? ?? '',
+    );
 
     // Dedicated services for current item
-    final List<ServiceAttachment> currentItemServices = [];
-    String? selectedServiceId;
-    final servicePriceCtrl = TextEditingController();
-    final serviceNotesCtrl = TextEditingController();
+    final List<ServiceAttachment> currentItemServices =
+        ((draft?['currentItemServices'] as List?) ?? const [])
+            .map((m) =>
+                ServiceAttachment.fromJson(Map<String, dynamic>.from(m as Map)))
+            .toList();
+    String? selectedServiceId = draft?['selectedServiceId'] as String?;
+    final servicePriceCtrl = TextEditingController(
+      text: draft?['servicePrice'] as String? ?? '',
+    );
+    final serviceNotesCtrl = TextEditingController(
+      text: draft?['serviceNotes'] as String? ?? '',
+    );
     // ---- Bulk selection + inline row editing state ----
     // First selection: assign the item type/record to blank rows.
     // Second selection (typed rows): apply a service to all of them.
-    final Set<int> selectedDraftRows = <int>{};
+    final Set<int> selectedDraftRows = <int>{
+      ...((draft?['selectedRows'] as List?)?.map(
+            (e) => (e as num).toInt(),
+          ) ??
+          const <int>[]),
+    };
 
     final rowEdits = <_WsOrderRowEdit>[];
     void syncRowEdit(int idx, WorkshopInvoiceItem it) {
@@ -6770,10 +6828,55 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     }
 
     // Bulk service application state.
-    String? bulkServiceId;
-    final bulkSvcPriceCtrl = TextEditingController();
-    final bulkSvcNotesCtrl = TextEditingController();
+    String? bulkServiceId = draft?['bulkServiceId'] as String?;
+    final bulkSvcPriceCtrl = TextEditingController(
+      text: draft?['bulkSvcPrice'] as String? ?? '',
+    );
+    final bulkSvcNotesCtrl = TextEditingController(
+      text: draft?['bulkSvcNotes'] as String? ?? '',
+    );
     String? bulkSvcError;
+
+    // Snapshot of the entire live form state; called on every rebuild so
+    // typed values, rows, selections and toggles survive an accidental
+    // close until the order is saved or the draft is discarded.
+    void persistDraft() => FormDraftStore.save(draftKey, () => {
+      'currency': orderCurrency,
+      'clientName': nameCtrl.text,
+      'clientPhone': phoneCtrl.text,
+      'clientSearch': approvedClientSearch,
+      'selectedApprovedClientId': selectedApprovedClientId,
+      'deposit': depositCtrl.text,
+      'photo': photoCtrl.text,
+      'showAdditional': showAdditionalInformation,
+      'items': draftItems.map((it) => it.toJson()).toList(),
+      'itemSourceType': itemSourceType,
+      'selectedRecordId': selectedRecordId,
+      'selectedLineItemId': selectedLineItemId,
+      'recordSearch': recordSearch,
+      'itemDesc': itemDescCtrl.text,
+      'itemQty': itemQtyCtrl.text,
+      'itemUnitPrice': itemUnitPriceCtrl.text,
+      'itemAgreed': itemAgreedCtrl.text,
+      'itemUnitCat': itemUnitCat,
+      'itemIsGranite': itemIsGranite,
+      'itemPhoto': itemPhoto,
+      'selectedRawId': selectedRawId,
+      'rawSearch': rawSearch,
+      'rawLen': rawLenCtrl.text,
+      'rawWid': rawWidCtrl.text,
+      'rawHei': rawHeiCtrl.text,
+      'rawQty': rawQtyCtrl.text,
+      'rawPrice': rawPriceCtrl.text,
+      'currentItemServices': currentItemServices.map((s) => s.toJson()).toList(),
+      'selectedServiceId': selectedServiceId,
+      'servicePrice': servicePriceCtrl.text,
+      'serviceNotes': serviceNotesCtrl.text,
+      'selectedRows': selectedDraftRows.toList(),
+      'bulkServiceId': bulkServiceId,
+      'bulkSvcPrice': bulkSvcPriceCtrl.text,
+      'bulkSvcNotes': bulkSvcNotesCtrl.text,
+    });
 
     // ---- Tab navigation restricted to the item value fields ----
     // Tab / Shift+Tab cycle only through [Length, Width, Height, Quantity,
@@ -6812,11 +6915,25 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     }
 
 
+    if (draft != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تمت استعادة مسودة طلبية المعمل غير المحفوظة تلقائياً.'),
+            backgroundColor: AppColors.accentPrimary,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      });
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) {
+          persistDraft();
           final dialogWidth = MediaQuery.of(
             ctx,
           ).size.width - 32;
@@ -7728,9 +7845,22 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                             ],
                           ),
                         ),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            FormDraftStore.discard(draftKey);
+                            Navigator.pop(ctx);
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.dangerWaste,
+                            side: const BorderSide(color: AppColors.dangerWaste),
+                          ),
+                          icon: const Icon(Icons.delete_sweep_rounded, size: 18),
+                          label: const Text('تجاهل المسودة'),
+                        ),
+                        const SizedBox(width: 6),
                         IconButton(
                           icon: const Icon(Icons.close_rounded),
-                          tooltip: 'إغلاق',
+                          tooltip: 'إغلاق (تبقى المسودة محفوظة)',
                           onPressed: () => Navigator.pop(ctx),
                         ),
                       ],
@@ -9820,6 +9950,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                   return;
                                                 }
 
+                                                FormDraftStore.discard(draftKey);
                                                 Navigator.pop(ctx);
                                                 ScaffoldMessenger.of(
                                                   context,

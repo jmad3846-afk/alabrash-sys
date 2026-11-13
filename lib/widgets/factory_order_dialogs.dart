@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
+import '../core/database/form_draft_store.dart';
 import '../core/models/models.dart';
 import 'currency_selector.dart';
 import 'app_image_attachment.dart';
@@ -65,31 +66,63 @@ void showAddFactoryOrderDialog(
     return;
   }
 
-  String? selectedClientId = existingOrder?.partyId;
-  String clientSearch = '';
-  String? selectedWhId;
-  String goodsSearch = '';
+  // ---- Auto-saved session draft: reopening this dialog restores the
+  // unsaved form state; a successful save or "تجاهل المسودة" clears it.
+  final draftKey = FormDraftStore.keyFor(
+    FormDraftStore.factoryOrderKey,
+    existingOrder == null ? 'new' : 'edit:${existingOrder.id}',
+  );
+  final draft = FormDraftStore.load(draftKey);
+
+  String? selectedClientId =
+      draft?['selectedClientId'] as String? ?? existingOrder?.partyId;
+  String clientSearch = draft?['clientSearch'] as String? ?? '';
+  String? selectedWhId = draft?['selectedWhId'] as String?;
+  String goodsSearch = draft?['goodsSearch'] as String? ?? '';
   final depositCtrl = TextEditingController(
-    text: existingOrder?.depositAmount.fmt ?? '',
+    text:
+        draft?['deposit'] as String? ?? existingOrder?.depositAmount.fmt ?? '',
   );
   final salesDiscountCtrl = TextEditingController(
-    text: existingOrder?.discountAmount.fmt ?? '0',
+    text:
+        draft?['salesDiscount'] as String? ??
+        existingOrder?.discountAmount.fmt ??
+        '0',
   );
   final shippingCtrl = TextEditingController(
-    text: existingOrder?.shippingFee.fmt ?? '',
+    text: draft?['shipping'] as String? ?? existingOrder?.shippingFee.fmt ?? '',
   );
-  final photoCtrl = TextEditingController(text: existingOrder?.photoPath ?? '');
-  bool? deliverByUs = existingOrder?.isGoodsDelivered;
+  final photoCtrl = TextEditingController(
+    text: draft?['photo'] as String? ?? existingOrder?.photoPath ?? '',
+  );
+  bool? deliverByUs = draft != null
+      ? draft['deliverByUs'] as bool?
+      : existingOrder?.isGoodsDelivered;
   String? formError;
-  bool showAdditionalInformation = false;
-  String orderCurrency = existingOrder?.currency ?? AppCurrency.usd;
+  bool showAdditionalInformation = draft?['showAdditional'] as bool? ?? false;
+  String orderCurrency =
+      draft?['currency'] as String? ??
+      existingOrder?.currency ??
+      AppCurrency.usd;
 
-  final List<FactoryInvoiceItem> draftItems =
-      existingOrder?.items.map((item) => item.copyWith()).toList() ?? [];
+  final List<FactoryInvoiceItem> draftItems = draft != null
+      ? (draft['items'] as List)
+            .map(
+              (m) => FactoryInvoiceItem.fromJson(
+                Map<String, dynamic>.from(m as Map),
+              ).copyWith(),
+            )
+            .toList()
+      : existingOrder?.items.map((item) => item.copyWith()).toList() ?? [];
 
   // Bulk row selection (first selection: assign material/type; second
   // selection on bound rows: apply services).
-  final Set<int> selectedDraftRows = <int>{};
+  final Set<int> selectedDraftRows = <int>{
+    ...((draft?['selectedRows'] as List?)?.map(
+          (e) => (e as num).toInt(),
+        ) ??
+        const <int>[]),
+  };
 
   // Per-row controllers + Tab focus nodes, index-aligned with draftItems.
   final rowEdits = <_OrderRowEdit>[];
@@ -119,10 +152,36 @@ void showAddFactoryOrderDialog(
   rebuildRowEdits();
 
   // Bulk service application state.
-  String? bulkServiceId;
-  final bulkSvcPriceCtrl = TextEditingController();
-  final bulkSvcNotesCtrl = TextEditingController();
+  String? bulkServiceId = draft?['bulkServiceId'] as String?;
+  final bulkSvcPriceCtrl = TextEditingController(
+    text: draft?['bulkSvcPrice'] as String? ?? '',
+  );
+  final bulkSvcNotesCtrl = TextEditingController(
+    text: draft?['bulkSvcNotes'] as String? ?? '',
+  );
   String? bulkSvcError;
+
+  // Snapshot of the entire live form state; called on every rebuild so any
+  // typed value, selection, row edit, or toggle survives an accidental
+  // close until the order is saved or the draft is discarded.
+  void persistDraft() => FormDraftStore.save(draftKey, () => {
+    'selectedClientId': selectedClientId,
+    'clientSearch': clientSearch,
+    'selectedWhId': selectedWhId,
+    'goodsSearch': goodsSearch,
+    'deposit': depositCtrl.text,
+    'salesDiscount': salesDiscountCtrl.text,
+    'shipping': shippingCtrl.text,
+    'photo': photoCtrl.text,
+    'deliverByUs': deliverByUs,
+    'showAdditional': showAdditionalInformation,
+    'currency': orderCurrency,
+    'bulkServiceId': bulkServiceId,
+    'bulkSvcPrice': bulkSvcPriceCtrl.text,
+    'bulkSvcNotes': bulkSvcNotesCtrl.text,
+    'selectedRows': selectedDraftRows.toList(),
+    'items': draftItems.map((it) => it.toJson()).toList(),
+  });
 
   double getFactoryCubicSellingPrice(FactoryWarehouseModel item) {
     if (item.category == 'متر مكعب' && item.recommendedSalePrice > 0) {
@@ -178,10 +237,24 @@ void showAddFactoryOrderDialog(
     nodes[next].requestFocus();
   }
 
+  if (draft != null) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تمت استعادة مسودة الطلبية غير المحفوظة تلقائياً.'),
+          backgroundColor: AppColors.orderDepositBoxAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    });
+  }
+
   showDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSt) {
+        persistDraft();
         final clientsFiltered = approvedClients
             .where(
               (c) => arabicFuzzyMatch(
@@ -525,9 +598,23 @@ void showAddFactoryOrderDialog(
                           ],
                         ),
                       ),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          FormDraftStore.discard(draftKey);
+                          Navigator.pop(ctx);
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.dangerWaste,
+                          side: const BorderSide(color: AppColors.dangerWaste),
+                        ),
+                        icon: const Icon(Icons.delete_sweep_rounded, size: 18),
+                        label: const Text('تجاهل المسودة'),
+                      ),
+                      const SizedBox(width: 6),
                       IconButton(
                         onPressed: () => Navigator.pop(ctx),
                         icon: const Icon(Icons.close_rounded),
+                        tooltip: 'إغلاق (تبقى المسودة محفوظة)',
                       ),
                     ],
                   ),
@@ -1208,6 +1295,7 @@ void showAddFactoryOrderDialog(
                             'تعذر حفظ التعديل. تحقق من توفر المخزون والعربون.');
                         return;
                       }
+                      FormDraftStore.discard(draftKey);
                       Navigator.pop(ctx);
 
                       if (onOrderCreated != null) {
