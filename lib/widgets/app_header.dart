@@ -23,38 +23,6 @@ class AppHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Thermal Printer Status Badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: erp.isThermalPrinterConnected ? AppColors.chipBgGreen : AppColors.chipBgRed,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: erp.isThermalPrinterConnected ? AppColors.successGreen : AppColors.dangerWaste,
-                width: 1,
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.print_rounded,
-                  size: 16,
-                  color: erp.isThermalPrinterConnected ? AppColors.successGreen : AppColors.dangerWaste,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  erp.isThermalPrinterConnected ? 'طابعة الفواتير الحرارية متصلة' : 'طابعة الفواتير غير متصلة',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: erp.isThermalPrinterConnected ? AppColors.successGreen : AppColors.dangerWaste,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-
           // 3 ISOLATED CASH BOX BADGES — each shows Dollar + Syrian funds
           // 1. Main Cash Box
           _buildCashBadge(
