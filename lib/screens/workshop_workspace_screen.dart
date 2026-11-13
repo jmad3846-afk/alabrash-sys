@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
@@ -44,6 +45,23 @@ class _TailoringStockOption {
 
   String get displayName =>
       '$typeName $grade ${thicknessCm}سم ($category - مواد المعمل) — المتاح: ${availableQty.fmt}';
+}
+
+class _WsOrderRowEdit {
+  final lenCtrl = TextEditingController();
+  final widCtrl = TextEditingController();
+  final heiCtrl = TextEditingController();
+  final qtyCtrl = TextEditingController();
+  final priceCtrl = TextEditingController();
+
+  final lenFocus = FocusNode(debugLabel: 'wsorder-row-len');
+  final widFocus = FocusNode(debugLabel: 'wsorder-row-wid');
+  final heiFocus = FocusNode(debugLabel: 'wsorder-row-hei');
+  final qtyFocus = FocusNode(debugLabel: 'wsorder-row-qty');
+  final priceFocus = FocusNode(debugLabel: 'wsorder-row-price');
+
+  // Net cost per stock unit captured when the row is bound to a record.
+  double netPerUnit = 0.0;
 }
 
 class WorkshopWorkspaceScreen extends StatefulWidget {
@@ -6125,55 +6143,6 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
       return item.heightCm > 0 ? item.heightCm : 2.0;
     }
 
-    double lookupCubicPrice() {
-      final stockMatches = erp.workshopStock
-          .where((w) => w.id == item.sourceId)
-          .toList();
-      if (stockMatches.isNotEmpty) {
-        return getWorkshopCubicSellingPrice(erp, stockMatches.first);
-      }
-      final facMatches = erp.factoryWarehouse
-          .where((w) => w.id == item.sourceId)
-          .toList();
-      if (facMatches.isNotEmpty) {
-        final f = facMatches.first;
-        if (f.category == 'متر مكعب' && f.recommendedSalePrice > 0)
-          return f.recommendedSalePrice;
-        final cMatches = erp.factoryWarehouse
-            .where(
-              (w) =>
-                  w.typeName.trim() == f.typeName.trim() &&
-                  w.category == 'متر مكعب' &&
-                  w.recommendedSalePrice > 0,
-            )
-            .toList();
-        if (cMatches.isNotEmpty) return cMatches.first.recommendedSalePrice;
-        return f.recommendedSalePrice;
-      }
-      for (final s in erp.workshopStock) {
-        if (item.description.contains(s.typeName)) {
-          return getWorkshopCubicSellingPrice(erp, s);
-        }
-      }
-      for (final f in erp.factoryWarehouse) {
-        if (item.description.contains(f.typeName)) {
-          if (f.category == 'متر مكعب' && f.recommendedSalePrice > 0)
-            return f.recommendedSalePrice;
-          final cMatches = erp.factoryWarehouse
-              .where(
-                (w) =>
-                    w.typeName.trim() == f.typeName.trim() &&
-                    w.category == 'متر مكعب' &&
-                    w.recommendedSalePrice > 0,
-              )
-              .toList();
-          if (cMatches.isNotEmpty) return cMatches.first.recommendedSalePrice;
-          return f.recommendedSalePrice;
-        }
-      }
-      return item.unitPrice;
-    }
-
     if (item.unitCategory == 'متر مكعب' && heiCtrl.text.isEmpty) {
       heiCtrl.text = lookupPredefinedThickness().fmt;
     }
@@ -6248,51 +6217,34 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     Row(
                       children: [
                         const Text(
-                          'وحدة القياس / البيع:',
+                          'وحدة البيع (حسب سماكة المادة > 5سم):',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        ChoiceChip(
-                          label: const Text('متر مربع (م²)'),
-                          selected: !isCube,
-                          onSelected: (sel) {
-                            if (sel) {
-                              setSt(() {
-                                editUnitCategory = 'متر مربع';
-                                heiCtrl.clear();
-                                final stockMatches = erp.workshopStock
-                                    .where((s) => s.id == item.sourceId)
-                                    .toList();
-                                if (stockMatches.isNotEmpty &&
-                                    stockMatches.first.recommendedSalePrice >
-                                        0) {
-                                  unitPriceCtrl.text = stockMatches
-                                      .first
-                                      .recommendedSalePrice
-                                      .fmt;
-                                }
-                              });
-                            }
-                          },
-                        ),
                         const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: const Text('متر مكعب (م³)'),
-                          selected: isCube,
-                          selectedColor: const Color(0xFFDCFCE7),
-                          onSelected: (sel) {
-                            if (sel) {
-                              setSt(() {
-                                editUnitCategory = 'متر مكعب';
-                                heiCtrl.text = lookupPredefinedThickness().fmt;
-                                final cp = lookupCubicPrice();
-                                if (cp > 0) unitPriceCtrl.text = cp.fmt;
-                              });
-                            }
-                          },
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isCube
+                                ? const Color(0xFFDCFCE7)
+                                : const Color(0xFFE0F2FE),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            isCube ? 'متر مكعب (م³)' : 'متر مربع (م²)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isCube
+                                  ? const Color(0xFF15803D)
+                                  : const Color(0xFF1E40AF),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -6738,6 +6690,127 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     String? selectedServiceId;
     final servicePriceCtrl = TextEditingController();
     final serviceNotesCtrl = TextEditingController();
+    // ---- Bulk selection + inline row editing state ----
+    // First selection: assign the item type/record to blank rows.
+    // Second selection (typed rows): apply a service to all of them.
+    final Set<int> selectedDraftRows = <int>{};
+
+    final rowEdits = <_WsOrderRowEdit>[];
+    void syncRowEdit(int idx, WorkshopInvoiceItem it) {
+      final ed = rowEdits[idx];
+      void push(TextEditingController c, double v) {
+        final text = v > 0 ? v.fmt : '';
+        if (c.text != text) c.text = text;
+      }
+      final cube = it.unitCategory == 'متر مكعب';
+      final showQty = cube || it.sourceType == 'بيع مواد خام من المعمل'
+          ? (it.count > 0 ? it.count : it.quantity)
+          : (it.lengthCm > 0 && it.widthCm > 0 && it.count > 0)
+          ? it.count
+          : it.quantity;
+      push(ed.lenCtrl, it.lengthCm);
+      push(ed.widCtrl, it.widthCm);
+      push(ed.heiCtrl, cube ? (it.heightCm > 0 ? it.heightCm : 0) : 0);
+      push(ed.qtyCtrl, showQty);
+      push(ed.priceCtrl, it.unitPrice);
+      ed.netPerUnit = it.quantity > 0 ? it.netCost / it.quantity : it.netCost;
+    }
+
+    void rebuildRowEdits() {
+      rowEdits.clear();
+      for (var i = 0; i < draftItems.length; i++) {
+        rowEdits.add(_WsOrderRowEdit());
+      }
+      for (var i = 0; i < draftItems.length; i++) {
+        syncRowEdit(i, draftItems[i]);
+      }
+    }
+
+    rebuildRowEdits();
+
+    // Recompute quantity/agreed/net for a typed row from its inline fields.
+    void recomputeOrderRow(int idx) {
+      final it = draftItems[idx];
+      if (it.sourceType.isEmpty) return;
+      final ed = rowEdits[idx];
+      final l = double.tryParse(ed.lenCtrl.text) ?? 0.0;
+      final w = double.tryParse(ed.widCtrl.text) ?? 0.0;
+      final h = double.tryParse(ed.heiCtrl.text) ?? 0.0;
+      final cnt = double.tryParse(ed.qtyCtrl.text) ?? 0.0;
+      final price = double.tryParse(ed.priceCtrl.text) ?? 0.0;
+      final cube = it.unitCategory == 'متر مكعب';
+      double quantity;
+      if (it.sourceType == 'بيع مواد خام من المعمل') {
+        quantity = cube
+            ? ((l > 0 && w > 0 && h > 0 && cnt > 0)
+                  ? (l / 100.0) * (w / 100.0) * (h / 100.0) * cnt
+                  : 0.0)
+            : ((l > 0 && w > 0 && cnt > 0)
+                  ? (l / 100.0) * (w / 100.0) * cnt
+                  : 0.0);
+      } else if (it.sourceType == 'بيع خياطة بسيطة') {
+        quantity = (l > 0 && w > 0 && cnt > 0)
+            ? (l / 100.0) * (w / 100.0) * cnt
+            : cnt;
+      } else {
+        quantity = cnt;
+      }
+      final agreed = quantity * price;
+      final net = ed.netPerUnit > 0 ? ed.netPerUnit * quantity : it.netCost;
+      draftItems[idx] = it.copyWith(
+        lengthCm: l,
+        widthCm: w,
+        heightCm: cube ? h : 0.0,
+        quantity: quantity,
+        count: cnt > 0 ? cnt : quantity,
+        unitPrice: price,
+        agreedPrice: agreed,
+        netCost: net,
+      );
+    }
+
+    // Bulk service application state.
+    String? bulkServiceId;
+    final bulkSvcPriceCtrl = TextEditingController();
+    final bulkSvcNotesCtrl = TextEditingController();
+    String? bulkSvcError;
+
+    // ---- Tab navigation restricted to the item value fields ----
+    // Tab / Shift+Tab cycle only through [Length, Width, Height, Quantity,
+    // Price] of typed rows (Height only on m³ rows); all other dialog
+    // fields are skipped entirely.
+    List<FocusNode> wsOrderTabNodes() {
+      final nodes = <FocusNode>[];
+      for (var i = 0; i < draftItems.length; i++) {
+        final it = draftItems[i];
+        if (it.sourceType.isEmpty) continue;
+        final ed = rowEdits[i];
+        nodes.add(ed.lenFocus);
+        nodes.add(ed.widFocus);
+        if (it.unitCategory == 'متر مكعب' || it.heightCm > 0) {
+          nodes.add(ed.heiFocus);
+        }
+        nodes.add(ed.qtyFocus);
+        nodes.add(ed.priceFocus);
+      }
+      return nodes;
+    }
+
+    void moveWsOrderTabFocus({required bool forward}) {
+      final nodes = wsOrderTabNodes();
+      if (nodes.isEmpty) return;
+      final current = FocusManager.instance.primaryFocus;
+      final idx = current == null ? -1 : nodes.indexOf(current);
+      if (idx == -1) {
+        nodes.first.requestFocus();
+        return;
+      }
+      final next = forward
+          ? (idx + 1) % nodes.length
+          : (idx - 1 + nodes.length) % nodes.length;
+      nodes[next].requestFocus();
+    }
+
 
     showDialog(
       context: context,
@@ -6850,7 +6923,739 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             double.infinity,
           );
 
-          return Dialog(
+          // ---- Bulk type assignment (first selection) ----
+          void assignTypeToSelectedRows() {
+            final targets = selectedDraftRows
+                .where(
+                  (i) =>
+                      i < draftItems.length &&
+                      draftItems[i].sourceType.isEmpty,
+                )
+                .toList();
+            if (targets.isEmpty) {
+              setSt(
+                () => itemError =
+                    'يرجى تحديد صفوف فارغة (☑) من يساراً قبل تعيين النوع.',
+              );
+              return;
+            }
+            if (itemSourceType == 'بيع مواد خام من المعمل') {
+              final wsMatches = erp.workshopStock
+                  .where((w) => w.id == selectedRawId)
+                  .toList();
+              if (selectedRawId == null || wsMatches.isEmpty) {
+                setSt(
+                  () => itemError = 'يرجى اختيار المادة الخام من مواد المعمل.',
+                );
+                return;
+              }
+              final w = wsMatches.first;
+              final cube = w.category == 'متر مكعب';
+              for (final idx in targets) {
+                draftItems[idx] = draftItems[idx].copyWith(
+                  sourceType: itemSourceType,
+                  sourceId: w.id,
+                  sourceLineItemId: '',
+                  description: '${w.typeName} ${w.grade} ${w.thicknessCm}سم',
+                  unitCategory: cube ? 'متر مكعب' : 'متر مربع',
+                  isGranite: w.isGranite,
+                  heightCm: cube ? w.thicknessCm : 0.0,
+                );
+                final ed = rowEdits[idx];
+                ed.lenCtrl.clear();
+                ed.widCtrl.clear();
+                ed.heiCtrl.text = cube ? w.thicknessCm.fmt : '';
+                ed.qtyCtrl.text = '1';
+                ed.priceCtrl.text =
+                    (cube
+                            ? workshopInvoiceCubicSellingPrice(erp, w)
+                            : (w.recommendedSalePrice > 0
+                                  ? w.recommendedSalePrice
+                                  : w.netCostPerUnit * 1.3))
+                        .fmt;
+                ed.netPerUnit = w.netCostPerUnit;
+                recomputeOrderRow(idx);
+              }
+            } else if (itemSourceType == 'بيع خياطة بسيطة') {
+              final tMatches = erp.simpleTailorings
+                  .where((t) => t.id == selectedRecordId)
+                  .toList();
+              if (selectedRecordId == null || tMatches.isEmpty) {
+                setSt(
+                  () => itemError =
+                      'يرجى اختيار السجل أو التفصيل المراد إضافته.',
+                );
+                return;
+              }
+              final t = tMatches.first;
+              final liMatches = selectedLineItemId == null
+                  ? const []
+                  : t.lineItems
+                        .where((x) => x.id == selectedLineItemId)
+                        .toList();
+              final li = liMatches.isEmpty ? null : liMatches.first;
+              for (final idx in targets) {
+                draftItems[idx] = draftItems[idx].copyWith(
+                  sourceType: itemSourceType,
+                  sourceId: t.id,
+                  sourceLineItemId: li?.id ?? '',
+                  description: li != null
+                      ? '${t.name} - ${li.description}'
+                      : t.name,
+                  unitCategory: 'متر مربع',
+                  isGranite: t.isGranite,
+                  photoPath: t.photoPath,
+                  lengthCm: li?.lengthCm ?? 0.0,
+                  widthCm: li?.widthCm ?? 0.0,
+                );
+                final ed = rowEdits[idx];
+                ed.lenCtrl.text = (li != null && li.lengthCm > 0)
+                    ? li.lengthCm.fmt
+                    : '';
+                ed.widCtrl.text = (li != null && li.widthCm > 0)
+                    ? li.widthCm.fmt
+                    : '';
+                ed.heiCtrl.clear();
+                ed.qtyCtrl.text = '1';
+                ed.priceCtrl.text =
+                    (li != null && li.sellingPricePerMeter > 0
+                            ? li.sellingPricePerMeter
+                            : t.sellingPrice)
+                        .fmt;
+                ed.netPerUnit = t.quantity > 0
+                    ? t.totalNetCost / t.quantity
+                    : 0.0;
+                recomputeOrderRow(idx);
+              }
+            } else if (itemSourceType == 'بيع خياطة معقدة') {
+              final tMatches = erp.complexTailorings
+                  .where((t) => t.id == selectedRecordId)
+                  .toList();
+              if (selectedRecordId == null || tMatches.isEmpty) {
+                setSt(
+                  () => itemError =
+                      'يرجى اختيار السجل أو التفصيل المراد إضافته.',
+                );
+                return;
+              }
+              final t = tMatches.first;
+              for (final idx in targets) {
+                draftItems[idx] = draftItems[idx].copyWith(
+                  sourceType: itemSourceType,
+                  sourceId: t.id,
+                  sourceLineItemId: '',
+                  description: t.name,
+                  unitCategory: 'قطعة',
+                  isGranite: t.isGranite,
+                  photoPath: t.photoPath,
+                );
+                final ed = rowEdits[idx];
+                ed.lenCtrl.clear();
+                ed.widCtrl.clear();
+                ed.heiCtrl.clear();
+                ed.qtyCtrl.text = '1';
+                ed.priceCtrl.text = t.sellingPrice.fmt;
+                ed.netPerUnit = t.quantity > 0
+                    ? t.totalNetCost / t.quantity
+                    : 0.0;
+                recomputeOrderRow(idx);
+              }
+            } else if (itemSourceType == 'بيع قطع إضافية') {
+              final sMatches = erp.scrapItems
+                  .where((s) => s.id == selectedRecordId)
+                  .toList();
+              if (selectedRecordId == null || sMatches.isEmpty) {
+                setSt(
+                  () => itemError =
+                      'يرجى اختيار السجل أو التفصيل المراد إضافته.',
+                );
+                return;
+              }
+              final s = sMatches.first;
+              final dimMatch = RegExp(
+                r'(\d+(?:\.\d+)?)\s*[*×xX]\s*(\d+(?:\.\d+)?)',
+              ).firstMatch(s.description);
+              for (final idx in targets) {
+                draftItems[idx] = draftItems[idx].copyWith(
+                  sourceType: itemSourceType,
+                  sourceId: s.id,
+                  sourceLineItemId: '',
+                  description: s.description,
+                  unitCategory: 'قطعة',
+                  isGranite: false,
+                  photoPath: s.photoPath,
+                );
+                final ed = rowEdits[idx];
+                ed.lenCtrl.text = dimMatch != null
+                    ? (double.tryParse(dimMatch.group(1)!) ?? 0).fmt
+                    : '';
+                ed.widCtrl.text = dimMatch != null
+                    ? (double.tryParse(dimMatch.group(2)!) ?? 0).fmt
+                    : '';
+                ed.heiCtrl.clear();
+                ed.qtyCtrl.text = '1';
+                ed.priceCtrl.text = s.sellingPrice.fmt;
+                ed.netPerUnit = s.baseCost;
+                recomputeOrderRow(idx);
+              }
+            }
+            selectedDraftRows.clear();
+            itemError = null;
+            setSt(() {});
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'تم تعيين نوع «$itemSourceType» على ${targets.length} بند. عدّل القيم داخل الصفوف مباشرةً.',
+                ),
+                backgroundColor: AppColors.successGreen,
+              ),
+            );
+          }
+
+          // ---- Bulk service application (second selection) ----
+          final bulkSvcTargets = selectedDraftRows
+              .where(
+                (i) => i < draftItems.length && draftItems[i].sourceType.isNotEmpty,
+              )
+              .toList();
+
+          void applyBulkServiceToSelectedRows() {
+            if (bulkServiceId == null) {
+              setSt(() => bulkSvcError = 'يرجى اختيار الخدمة المراد تطبيقها.');
+              return;
+            }
+            if (bulkSvcTargets.isEmpty) {
+              setSt(
+                () => bulkSvcError =
+                    'يرجى تحديد بنود تم تعيين نوعها (☑) قبل تطبيق الخدمة.',
+              );
+              return;
+            }
+            final srv = erp.services.firstWhere((s) => s.id == bulkServiceId);
+            final fixed = double.tryParse(bulkSvcPriceCtrl.text.trim()) ?? 0.0;
+            setSt(() {
+              for (final i in bulkSvcTargets) {
+                final it = draftItems[i];
+                final qtyForCost = it.count > 0 ? it.count : it.quantity;
+                // Automatic per-item rule: length × quantity × unit rate.
+                final rawPrice = fixed > 0
+                    ? fixed
+                    : _workshopServiceCost(
+                        lengthCm: it.lengthCm,
+                        quantity: qtyForCost,
+                        unitRate: srv.unitRate,
+                      );
+                final price = double.tryParse(rawPrice.fmt) ?? rawPrice;
+                draftItems[i] = it.copyWith(
+                  services: [
+                    ...it.services,
+                    ServiceAttachment(
+                      serviceName: srv.name,
+                      price: price,
+                      notes: bulkSvcNotesCtrl.text.trim(),
+                    ),
+                  ],
+                );
+              }
+              bulkServiceId = null;
+              bulkSvcPriceCtrl.clear();
+              bulkSvcNotesCtrl.clear();
+              bulkSvcError = null;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'تم تطبيق خدمة «${srv.name}» على ${bulkSvcTargets.length} بند محدد.',
+                ),
+                backgroundColor: AppColors.successGreen,
+              ),
+            );
+          }
+
+          Widget bulkServicePanel() {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDFA),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF5EEAD4)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.handyman_rounded,
+                        size: 18,
+                        color: Color(0xFF0F766E),
+                      ),
+                      const SizedBox(width: 6),
+                      const Expanded(
+                        child: Text(
+                          'تطبيق خدمة على البنود المحددة',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      if (bulkSvcTargets.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFCCFBF1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${bulkSvcTargets.length} بند محدد',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF115E59),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'يُحسب سعر الخدمة لكل بند تلقائياً (الطول × الكمية × سعر وحدة الخدمة)؛ أدخل سعراً موحداً لتثبيته على الكل. يبقى تعيين الخدمات الفردية لكل بند كما هو.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.brandSecondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: bulkServiceId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'اختر الخدمة',
+                      isDense: true,
+                    ),
+                    items: servicesFiltered
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s.id,
+                            child: Text('${s.name} (${s.unitRate}\$)'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setSt(() {
+                      bulkServiceId = v;
+                      bulkSvcError = null;
+                    }),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: bulkSvcPriceCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'سعر موحّد (\$) اختياري',
+                            helperText: 'فارغ = حساب تلقائي لكل بند',
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: bulkSvcNotesCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'ملاحظات الخدمة (اختياري)',
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F766E),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: bulkSvcTargets.isEmpty
+                        ? null
+                        : applyBulkServiceToSelectedRows,
+                    icon: const Icon(Icons.add_task_rounded, size: 18),
+                    label: Text(
+                      'تطبيق الخدمة على البنود المحددة (${bulkSvcTargets.length})',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  if (bulkSvcError != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      bulkSvcError!,
+                      style: const TextStyle(
+                        color: AppColors.dangerWaste,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }
+
+          // ---- Inline editable item row ----
+          String wsQtyLabel(WorkshopInvoiceItem it) {
+            switch (it.sourceType) {
+              case 'بيع مواد خام من المعمل':
+                return 'العدد / القطع';
+              case 'بيع خياطة بسيطة':
+                return (it.lengthCm > 0 && it.widthCm > 0)
+                    ? 'عدد القطع'
+                    : 'الكمية بالمتر (م²)';
+              case 'بيع خياطة معقدة':
+                return 'عدد القطع';
+              case 'بيع قطع إضافية':
+                return 'عدد القطع';
+              default:
+                return 'الكمية';
+            }
+          }
+
+          String wsPriceLabel(WorkshopInvoiceItem it) {
+            switch (it.sourceType) {
+              case 'بيع مواد خام من المعمل':
+                return it.unitCategory == 'متر مكعب'
+                    ? 'سعر بيع المتر (م³ \$)'
+                    : 'سعر بيع المتر (م² \$)';
+              case 'بيع خياطة بسيطة':
+                return 'سعر المتر الإفرادي (\$)';
+              case 'بيع خياطة معقدة':
+                return 'سعر القطعة الإفرادي (\$)';
+              case 'بيع قطع إضافية':
+                return 'السعر (\$)';
+              default:
+                return 'السعر (\$)';
+            }
+          }
+
+          Widget wsOrderRowCard(int idx) {
+            final it = draftItems[idx];
+            final ed = rowEdits[idx];
+            final typed = it.sourceType.isNotEmpty;
+            final cube =
+                typed && (it.unitCategory == 'متر مكعب' || it.heightCm > 0);
+            Color chipColor = AppColors.chipBgSky;
+            Color textColor = AppColors.orderDepositBoxAccent;
+            if (!typed) {
+              chipColor = const Color(0xFFFEF3C7);
+              textColor = const Color(0xFF92400E);
+            } else if (it.sourceType == 'بيع مواد خام من المعمل') {
+              chipColor = const Color(0xFFD1FAE5);
+              textColor = const Color(0xFF065F46);
+            } else if (it.sourceType == 'بيع قطع إضافية') {
+              chipColor = const Color(0xFFFEF3C7);
+              textColor = const Color(0xFF92400E);
+            } else if (it.sourceType == 'بيع خياطة بسيطة' ||
+                it.sourceType == 'بيع خياطة معقدة') {
+              chipColor = const Color(0xFFEDE9FE);
+              textColor = const Color(0xFF5B21B6);
+            }
+            Widget numField(
+              TextEditingController c,
+              FocusNode f,
+              String label, {
+              double width = 110,
+              bool enabled = true,
+            }) {
+              return SizedBox(
+                width: width,
+                child: TextFormField(
+                  controller: c,
+                  focusNode: f,
+                  enabled: typed && enabled,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  decoration: InputDecoration(
+                    labelText: label,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 8,
+                    ),
+                  ),
+                  onChanged: (_) => setSt(() => recomputeOrderRow(idx)),
+                ),
+              );
+            }
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(
+                  color: selectedDraftRows.contains(idx)
+                      ? const Color(0xFF2563EB)
+                      : AppColors.panelBorder,
+                  width: selectedDraftRows.contains(idx) ? 1.6 : 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      children: [
+                        Tooltip(
+                          message:
+                              'تحديد: أولاً لتعيين النوع، ثم لتطبيق الخدمات',
+                          child: Checkbox(
+                            value: selectedDraftRows.contains(idx),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            onChanged: (_) => setSt(() {
+                              if (!selectedDraftRows.add(idx)) {
+                                selectedDraftRows.remove(idx);
+                              }
+                            }),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: chipColor,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            typed ? it.sourceType : 'بدون نوع',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: textColor,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            it.description,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.edit_outlined,
+                            size: 18,
+                            color: Color(0xFF2563EB),
+                          ),
+                          tooltip: 'تعديل هذا البند',
+                          onPressed: () => _showEditWorkshopDraftItemModal(
+                            context: context,
+                            item: it,
+                            currency: orderCurrency,
+                            erp: erp,
+                            onSave: (updated) => setSt(() {
+                              draftItems[idx] = updated;
+                              syncRowEdit(idx, updated);
+                            }),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            size: 18,
+                            color: AppColors.dangerWaste,
+                          ),
+                          tooltip: 'حذف هذا الصنف',
+                          onPressed: () => setSt(() {
+                            draftItems.removeAt(idx);
+                            rowEdits.removeAt(idx);
+                            selectedDraftRows.clear();
+                          }),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Row(
+                      children: [
+                        numField(ed.lenCtrl, ed.lenFocus, 'الطول (سم)'),
+                        const SizedBox(width: 6),
+                        numField(ed.widCtrl, ed.widFocus, 'العرض (سم)'),
+                        const SizedBox(width: 6),
+                        numField(
+                          ed.heiCtrl,
+                          ed.heiFocus,
+                          'الارتفاع/السماكة',
+                          enabled: cube,
+                        ),
+                        const SizedBox(width: 6),
+                        numField(
+                          ed.qtyCtrl,
+                          ed.qtyFocus,
+                          wsQtyLabel(it),
+                          width: 130,
+                        ),
+                        const SizedBox(width: 6),
+                        numField(
+                          ed.priceCtrl,
+                          ed.priceFocus,
+                          wsPriceLabel(it),
+                          width: 130,
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 130,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: typed
+                                ? const Color(0xFFF0FDF4)
+                                : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: typed
+                                  ? const Color(0xFF86EFAC)
+                                  : AppColors.panelBorder,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'إجمالي البند',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: AppColors.brandSecondaryText,
+                                ),
+                              ),
+                              Text(
+                                '${(it.agreedPrice + it.servicesTotal).fmt} \$',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: typed
+                                      ? const Color(0xFF15803D)
+                                      : const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (it.services.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: it.services.asMap().entries.map((e) {
+                            return Chip(
+                              labelPadding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              backgroundColor: Colors.white,
+                              label: Text(
+                                '${e.value.serviceName}: ${e.value.price.fmt}\$',
+                                style: const TextStyle(fontSize: 10),
+                              ),
+                              deleteIcon: const Icon(Icons.close, size: 14),
+                              onDeleted: () => setSt(() {
+                                final svcs = List.of(it.services)
+                                  ..removeAt(e.key);
+                                draftItems[idx] = it.copyWith(
+                                  services: svcs,
+                                );
+                                syncRowEdit(idx, draftItems[idx]);
+                              }),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                  if (!typed)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(12, 0, 12, 6),
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          'صف فارغ — حدّده ثم عيّن له النوع من لوحة الإضافة يساراً',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF92400E),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }
+
+          // ---------- Body ----------
+          // Tab / Shift+Tab are captured for the whole dialog and redirected
+          // ONLY through the item value fields (Length, Width, Height,
+          // Quantity, Price) of the typed rows.
+          return Shortcuts(
+            shortcuts: const <ShortcutActivator, Intent>{
+              SingleActivator(LogicalKeyboardKey.tab): NextFocusIntent(),
+              SingleActivator(LogicalKeyboardKey.tab, shift: true):
+                  PreviousFocusIntent(),
+            },
+            child: Actions(
+              actions: <Type, Action<Intent>>{
+                NextFocusIntent: CallbackAction<NextFocusIntent>(
+                  onInvoke: (_) {
+                    moveWsOrderTabFocus(forward: true);
+                    return null;
+                  },
+                ),
+                PreviousFocusIntent: CallbackAction<PreviousFocusIntent>(
+                  onInvoke: (_) {
+                    moveWsOrderTabFocus(forward: false);
+                    return null;
+                  },
+                ),
+              },
+              child: Dialog(
             insetPadding: const EdgeInsets.symmetric(
               horizontal: 8,
               vertical: 8,
@@ -7269,95 +8074,58 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                               ),
                                               if (selectedRaw != null) ...[
                                                 const SizedBox(height: 8),
-                                                Row(
-                                                  children: [
-                                                    const Text(
-                                                      'وحدة القياس / البيع:',
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 12),
-                                                    ChoiceChip(
-                                                      label: const Text(
-                                                        'متر مربع (م²)',
-                                                      ),
-                                                      selected: !rawCube,
-                                                      onSelected: (sel) {
-                                                        if (sel) {
-                                                          setSt(() {
-                                                            itemUnitCat =
-                                                                'متر مربع';
-                                                            rawHeiCtrl.clear();
-                                                            rawPriceCtrl.text =
-                                                                selectedRaw!
-                                                                        .recommendedSalePrice >
-                                                                    0
-                                                                ? selectedRaw!
-                                                                      .recommendedSalePrice
-                                                                      .fmt
-                                                                : (selectedRaw!
-                                                                              .netCostPerUnit *
-                                                                          1.3)
-                                                                      .fmt;
-                                                            final p =
-                                                                double.tryParse(
-                                                                  rawPriceCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            itemAgreedCtrl
-                                                                    .text =
-                                                                (rawArea * p)
-                                                                    .fmt;
-                                                          });
-                                                        }
-                                                      },
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    ChoiceChip(
-                                                      label: const Text(
-                                                        'متر مكعب (م³)',
-                                                      ),
-                                                      selected: rawCube,
-                                                      selectedColor:
-                                                          const Color(
-                                                            0xFFDCFCE7,
+                                                    Row(
+                                                      children: [
+                                                        const Text(
+                                                          'وحدة البيع (تُشتق تلقائياً من سماكة المادة):',
+                                                          style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            fontSize: 12,
                                                           ),
-                                                      onSelected: (sel) {
-                                                        if (sel) {
-                                                          setSt(() {
-                                                            itemUnitCat =
-                                                                'متر مكعب';
-                                                            rawHeiCtrl.text =
-                                                                selectedRaw!
-                                                                    .thicknessCm
-                                                                    .fmt;
-                                                            final cp =
-                                                                getWorkshopCubicSellingPrice(
-                                                                  erp,
-                                                                  selectedRaw!,
-                                                                );
-                                                            rawPriceCtrl.text =
-                                                                cp.fmt;
-                                                            final p =
-                                                                double.tryParse(
-                                                                  rawPriceCtrl
-                                                                      .text,
-                                                                ) ??
-                                                                0;
-                                                            itemAgreedCtrl
-                                                                    .text =
-                                                                (rawArea * p)
-                                                                    .fmt;
-                                                          });
-                                                        }
-                                                      },
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 8,
+                                                        ),
+                                                        Container(
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 8,
+                                                                vertical: 3,
+                                                              ),
+                                                          decoration: BoxDecoration(
+                                                            color: rawCube
+                                                                ? const Color(
+                                                                    0xFFDCFCE7,
+                                                                  )
+                                                                : const Color(
+                                                                    0xFFE0F2FE,
+                                                                  ),
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  6,
+                                                                ),
+                                                          ),
+                                                          child: Text(
+                                                            rawCube
+                                                                ? 'متر مكعب (م³)'
+                                                                : 'متر مربع (م²)',
+                                                            style: TextStyle(
+                                                              fontSize: 11,
+                                                              fontWeight:
+                                                                  FontWeight.bold,
+                                                              color: rawCube
+                                                                  ? const Color(
+                                                                      0xFF15803D,
+                                                                    )
+                                                                  : const Color(
+                                                                      0xFF1E40AF,
+                                                                    ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
-                                                  ],
-                                                ),
                                                 const SizedBox(height: 8),
                                                 Row(
                                                   children: [
@@ -8237,6 +9005,47 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
 
                                             const SizedBox(height: 12),
 
+                                            // تعيين النوع للصفوف الفارغة المحددة
+                                            // (التحديد الأول) دفعة واحدة.
+                                            if (selectedDraftRows.isNotEmpty) ...[
+                                              SizedBox(
+                                                width: double.infinity,
+                                                child: ElevatedButton.icon(
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: const Color(
+                                                      0xFF2563EB,
+                                                    ),
+                                                    foregroundColor: Colors.white,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 12,
+                                                        ),
+                                                    shape:
+                                                        RoundedRectangleBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                8,
+                                                              ),
+                                                        ),
+                                                  ),
+                                                  onPressed:
+                                                      assignTypeToSelectedRows,
+                                                  icon: const Icon(
+                                                    Icons.playlist_add_check_rounded,
+                                                    size: 18,
+                                                  ),
+                                                  label: Text(
+                                                    'تعيين النوع للصفوف المحددة (${selectedDraftRows.length})',
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                            ],
                                             // BUTTON: ADD ITEM TO ORDER
                                             SizedBox(
                                               width: double.infinity,
@@ -8426,6 +9235,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
 
                                                   setSt(() {
                                                     draftItems.add(newItem);
+                                                    final newIdx = draftItems.length - 1;
+                                                    rowEdits.add(_WsOrderRowEdit());
+                                                    syncRowEdit(newIdx, draftItems[newIdx]);
                                                     selectedRecordId = null;
                                                     selectedLineItemId = null;
                                                     selectedRawId = null;
@@ -8531,6 +9343,39 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                   AppColors.brandSecondaryText,
                                             ),
                                           ),
+                                          const SizedBox(width: 8),
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(
+                                                0xFF0F766E,
+                                              ),
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 8,
+                                                  ),
+                                            ),
+                                            onPressed: () => setSt(() {
+                                              draftItems.add(
+                                                WorkshopInvoiceItem(
+                                                  id:
+                                                      'woi_blank_${DateTime.now().microsecondsSinceEpoch}_${draftItems.length}',
+                                                  sourceType: '',
+                                                  description:
+                                                      'صف فارغ — عيّن النوع',
+                                                  quantity: 0,
+                                                  unitPrice: 0,
+                                                  agreedPrice: 0,
+                                                ),
+                                              );
+                                              rowEdits.add(
+                                                _WsOrderRowEdit(),
+                                              );
+                                            }),
+                                            icon: const Icon(Icons.add, size: 18),
+                                            label: const Text('إضافة بند'),
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -8548,26 +9393,26 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                       MainAxisAlignment.center,
                                                   children: [
                                                     Icon(
-                                                      Icons.assignment_outlined,
+                                                      Icons
+                                                          .receipt_long_outlined,
                                                       size: 64,
                                                       color:
                                                           Colors.grey.shade400,
                                                     ),
                                                     const SizedBox(height: 12),
                                                     const Text(
-                                                      'لم يتم إضافة أي بند للطلبية بعد',
+                                                      'لم يتم إضافة أي صنف للطلبية بعد',
                                                       style: TextStyle(
                                                         fontWeight:
                                                             FontWeight.bold,
                                                         fontSize: 16,
-                                                        color: Color(
-                                                          0xFF475569,
-                                                        ),
+                                                        color:
+                                                            Color(0xFF475569),
                                                       ),
                                                     ),
                                                     const SizedBox(height: 6),
                                                     const Text(
-                                                      'اختر نوع البند من القائمة يساراً وأضف الأصناف والخدمات لتظهر هنا.',
+                                                      'انقر «إضافة بند» بالأعلى لتوليد صفوف فارغة، حدّدها ثم عيّن نوعها دفعة واحدة من لوحة الإضافة يساراً.',
                                                       textAlign:
                                                           TextAlign.center,
                                                       style: TextStyle(
@@ -8580,295 +9425,14 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                 ),
                                               ),
                                             )
-                                          : ListView.separated(
-                                              padding: const EdgeInsets.all(16),
+                                          : ListView.builder(
+                                              padding: const EdgeInsets.all(
+                                                12,
+                                              ),
                                               itemCount: draftItems.length,
-                                              separatorBuilder: (_, __) =>
-                                                  const SizedBox(height: 10),
-                                              itemBuilder: (context, idx) {
-                                                final item = draftItems[idx];
-                                                return Card(
-                                                  elevation: 1,
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          10,
-                                                        ),
-                                                    side: const BorderSide(
-                                                      color: Color(0xFFE2E8F0),
-                                                    ),
-                                                  ),
-                                                  child: InkWell(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          10,
-                                                        ),
-                                                    onTap: () {
-                                                      _showEditWorkshopDraftItemModal(
-                                                        context: context,
-                                                        item: item,
-                                                        currency: orderCurrency,
-                                                        erp: erp,
-                                                        onSave: (updated) =>
-                                                            setSt(() {
-                                                              draftItems[idx] =
-                                                                  updated;
-                                                            }),
-                                                      );
-                                                    },
-                                                    child: Padding(
-                                                      padding:
-                                                          const EdgeInsets.all(
-                                                            12,
-                                                          ),
-                                                      child: Column(
-                                                        crossAxisAlignment:
-                                                            CrossAxisAlignment
-                                                                .start,
-                                                        children: [
-                                                          Row(
-                                                            children: [
-                                                              CircleAvatar(
-                                                                radius: 12,
-                                                                backgroundColor:
-                                                                    const Color(
-                                                                      0xFFE2E8F0,
-                                                                    ),
-                                                                child: Text(
-                                                                  '${idx + 1}',
-                                                                  style: const TextStyle(
-                                                                    fontSize:
-                                                                        11,
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .bold,
-                                                                    color: Color(
-                                                                      0xFF334155,
-                                                                    ),
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                              const SizedBox(
-                                                                width: 8,
-                                                              ),
-                                                              Container(
-                                                                padding:
-                                                                    const EdgeInsets.symmetric(
-                                                                      horizontal:
-                                                                          8,
-                                                                      vertical:
-                                                                          3,
-                                                                    ),
-                                                                decoration: BoxDecoration(
-                                                                  color: AppColors
-                                                                      .chipBgSky,
-                                                                  borderRadius:
-                                                                      BorderRadius.circular(
-                                                                        6,
-                                                                      ),
-                                                                ),
-                                                                child: Text(
-                                                                  item.sourceType,
-                                                                  style: const TextStyle(
-                                                                    fontSize:
-                                                                        11,
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .bold,
-                                                                    color: AppColors
-                                                                        .orderDepositBoxAccent,
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                              const SizedBox(
-                                                                width: 8,
-                                                              ),
-                                                              Expanded(
-                                                                child: Text(
-                                                                  item.description,
-                                                                  style: const TextStyle(
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .bold,
-                                                                    fontSize:
-                                                                        14,
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                              IconButton(
-                                                                icon: const Icon(
-                                                                  Icons
-                                                                      .edit_outlined,
-                                                                  size: 18,
-                                                                  color: Color(
-                                                                    0xFF2563EB,
-                                                                  ),
-                                                                ),
-                                                                tooltip:
-                                                                    'تعديل هذا البند',
-                                                                onPressed: () {
-                                                                  _showEditWorkshopDraftItemModal(
-                                                                    context:
-                                                                        context,
-                                                                    item: item,
-                                                                    currency:
-                                                                        orderCurrency,
-                                                                    erp: erp,
-                                                                    onSave:
-                                                                        (
-                                                                          updated,
-                                                                        ) => setSt(() {
-                                                                          draftItems[idx] =
-                                                                              updated;
-                                                                        }),
-                                                                  );
-                                                                },
-                                                              ),
-                                                              IconButton(
-                                                                icon: const Icon(
-                                                                  Icons
-                                                                      .delete_outline_rounded,
-                                                                  size: 18,
-                                                                  color: AppColors
-                                                                      .dangerWaste,
-                                                                ),
-                                                                tooltip: 'حذف',
-                                                                onPressed: () => setSt(
-                                                                  () => draftItems
-                                                                      .removeAt(
-                                                                        idx,
-                                                                      ),
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                          const SizedBox(
-                                                            height: 6,
-                                                          ),
-                                                          Row(
-                                                            children: [
-                                                              Text(
-                                                                'الكمية: ${item.quantity.fmt} ${item.unitCategory}',
-                                                                style: const TextStyle(
-                                                                  fontSize: 12,
-                                                                  color: Color(
-                                                                    0xFF475569,
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                              if (item.unitPrice >
-                                                                  0) ...[
-                                                                const SizedBox(
-                                                                  width: 12,
-                                                                ),
-                                                                Text(
-                                                                  'سعر الوحدة: ${item.unitPrice.fmt}\$',
-                                                                  style: const TextStyle(
-                                                                    fontSize:
-                                                                        12,
-                                                                    color: Color(
-                                                                      0xFF475569,
-                                                                    ),
-                                                                  ),
-                                                                ),
-                                                              ],
-                                                              const Spacer(),
-                                                              Text(
-                                                                'القيمة: ${item.agreedPrice.fmt} ${AppCurrency.symbol(orderCurrency)}',
-                                                                style: const TextStyle(
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .bold,
-                                                                  fontSize: 13,
-                                                                  color: Color(
-                                                                    0xFF0F172A,
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                          if (item
-                                                              .services
-                                                              .isNotEmpty) ...[
-                                                            const SizedBox(
-                                                              height: 6,
-                                                            ),
-                                                            Wrap(
-                                                              spacing: 6,
-                                                              runSpacing: 4,
-                                                              children: item
-                                                                  .services
-                                                                  .map(
-                                                                    (
-                                                                      s,
-                                                                    ) => Container(
-                                                                      padding: const EdgeInsets.symmetric(
-                                                                        horizontal:
-                                                                            6,
-                                                                        vertical:
-                                                                            2,
-                                                                      ),
-                                                                      decoration: BoxDecoration(
-                                                                        color: const Color(
-                                                                          0xFFEFF6FF,
-                                                                        ),
-                                                                        borderRadius:
-                                                                            BorderRadius.circular(
-                                                                              4,
-                                                                            ),
-                                                                      ),
-                                                                      child: Text(
-                                                                        'خدمة: ${s.serviceName} (${s.price}\$)',
-                                                                        style: const TextStyle(
-                                                                          fontSize:
-                                                                              10,
-                                                                          color: Color(
-                                                                            0xFF1D4ED8,
-                                                                          ),
-                                                                        ),
-                                                                      ),
-                                                                    ),
-                                                                  )
-                                                                  .toList(),
-                                                            ),
-                                                          ],
-                                                          const Divider(
-                                                            height: 12,
-                                                          ),
-                                                          Row(
-                                                            mainAxisAlignment:
-                                                                MainAxisAlignment
-                                                                    .spaceBetween,
-                                                            children: [
-                                                              const Text(
-                                                                'إجمالي البند مع الخدمات:',
-                                                                style: TextStyle(
-                                                                  fontSize: 11,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .bold,
-                                                                ),
-                                                              ),
-                                                              Text(
-                                                                '${(item.agreedPrice + item.servicesTotal).fmt} ${AppCurrency.symbol(orderCurrency)}',
-                                                                style: const TextStyle(
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .bold,
-                                                                  fontSize: 13,
-                                                                  color: Color(
-                                                                    0xFF2563EB,
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ),
-                                                );
-                                              },
+                                              itemBuilder:
+                                                  (context, idx) =>
+                                                      wsOrderRowCard(idx),
                                             ),
                                     ),
 
@@ -9044,6 +9608,12 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                               ),
                                             ),
                                           ],
+                  // صندوق تطبيق الخدمة الجماعية - يظهر عند التحديد الثاني
+                  // (بنود معيّن نوعها) مباشرة فوق زر الحفظ.
+                  if (bulkSvcTargets.isNotEmpty) ...[
+                    bulkServicePanel(),
+                    const SizedBox(height: 10),
+                  ],
                                           if (formError != null) ...[
                                             const SizedBox(height: 8),
                                             Text(
@@ -9082,6 +9652,107 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                         'يجب إضافة بند واحد على الأقل للطلبية.',
                                                   );
                                                   return;
+                                                }
+                                                if (draftItems.any(
+                                                      (it) =>
+                                                          it.sourceType
+                                                              .isEmpty,
+                                                    )) {
+                                                  setSt(
+                                                    () => formError =
+                                                        'لا يمكن الحفظ: يوجد صف فارغ بدون نوع بند. عيّن النوع للصفوف المحددة من لوحة الإضافة أو احذف الصفوف الفارغة.',
+                                                  );
+                                                  return;
+                                                }
+                                                final rawStockIds = draftItems
+                                                    .where(
+                                                      (it) =>
+                                                          it.sourceType ==
+                                                          'بيع مواد خام من المعمل',
+                                                    )
+                                                    .map((it) => it.sourceId)
+                                                    .toSet();
+                                                for (final sid in rawStockIds) {
+                                                  final used = draftItems
+                                                      .where(
+                                                        (it) =>
+                                                            it.sourceId ==
+                                                                sid &&
+                                                            it.sourceType ==
+                                                            'بيع مواد خام من المعمل',
+                                                      )
+                                                      .fold<double>(
+                                                        0.0,
+                                                        (s, it) =>
+                                                            s + it.quantity,
+                                                      );
+                                                  final stockM =
+                                                      erp.workshopStock
+                                                          .where(
+                                                            (w) =>
+                                                                w.id == sid,
+                                                          )
+                                                          .toList();
+                                                  if (stockM.isNotEmpty &&
+                                                      used >
+                                                          stockM
+                                                                  .first
+                                                                  .availableQty +
+                                                              0.0001) {
+                                                    setSt(
+                                                      () => formError =
+                                                          'كمية «${stockM.first.typeName} ${stockM.first.grade}» المطلوبة (${used.fmt}) تتجاوز المتاح في مواد المعمل (${stockM.first.availableQty.fmt}).',
+                                                    );
+                                                    return;
+                                                  }
+                                                }
+                                                final tailorIds = draftItems
+                                                    .where(
+                                                      (it) =>
+                                                          it.sourceType ==
+                                                              'بيع خياطة بسيطة' ||
+                                                          it.sourceType ==
+                                                          'بيع خياطة معقدة',
+                                                    )
+                                                    .map((it) => it.sourceId)
+                                                    .toSet();
+                                                for (final tid in tailorIds) {
+                                                  final tM =
+                                                      erp.simpleTailorings
+                                                          .where(
+                                                            (t) =>
+                                                                t.id == tid,
+                                                          )
+                                                          .toList();
+                                                  final cM = tM.isEmpty
+                                                      ? erp.complexTailorings
+                                                            .where(
+                                                              (t) =>
+                                                                  t.id ==
+                                                                  tid,
+                                                            )
+                                                            .toList()
+                                                      : tM;
+                                                  if (cM.isEmpty) continue;
+                                                  final used = draftItems
+                                                      .where(
+                                                        (it) =>
+                                                            it.sourceId == tid,
+                                                      )
+                                                      .fold<double>(
+                                                        0.0,
+                                                        (s, it) =>
+                                                            s + it.quantity,
+                                                      );
+                                                  if (used >
+                                                      cM.first.quantity +
+                                                          0.0001) {
+                                                    setSt(
+                                                      () => formError =
+                                                          'كمية «${cM.first.name}» المطلوبة (${used.fmt}) تتجاوز المتاح (${cM.first.quantity.fmt}).',
+                                                    );
+                                                    return;
+                                                  }
                                                 }
                                                 if (selectedApprovedClientId ==
                                                     null) {
@@ -9186,6 +9857,8 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                     ),
                   ),
                 ],
+              ),
+            ),
               ),
             ),
           );

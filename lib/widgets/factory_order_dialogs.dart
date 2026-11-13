@@ -1,10 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import 'currency_selector.dart';
 import 'app_image_attachment.dart';
 import 'a4_invoice_print_dialog.dart';
+
+/// Per-row field controllers and Tab focus nodes for the factory order
+/// item rows. Kept index-aligned with the draftItems list so keyboard
+/// Tab cycles only through [Length, Width, Height, Quantity, Price].
+class _OrderRowEdit {
+  final lenCtrl = TextEditingController();
+  final widCtrl = TextEditingController();
+  final heiCtrl = TextEditingController();
+  final qtyCtrl = TextEditingController();
+  final priceCtrl = TextEditingController();
+
+  final lenFocus = FocusNode(debugLabel: 'order-row-len');
+  final widFocus = FocusNode(debugLabel: 'order-row-wid');
+  final heiFocus = FocusNode(debugLabel: 'order-row-hei');
+  final qtyFocus = FocusNode(debugLabel: 'order-row-qty');
+  final priceFocus = FocusNode(debugLabel: 'order-row-price');
+}
 
 /// Shows dialog to create a new Factory Order with identical structure
 /// to Factory Accredited Agents Sales Invoice, but including a Deposit / Down Payment.
@@ -83,6 +101,43 @@ void showAddFactoryOrderDialog(
       existingOrder?.services.toList() ?? [];
   String selectedItemMeterUnit = 'متر مربع';
 
+  // Bulk row selection (first selection: assign material/type; second
+  // selection on bound rows: apply services).
+  final Set<int> selectedDraftRows = <int>{};
+
+  // Per-row controllers + Tab focus nodes, index-aligned with draftItems.
+  final rowEdits = <_OrderRowEdit>[];
+  void syncRowEdit(int idx, FactoryInvoiceItem it) {
+    final edit = rowEdits[idx];
+    void push(TextEditingController c, double v) {
+      final text = v > 0 ? v.fmt : '';
+      if (c.text != text) c.text = text;
+    }
+    push(edit.lenCtrl, it.lengthCm);
+    push(edit.widCtrl, it.widthCm);
+    push(edit.heiCtrl, it.heightCm);
+    push(edit.qtyCtrl, it.quantity);
+    push(edit.priceCtrl, it.unitPrice);
+  }
+
+  void rebuildRowEdits() {
+    rowEdits.clear();
+    for (var i = 0; i < draftItems.length; i++) {
+      rowEdits.add(_OrderRowEdit());
+    }
+    for (var i = 0; i < draftItems.length; i++) {
+      syncRowEdit(i, draftItems[i]);
+    }
+  }
+
+  rebuildRowEdits();
+
+  // Bulk service application state.
+  String? bulkServiceId;
+  final bulkSvcPriceCtrl = TextEditingController();
+  final bulkSvcNotesCtrl = TextEditingController();
+  String? bulkSvcError;
+
   double getFactoryCubicSellingPrice(FactoryWarehouseModel item) {
     if (item.category == 'متر مكعب' && item.recommendedSalePrice > 0) {
       return item.recommendedSalePrice;
@@ -115,6 +170,42 @@ void showAddFactoryOrderDialog(
       return (l / 100.0) * (w / 100.0) * (h / 100.0) * q;
     }
     return (l / 100.0) * (w / 100.0) * q;
+  }
+
+  // ---- Tab navigation restricted to the item value fields ----
+  // Tab / Shift+Tab cycle only through [Length, Width, Height, Quantity,
+  // Price] of the bound rows (Height participates only on m³ rows), and
+  // never move focus to any other field inside this dialog.
+  List<FocusNode> orderTabNodes() {
+    final nodes = <FocusNode>[];
+    for (var i = 0; i < draftItems.length; i++) {
+      final it = draftItems[i];
+      if (it.itemId.isEmpty) continue;
+      final edit = rowEdits[i];
+      nodes.add(edit.lenFocus);
+      nodes.add(edit.widFocus);
+      if (it.meterUnit == 'متر مكعب' || it.heightCm > 0) {
+        nodes.add(edit.heiFocus);
+      }
+      nodes.add(edit.qtyFocus);
+      nodes.add(edit.priceFocus);
+    }
+    return nodes;
+  }
+
+  void moveOrderTabFocus({required bool forward}) {
+    final nodes = orderTabNodes();
+    if (nodes.isEmpty) return;
+    final current = FocusManager.instance.primaryFocus;
+    final idx = current == null ? -1 : nodes.indexOf(current);
+    if (idx == -1) {
+      nodes.first.requestFocus();
+      return;
+    }
+    final next = forward
+        ? (idx + 1) % nodes.length
+        : (idx - 1 + nodes.length) % nodes.length;
+    nodes[next].requestFocus();
   }
 
   showDialog(
@@ -243,7 +334,241 @@ void showAddFactoryOrderDialog(
             .where((it) => it.itemId == whId)
             .fold(0.0, (s, it) => s + it.calculatedArea);
 
-        return Dialog(
+          // ---- Bulk service application on the selected rows ----
+          // First selection assigns the material/type to the rows; this
+          // second selection (rows already bound) applies a service to all
+          // of them at once.
+          final bulkSvcTargets = selectedDraftRows
+              .where(
+                (i) =>
+                    i < draftItems.length && draftItems[i].itemId.isNotEmpty,
+              )
+              .toList();
+
+          void applyBulkService() {
+            if (bulkServiceId == null) {
+              setSt(() => bulkSvcError = 'يرجى اختيار الخدمة المراد تطبيقها.');
+              return;
+            }
+            if (bulkSvcTargets.isEmpty) {
+              setSt(
+                () => bulkSvcError =
+                    'يرجى تحديد بنود مرتبطة بمادة (☑) قبل تطبيق الخدمة.',
+              );
+              return;
+            }
+            final srv = erp.services.firstWhere((s) => s.id == bulkServiceId);
+            final fixed = double.tryParse(bulkSvcPriceCtrl.text.trim()) ?? 0.0;
+            setSt(() {
+              for (final i in bulkSvcTargets) {
+                final it = draftItems[i];
+                // Automatic per-item rule: length(m) × quantity × unit
+                // rate; a fixed price, when given, overrides it uniformly.
+                final rawPrice = fixed > 0
+                    ? fixed
+                    : (it.lengthCm > 0 && it.quantity > 0
+                          ? (it.lengthCm / 100.0) * it.quantity * srv.unitRate
+                          : it.quantity > 0
+                          ? it.quantity * srv.unitRate
+                          : srv.unitRate);
+                final price = double.tryParse(rawPrice.fmt) ?? rawPrice;
+                draftItems[i] = it.copyWith(
+                  services: [
+                    ...it.services,
+                    ServiceAttachment(
+                      serviceName: srv.name,
+                      price: price,
+                      notes: bulkSvcNotesCtrl.text.trim(),
+                    ),
+                  ],
+                );
+              }
+              bulkServiceId = null;
+              bulkSvcPriceCtrl.clear();
+              bulkSvcNotesCtrl.clear();
+              bulkSvcError = null;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'تم تطبيق خدمة «${srv.name}» على ${bulkSvcTargets.length} بند محدد.',
+                ),
+                backgroundColor: AppColors.successGreen,
+              ),
+            );
+          }
+
+          Widget bulkServicePanel() {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDFA),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF5EEAD4)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.handyman_rounded,
+                        size: 18,
+                        color: Color(0xFF0F766E),
+                      ),
+                      const SizedBox(width: 6),
+                      const Expanded(
+                        child: Text(
+                          'تطبيق خدمة على البنود المحددة',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      if (bulkSvcTargets.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFCCFBF1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${bulkSvcTargets.length} بند محدد',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF115E59),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'يُحسب سعر الخدمة لكل بند تلقائياً (الطول بالمتر × العدد × سعر وحدة الخدمة)؛ أدخل سعراً موحداً لتثبيته على الكل. يبقى تعيين الخدمات الفردية لكل بند كما هو.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.brandSecondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: bulkServiceId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'اختر الخدمة',
+                      isDense: true,
+                    ),
+                    items: erp.services
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s.id,
+                            child: Text('${s.name} (${s.unitRate.fmt}\$)'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setSt(() {
+                      bulkServiceId = v;
+                      bulkSvcError = null;
+                    }),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: bulkSvcPriceCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'سعر موحّد (\$) اختياري',
+                            helperText: 'فارغ = حساب تلقائي لكل بند',
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: bulkSvcNotesCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'ملاحظات الخدمة (اختياري)',
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F766E),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed:
+                        bulkSvcTargets.isEmpty ? null : applyBulkService,
+                    icon: const Icon(Icons.add_task_rounded, size: 18),
+                    label: Text(
+                      'تطبيق الخدمة على البنود المحددة (${bulkSvcTargets.length})',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  if (bulkSvcError != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      bulkSvcError!,
+                      style: const TextStyle(
+                        color: AppColors.dangerWaste,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }
+
+          // ---------- Body ----------
+          // Tab / Shift+Tab are captured for the whole dialog and redirected
+          // ONLY through the item value fields (Length, Width, Height,
+          // Quantity, Price) of the bound rows.
+          return Shortcuts(
+            shortcuts: const <ShortcutActivator, Intent>{
+              SingleActivator(LogicalKeyboardKey.tab): NextFocusIntent(),
+              SingleActivator(LogicalKeyboardKey.tab, shift: true):
+                  PreviousFocusIntent(),
+            },
+            child: Actions(
+              actions: <Type, Action<Intent>>{
+                NextFocusIntent: CallbackAction<NextFocusIntent>(
+                  onInvoke: (_) {
+                    moveOrderTabFocus(forward: true);
+                    return null;
+                  },
+                ),
+                PreviousFocusIntent: CallbackAction<PreviousFocusIntent>(
+                  onInvoke: (_) {
+                    moveOrderTabFocus(forward: false);
+                    return null;
+                  },
+                ),
+              },
+              child: Dialog(
           insetPadding: const EdgeInsets.all(8),
           child: Container(
             width: MediaQuery.of(ctx).size.width - 32,
@@ -451,48 +776,90 @@ void showAddFactoryOrderDialog(
                   ),
                   const SizedBox(height: 8),
 
+                  // تعيين المادة دفعة واحدة للصفوف المحددة (التحديد الأول).
+                  if (selectedDraftRows.isNotEmpty) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: wh == null
+                            ? null
+                            : () => setSt(() {
+                                  final isCubeWh = wh.category == 'متر مكعب';
+                                  for (final rowIndex in selectedDraftRows) {
+                                    final row = draftItems[rowIndex];
+                                    final cp = getFactoryCubicSellingPrice(wh);
+                                    draftItems[rowIndex] = row.copyWith(
+                                      itemId: wh.id,
+                                      description:
+                                          '${wh.typeName} ${wh.grade} ${wh.thicknessCm}سم',
+                                      typeName: wh.typeName,
+                                      grade: wh.grade,
+                                      unitPrice: isCubeWh && cp > 0
+                                          ? cp
+                                          : (wh.recommendedSalePrice > 0
+                                                ? wh.recommendedSalePrice
+                                                : row.unitPrice),
+                                      unitCost: wh.netCostPerUnit,
+                                      isGranite: wh.isGranite,
+                                      thicknessCm: wh.thicknessCm,
+                                      // سماكة > 5سم => المتر المكعب يُفعّل
+                                      // حقل الارتفاع تلقائياً.
+                                      heightCm: isCubeWh
+                                          ? wh.thicknessCm
+                                          : row.heightCm,
+                                      meterUnit: isCubeWh
+                                          ? 'متر مكعب'
+                                          : 'متر مربع',
+                                      itemCategory: isCubeWh
+                                          ? 'متر مكعب'
+                                          : 'meter',
+                                    );
+                                    syncRowEdit(rowIndex, draftItems[rowIndex]);
+                                  }
+                                  selectedDraftRows.clear();
+                                  formError = null;
+                                }),
+                        icon: const Icon(Icons.playlist_add_check),
+                        label: Text(
+                          'تعيين المادة للصفوف المحددة (${selectedDraftRows.length})',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+
                   if (wh != null) ...[
                     Row(
                       children: [
                         const Text(
-                          'وحدة القياس / البيع:',
+                          'وحدة البيع (حسب سماكة المادة > 5سم):',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        ChoiceChip(
-                          label: const Text('متر مربع (م²)'),
-                          selected: !isCube,
-                          onSelected: (sel) {
-                            if (sel) {
-                              setSt(() {
-                                selectedItemMeterUnit = 'متر مربع';
-                                heightCtrl.clear();
-                                if (wh.recommendedSalePrice > 0) {
-                                  unitPriceCtrl.text =
-                                      wh.recommendedSalePrice.fmt;
-                                }
-                              });
-                            }
-                          },
-                        ),
                         const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: const Text('متر مكعب (م³)'),
-                          selected: isCube,
-                          selectedColor: const Color(0xFFDCFCE7),
-                          onSelected: (sel) {
-                            if (sel) {
-                              setSt(() {
-                                selectedItemMeterUnit = 'متر مكعب';
-                                heightCtrl.text = wh.thicknessCm.fmt;
-                                final cp = getFactoryCubicSellingPrice(wh);
-                                if (cp > 0) unitPriceCtrl.text = cp.fmt;
-                              });
-                            }
-                          },
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isCube
+                                ? const Color(0xFFDCFCE7)
+                                : const Color(0xFFE0F2FE),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            isCube ? 'متر مكعب (م³)' : 'متر مربع (م²)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isCube
+                                  ? const Color(0xFF15803D)
+                                  : const Color(0xFF1E40AF),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -896,6 +1263,9 @@ void showAddFactoryOrderDialog(
                                 itemCategory: isCube ? 'متر مكعب' : 'meter',
                               ),
                             );
+                            final newIdx = draftItems.length - 1;
+                            rowEdits.add(_OrderRowEdit());
+                            syncRowEdit(newIdx, draftItems[newIdx]);
                             draftServices.clear();
                             lengthCtrl.clear();
                             widthCtrl.clear();
@@ -929,99 +1299,302 @@ void showAddFactoryOrderDialog(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
-                  const Text(
-                    'بنود الطلبية والملخص',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-                  if (formError != null) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.chipBgRed,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        formError!,
-                        style: const TextStyle(
-                          color: AppColors.dangerWaste,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-
-                  // Draft items table
-                  if (draftItems.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8.0),
-                      child: Text(
-                        'لم تتم إضافة بنود للطلبية بعد. اختر صنفاً وأدخله بالزر أعلاه.',
-                        style: TextStyle(color: AppColors.brandSecondaryText),
-                      ),
-                    ),
-                  ...draftItems.asMap().entries.map(
-                    (e) => Card(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      child: ExpansionTile(
-                        leading: CircleAvatar(
-                          backgroundColor: AppColors.chipBgBlue,
-                          child: Text('${e.key + 1}'),
-                        ),
-                        title: Text(
-                          e.value.description,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'بنود الطلبية والملخص',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                        subtitle: Text(
-                          '${e.value.calculatedArea.fmt} ${e.value.heightCm > 5 ? "م³" : "م²"} × ${e.value.unitPrice}\$ + خدمات ${e.value.servicesTotal.fmt}\$ = ${e.value.grandTotal.fmt}\$',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (onEditItem != null)
-                              IconButton(
-                                tooltip: 'تعديل البند',
-                                icon: const Icon(Icons.edit_outlined),
-                                onPressed: () => onEditItem!(e.value, (updated) {
-                                  setSt(() => draftItems[e.key] = updated);
-                                }),
-                              ),
-                            IconButton(
-                              tooltip: 'حذف البند',
-                              icon: const Icon(
-                                Icons.delete_outline,
-                                color: AppColors.dangerWaste,
-                              ),
-                              onPressed: () =>
-                                  setSt(() => draftItems.removeAt(e.key)),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0F766E),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
                             ),
-                          ],
+                          ),
+                          onPressed: () => setSt(() {
+                            draftItems.add(
+                              FactoryInvoiceItem(
+                                itemId: '',
+                                description: 'صف جديد — اختر المادة',
+                                quantity: 0,
+                                unitPrice: 0,
+                                unitCost: 0,
+                                itemCategory: 'meter',
+                              ),
+                            );
+                            rowEdits.add(_OrderRowEdit());
+                          }),
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('إضافة صف'),
                         ),
-                        children: [
-                          ...e.value.services.map(
-                            (s) => ListTile(
-                              dense: true,
-                              title: Text(s.serviceName),
-                              subtitle: Text(s.notes.isEmpty ? '—' : s.notes),
-                              trailing: Text(
-                                '${s.price}\$',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (formError != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.chipBgRed,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          formError!,
+                          style: const TextStyle(
+                            color: AppColors.dangerWaste,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+
+                    // Draft items table — كل بند صف أفقي قابل للتعديل
+                    if (draftItems.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8.0),
+                        child: Text(
+                          'لم تتم إضافة بنود للطلبية بعد. أضف صفوفاً من الزر أعلاه، حدّدها ثم عيّن المادة من لوحة الإدخال.',
+                          style: TextStyle(color: AppColors.brandSecondaryText),
+                        ),
+                      ),
+                    ...draftItems.asMap().entries.map((e) {
+                      final it = e.value;
+                      final rowEdit = rowEdits[e.key];
+                      final rowCube =
+                          it.meterUnit == 'متر مكعب' || it.heightCm > 0;
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: ExpansionTile(
+                          leading: Tooltip(
+                            message:
+                                'تحديد: أولاً للتعيين الجماعي للمادة، ثم للخدمات',
+                            child: Checkbox(
+                              value: selectedDraftRows.contains(e.key),
+                              onChanged: (_) => setSt(() {
+                                if (!selectedDraftRows.add(e.key)) {
+                                  selectedDraftRows.remove(e.key);
+                                }
+                              }),
+                            ),
+                          ),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  it.description,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(width: 6),
+                              SizedBox(
+                                width: 90,
+                                child: TextFormField(
+                                  controller: rowEdit.lenCtrl,
+                                  focusNode: rowEdit.lenFocus,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'الطول',
+                                    isDense: true,
+                                  ),
+                                  onChanged: (value) => setSt(() {
+                                    draftItems[e.key] = it.copyWith(
+                                      lengthCm:
+                                          double.tryParse(value) ?? 0,
+                                    );
+                                  }),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              SizedBox(
+                                width: 90,
+                                child: TextFormField(
+                                  controller: rowEdit.widCtrl,
+                                  focusNode: rowEdit.widFocus,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'العرض',
+                                    isDense: true,
+                                  ),
+                                  onChanged: (value) => setSt(() {
+                                    draftItems[e.key] = it.copyWith(
+                                      widthCm:
+                                          double.tryParse(value) ?? 0,
+                                    );
+                                  }),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              SizedBox(
+                                width: 95,
+                                child: TextFormField(
+                                  controller: rowEdit.heiCtrl,
+                                  focusNode: rowEdit.heiFocus,
+                                  enabled: rowCube,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'الارتفاع',
+                                    isDense: true,
+                                  ),
+                                  onChanged: (value) => setSt(() {
+                                    draftItems[e.key] = it.copyWith(
+                                      heightCm:
+                                          double.tryParse(value) ?? 0,
+                                    );
+                                  }),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              SizedBox(
+                                width: 80,
+                                child: TextFormField(
+                                  controller: rowEdit.qtyCtrl,
+                                  focusNode: rowEdit.qtyFocus,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'العدد',
+                                    isDense: true,
+                                  ),
+                                  onChanged: (value) => setSt(() {
+                                    draftItems[e.key] = it.copyWith(
+                                      quantity:
+                                          double.tryParse(value) ?? 0,
+                                    );
+                                  }),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              SizedBox(
+                                width: 95,
+                                child: TextFormField(
+                                  controller: rowEdit.priceCtrl,
+                                  focusNode: rowEdit.priceFocus,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'السعر',
+                                    isDense: true,
+                                  ),
+                                  onChanged: (value) => setSt(() {
+                                    draftItems[e.key] = it.copyWith(
+                                      unitPrice:
+                                          double.tryParse(value) ?? 0,
+                                    );
+                                  }),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
+                          subtitle: Text(
+                            '${it.calculatedArea.fmt} ${rowCube ? "م³" : "م²"} × ${it.unitPrice.fmt}\$ + خدمات ${it.servicesTotal.fmt}\$ = ${it.grandTotal.fmt}\$',
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (onEditItem != null)
+                                IconButton(
+                                  tooltip: 'تعديل البند',
+                                  icon: const Icon(Icons.edit_outlined),
+                                  onPressed: () => onEditItem(it, (updated) {
+                                    setSt(() {
+                                      draftItems[e.key] = updated;
+                                      syncRowEdit(e.key, updated);
+                                    });
+                                  }),
+                                ),
+                              IconButton(
+                                tooltip: 'حذف البند',
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: AppColors.dangerWaste,
+                                ),
+                                onPressed: () => setSt(() {
+                                  draftItems.removeAt(e.key);
+                                  rowEdits.removeAt(e.key);
+                                  selectedDraftRows.clear();
+                                }),
+                              ),
+                            ],
+                          ),
+                          children: [
+                            if (it.itemId.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 4),
+                                child: Text(
+                                  'صف فارغ — حدّده ثم عيّن له المادة من لوحة الإدخال (يساراً).',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF92400E),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            if (it.services.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 4),
+                                child: Text(
+                                  'لا توجد خدمات مرفقة بهذا البند',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.brandSecondaryText,
+                                  ),
+                                ),
+                              )
+                            else
+                              ...it.services.map(
+                                (s) => ListTile(
+                                  dense: true,
+                                  title: Text(
+                                    s.serviceName,
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  subtitle: Text(
+                                    s.notes.isEmpty ? '—' : s.notes,
+                                    style: const TextStyle(fontSize: 10),
+                                  ),
+                                  trailing: Text(
+                                    '${s.price.fmt}\$',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    }),
 
+
+                    const SizedBox(height: 16),
                   // Order pricing summary
                   Container(
                     padding: const EdgeInsets.all(14),
@@ -1102,6 +1675,11 @@ void showAddFactoryOrderDialog(
                       ),
                     ),
                   ],
+                  // صندوق تطبيق الخدمة الجماعية - يظهر عند التحديد الثاني
+                  // (بنود مرتبطة بمادة)، مباشرة فوق زر الحفظ.
+                  if (bulkSvcTargets.isNotEmpty)
+                    bulkServicePanel(),
+
                   const SizedBox(height: 20),
 
                   ElevatedButton.icon(
@@ -1121,6 +1699,17 @@ void showAddFactoryOrderDialog(
                         );
                         return;
                       }
+                      if (draftItems.any(
+                        (item) =>
+                            item.itemId.isEmpty || item.calculatedArea <= 0,
+                      )) {
+                        setSt(
+                          () => formError =
+                              'أكمل اختيار المادة والأبعاد والكمية لكل صف قبل حفظ الطلبية.',
+                        );
+                        return;
+                      }
+
                       if (deposit < 0) {
                         setSt(() => formError = 'أدخل عربوناً صحيحاً.');
                         return;
@@ -1207,7 +1796,9 @@ void showAddFactoryOrderDialog(
               ],
             ),
           ),
-        );
+          ),
+        ),
+      );
       },
     ),
   );
