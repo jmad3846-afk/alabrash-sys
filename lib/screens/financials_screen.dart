@@ -3315,7 +3315,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ),
                   if (varianceSavingsUsd > 0 || varianceSavingsSyp > 0)
                     _buildPlLine(
-                      'وفر تكاليف تشغيلية / Operating Cost Savings:',
+                      'فائض تغطية التكاليف التشغيلية / Operating Cost Surplus:',
                       varianceSavingsUsd,
                       syp: varianceSavingsSyp,
                     ),
@@ -3325,6 +3325,97 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     syp: erp.totalRevenuesSyp + varianceSavingsSyp,
                     isTotal: true,
                     color: AppColors.accentPrimary,
+                  ),
+
+                  const SizedBox(height: 16),
+                  // Dynamic overhead allocation engine status card.
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDFA),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF5EEAD4)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.auto_awesome_rounded,
+                              size: 18,
+                              color: Color(0xFF0F766E),
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'مؤشر التحميل التشغيلي الديناميكي — محسوب من الفجوة بين المصاريف التشغيلية الأساسية والتغطية',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12.5,
+                                  color: Color(0xFF115E59),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _overheadPoolColumn(
+                                title: 'الدولار USD',
+                                rate: erp.dynamicOverheadRate,
+                                poolUsd: erp
+                                    .coreOperationalExpensesTotalOf(
+                                      AppCurrency.usd,
+                                    ),
+                                coverage: erp.overheadCoverageTotalOf(
+                                  AppCurrency.usd,
+                                ),
+                                gap: erp.operationalOverheadGapOf(
+                                  AppCurrency.usd,
+                                ),
+                                sym: '\$',
+                              ),
+                            ),
+                            Container(
+                              width: 1,
+                              height: 72,
+                              color: const Color(0xFF5EEAD4),
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                            ),
+                            Expanded(
+                              child: _overheadPoolColumn(
+                                title: 'الليرة السورية SYP',
+                                rate: erp.dynamicOverheadRateSyp,
+                                poolUsd: erp
+                                    .coreOperationalExpensesTotalOf(
+                                      AppCurrency.syp,
+                                    ),
+                                coverage: erp.overheadCoverageTotalOf(
+                                  AppCurrency.syp,
+                                ),
+                                gap: erp.operationalOverheadGapOf(
+                                  AppCurrency.syp,
+                                ),
+                                sym: 'ل.س',
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'هذه النسبة تُعرض كمقترح جاهز في شاشة القص مع كل عملية جديدة، وتبقى قابلة للتعديل اليدوي لكل خطة قص؛ المجمّع لا يشمل إلا الأجور والأنواع المصنفة «تشغيلي أساسي» — المصاريف المخصصة العادية لا تدخل المعادلة.',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: Color(0xFF115E59),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
 
                   const SizedBox(height: 24),
@@ -3351,7 +3442,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   ),
                   if (varianceDeficitUsd > 0 || varianceDeficitSyp > 0)
                     _buildPlLine(
-                      'انحراف مصاريف تشغيلية / Operating Cost Deficit:',
+                      'عجز التكاليف التشغيلية / Operating Cost Deficit:',
                       varianceDeficitUsd,
                       syp: varianceDeficitSyp,
                     ),
@@ -4156,6 +4247,77 @@ class _FinancialsScreenState extends State<FinancialsScreen>
           );
         },
       ),
+    );
+  }
+
+  Widget _overheadPoolColumn({
+    required String title,
+    required double rate,
+    required double poolUsd,
+    required double coverage,
+    required double gap,
+    required String sym,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+            color: Color(0xFF115E59),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('النسبة المقترحة:', style: TextStyle(fontSize: 11.5)),
+            Text(
+              '${(rate * 100).fmt}٪',
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 14,
+                color: Color(0xFF0F766E),
+              ),
+            ),
+          ],
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('المصاريف الأساسية:', style: TextStyle(fontSize: 11)),
+            Text('${poolUsd.fmt} $sym', style: const TextStyle(fontSize: 11)),
+          ],
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('التغطية:', style: TextStyle(fontSize: 11)),
+            Text('${coverage.fmt} $sym', style: const TextStyle(fontSize: 11)),
+          ],
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              gap > 0.0001 ? 'العجز:' : 'الفايض:',
+              style: const TextStyle(fontSize: 11.5),
+            ),
+            Text(
+              '${(gap > 0.0001 ? gap : -gap).fmt} $sym',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: gap > 0.0001
+                    ? AppColors.dangerWaste
+                    : AppColors.successGreen,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 

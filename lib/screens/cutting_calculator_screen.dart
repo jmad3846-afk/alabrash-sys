@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
@@ -30,6 +30,13 @@ class _TypePlan {
   String convOptionId = '3cm';
   double thicknessCm = 3.0;
   double feePercent = 0.08;
+
+  /// The overhead percentage is pre-filled with the system's dynamic
+  /// suggestion and stays fully editable: any manual change marks the
+  /// plan as overridden so the suggestion no longer stomps on it.
+  bool feeOverridden = false;
+  final TextEditingController feeCtrl;
+
   final TextEditingController tonsCtrl;
   final TextEditingController factorCtrl;
   final TextEditingController thickCtrl;
@@ -39,13 +46,15 @@ class _TypePlan {
       : tonsCtrl = TextEditingController(),
         factorCtrl = TextEditingController(text: '5.5'),
         thickCtrl = TextEditingController(text: '3'),
-        metersCtrl = TextEditingController();
+        metersCtrl = TextEditingController(),
+        feeCtrl = TextEditingController();
 
   void dispose() {
     tonsCtrl.dispose();
     factorCtrl.dispose();
     thickCtrl.dispose();
     metersCtrl.dispose();
+    feeCtrl.dispose();
     for (final c in conversions) {
       c.dispose();
     }
@@ -273,28 +282,35 @@ class _CuttingCalculatorScreenState extends State<CuttingCalculatorScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<double>(
-                    initialValue: plan.feePercent,
-                    decoration: const InputDecoration(
-                        labelText: 'نسبة تقديرية للقص % (استرشادية)'),
-                    items: const [
-                      DropdownMenuItem(
-                          value: 0.09, child: Text('9%')),
-                      DropdownMenuItem(
-                          value: 0.08, child: Text('8%')),
-                      DropdownMenuItem(
-                          value: 0.07, child: Text('7%')),
-                    ],
+                  child: TextField(
+                    controller: plan.feeCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     onChanged: (v) {
-                      if (v != null) {
-                        setState(() => plan.feePercent = v);
-                      }
+                      final pct = double.tryParse(
+                        v.trim().replaceAll(',', '.'),
+                      );
+                      setState(() {
+                        plan.feeOverridden = true;
+                        plan.feePercent = ((pct ?? 0.0) / 100.0).clamp(
+                          0.0,
+                          1.0,
+                        );
+                      });
                     },
+                    decoration: const InputDecoration(
+                      labelText: 'نسبة التحميل التشغيلي % — مقترحة تلقائياً',
+                      suffixText: '%',
+                      isDense: true,
+                    ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
+            _feeSuggestionBanner(erp, plan),
+            const SizedBox(height: 4),
             Row(
               children: [
                 Expanded(
@@ -462,6 +478,57 @@ class _CuttingCalculatorScreenState extends State<CuttingCalculatorScreen> {
       plan.tonsCtrl.clear();
       plan.metersCtrl.clear();
     });
+  }
+
+  /// Real-time dynamic overhead indicator shown under the fee field:
+  /// auto-syncs the suggestion while untouched, and never overrides a
+  /// manually edited value.
+  Widget _feeSuggestionBanner(ERPProvider erp, _TypePlan plan) {
+    final suggestion = erp.dynamicOverheadRateOf(plan.batch.currency);
+    if (!plan.feeOverridden) {
+      final want = (suggestion * 100).fmt;
+      if (plan.feeCtrl.text != want) {
+        plan.feeCtrl.text = want;
+        plan.feePercent = suggestion;
+      }
+    }
+    final gap = erp.operationalOverheadGapOf(plan.batch.currency);
+    final coverage = erp.overheadCoverageTotalOf(plan.batch.currency);
+    final pool = erp.coreOperationalExpensesTotalOf(plan.batch.currency);
+    final sym = AppCurrency.symbol(plan.batch.currency);
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDFA),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF5EEAD4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.auto_awesome_rounded,
+            size: 16,
+            color: Color(0xFF0F766E),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'النسبة الديناميكية المقترحة الآن: ${(suggestion * 100).fmt}٪ — '
+              'مجمّع المصاريف التشغيلية الأساسية: ${pool.fmt} $sym • '
+              'التغطية (تحميلات القص المحصّلة + إيرادات الخدمات): ${coverage.fmt} $sym • '
+              '${gap > 0.0001 ? "الفجوة غير المغطاة: ${gap.fmt} $sym" : "تغطية كاملة — فائض ${(-gap).fmt} $sym"}'
+              '${plan.feeOverridden ? ' • تم التجاوز يدوياً لهذه الخطة' : ''}',
+              style: const TextStyle(
+                fontSize: 11,
+                color: Color(0xFF115E59),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showWarehouseTransferPopup(ERPProvider erp) {

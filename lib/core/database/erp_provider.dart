@@ -5234,6 +5234,31 @@ class ERPProvider extends ChangeNotifier {
   bool isOperatingExpense(ExpenseRecordModel expense) =>
       !expense.isInformational &&
       expenseTreatmentOf(expense) == ExpenseRecordModel.operational;
+
+  /// Core operational pool membership for the dynamic overhead engine:
+  /// ONLY worker wages (the auto-created wage types) and expense types the
+  /// user explicitly designated as «مصروف تشغيلي أساسي» enter the pool.
+  /// Cutting-processing expenses are core by designation. Any newly created
+  /// custom/general type defaults to a standard expense and NEVER affects
+  /// the overhead percentage or the deficit/surplus formula.
+  bool isCoreOperationalExpense(ExpenseRecordModel expense) {
+    if (!isOperatingExpense(expense)) return false;
+    if (expense.typeId == cuttingExpenseTypeId ||
+        expense.typeId == 'workforce_wages_expense' ||
+        expense.typeId == 'salaries_and_wages_expense') {
+      return true;
+    }
+    final type = _firstOrNull(
+      expenseTypes.where((t) => t.id == expense.typeId),
+    );
+    if (type != null && type.isOperational) return true;
+    // Wage payments recorded under a wage-named type created before the
+    // dedicated IDs existed.
+    final label = (type?.name ?? '').trim();
+    return label == 'أجور العمال' ||
+        label.contains('الرواتب والأجور') ||
+        label.contains('Salaries & Wages');
+  }
   double expenseRecordsTotalOf(String? currency) => expenseRecords
       .where(
         (e) =>
@@ -5537,15 +5562,18 @@ class ERPProvider extends ChangeNotifier {
         ),
       );
       if (batch == null) return sum;
-      return sum +
-          quantity *
-              entry.value *
-              batch.netCostPerUnit *
-              standardCuttingOverheadRate;
+      // Recover overhead at the rate ACTUALLY baked into this batch
+      // (the dynamic percentage stored on the cutting operation), falling
+      // back to the standard rate for legacy batches recorded with 0.
+      final rate = batch.cuttingFeePercentage > 0
+          ? batch.cuttingFeePercentage
+          : standardCuttingOverheadRate;
+      return sum + quantity * entry.value * batch.netCostPerUnit * rate;
     });
   }
 
-  /// The 9% standard cutting allowance included in sold cutting output.
+  /// The cutting overhead allowance actually included in sold output,
+  /// recovered at each batch's own (dynamic) percentage.
   double collectedStandardCuttingOverheadOf(
     String? currency, {
     DateTime? start,
@@ -5592,7 +5620,7 @@ class ERPProvider extends ChangeNotifier {
     return expenseRecords
         .where(
           (expense) =>
-              isOperatingExpense(expense) &&
+              isCoreOperationalExpense(expense) &&
               expense.currency == c &&
               _isInFinancialPeriod(expense.date, start: start, end: end),
         )
@@ -5637,8 +5665,63 @@ class ERPProvider extends ChangeNotifier {
     return total;
   }
 
+  // ==========================================================================
+  // DYNAMIC OPERATIONAL OVERHEAD ALLOCATION ENGINE (rolling pools)
+  // ==========================================================================
+
+  /// Side (a) of the pool: all-time actual core operational expenses —
+  /// worker wages + expenses under designated core operational types.
+  double coreOperationalExpensesTotalOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return expenseRecords
+        .where((e) => isCoreOperationalExpense(e) && e.currency == c)
+        .fold<double>(0, (s, e) => s + e.amount);
+  }
+
+  /// Side (b) of the coverage pool: overhead already collected inside sold
+  /// cutting output (at each batch's own rate) plus accumulated external
+  /// services incomes.
+  double overheadCoverageTotalOf(String? currency) =>
+      collectedStandardCuttingOverheadOf(currency) + serviceRevenueOf(currency);
+
+  /// The uncovered operating gap: positive = core expenses still not
+  /// covered by allocations/services, negative = over-coverage surplus.
+  double operationalOverheadGapOf(String? currency) =>
+      coreOperationalExpensesTotalOf(currency) - overheadCoverageTotalOf(currency);
+
+  /// Raw material capital actually passed through cutting — the denominator
+  /// distributing the uncovered gap into a recommended percentage.
+  double cuttingMaterialCostBaseOf(String? currency) {
+    final c = AppCurrency.normalize(currency);
+    return cuttingOperations
+        .where((o) => o.currency == c)
+        .fold<double>(0, (s, o) => s + o.inputTons * o.baseTonCost);
+  }
+
+  /// The recommended dynamic overhead percentage shown pre-filled in the
+  /// cutting screen (gap ÷ cutting material base, clamped to [0, 25%]).
+  /// Always editable: the user can override it per cutting without this
+  /// suggestion changing the stored history.
+  double dynamicOverheadRateOf(String? currency) {
+    final base = cuttingMaterialCostBaseOf(currency);
+    final gap = operationalOverheadGapOf(currency);
+    if (base <= 0.0001) return gap > 0 ? standardCuttingOverheadRate : 0.0;
+    return (gap / base).clamp(0.0, 0.25);
+  }
+
+  double get dynamicOverheadRate => dynamicOverheadRateOf(AppCurrency.usd);
+  double get dynamicOverheadRateSyp => dynamicOverheadRateOf(AppCurrency.syp);
+
+  void setExpenseTypeOperational(ExpenseTypeModel type, bool value) {
+    if (type.isOperational == value) return;
+    type.isOperational = value;
+    refresh();
+  }
+
   /// Positive values are operating-cost savings; negative values are deficits.
-  /// The comparison pool combines the 9% cutting allowance with service value.
+  /// The comparison pool combines the recovered cutting overhead allocations
+  /// (at each batch's actual dynamic rate) with service revenues, weighed
+  /// against the CORE operational expense pool only.
   double operatingCostVarianceOf(
     String? currency, {
     DateTime? start,
@@ -6528,7 +6611,10 @@ class ERPProvider extends ChangeNotifier {
       for (final c in list) {
         final cost = c.inputTons * avgCost;
         final unitCost = cost / c.outputQty;
-        fee += c.inputTons * avgCost * standardCuttingOverheadRate;
+        // The overhead actually baked into this conversion: the dynamic
+        // suggested rate pre-filled by the cutting screen, or the user's
+        // manual override.
+        fee += cost * c.feePercent;
         output += c.outputQty;
         capital += cost;
         final outputId =
@@ -6546,7 +6632,7 @@ class ERPProvider extends ChangeNotifier {
             thicknessCm: c.thicknessCm,
             category: c.category,
             availableQty: c.outputQty,
-            netCostPerUnit: unitCost * (1 + standardCuttingOverheadRate),
+            netCostPerUnit: unitCost * (1 + c.feePercent),
             recommendedSalePrice: c.salePrice,
             isGranite: c.isGranite,
           ),
@@ -6562,7 +6648,10 @@ class ERPProvider extends ChangeNotifier {
           timestamp: now,
           inputTons: inputTons,
           baseTonCost: avgCost,
-          cuttingFeePercentage: standardCuttingOverheadRate,
+          // Weighted average of the actual (possibly overridden) rates
+          // baked into this batch — later sold units recover overhead
+          // at exactly this percentage.
+          cuttingFeePercentage: capital > 0 ? fee / capital : 0.0,
           targetTypeName: first.typeName,
           targetGrade: first.grade,
           thicknessCm: first.thicknessCm,
@@ -6637,8 +6726,7 @@ class ERPProvider extends ChangeNotifier {
         thicknessCm: thicknessCm,
         category: category,
         availableQty: totalOutputArea,
-        netCostPerUnit:
-            rawCost * (1 + standardCuttingOverheadRate) / totalOutputArea,
+        netCostPerUnit: rawCost * (1 + cuttingFeePercent) / totalOutputArea,
         recommendedSalePrice: recommendedSalePrice,
         isGranite: isGranite,
       ),
@@ -6651,15 +6739,14 @@ class ERPProvider extends ChangeNotifier {
         outputItemIds: [received.id],
         inputTons: tons,
         baseTonCost: rawCost / tons,
-        cuttingFeePercentage: standardCuttingOverheadRate,
+        cuttingFeePercentage: cuttingFeePercent,
         targetTypeName: targetTypeName,
         targetGrade: targetGrade,
         thicknessCm: thicknessCm,
         category: category,
         totalOutputArea: totalOutputArea,
         netCostPerUnit: rawCost / totalOutputArea,
-        estimatedUnitCost:
-            rawCost * (1 + standardCuttingOverheadRate) / totalOutputArea,
+        estimatedUnitCost: rawCost * (1 + cuttingFeePercent) / totalOutputArea,
         recommendedSalePrice: recommendedSalePrice,
         wasteValue: wasteValue,
         isGranite: isGranite,
@@ -9359,6 +9446,9 @@ class ERPProvider extends ChangeNotifier {
           id: wageTypeId,
           name: 'أجور العمال',
           description: 'تسديد مستحقات العمال والمعلمين والإداريين',
+          // Worker wages are core operational expenses by definition:
+          // they always feed the dynamic overhead pool.
+          isOperational: true,
         ),
       );
     }
@@ -9412,6 +9502,9 @@ class ERPProvider extends ChangeNotifier {
           id: wageTypeId,
           name: 'الرواتب والأجور (Salaries & Wages)',
           description: 'رواتب وأجور العمال والمعلمين والإداريين',
+          // Worker wages are core operational expenses by definition:
+          // they always feed the dynamic overhead pool.
+          isOperational: true,
         ),
       );
     }

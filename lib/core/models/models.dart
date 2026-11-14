@@ -540,24 +540,41 @@ class ExpenseTypeModel {
   final String name;
   final String description;
 
+  /// Core operational flag: only expenses under types explicitly designated
+  /// as core operational (plus worker-wage types) feed the dynamic overhead
+  /// percentage pool and the operating deficit/surplus comparison.
+  /// Custom/general types default to false and never affect the formula.
+  bool isOperational;
+
   ExpenseTypeModel({
     required this.id,
     required this.name,
     this.description = '',
+    this.isOperational = false,
   });
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
     'description': description,
+    'isOperational': isOperational,
   };
 
-  factory ExpenseTypeModel.fromJson(Map<String, dynamic> json) =>
-      ExpenseTypeModel(
-        id: json['id'],
-        name: json['name'],
-        description: json['description'] ?? '',
-      );
+  factory ExpenseTypeModel.fromJson(Map<String, dynamic> json) {
+    final id = json['id'];
+    // Legacy saved data: the pre-designated cutting-processing and wage
+    // types are core operational by definition.
+    final legacyCore =
+        id == 'cutting_processing_expense' ||
+        id == 'workforce_wages_expense' ||
+        id == 'salaries_and_wages_expense';
+    return ExpenseTypeModel(
+      id: id,
+      name: json['name'],
+      description: json['description'] ?? '',
+      isOperational: json['isOperational'] as bool? ?? legacyCore,
+    );
+  }
 }
 
 class ExpenseRecordModel {
