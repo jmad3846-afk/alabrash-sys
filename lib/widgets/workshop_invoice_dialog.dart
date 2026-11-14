@@ -343,6 +343,7 @@ void showWorkshopInvoiceDialog(
     text: draft?['batchSvcNotes'] as String? ?? '',
   );
   String? batchSvcError;
+  bool showAdditionalInfo = draft?['showAdditionalInfo'] as bool? ?? false;
 
   // Snapshot of the entire live form state; called on every rebuild so any
   // typed value, row, selection or panel choice survives an accidental
@@ -366,6 +367,7 @@ void showWorkshopInvoiceDialog(
     'batchServiceId': batchServiceId,
     'batchSvcPrice': batchSvcPriceCtrl.text,
     'batchSvcNotes': batchSvcNotesCtrl.text,
+    'showAdditionalInfo': showAdditionalInfo,
   });
 
   double getAvailableStockForRaw(WorkshopStockModel w) {
@@ -766,6 +768,29 @@ void showWorkshopInvoiceDialog(
                 r.heiCtrl.clear();
                 r.qtyCtrl.text = '1';
                 r.priceCtrl.text = s.sellingPrice.fmt;
+              }
+            case 'بيع تجهيزات':
+              final e = erp.equipmentStock.firstWhere(
+                (x) => x.id == assignRecordId,
+              );
+              for (final r in selectedBlankRows) {
+                r.assigned = true;
+                r.selected = false;
+                r.sourceType = assignType;
+                r.sourceId = e.id;
+                r.sourceLineItemId = '';
+                r.unitCategory = 'قطعة';
+                r.isGranite = false;
+                r.photoPath = '';
+                r.netCostPerUnit = e.costPrice;
+                r.flatNetCost = -1;
+                r.depositAmount = 0.0;
+                r.descCtrl.text = e.name;
+                r.lenCtrl.clear();
+                r.widCtrl.clear();
+                r.heiCtrl.clear();
+                r.qtyCtrl.text = '1';
+                r.priceCtrl.text = (e.sellingPrice > 0 ? e.sellingPrice : e.costPrice).fmt;
               }
           }
           assignRecordId = null;
@@ -1569,6 +1594,10 @@ void showWorkshopInvoiceDialog(
                         'بيع مواد خام من المعمل (Sell Raw Materials)',
                       ),
                     ),
+                    DropdownMenuItem(
+                      value: 'بيع تجهيزات',
+                      child: Text('بيع تجهيزات (Sell Equipment)'),
+                    ),
                   ],
                   onChanged: (v) => setSt(() {
                     assignType = v!;
@@ -1732,6 +1761,30 @@ void showWorkshopInvoiceDialog(
                             value: w.id,
                             child: Text(
                                '${w.typeName} ${w.grade}${w.thicknessCm > 0 ? " • سماكة ${w.thicknessCm.fmt} سم" : ""} — المتاح: ${getAvailableStockForRaw(w).fmt} ${w.category == "متر مكعب" ? "م³" : "م²"} (سعر المتر: ${w.recommendedSalePrice.fmt}\$)',
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setSt(() => assignRecordId = v),
+                  ),
+                ] else if (assignType == 'بيع تجهيزات') ...[
+                  DropdownButtonFormField<String>(
+                    value: erp.equipmentStock.any((e) => e.id == assignRecordId)
+                        ? assignRecordId
+                        : null,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'اختر التجهيز من مخزون المعمل',
+                      isDense: true,
+                      prefixIcon: Icon(Icons.construction_outlined, size: 18),
+                    ),
+                    items: erp.equipmentStock
+                        .where((e) => e.availableQty > 0)
+                        .map(
+                          (e) => DropdownMenuItem(
+                            value: e.id,
+                            child: Text(
+                              '${e.name} — المتاح: ${e.availableQty.fmt} قطعة (سعر البيع: ${e.sellingPrice.fmt}\$)',
                             ),
                           ),
                         )
@@ -2073,6 +2126,32 @@ void showWorkshopInvoiceDialog(
                   ],
                 ),
                 const SizedBox(height: 8),
+                // زرطي «معلومات إضافية»: يُظهر أو يخفي حقول الخصم
+                // والدفعات النقدية والصورة.
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.accentPrimary,
+                      side: const BorderSide(color: AppColors.accentPrimary),
+                    ),
+                    onPressed: () => setSt(
+                      () => showAdditionalInfo = !showAdditionalInfo,
+                    ),
+                    icon: Icon(
+                      showAdditionalInfo
+                          ? Icons.expand_less_rounded
+                          : Icons.tune_rounded,
+                    ),
+                    label: Text(
+                      showAdditionalInfo
+                          ? 'إخفاء المعلومات الإضافية'
+                          : 'معلومات إضافية',
+                    ),
+                  ),
+                ),
+                if (showAdditionalInfo) ...[
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
@@ -2224,6 +2303,7 @@ void showWorkshopInvoiceDialog(
                   label: 'صورة الفاتورة / الوصل',
                   onImageChanged: (p) => setSt(() => photoCtrl.text = p),
                 ),
+                ],
               ],
             ),
           );
@@ -2422,6 +2502,24 @@ void showWorkshopInvoiceDialog(
                   );
                   return;
                 }
+              }
+            } else if (r.sourceType == 'بيع تجهيزات') {
+              final eMatches = erp.equipmentStock
+                  .where((e) => e.id == r.sourceId)
+                  .toList();
+              if (eMatches.isEmpty) {
+                setSt(
+                  () => formError =
+                      'بند $no (${r.effectiveDescription}): التجهيز المرتبط لم يعد موجوداً في المخزون.',
+                );
+                return;
+              }
+              if (r.qty <= 0 || r.qty > eMatches.first.availableQty + 0.0001) {
+                setSt(
+                  () => formError =
+                      'بند $no (${r.effectiveDescription}): عدد القطع المطلوب غير صحيح أو يتجاوز المتاح في التجهيزات (${eMatches.first.availableQty.fmt}).',
+                );
+                return;
               }
             } else if (r.sourceType == 'بيع خياطة معقدة') {
               final tMatches = erp.complexTailorings
@@ -2943,8 +3041,14 @@ void showWorkshopInvoiceDialog(
                                               const SizedBox(height: 14),
                                               batchCard(),
                                               const SizedBox(height: 14),
-                                              serviceBatchCard(),
-                                              const SizedBox(height: 14),
+                                              // صندوق تطبيق الخدمة يظهر
+                                              // ديناميكياً عند التحديد الثاني
+                                              // (بنود تم تعيين نوعها).
+                                              if (selectedAssignedRows
+                                                  .isNotEmpty) ...[
+                                                serviceBatchCard(),
+                                                const SizedBox(height: 14),
+                                              ],
                                               additionalCard(),
                                             ],
                                           ),

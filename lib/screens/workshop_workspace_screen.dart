@@ -228,7 +228,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
         .where((w) => w.category == 'متر مكعب')
         .toList();
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Column(
@@ -267,6 +267,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                 tabs: [
                   Tab(text: 'مخزون المعمل — متر مربع (م²)'),
                   Tab(text: 'مخزون المعمل — متر مكعب (م³)'),
+                  Tab(text: 'التجهيزات'),
                 ],
               ),
             ),
@@ -276,6 +277,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                 children: [
                   _buildWorkshopStockGrid(erp, m2, 'م²'),
                   _buildWorkshopStockGrid(erp, m3, 'م³'),
+                  _buildEquipmentTab(erp),
                 ],
               ),
             ),
@@ -411,6 +413,663 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
         );
       },
     );
+  }
+
+  // -------------------------------------------------------------
+  // EQUIPMENT TAB (التجهيزات) — view-only stock cards + add type +
+  // equipment purchase invoice (updates supplier statement & cash).
+  // -------------------------------------------------------------
+  Widget _buildEquipmentTab(ERPProvider erp) {
+    final items = erp.equipmentStock;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'التجهيزات — القطع والأدوات المتاحة في المعمل للاطلاع فقط',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => _showAddEquipmentTypeDialog(erp),
+              icon: const Icon(Icons.add_circle_outline, size: 18),
+              label: const Text(
+                'إضافة تجهيز',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.scrapBoxAccent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: erp.equipmentTypes.isEmpty
+                  ? null
+                  : () => _showEquipmentPurchaseDialog(erp),
+              icon: const Icon(Icons.shopping_cart_checkout_rounded, size: 18),
+              label: const Text(
+                'فاتورة شراء تجهيزات',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: items.isEmpty
+              ? const Card(
+                  child: Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'لا توجد تجهيزات بعد. اضغط «إضافة تجهيز» لتعريف الأنواع، ثم سجّل «فاتورة شراء تجهيزات» أو أضف رصيد التجهيزات من القيد الافتتاحي.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppColors.brandSecondaryText),
+                      ),
+                    ),
+                  ),
+                )
+              : GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    childAspectRatio: 1.25,
+                  ),
+                  itemCount: items.length,
+                  itemBuilder: (context, idx) {
+                    final item = items[idx];
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    item.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.chipBgSky,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Text(
+                                    'تجهيز',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.orderDepositBoxAccent,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (item.description.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                item.description,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: AppColors.brandSecondaryText,
+                                ),
+                              ),
+                            ],
+                            const Spacer(),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'المتاح (العدد):',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                Text(
+                                  '${item.availableQty.fmt} قطعة',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                    color: item.availableQty > 0
+                                        ? AppColors.scrapBoxAccent
+                                        : AppColors.dangerWaste,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'سعر التكلفة:',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.brandSecondaryText,
+                                  ),
+                                ),
+                                Text(
+                                  '${item.costPrice.fmt} ${AppCurrency.symbol(item.currency)}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'سعر البيع:',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.brandSecondaryText,
+                                  ),
+                                ),
+                                Text(
+                                  '${item.sellingPrice.fmt} ${AppCurrency.symbol(item.currency)}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12.5,
+                                    color: AppColors.successGreen,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// Defines a new equipment type (name + description) feeding the
+  /// selectable equipment lists everywhere.
+  Future<void> _showAddEquipmentTypeDialog(ERPProvider erp) async {
+    final nameCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          title: Row(
+            children: const [
+              Icon(
+                Icons.construction_rounded,
+                color: AppColors.accentPrimary,
+                size: 22,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'إضافة تجهيز',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'اسم التجهيز',
+                    isDense: true,
+                    prefixIcon: Icon(Icons.label_outline, size: 18),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descCtrl,
+                  maxLines: 3,
+                  minLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'الوصف (اختياري)',
+                    isDense: true,
+                    prefixIcon: Icon(Icons.notes_rounded, size: 18),
+                  ),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    error!,
+                    style: const TextStyle(
+                      color: AppColors.dangerWaste,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.accentPrimary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty) {
+                  update(() => error = 'يرجى إدخال اسم التجهيز.');
+                  return;
+                }
+                if (!erp.addEquipmentType(
+                  name: nameCtrl.text,
+                  description: descCtrl.text,
+                )) {
+                  update(() => error = 'اسم التجهيز فارغ أو مسجّل مسبقاً.');
+                  return;
+                }
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('تمت إضافة نوع التجهيز إلى القائمة.'),
+                    backgroundColor: AppColors.successGreen,
+                  ),
+                );
+              },
+              icon: const Icon(Icons.check, size: 18),
+              label: const Text('حفظ التجهيز'),
+            ),
+          ],
+        ),
+      ),
+    );
+    nameCtrl.dispose();
+    descCtrl.dispose();
+  }
+
+  /// Equipment purchase invoice: supplier + type + quantity + purchase price
+  /// + selling price + down payment. Records a supplier purchase invoice
+  /// (statement + debt), deducts the down payment from the cash box, and
+  /// raises the equipment stock.
+  Future<void> _showEquipmentPurchaseDialog(ERPProvider erp) async {
+    if (erp.suppliers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لا يوجد موردون مسجلون. أضف مورداً من المصنع ← الأشخاص أولاً.'),
+          backgroundColor: AppColors.dangerWaste,
+        ),
+      );
+      return;
+    }
+    String? supplierId;
+    String? typeId = erp.equipmentTypes.firstOrNull?.id;
+    final qtyCtrl = TextEditingController(text: '1');
+    final priceCtrl = TextEditingController();
+    final sellCtrl = TextEditingController();
+    final downCtrl = TextEditingController();
+    var currency = AppCurrency.usd;
+    var box = 'main';
+    String? error;
+    OutlineInputBorder outline() => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: AppColors.panelBorder),
+    );
+    InputDecoration field(String label, {Widget? icon}) => InputDecoration(
+      labelText: label,
+      prefixIcon: icon,
+      isDense: true,
+      filled: true,
+      fillColor: const Color(0xFFF8FAFC),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      enabledBorder: outline(),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.accentPrimary, width: 1.4),
+      ),
+      border: outline(),
+    );
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) {
+          double? num(TextEditingController c) =>
+              double.tryParse(c.text.trim().replaceAll(',', '.'));
+          final qty = num(qtyCtrl) ?? 0.0;
+          final price = num(priceCtrl) ?? 0.0;
+          final total = qty * price;
+          final down = num(downCtrl) ?? 0.0;
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+            title: Row(
+              children: const [
+                Icon(
+                  Icons.shopping_cart_checkout_rounded,
+                  color: AppColors.scrapBoxAccent,
+                  size: 24,
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'فاتورة شراء تجهيزات',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 520,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: supplierId,
+                      isExpanded: true,
+                      decoration: field(
+                        'المورد',
+                        icon: const Icon(Icons.local_shipping_outlined, size: 18),
+                      ),
+                      items: erp.suppliers
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s.id,
+                              child: Text(
+                                s.phone.isEmpty
+                                    ? s.name
+                                    : '${s.name} • ${s.phone}',
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => update(() => supplierId = v),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: typeId,
+                      isExpanded: true,
+                      decoration: field(
+                        'نوع التجهيز',
+                        icon: const Icon(Icons.construction_rounded, size: 18),
+                      ),
+                      items: erp.equipmentTypes
+                          .map(
+                            (t) => DropdownMenuItem(value: t.id, child: Text(t.name)),
+                          )
+                          .toList(),
+                      onChanged: (v) => update(() => typeId = v),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: qtyCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            onChanged: (_) => update(() {}),
+                            decoration: field(
+                              'العدد (القطعات)',
+                              icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: priceCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            onChanged: (_) => update(() {}),
+                            decoration: field(
+                              'سعر الشراء للقطعة (\$)',
+                              icon: const Icon(Icons.request_quote_outlined, size: 18),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: sellCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: field(
+                              'سعر البيع للقطعة (\$)',
+                              icon: const Icon(Icons.sell_outlined, size: 18),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: downCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            onChanged: (_) => update(() {}),
+                            decoration: field(
+                              'الدفعة الأولى',
+                              icon: const Icon(
+                                Icons.account_balance_wallet_outlined,
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: currency,
+                            isExpanded: true,
+                            decoration: field(
+                              'العملة',
+                              icon: const Icon(Icons.swap_horiz, size: 18),
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: AppCurrency.usd,
+                                child: Text('دولار (USD)'),
+                              ),
+                              DropdownMenuItem(
+                                value: AppCurrency.syp,
+                                child: Text('ليرة سورية (SYP)'),
+                              ),
+                            ],
+                            onChanged: (v) => update(() => currency = v!),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: DropdownButtonFormField<String>(
+                            initialValue: box,
+                            isExpanded: true,
+                            decoration: field(
+                              'الصندوق المخصص للدفعة الأولى',
+                              icon: const Icon(
+                                Icons.savings_outlined,
+                                size: 18,
+                              ),
+                            ),
+                            items: [
+                              DropdownMenuItem(
+                                value: 'main',
+                                child: Text(
+                                  'الصندوق الرئيسي • ${AppCurrency.single(erp.cashOf('main', currency), currency)}',
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'scrap',
+                                child: Text(
+                                  'صندوق الزيادات • ${AppCurrency.single(erp.cashOf('scrap', currency), currency)}',
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'order',
+                                child: Text(
+                                  'صندوق الطلبيات • ${AppCurrency.single(erp.cashOf('order', currency), currency)}',
+                                ),
+                              ),
+                            ],
+                            onChanged: (v) => update(() => box = v!),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF86EFAC)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'إجمالي الفاتورة:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                              color: Color(0xFF166534),
+                            ),
+                          ),
+                          Text(
+                            '${total.fmt} ${AppCurrency.symbol(currency)} • المتبقي على المورد: ${(total - down).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(currency)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12.5,
+                              color: Color(0xFF15803D),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (error != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        error!,
+                        style: const TextStyle(
+                          color: AppColors.dangerWaste,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.scrapBoxAccent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () {
+                  if (supplierId == null || typeId == null) {
+                    update(() => error = 'يرجى اختيار المورد ونوع التجهيز.');
+                    return;
+                  }
+                  final ok = erp.addEquipmentPurchaseInvoice(
+                    supplierId: supplierId!,
+                    typeId: typeId!,
+                    quantity: qty,
+                    unitPrice: price,
+                    sellingPrice: num(sellCtrl) ?? 0.0,
+                    downPayment: down,
+                    currency: currency,
+                    cashBox: box,
+                  );
+                  if (!ok) {
+                    update(
+                      () => error =
+                          'تعذر حفظ الفاتورة: تحقق من العدد والأسعار ومن كفاية رصيد الصندوق المحدد للدفعة الأولى.',
+                    );
+                    return;
+                  }
+                  Navigator.pop(dialogContext);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'تم تسجيل فاتورة شراء التجهيزات: أُضيفت الكميات للمخزون، وسُجلت القيمة على كشف المورد، وخُصمت الدفعة الأولى من الصندوق.',
+                      ),
+                      backgroundColor: AppColors.successGreen,
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.check_circle_outline, size: 18),
+                label: const Text('حفظ فاتورة الشراء'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    qtyCtrl.dispose();
+    priceCtrl.dispose();
+    sellCtrl.dispose();
+    downCtrl.dispose();
   }
 
   // -------------------------------------------------------------

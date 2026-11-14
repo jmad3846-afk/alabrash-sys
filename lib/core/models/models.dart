@@ -4171,3 +4171,80 @@ class ServiceInvoiceModel {
         notes: json['notes'] as String? ?? '',
       );
 }
+
+// ==========================================
+// EQUIPMENT / تجهيزات (Workshop Equipment & Supplies)
+// ==========================================
+/// Catalog entry defining a selectable equipment type (name + description).
+class EquipmentTypeModel {
+  final String id;
+  String name;
+  String description;
+
+  EquipmentTypeModel({
+    required this.id,
+    required this.name,
+    this.description = '',
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'description': description,
+  };
+
+  factory EquipmentTypeModel.fromJson(Map<String, dynamic> json) =>
+      EquipmentTypeModel(
+        id: json['id'],
+        name: json['name'],
+        description: json['description'] ?? '',
+      );
+}
+
+/// Stock card of an equipment type: available pieces, cost and selling price.
+class EquipmentStockModel {
+  final String id;
+  final String typeId;
+  String name;
+  String description;
+  double availableQty;
+  double costPrice;
+  double sellingPrice;
+  String currency;
+
+  EquipmentStockModel({
+    required this.id,
+    required this.typeId,
+    required this.name,
+    this.description = '',
+    this.availableQty = 0.0,
+    this.costPrice = 0.0,
+    this.sellingPrice = 0.0,
+    this.currency = AppCurrency.usd,
+  });
+
+  double get stockValue => availableQty * costPrice;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'typeId': typeId,
+    'name': name,
+    'description': description,
+    'availableQty': availableQty,
+    'costPrice': costPrice,
+    'sellingPrice': sellingPrice,
+    'currency': AppCurrency.normalize(currency),
+  };
+
+  factory EquipmentStockModel.fromJson(Map<String, dynamic> json) =>
+      EquipmentStockModel(
+        id: json['id'],
+        typeId: json['typeId'] ?? '',
+        name: json['name'],
+        description: json['description'] ?? '',
+        availableQty: (json['availableQty'] as num? ?? 0).toDouble(),
+        costPrice: (json['costPrice'] as num? ?? 0).toDouble(),
+        sellingPrice: (json['sellingPrice'] as num? ?? 0).toDouble(),
+        currency: AppCurrency.normalize(json['currency']),
+      );
+}

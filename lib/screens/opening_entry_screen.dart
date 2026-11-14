@@ -546,6 +546,191 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
     }
   }
 
+  /// Opening stock for Equipment (التجهيزات): picks a predefined equipment
+  /// type and writes quantity + initial cost + selling price directly onto
+  /// its stock card in the Workshop Materials -> Equipment page.
+  Future<void> _addEquipmentOpeningStock(ERPProvider erp) async {
+    if (erp.equipmentTypes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'لا توجد أنواع تجهيزات بعد. أضفها أولاً من مواد المعمل ← تبويب «التجهيزات» ← «إضافة تجهيز».',
+          ),
+          backgroundColor: AppColors.dangerWaste,
+        ),
+      );
+      return;
+    }
+    String? typeId = erp.equipmentTypes.first.id;
+    final qtyCtrl = TextEditingController(text: '1');
+    final costCtrl = TextEditingController();
+    final sellCtrl = TextEditingController();
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          title: Row(
+            children: const [
+              Icon(
+                Icons.construction_rounded,
+                color: AppColors.scrapBoxAccent,
+                size: 22,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'إضافة تجهيزات • رصيد افتتاحي',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: typeId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'نوع التجهيز',
+                    isDense: true,
+                    prefixIcon: Icon(Icons.construction_outlined, size: 18),
+                  ),
+                  items: erp.equipmentTypes
+                      .map(
+                        (t) => DropdownMenuItem(
+                          value: t.id,
+                          child: Text(
+                            t.description.isEmpty
+                                ? t.name
+                                : '${t.name} — ${t.description}',
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => update(() => typeId = v),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: qtyCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'العدد',
+                    isDense: true,
+                    prefixIcon: Icon(Icons.inventory_2_outlined, size: 18),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: costCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'السعر المبدئي / للتكلفة (\$)',
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: sellCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'سعر البيع (\$)',
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    error!,
+                    style: const TextStyle(
+                      color: AppColors.dangerWaste,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.scrapBoxAccent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () {
+                final qty =
+                    double.tryParse(qtyCtrl.text.trim().replaceAll(',', '.')) ??
+                    0.0;
+                final cost =
+                    double.tryParse(costCtrl.text.trim().replaceAll(',', '.')) ??
+                    0.0;
+                final sell =
+                    double.tryParse(sellCtrl.text.trim().replaceAll(',', '.')) ??
+                    0.0;
+                if (typeId == null || qty <= 0 || !qty.isFinite) {
+                  update(() => error = 'أدخل عدداً صحيحاً أكبر من صفر.');
+                  return;
+                }
+                if (cost < 0 || sell < 0 || !cost.isFinite || !sell.isFinite) {
+                  update(() => error = 'الأسعار غير صحيحة.');
+                  return;
+                }
+                erp.addEquipmentStock(
+                  typeId: typeId!,
+                  quantity: qty,
+                  costPrice: cost,
+                  sellingPrice: sell,
+                );
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('تمت إضافة رصيد التجهيز إلى صفحة «التجهيزات».'),
+                    backgroundColor: AppColors.successGreen,
+                  ),
+                );
+              },
+              icon: const Icon(Icons.check, size: 18),
+              label: const Text('إضافة الرصيد'),
+            ),
+          ],
+        ),
+      ),
+    );
+    qtyCtrl.dispose();
+    costCtrl.dispose();
+    sellCtrl.dispose();
+  }
+
   String _openingStockUnit(ERPProvider erp, OpeningStockItemModel item) {
     if (item.category == 'بلوكات خام المصنع') return 'طن';
     if (item.category == 'أمتار المصنع' || item.category == 'أمتار المعمل') {
@@ -881,6 +1066,17 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                           icon: const Icon(Icons.add_box_outlined),
                           label: Text(category),
                         ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.scrapBoxAccent,
+                          side: const BorderSide(color: AppColors.scrapBoxAccent),
+                        ),
+                        onPressed: entry.isLocked
+                            ? null
+                            : () => _addEquipmentOpeningStock(erp),
+                        icon: const Icon(Icons.construction_rounded),
+                        label: const Text('إضافة تجهيزات'),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -930,6 +1126,46 @@ class _OpeningEntryScreenState extends State<OpeningEntryScreen> {
                         ),
                       ),
                     ),
+                  if (erp.equipmentStock.isNotEmpty) ...[
+                    const Divider(height: 24),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.construction_rounded,
+                          size: 16,
+                          color: AppColors.scrapBoxAccent,
+                        ),
+                        const SizedBox(width: 6),
+                        const Expanded(
+                          child: Text(
+                            'التجهيزات — تظهر تلقائياً عند إضافة أي تجهيز جديد',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    ...erp.equipmentStock.map(
+                      (e) => ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.build_circle_outlined),
+                        title: Text(e.name),
+                        subtitle: Text(
+                          'المتاح: ${e.availableQty.fmt} قطعة • السعر المبدئي/التكلفة: ${e.costPrice.fmt} ${AppCurrency.symbol(e.currency)} • سعر البيع: ${e.sellingPrice.fmt} ${AppCurrency.symbol(e.currency)}${e.description.isEmpty ? '' : ' • ${e.description}'}',
+                        ),
+                        trailing: Text(
+                          'للتعديل: زر «إضافة تجهيزات»',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: AppColors.brandSecondaryText,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

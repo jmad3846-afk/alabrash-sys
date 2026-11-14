@@ -196,6 +196,10 @@ class ERPProvider extends ChangeNotifier {
   List<WorkshopInvoiceModel> workshopInvoices = [];
   List<WorkshopProjectModel> workshopProjects = [];
 
+  // Equipment (التجهيزات): catalog types + per-type stock cards.
+  List<EquipmentTypeModel> equipmentTypes = [];
+  List<EquipmentStockModel> equipmentStock = [];
+
   // Services Center
   List<ServiceItemModel> services = [];
 
@@ -2947,6 +2951,158 @@ class ERPProvider extends ChangeNotifier {
 
   /// Materialized lines of a workshop invoice. Legacy invoices keep their
   /// data in the scalar fields instead of an items list.
+  // ==========================================================================
+  // EQUIPMENT (التجهيزات) — catalog, opening stock, purchases & sales
+  // ==========================================================================
+
+  /// Defines a new selectable equipment type (name + description). The new
+  /// item is synchronized instantly: it becomes a stock card on the
+  /// «التجهيزات» page (zero quantity until an opening balance or a purchase
+  /// invoice adds stock) and appears in the Opening Entry equipment lists.
+  bool addEquipmentType({required String name, String description = ''}) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return false;
+    if (equipmentTypes.any((t) => t.name.trim() == trimmed)) return false;
+    final type = EquipmentTypeModel(
+      id: 'eqt_${DateTime.now().microsecondsSinceEpoch}',
+      name: trimmed,
+      description: description.trim(),
+    );
+    equipmentTypes.add(type);
+    if (!equipmentStock.any((s) => s.typeId == type.id)) {
+      equipmentStock.add(
+        EquipmentStockModel(
+          id: 'eqs_${DateTime.now().microsecondsSinceEpoch}',
+          typeId: type.id,
+          name: type.name,
+          description: type.description,
+        ),
+      );
+    }
+    refresh();
+    return true;
+  }
+
+  /// Adds quantity + pricing directly onto the equipment stock card
+  /// (upsert by type). Used by the Opening Entry and purchase invoices.
+  EquipmentStockModel? addEquipmentStock({
+    required String typeId,
+    required double quantity,
+    double costPrice = 0.0,
+    double sellingPrice = 0.0,
+    String currency = AppCurrency.usd,
+  }) {
+    if (quantity < 0) return null;
+    final type = equipmentTypes.where((t) => t.id == typeId).firstOrNull;
+    if (type == null) return null;
+    var stock = equipmentStock.where((s) => s.typeId == typeId).firstOrNull;
+    stock ??= EquipmentStockModel(
+      id: 'eqs_${DateTime.now().microsecondsSinceEpoch}',
+      typeId: typeId,
+      name: type.name,
+      description: type.description,
+      currency: AppCurrency.normalize(currency),
+    );
+    stock.availableQty += quantity;
+    if (costPrice > 0) stock.costPrice = costPrice;
+    if (sellingPrice > 0) stock.sellingPrice = sellingPrice;
+    stock.description = type.description;
+    if (!equipmentStock.contains(stock)) equipmentStock.add(stock);
+    refresh();
+    return stock;
+  }
+
+  /// Equipment purchase invoice: records a regular supplier purchase invoice
+  /// (shown in the supplier statement, raising the supplier balance and
+  /// settling the down payment FIFO), deducts the down payment from the
+  /// chosen cash box, adds the purchased pieces to the equipment stock and
+  /// updates the selling price.
+  bool addEquipmentPurchaseInvoice({
+    required String supplierId,
+    required String typeId,
+    required double quantity,
+    required double unitPrice,
+    double sellingPrice = 0.0,
+    double downPayment = 0.0,
+    String currency = AppCurrency.usd,
+    String cashBox = 'main',
+  }) {
+    final supplier = suppliers.where((s) => s.id == supplierId).firstOrNull;
+    final type = equipmentTypes.where((t) => t.id == typeId).firstOrNull;
+    if (supplier == null ||
+        type == null ||
+        !quantity.isFinite ||
+        quantity <= 0 ||
+        !unitPrice.isFinite ||
+        unitPrice < 0 ||
+        !downPayment.isFinite ||
+        downPayment < 0) {
+      return false;
+    }
+    final total = quantity * unitPrice;
+    if (downPayment > total + 0.001) return false;
+    final inv = FactoryInvoiceModel(
+      id: 'fi_equip_${DateTime.now().microsecondsSinceEpoch}',
+      invoiceNo: 'EQ-${factoryInvoices.length + 101}',
+      date: DateTime.now(),
+      partyId: supplier.id,
+      partyName: supplier.name,
+      invoiceType: 'شراء_مورد',
+      items: [
+        FactoryInvoiceItem(
+          itemId: 'equip_${type.id}',
+          description: 'تجهيز: ${type.name}',
+          typeName: type.name,
+          quantity: quantity,
+          unitPrice: unitPrice,
+          unitCost: unitPrice,
+          sellingPrice: sellingPrice > 0 ? sellingPrice : null,
+        ),
+      ],
+      isGoodsDelivered: true,
+      advancePayment: downPayment,
+      isCashInvoice: total - downPayment <= 0.01,
+      currency: AppCurrency.normalize(currency),
+    );
+    // Move the down payment out of the chosen box first (addSupplierPurchase
+    // Invoice settles from the main box).
+    if (cashBox != 'main' && downPayment > 0) {
+      if (!takeCash(cashBox, inv.currency, downPayment)) return false;
+      addCash('main', inv.currency, downPayment);
+    }
+    if (!addSupplierPurchaseInvoice(inv)) {
+      // Roll back the box transfer above if the invoice was rejected.
+      if (cashBox != 'main' && downPayment > 0) {
+        takeCash('main', inv.currency, downPayment);
+        addCash(cashBox, inv.currency, downPayment);
+      }
+      return false;
+    }
+    addEquipmentStock(
+      typeId: type.id,
+      quantity: quantity,
+      costPrice: unitPrice,
+      sellingPrice: sellingPrice,
+      currency: inv.currency,
+    );
+    return true;
+  }
+
+  /// Total revenue billed from equipment sales inside workshop invoices.
+  double equipmentSalesRevenueOf(String? currency) {
+    final cur = AppCurrency.normalize(currency);
+    double sum = 0.0;
+    for (final inv in workshopInvoices) {
+      if (inv.currency != cur) continue;
+      for (final line in _workshopInvoiceLines(inv)) {
+        if (line.sourceType == 'بيع تجهيزات' || line.sourceType == 'تجهيزات') {
+          sum += line.agreedPrice;
+        }
+      }
+    }
+    return sum;
+  }
+
   List<WorkshopInvoiceItem> _workshopInvoiceLines(WorkshopInvoiceModel inv) {
     if (inv.items.isNotEmpty) return List.of(inv.items);
     final quantity = inv.sourceQuantity > 0 ? inv.sourceQuantity : 1.0;
@@ -7365,6 +7521,21 @@ class ERPProvider extends ChangeNotifier {
               return false;
             }
           }
+        } else if (item.sourceType == 'بيع تجهيزات' ||
+            item.sourceType == 'تجهيزات') {
+          final equip = equipmentStock
+              .where((e) => e.id == item.sourceId)
+              .toList();
+          if (item.quantity <= 0 ||
+              equip.isEmpty ||
+              equip.first.availableQty + 0.0001 < item.quantity) {
+            if (linkedOrders.isNotEmpty) {
+              for (final it in linkedOrders.first.items) {
+                _deductWorkshopOrderItemStock(it);
+              }
+            }
+            return false;
+          }
         } else if (item.sourceType == 'طلب معمل' ||
             item.sourceType == 'طلبية معمل') {
           if (item.depositAmount > 0 && item.sourceId.isNotEmpty) {
@@ -7454,6 +7625,15 @@ class ERPProvider extends ChangeNotifier {
                     double.infinity,
                   );
             }
+          }
+        } else if (item.sourceType == 'بيع تجهيزات' ||
+            item.sourceType == 'تجهيزات') {
+          final equip = equipmentStock
+              .where((e) => e.id == item.sourceId)
+              .toList();
+          if (equip.isNotEmpty) {
+            equip.first.availableQty = (equip.first.availableQty - item.quantity)
+                .clamp(0.0, double.infinity);
           }
         } else if (item.sourceType == 'بيع قطع إضافية' ||
             item.sourceType == 'قطع زائدة') {
@@ -9642,6 +9822,8 @@ class ERPProvider extends ChangeNotifier {
     serviceInvoices.clear();
     factoryOrders.clear();
     workshopStock.clear();
+    equipmentTypes.clear();
+    equipmentStock.clear();
     simpleTailorings.clear();
     complexTailorings.clear();
     scrapItems.clear();
@@ -9851,6 +10033,14 @@ class ERPProvider extends ChangeNotifier {
       await prefs.setString(
         'workshopProjects',
         jsonEncode(workshopProjects.map((p) => p.toJson()).toList()),
+      );
+      await prefs.setString(
+        'equipmentTypes',
+        jsonEncode(equipmentTypes.map((t) => t.toJson()).toList()),
+      );
+      await prefs.setString(
+        'equipmentStock',
+        jsonEncode(equipmentStock.map((s) => s.toJson()).toList()),
       );
       await prefs.setString(
         'staffTypes',
@@ -10115,6 +10305,22 @@ class ERPProvider extends ChangeNotifier {
         workshopStock = (jsonDecode(workshopStockJson) as List)
             .map((item) => WorkshopStockModel.fromJson(item))
             .toList();
+      }
+      final equipmentTypesJson = prefs.getString('equipmentTypes');
+      if (equipmentTypesJson != null) {
+        try {
+          equipmentTypes = (jsonDecode(equipmentTypesJson) as List)
+              .map((item) => EquipmentTypeModel.fromJson(item))
+              .toList();
+        } catch (_) {}
+      }
+      final equipmentStockJson = prefs.getString('equipmentStock');
+      if (equipmentStockJson != null) {
+        try {
+          equipmentStock = (jsonDecode(equipmentStockJson) as List)
+              .map((item) => EquipmentStockModel.fromJson(item))
+              .toList();
+        } catch (_) {}
       }
       final simpleTailoringsJson = prefs.getString('simpleTailorings');
       if (simpleTailoringsJson != null) {

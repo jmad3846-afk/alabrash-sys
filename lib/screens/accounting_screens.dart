@@ -1485,120 +1485,255 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
 
   Future<void> _addExpense(ERPProvider erp, ExpenseTypeModel type) async {
     final amount = TextEditingController();
-    final share = TextEditingController();
     final description = TextEditingController();
-    final person = TextEditingController();
     var currency = AppCurrency.usd;
     var box = 'main';
-    String? staffId;
     const classification = ExpenseRecordModel.operational;
     String? error;
     final route = DialogRoute<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, update) {
+          String boxLabelOf(String key) => key == 'main'
+              ? 'الصندوق الرئيسي'
+              : key == 'scrap'
+              ? 'صندوق الزيادات والسكراب'
+              : 'صندوق الطلبيات';
+          OutlineInputBorder outline() => OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.panelBorder),
+          );
+          InputDecoration field(String label, {Widget? icon, String? helper}) =>
+              InputDecoration(
+                labelText: label,
+                helperText: helper,
+                prefixIcon: icon,
+                isDense: true,
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 14,
+                ),
+                enabledBorder: outline(),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: AppColors.accentPrimary,
+                    width: 1.4,
+                  ),
+                ),
+                border: outline(),
+              );
+          final parsed = double.tryParse(
+            amount.text.trim().replaceAll(',', '.'),
+          );
+          final preview = (parsed != null && parsed > 0) ? parsed : null;
+          final balance = erp.cashOf(box, currency);
+          final after = balance - (preview ?? 0.0);
           return AlertDialog(
-            title: Text('مصروف جديد • ' + type.name),
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: AppColors.chipBgBlue,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.account_balance_wallet_rounded,
+                    color: AppColors.accentPrimary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'مصروف جديد • ${type.name}',
+                        style: const TextStyle(
+                          fontSize: 16.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'أدخل المبلغ والصندوق المخصوم منه',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.brandSecondaryText,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
             content: SizedBox(
-              width: 500,
+              width: 480,
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    const SizedBox(height: 6),
                     TextField(
                       controller: amount,
+                      autofocus: true,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      decoration: const InputDecoration(
-                        labelText: 'مبلغ المصروف',
+                      onChanged: (_) => update(() {}),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      decoration: field(
+                        'مبلغ المصروف (${AppCurrency.symbol(currency)})',
+                        icon: const Icon(Icons.payments_outlined, size: 20),
                       ),
                     ),
-                    DropdownButtonFormField<String>(
-                      initialValue: currency,
-                      decoration: const InputDecoration(labelText: 'العملة'),
-                      items: const [
-                        DropdownMenuItem(
-                          value: AppCurrency.usd,
-                          child: Text('دولار (USD)'),
+                    const SizedBox(height: 14),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: currency,
+                            isExpanded: true,
+                            decoration: field(
+                              'العملة',
+                              icon: const Icon(Icons.swap_horiz, size: 20),
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: AppCurrency.usd,
+                                child: Text('دولار (USD)'),
+                              ),
+                              DropdownMenuItem(
+                                value: AppCurrency.syp,
+                                child: Text('ليرة سورية (SYP)'),
+                              ),
+                            ],
+                            onChanged: (v) => update(() => currency = v!),
+                          ),
                         ),
-                        DropdownMenuItem(
-                          value: AppCurrency.syp,
-                          child: Text('ليرة سورية (SYP)'),
-                        ),
-                      ],
-                      onChanged: (v) => update(() => currency = v!),
-                    ),
-                    DropdownButtonFormField<String>(
-                      initialValue: box,
-                      decoration: const InputDecoration(
-                        labelText: 'الصندوق / الخزينة المخصوم منها',
-                      ),
-                      items: ['main', 'scrap', 'order']
-                          .map(
-                            (key) => DropdownMenuItem(
-                              value: key,
-                              child: Text(
-                                (key == 'main'
-                                        ? 'الصندوق الرئيسي'
-                                        : key == 'scrap'
-                                        ? 'صندوق الزيادات والسكراب'
-                                        : 'صندوق الطلبيات') +
-                                    ' • ' +
-                                    AppCurrency.single(
-                                      erp.cashOf(key, currency),
-                                      currency,
-                                    ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: DropdownButtonFormField<String>(
+                            initialValue: box,
+                            isExpanded: true,
+                            decoration: field(
+                              'الصندوق المخصوم منه',
+                              icon: const Icon(
+                                Icons.account_balance_rounded,
+                                size: 20,
                               ),
                             ),
-                          )
-                          .toList(),
-                      onChanged: (v) => update(() => box = v!),
-                    ),
-                    DropdownButtonFormField<String?>(
-                      initialValue: staffId,
-                      decoration: const InputDecoration(
-                        labelText: 'موظف داخلي (اختياري)',
-                      ),
-                      items: [
-                        const DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text('لا يوجد موظف داخلي'),
-                        ),
-                        for (final staff in erp.staffList)
-                          DropdownMenuItem<String?>(
-                            value: staff.id,
-                            child: Text(staff.name),
+                            items: ['main', 'scrap', 'order']
+                                .map(
+                                  (key) => DropdownMenuItem(
+                                    value: key,
+                                    child: Text(boxLabelOf(key)),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) => update(() => box = v!),
                           ),
+                        ),
                       ],
-                      onChanged: (v) => update(() {
-                        staffId = v;
-                        if (v != null)
-                          person.text = erp.staffList
-                              .firstWhere((s) => s.id == v)
-                              .name;
-                      }),
                     ),
-                    TextField(
-                      controller: person,
-                      enabled: staffId == null,
-                      decoration: const InputDecoration(
-                        labelText: 'شخص خارجي / مستفيد (اختياري)',
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0F9FF),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFBAE6FD)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.visibility_outlined,
+                            size: 16,
+                            color: AppColors.orderDepositBoxAccent,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              preview == null
+                                  ? 'رصيد ${boxLabelOf(box)} حالياً: '
+                                        '${AppCurrency.single(balance, currency)}'
+                                  : 'الرصيد بعد الخصم: '
+                                        '${AppCurrency.single(after, currency)} '
+                                        '• ${boxLabelOf(box)}',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF075985),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    TextField(
-                      controller: share,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(labelText: 'حصة الشخص'),
-                    ),
+                    const SizedBox(height: 14),
                     TextField(
                       controller: description,
-                      decoration: const InputDecoration(labelText: 'الوصف'),
+                      maxLines: 2,
+                      minLines: 1,
+                      decoration: field(
+                        'الوصف / بيان المصروف (اختياري)',
+                        icon: const Icon(Icons.notes_rounded, size: 20),
+                      ),
                     ),
-                    if (error != null)
-                      Text(error!, style: const TextStyle(color: Colors.red)),
+                    if (error != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.chipBgRed,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              size: 16,
+                              color: AppColors.dangerWaste,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                error!,
+                                style: const TextStyle(
+                                  color: AppColors.dangerWaste,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 4),
                   ],
                 ),
               ),
@@ -1609,24 +1744,24 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                 child: const Text('إلغاء'),
               ),
               FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.accentPrimary,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
                 icon: const Icon(Icons.check_circle_outline, size: 18),
                 label: const Text('إضافة المصروف وخصم قيمته'),
                 onPressed: () {
-                  double? parse(TextEditingController c) =>
-                      double.tryParse(c.text.trim().replaceAll(',', '.'));
-                  final value = parse(amount);
-                  final personShare = share.text.trim().isEmpty
-                      ? 0.0
-                      : parse(share);
-                  if (value == null ||
-                      !value.isFinite ||
-                      value <= 0 ||
-                      personShare == null ||
-                      !personShare.isFinite ||
-                      personShare < 0 ||
-                      personShare > value ||
-                      (personShare > 0 && person.text.trim().isEmpty)) {
-                    update(() => error = 'تحقق من المبلغ والمستفيد وحصته.');
+                  final value = double.tryParse(
+                    amount.text.trim().replaceAll(',', '.'),
+                  );
+                  if (value == null || !value.isFinite || value <= 0) {
+                    update(() => error = 'أدخل مبلغاً صحيحاً أكبر من صفر.');
                     return;
                   }
                   try {
@@ -1639,19 +1774,10 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
                         expenseType: classification,
                         amount: value,
                         currency: currency,
-                        personName: person.text.trim(),
-                        staffId: staffId,
-                        personShare: personShare,
                         description: description.text.trim(),
                         cashBox: box,
                       ),
                     );
-                    if (staffId != null && personShare > 0) {
-                      erp.staffList
-                          .firstWhere((s) => s.id == staffId)
-                          .addEarning(currency, personShare);
-                      erp.refresh();
-                    }
                     Navigator.pop(dialogContext, true);
                   } on ArgumentError catch (e) {
                     update(() => error = e.message.toString());
@@ -1665,12 +1791,10 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
     );
     final added = await Navigator.of(context, rootNavigator: true).push(route);
     if (added == true && mounted)
-      _message('تم تسجيل المصروف وخصم قيمته وفق التصنيف المحدد.');
+      _message('تم تسجيل المصروف وخصم قيمته من الصندوق المحدد.');
     await route.completed;
     amount.dispose();
-    share.dispose();
     description.dispose();
-    person.dispose();
   }
 
   void _message(String value) => ScaffoldMessenger.of(

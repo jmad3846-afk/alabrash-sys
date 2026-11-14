@@ -3272,11 +3272,18 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     'إجمالي مبيعات وتفصيل المعمل النقدية والآجلة (قبل الخصم):',
                     erp.totalWorkshopRevenue -
                         erp.workshopServiceRevenueOf(AppCurrency.usd) +
-                        erp.workshopSalesDiscountOf(AppCurrency.usd),
+                        erp.workshopSalesDiscountOf(AppCurrency.usd) -
+                        erp.equipmentSalesRevenueOf(AppCurrency.usd),
                     syp:
                         erp.totalWorkshopRevenueSyp -
                         erp.workshopServiceRevenueOf(AppCurrency.syp) +
-                        erp.workshopSalesDiscountOf(AppCurrency.syp),
+                        erp.workshopSalesDiscountOf(AppCurrency.syp) -
+                        erp.equipmentSalesRevenueOf(AppCurrency.syp),
+                  ),
+                  _buildPlLine(
+                    'إيرادات بيع تجهيزات:',
+                    erp.equipmentSalesRevenueOf(AppCurrency.usd),
+                    syp: erp.equipmentSalesRevenueOf(AppCurrency.syp),
                   ),
                   _buildPlLine(
                     'خدمات المعمل النقدية والآجلة:',

@@ -211,9 +211,13 @@ class A4InvoiceData {
       final qtyLabel = isPurchase
           ? (it.isMeterItem
               ? '${it.quantity.fmt} ${it.meterUnit.isNotEmpty ? it.meterUnit : "متر"}'
+              : it.itemId.startsWith('equip_')
+              ? '${it.quantity.fmt} قطعة'
               : '${it.quantity.fmt} طن')
           : '${it.calculatedArea.fmt} ${it.heightCm > 5 ? "م³" : "م²"}\n(${it.quantity.fmt} قطعة)';
-      final specs = it.isMeterItem
+      final specs = it.itemId.startsWith('equip_')
+          ? 'تجهيز'
+          : it.isMeterItem
           ? '${it.grade}${it.thicknessCm > 0 ? " • ${it.thicknessCm.fmt} سم" : ""} ${it.isGranite ? "(جرانيت)" : "(رخام)"}'
           : '${it.grade} ${it.isGranite ? "(جرانيت)" : "(رخام)"}';
 
