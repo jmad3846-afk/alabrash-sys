@@ -232,36 +232,50 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
   }
 
   // -------------------------------------------------------------
-  // SUB-TAB 1: FACTORY HOME STATS
+  // SUB-TAB 1: FACTORY HOME — VIEW-ONLY INVENTORY OVERVIEW (للاطلاع فقط)
+  //
+  // Modern cards, one per (النوع + النخب) combination. Each card lists
+  // all available السماكات with عدد الأمتار المتوفرة and سعر مبيع المتر.
+  // The page is informational only: no actions, no editing.
   // -------------------------------------------------------------
+  String _dashSearch = '';
+
   Widget _buildSubTab1Home(ERPProvider erp) {
-    double totalBlockTons = erp.factoryBlocks.fold(
-      0.0,
-      (s, b) => s + b.weightTons,
-    );
-    double totalBlockVal = erp.factoryBlocks.fold(
-      0.0,
-      (s, b) => s + b.totalCost,
-    );
+    final query = _dashSearch.trim();
+    final matched = erp.factoryWarehouse
+        .where(
+          (w) =>
+              query.isEmpty ||
+              arabicFuzzyMatch(
+                '${w.typeName} ${w.grade} ${w.thicknessCm.fmt} سم ${w.category}',
+                query,
+              ),
+        )
+        .toList();
 
-    double totalSlabsM2 = erp.factoryWarehouse
-        .where((w) => w.category == 'متر مربع')
-        .fold(0.0, (s, w) => s + w.availableQty);
-    double totalSlabsM3 = erp.factoryWarehouse
-        .where((w) => w.category == 'متر مكعب')
-        .fold(0.0, (s, w) => s + w.availableQty);
+    // Group warehouse lines by (typeName + grade) — each group is a card.
+    final Map<String, List<FactoryWarehouseModel>> groups = {};
+    for (final w in matched) {
+      groups.putIfAbsent('${w.typeName}||${w.grade}', () => []).add(w);
+    }
+    final entries = groups.entries.toList()
+      ..sort((a, b) {
+        final ap = a.key.split('||');
+        final bp = b.key.split('||');
+        final cmp = ap.first.compareTo(bp.first);
+        return cmp != 0 ? cmp : ap.last.compareTo(bp.last);
+      });
 
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
                 child: Text(
-                  'لوحة ملخص إنتاج ومخزون المصنع',
+                  'رئيسية المصنع — مخزون الأمتار للاطلاع فقط',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleLarge,
@@ -278,7 +292,7 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'إجمالي وزن البلوكات الخام: ${totalBlockTons.fmt} طن',
+                  '${entries.length} بطاقة نوع ونخب • ${matched.length} سماكة متوفرة',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     color: AppColors.accentPrimary,
@@ -287,149 +301,307 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'إحصائيات البلوكات الخام حسب النوع والدرجة',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                        ),
-                        const Divider(height: 20),
-                        ...erp.factoryBlocks.map(
-                          (b) => Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    '${b.blockCode} • ${b.typeName} (${b.grade})',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  '${b.weightTons} طن (${b.tonCost}\$/طن)',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const Divider(height: 20),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'إجمالي قيمة البلوكات:',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              '${totalBlockVal.fmt} \$',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.accentPrimary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+          const SizedBox(height: 14),
+
+          // Search bar: quick check of available inventory.
+          TextField(
+            decoration: const InputDecoration(
+              labelText: 'ابحث في المخزون المتوفر (النوع، النخب، السماكة)...',
+              prefixIcon: Icon(Icons.search),
+              isDense: true,
+            ),
+            onChanged: (v) => setState(() => _dashSearch = v.trim()),
+          ),
+          const SizedBox(height: 16),
+
+          if (matched.isEmpty)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.inventory_2_outlined,
+                        size: 42,
+                        color: AppColors.brandSecondaryText,
+                      ),
+                      SizedBox(height: 10),
+                      Text(
+                        'لا توجد أصناف مطابقة للبحث في مستودع المصنع.',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'إحصائيات الألواح الجاهزة بالمستودع',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                        ),
-                        const Divider(height: 20),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'إجمالي الألواح المربعة (<= 5سم):',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              '${totalSlabsM2.fmt} م²',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.scrapBoxAccent,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'إجمالي الكتل التكعيبية (> 5سم):',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              '${totalSlabsM3.fmt} م³',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.partnersEquityAccent,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const Divider(height: 20),
-                        ...erp.factoryWarehouse.map(
-                          (w) => Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 3.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  '${w.typeName} ${w.thicknessCm}سم (${w.grade})',
-                                ),
-                                Text(
-                                  '${w.availableQty} ${w.category == "متر مربع" ? "م²" : "م³"}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+            )
+          else
+            Expanded(
+              child: SingleChildScrollView(
+                child: Wrap(
+                  spacing: 16,
+                  runSpacing: 16,
+                  children: entries
+                      .map((e) => _dashboardStockCard(e.key, e.value))
+                      .toList(),
                 ),
               ),
-            ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// One modern type+grade card listing every available thickness with its
+  /// in-stock meters and selling price per meter (view-only).
+  Widget _dashboardStockCard(
+    String key,
+    List<FactoryWarehouseModel> items,
+  ) {
+    final parts = key.split('||');
+    final typeName = parts.first;
+    final grade = parts.length > 1 ? parts[1] : '';
+    final isGranite = items.first.isGranite;
+    final sorted = [...items]..sort(
+      (a, b) => a.thicknessCm.compareTo(b.thicknessCm),
+    );
+    final totalM2 = sorted
+        .where((w) => w.category != 'متر مكعب')
+        .fold<double>(0.0, (s, w) => s + w.availableQty);
+    final totalM3 = sorted
+        .where((w) => w.category == 'متر مكعب')
+        .fold<double>(0.0, (s, w) => s + w.availableQty);
+
+    return Container(
+      width: 372,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.panelBorder),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
           ),
         ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Card header: type + grade identity.
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(15),
+              ),
+              color: isGranite
+                  ? const Color(0xFFF1F5F9)
+                  : const Color(0xFFFFFBEB),
+              border: const Border(
+                bottom: BorderSide(color: AppColors.panelBorder),
+              ),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: isGranite
+                      ? AppColors.chipBgBlue
+                      : AppColors.chipBgAmber,
+                  child: Icon(
+                    isGranite ? Icons.grid_on : Icons.view_comfy,
+                    color: isGranite
+                        ? AppColors.accentPrimary
+                        : AppColors.partnersEquityAccent,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        typeName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          _dashChip(
+                            'النخب: $grade',
+                            AppColors.chipBgSky,
+                            AppColors.orderDepositBoxAccent,
+                          ),
+                          _dashChip(
+                            isGranite ? 'جرانيت' : 'رخام',
+                            isGranite
+                                ? AppColors.chipBgBlue
+                                : AppColors.chipBgAmber,
+                            isGranite
+                                ? AppColors.accentPrimary
+                                : AppColors.partnersEquityAccent,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (totalM2 > 0)
+                      Text(
+                        '${totalM2.fmt} م²',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12.5,
+                          color: AppColors.scrapBoxAccent,
+                        ),
+                      ),
+                    if (totalM3 > 0)
+                      Text(
+                        '${totalM3.fmt} م³',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12.5,
+                          color: AppColors.partnersEquityAccent,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Thickness breakdown rows.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+            child: Column(
+              children: [
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.straighten_rounded,
+                      size: 15,
+                      color: AppColors.brandSecondaryText,
+                    ),
+                    SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                      'السماكات المتوفرة وعدد الأمتار وسعر مبيع المتر:',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.brandSecondaryText,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ...sorted.map((w) {
+                  final cube = w.category == 'متر مكعب';
+                  final unit = cube ? 'م³' : 'م²';
+                  final low = w.availableQty <= 0.001;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: low
+                            ? const Color(0xFFFEE2E2)
+                            : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.panelBorder),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 58,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: cube
+                                  ? AppColors.chipBgSky
+                                  : AppColors.chipBgGreen,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '${w.thicknessCm.fmt} سم',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12.5,
+                                color: cube
+                                    ? AppColors.orderDepositBoxAccent
+                                    : AppColors.successGreen,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'متوفر: ${w.availableQty.fmt} $unit',
+                              style: TextStyle(
+                                fontWeight: low
+                                    ? FontWeight.w900
+                                    : FontWeight.bold,
+                                fontSize: 12.5,
+                                color: low
+                                    ? AppColors.dangerWaste
+                                    : const Color(0xFF0F172A),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text(
+                            'سعر المتر: ${w.recommendedSalePrice.fmt} ${AppCurrency.symbol(w.currency)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: AppColors.accentPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashChip(String text, Color bg, Color fg) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: fg),
       ),
     );
   }
