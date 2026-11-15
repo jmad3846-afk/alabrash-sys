@@ -198,6 +198,85 @@ void main() {
     });
   });
 
+  group('A4InvoiceData.fromWorkshopInvoice quantity field', () {
+    test('shows the item Count (العدد) under the consumed meters', () {
+      final inv = WorkshopInvoiceModel(
+        id: 'wi_qty_preview',
+        invoiceNo: 'WRK-INV-QTY',
+        date: DateTime(2026, 11, 15),
+        clientName: 'زبون المعاينة',
+        agreedPrice: 147.0,
+        depositDeducted: 0,
+        cashPaidNow: 0,
+        netCost: 90,
+        currency: AppCurrency.usd,
+        items: [
+          WorkshopInvoiceItem(
+            id: 'item_1',
+            sourceType: 'بيع مواد خام من المعمل',
+            description: 'رخام موغلا تركي',
+            lengthCm: 140,
+            widthCm: 70,
+            count: 3,
+            quantity: 2.94,
+            unitCategory: 'متر مربع',
+            unitPrice: 50.0,
+            agreedPrice: 147.0,
+          ),
+          WorkshopInvoiceItem(
+            id: 'item_2',
+            sourceType: 'بيع قطع إضافية',
+            description: 'قطعة غرانيت',
+            quantity: 2,
+            unitCategory: 'قطعة',
+            unitPrice: 100.0,
+            agreedPrice: 200.0,
+          ),
+        ],
+      );
+
+      final data = A4InvoiceData.fromWorkshopInvoice(inv);
+
+      // Meters consumed first, then the Count right underneath in the same
+      // quantity field.
+      expect(data.items[0].quantityText, '2.94 م²\n(العدد: 3 قطعة)');
+      expect(data.items[0].count, 3);
+
+      // Piece rows already ARE the count — no redundant second line.
+      expect(data.items[1].quantityText, '2 وحدة');
+      expect(data.items[1].quantityText, isNot(contains('العدد')));
+    });
+
+    test('rows without a distinct count keep the plain meters text', () {
+      final inv = WorkshopInvoiceModel(
+        id: 'wi_qty_plain',
+        invoiceNo: 'WRK-INV-QTY2',
+        date: DateTime(2026, 11, 15),
+        clientName: 'زبون المعاينة',
+        agreedPrice: 120.0,
+        depositDeducted: 0,
+        cashPaidNow: 0,
+        netCost: 60,
+        currency: AppCurrency.usd,
+        items: [
+          WorkshopInvoiceItem(
+            id: 'item_1',
+            sourceType: 'بيع خياطة بسيطة',
+            description: 'ألواح بدون تفصيل مقاسي',
+            quantity: 12,
+            unitCategory: 'متر مربع',
+            unitPrice: 10.0,
+            agreedPrice: 120.0,
+          ),
+        ],
+      );
+
+      final data = A4InvoiceData.fromWorkshopInvoice(inv);
+      // No dimensions → effectiveCount equals the meters → no Count line.
+      expect(data.items.single.quantityText, '12 م²');
+    });
+  });
+
   group('A4InvoicePrintDialog Table Rendering', () {
     testWidgets('renders separate Length and Width columns when invoice has dimensions', (tester) async {
       tester.view.physicalSize = const Size(1400, 1200);

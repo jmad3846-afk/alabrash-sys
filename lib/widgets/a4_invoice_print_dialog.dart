@@ -516,6 +516,20 @@ class A4InvoiceData {
                 })
                 .join('\n')
             : '—';
+        // Quantity field: the total consumed meters (الأمتار المستهلكة) with
+        // the item Count (العدد / القطع) displayed right underneath it so
+        // the craftsmen see both figures inside the same field.
+        final count = item.effectiveCount;
+        final unitLabel = item.unitCategory == 'متر مكعب'
+            ? 'م³'
+            : item.unitCategory == 'متر مربع'
+            ? 'م²'
+            : 'وحدة';
+        final showCountLine =
+            (item.unitCategory == 'متر مربع' ||
+                item.unitCategory == 'متر مكعب') &&
+            count > 0 &&
+            (count - item.quantity).abs() > 0.01;
         items.add(A4InvoiceLineItem(
           index: idx++,
           description: item.description.isNotEmpty
@@ -526,8 +540,10 @@ class A4InvoiceData {
           lengthCm: item.lengthCm > 0 ? item.lengthCm : null,
           widthCm: item.widthCm > 0 ? item.widthCm : null,
           heightCm: item.heightCm > 0 ? item.heightCm : null,
-          quantityText:
-              '${item.quantity.fmt} ${item.unitCategory == "متر مكعب" ? "م³" : item.unitCategory == "متر مربع" ? "م²" : "وحدة"}',
+          count: showCountLine ? count : null,
+          quantityText: showCountLine
+              ? '${item.quantity.fmt} $unitLabel\n(العدد: ${count.fmt} قطعة)'
+              : '${item.quantity.fmt} $unitLabel',
           unitPrice: item.unitPrice > 0 ? item.unitPrice : item.agreedPrice,
           servicesText: srvText,
           lineTotal: item.agreedPrice + item.servicesTotal,

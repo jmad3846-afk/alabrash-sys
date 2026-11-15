@@ -167,7 +167,8 @@ void main() {
     expect(workshopDetails.description, 'مغسلة رخام');
     expect(workshopDetails.gradeAndSpecs, 'تفصيل بسيط');
     expect(workshopDetails.dimensionsText, '200 × 60 سم');
-    expect(workshopDetails.quantityText, '1.2 م²');
+    // Consumed meters first, item Count (العدد) right underneath.
+    expect(workshopDetails.quantityText, '1.2 م²\n(العدد: 1 قطعة)');
     expect(workshopDetails.unitPrice, 75);
     expect(workshopDetails.servicesText, 'تلميع (10\$)');
     expect(workshopDetails.lineTotal, 100);
