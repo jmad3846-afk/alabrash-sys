@@ -10,6 +10,7 @@ import '../widgets/app_image_attachment.dart';
 import '../widgets/customer_collection_dialog.dart';
 import '../widgets/supplier_credit_collection_dialog.dart';
 import '../widgets/customer_credit_payout_dialog.dart';
+import '../widgets/party_balances_modal.dart';
 import 'accounting_screens.dart';
 
 class FinancialsScreen extends StatefulWidget {
@@ -2113,6 +2114,13 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       (i.partyId == s.id || i.partyName == s.name),
                 )
                 .toList();
+            // The account statement's REMAINING balance (current dues +
+            // carried opening records + returns) is shown right under the
+            // supplier name with an explicit لنا / علينا direction.
+            final statement = A4StatementData.fromSupplier(
+              supplier: s,
+              erp: erp,
+            );
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
               child: ExpansionTile(
@@ -2161,25 +2169,21 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       onPressed: () {
                         A4StatementPrintDialog.show(
                           context,
-                          statementData: A4StatementData.fromSupplier(
-                            supplier: s,
-                            erp: erp,
-                          ),
+                          statementData: statement,
                         );
                       },
                     ),
                   ],
                 ),
-                subtitle: Text(
-                  s.hasCredit
-                      ? 'رصيد دائن مستحق لنا: ${s.dualCredit} • الفواتير: ${invs.length}'
-                      : 'المتبقي علينا: ${s.dualDebt} • الفواتير: ${invs.length}',
-                  style: TextStyle(
-                    color: s.hasCredit ? AppColors.successGreen : null,
-                    fontWeight: s.hasCredit
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                  ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    StatementBalanceLabel(
+                      netUsd: statement.currentBalanceUsd,
+                      netSyp: statement.currentBalanceSyp,
+                    ),
+                    Text('الفواتير: ${invs.length}'),
+                  ],
                 ),
                 trailing: _buildSupplierPayButton(erp, s),
                 children: [
@@ -2523,25 +2527,22 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       onPressed: () {
                         A4StatementPrintDialog.show(
                           context,
-                          statementData: A4StatementData.fromAccreditedAgent(
-                            client: c,
-                            erp: erp,
-                          ),
+                          statementData: statement,
                         );
                       },
                     ),
                   ],
                 ),
-                subtitle: Text(
-                  c.hasCredit
-                      ? 'رصيد دائن للمعتمد (أمانة بذمتنا): ${c.dualCredit} • الفواتير: ${invs.length}'
-                      : 'المتبقي عليه: ${c.dualDebt} • الفواتير: ${invs.length}',
-                  style: TextStyle(
-                    color: c.hasCredit ? AppColors.dangerWaste : null,
-                    fontWeight: c.hasCredit
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                  ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    StatementBalanceLabel(
+                      netUsd: statement.currentBalanceUsd,
+                      netSyp: statement.currentBalanceSyp,
+                      agentSide: true,
+                    ),
+                    Text('الفواتير: ${invs.length}'),
+                  ],
                 ),
                 trailing: _buildCustomerCollectButton(erp, c),
                 children: [

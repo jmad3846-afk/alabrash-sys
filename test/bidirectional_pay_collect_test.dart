@@ -491,4 +491,67 @@ void main() {
       expect(find.textContaining('500'), findsWidgets);
     });
   });
+
+  group('7. Statement balance direction label', () {
+    Future<void> pumpLabel(
+      WidgetTester tester,
+      StatementBalanceLabel label,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: Center(child: label)),
+        ),
+      );
+    }
+
+    testWidgets('Supplier positive net is labelled علينا (payable)',
+        (tester) async {
+      await pumpLabel(
+        tester,
+        const StatementBalanceLabel(netUsd: 300, netSyp: 0),
+      );
+      expect(find.textContaining('300 \$ علينا'), findsOneWidget);
+      expect(find.textContaining('لنا'), findsNothing);
+    });
+
+    testWidgets('Supplier negative net is labelled لنا (receivable)',
+        (tester) async {
+      await pumpLabel(
+        tester,
+        const StatementBalanceLabel(netUsd: -100, netSyp: 0),
+      );
+      expect(find.textContaining('100 \$ لنا'), findsOneWidget);
+    });
+
+    testWidgets('Agent positive net is labelled لنا (receivable)',
+        (tester) async {
+      await pumpLabel(
+        tester,
+        const StatementBalanceLabel(netUsd: 700, netSyp: 0, agentSide: true),
+      );
+      expect(find.textContaining('700 \$ لنا'), findsOneWidget);
+    });
+
+    testWidgets('Mixed currencies label each direction independently',
+        (tester) async {
+      await pumpLabel(
+        tester,
+        const StatementBalanceLabel(
+          netUsd: 250,
+          netSyp: -1500000,
+          agentSide: true,
+        ),
+      );
+      expect(find.textContaining('250 \$ لنا'), findsOneWidget);
+      expect(find.textContaining('1500000 ل.س علينا'), findsOneWidget);
+    });
+
+    testWidgets('Zero balance shows the settled chip', (tester) async {
+      await pumpLabel(
+        tester,
+        const StatementBalanceLabel(netUsd: 0, netSyp: 0),
+      );
+      expect(find.textContaining('خالص'), findsOneWidget);
+    });
+  });
 }

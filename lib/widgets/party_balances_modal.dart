@@ -189,6 +189,81 @@ class PartyBalancesModal extends StatelessWidget {
   }
 }
 
+/// Displays the REMAINING BALANCE from a counterparty's account statement
+/// (كشف الحساب) with an explicit direction label:
+///  • 'لنا' (Receivable — the counterparty owes the company) in green.
+///  • 'علينا' (Payable — the company owes the counterparty) in red.
+/// [agentSide] selects the balance convention: for distributors/agents a
+/// positive net means THEY owe us; for suppliers (agentSide == false) a
+/// positive net means WE owe them. Each currency is labelled independently,
+/// so a mixed-direction account is still shown truthfully.
+class StatementBalanceLabel extends StatelessWidget {
+  final double netUsd;
+  final double netSyp;
+  final bool agentSide;
+
+  const StatementBalanceLabel({
+    super.key,
+    required this.netUsd,
+    required this.netSyp,
+    this.agentSide = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = <Widget>[];
+
+    void addPart(double value, String symbol) {
+      if (value.abs() <= 0.01) return;
+      // Direction: agent positive = لنا; supplier negative = لنا.
+      final forUs = agentSide ? value > 0 : value < 0;
+      if (parts.isNotEmpty) {
+        parts.add(
+          const Text(
+            '  •  ',
+            style: TextStyle(color: AppColors.brandSecondaryText),
+          ),
+        );
+      }
+      parts.add(
+        Text(
+          '${value.abs().fmt} $symbol ${forUs ? 'لنا' : 'علينا'}',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: forUs ? AppColors.successGreen : AppColors.dangerWaste,
+          ),
+        ),
+      );
+    }
+
+    addPart(netUsd, '\$');
+    addPart(netSyp, 'ل.س');
+
+    if (parts.isEmpty) {
+      parts.add(
+        const Text(
+          'رصيد منتهٍ (خالص)',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: AppColors.brandSecondaryText,
+          ),
+        ),
+      );
+    }
+
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        const Text(
+          'الرصيد المتبقي من كشف الحساب: ',
+          style: TextStyle(fontSize: 12, color: AppColors.brandSecondaryText),
+        ),
+        ...parts,
+      ],
+    );
+  }
+}
+
 /// Small pill badge marking the counterparty role in the drill-down list.
 class _RoleBadge extends StatelessWidget {
   final String roleLabel;
