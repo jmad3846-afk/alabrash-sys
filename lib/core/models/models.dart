@@ -1718,6 +1718,24 @@ class FactoryInvoiceModel {
   final String
   currency; // AppCurrency.usd ('USD' $) | AppCurrency.syp ('SYP' ل.س)
 
+  // ---- Multi-currency Down Payment / Cash Collected (الدفعة الأولى / النقد المحصل) ----
+  // Base invoice total always stays in [currency] (USD $) and advancePayment
+  // keeps the USD-equivalent deducted from the balance. The fields below
+  // record how the money was physically collected:
+  //   advancePaymentCurrency : '' = legacy (invoice currency), 'USD' | 'SYP'
+  //   advanceCollectedSyp    : real SYP amount put into the SYP register.
+  //   advanceExchangeRate    : قيمة الدولار اليوم used (SYP per USD).
+  // When the invoice rolls in a reserved factory-order deposit (العربون),
+  // the deposit part is carried here in its own collection currency so the
+  // Order Cash Box SYP/USD funds stay consistent.
+  final String advancePaymentCurrency;
+  final double advanceCollectedSyp;
+  final double advanceExchangeRate;
+  final double depositAmount;
+  final String depositCurrency; // '' | 'USD' | 'SYP'
+  final double depositCollectedSyp;
+  final double depositExchangeRate;
+
   FactoryInvoiceModel({
     required this.id,
     required this.invoiceNo,
@@ -1737,9 +1755,41 @@ class FactoryInvoiceModel {
     this.isCashInvoice = false,
     this.paymentStatus = 'تم الدفع',
     this.currency = AppCurrency.usd,
+    this.advancePaymentCurrency = '',
+    this.advanceCollectedSyp = 0.0,
+    this.advanceExchangeRate = 0.0,
+    this.depositAmount = 0.0,
+    this.depositCurrency = '',
+    this.depositCollectedSyp = 0.0,
+    this.depositExchangeRate = 0.0,
   });
 
   String get currencySymbol => AppCurrency.symbol(currency);
+
+  /// True when the down payment collected at the till was taken in SYP.
+  bool get isAdvanceCollectedSyp =>
+      advancePaymentCurrency == AppCurrency.syp && advanceCollectedSyp > 0.001;
+
+  /// True when the rolled-in order deposit was collected in SYP.
+  bool get isDepositCollectedSyp =>
+      depositCurrency == AppCurrency.syp && depositCollectedSyp > 0.001;
+
+  /// The till portion of the advance (base-currency USD equivalent), i.e.
+  /// everything deducted beyond the reserved order deposit.
+  double get advanceBaseCashAmount =>
+      (advancePayment - depositAmount).clamp(0.0, double.infinity);
+
+  /// Fund of the Main Cash Box where the till portion physically lands.
+  String get advanceFundCurrency =>
+      isAdvanceCollectedSyp ? AppCurrency.syp : currency;
+  double get advanceFundAmount =>
+      isAdvanceCollectedSyp ? advanceCollectedSyp : advanceBaseCashAmount;
+
+  /// Fund of the Cash Boxes where the rolled-in deposit physically lives.
+  String get depositFundCurrency =>
+      isDepositCollectedSyp ? AppCurrency.syp : currency;
+  double get depositFundAmount =>
+      isDepositCollectedSyp ? depositCollectedSyp : depositAmount;
 
   double get subtotal => items.fold(0.0, (sum, item) => sum + item.totalPrice);
   double get itemsServicesTotal =>
@@ -1822,6 +1872,13 @@ class FactoryInvoiceModel {
     'isCashInvoice': isCashInvoice,
     'paymentStatus': paymentStatus,
     'currency': currency,
+    'advancePaymentCurrency': advancePaymentCurrency,
+    'advanceCollectedSyp': advanceCollectedSyp,
+    'advanceExchangeRate': advanceExchangeRate,
+    'depositAmount': depositAmount,
+    'depositCurrency': depositCurrency,
+    'depositCollectedSyp': depositCollectedSyp,
+    'depositExchangeRate': depositExchangeRate,
   };
 
   factory FactoryInvoiceModel.fromJson(Map<String, dynamic> json) =>
@@ -1851,6 +1908,17 @@ class FactoryInvoiceModel {
         isCashInvoice: json['isCashInvoice'] ?? false,
         paymentStatus: json['paymentStatus'] ?? 'تم الدفع',
         currency: AppCurrency.normalize(json['currency']),
+        advancePaymentCurrency: json['advancePaymentCurrency'] as String? ?? '',
+        advanceCollectedSyp:
+            (json['advanceCollectedSyp'] as num?)?.toDouble() ?? 0.0,
+        advanceExchangeRate:
+            (json['advanceExchangeRate'] as num?)?.toDouble() ?? 0.0,
+        depositAmount: (json['depositAmount'] as num?)?.toDouble() ?? 0.0,
+        depositCurrency: json['depositCurrency'] as String? ?? '',
+        depositCollectedSyp:
+            (json['depositCollectedSyp'] as num?)?.toDouble() ?? 0.0,
+        depositExchangeRate:
+            (json['depositExchangeRate'] as num?)?.toDouble() ?? 0.0,
       );
 }
 
@@ -2418,6 +2486,15 @@ class WorkshopOrderModel {
   currency; // AppCurrency.usd | AppCurrency.syp — invoice inherits it
   final List<WorkshopInvoiceItem> items;
 
+  // ---- Multi-currency Down Payment / Deposit (الدفعة الأولى / العربون) ----
+  // The order total and depositAmount stay USD-denominated; when the deposit
+  // was physically collected in Syrian Pounds the fields below record the
+  // real SYP amount and the قيمة الدولار اليوم used, and the money lives in
+  // the SYP fund of the isolated Order Cash Box (صندوق الطلبيات).
+  final String depositPaymentCurrency; // '' = legacy (order currency) | 'SYP'
+  final double depositCollectedSyp;
+  final double depositExchangeRate;
+
   WorkshopOrderModel({
     required this.id,
     required this.orderNo,
@@ -2433,9 +2510,22 @@ class WorkshopOrderModel {
     this.isSpecialRefund = false,
     this.currency = AppCurrency.usd,
     this.items = const [],
+    this.depositPaymentCurrency = '',
+    this.depositCollectedSyp = 0.0,
+    this.depositExchangeRate = 0.0,
   });
 
   String get currencySymbol => AppCurrency.symbol(currency);
+
+  /// True when the deposit was received in Syrian Pounds at today's rate.
+  bool get isDepositCollectedSyp =>
+      depositPaymentCurrency == AppCurrency.syp && depositCollectedSyp > 0.001;
+
+  /// Fund of the isolated Order Cash Box holding this deposit.
+  String get depositFundCurrency =>
+      isDepositCollectedSyp ? AppCurrency.syp : currency;
+  double get depositFundAmount =>
+      isDepositCollectedSyp ? depositCollectedSyp : depositAmount;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -2452,6 +2542,9 @@ class WorkshopOrderModel {
     'isSpecialRefund': isSpecialRefund,
     'currency': currency,
     'items': items.map((i) => i.toJson()).toList(),
+    'depositPaymentCurrency': depositPaymentCurrency,
+    'depositCollectedSyp': depositCollectedSyp,
+    'depositExchangeRate': depositExchangeRate,
   };
 
   factory WorkshopOrderModel.fromJson(Map<String, dynamic> json) =>
@@ -2474,6 +2567,11 @@ class WorkshopOrderModel {
                   .map((i) => WorkshopInvoiceItem.fromJson(i))
                   .toList()
             : [],
+        depositPaymentCurrency: json['depositPaymentCurrency'] as String? ?? '',
+        depositCollectedSyp:
+            (json['depositCollectedSyp'] as num?)?.toDouble() ?? 0.0,
+        depositExchangeRate:
+            (json['depositExchangeRate'] as num?)?.toDouble() ?? 0.0,
       );
 }
 
@@ -2722,6 +2820,19 @@ class WorkshopInvoiceModel {
   final bool isCashInvoice;
   final String currency; // AppCurrency.usd | AppCurrency.syp
 
+  // ---- Multi-currency Down Payment / Cash Collected (الدفعة الأولى / النقد المحصل) ----
+  // Base invoice total always stays in [currency] (USD $).
+  // cashPaidNow keeps the USD-equivalent deducted from the balance, while
+  // the fields below record the physical receipt when cash was taken in
+  // Syrian Pounds: the collected SYP amount + قيمة الدولار اليوم used.
+  final String cashPaymentCurrency; // '' = legacy (invoice currency), 'USD' | 'SYP'
+  final double cashCollectedSyp;
+  final double cashExchangeRate;
+  // Same recording for the order deposit (العربون) rolled into the invoice.
+  final String depositPaymentCurrency; // '' | 'USD' | 'SYP'
+  final double depositCollectedSyp;
+  final double depositExchangeRate;
+
   WorkshopInvoiceModel({
     this.batchUnitsPerUnit = const {},
     required this.id,
@@ -2747,9 +2858,36 @@ class WorkshopInvoiceModel {
     this.isGranite = false,
     this.isCashInvoice = false,
     this.currency = AppCurrency.usd,
+    this.cashPaymentCurrency = '',
+    this.cashCollectedSyp = 0.0,
+    this.cashExchangeRate = 0.0,
+    this.depositPaymentCurrency = '',
+    this.depositCollectedSyp = 0.0,
+    this.depositExchangeRate = 0.0,
   });
 
   String get currencySymbol => AppCurrency.symbol(currency);
+
+  /// True when the down payment / cash of this invoice was physically
+  /// collected in Syrian Pounds at a today's exchange rate.
+  bool get isCashCollectedSyp =>
+      cashPaymentCurrency == AppCurrency.syp && cashCollectedSyp > 0.001;
+
+  /// True when the order deposit rolled into this invoice was collected in
+  /// Syrian Pounds (it then lives in the SYP side of the Order Cash Box).
+  bool get isDepositCollectedSyp =>
+      depositPaymentCurrency == AppCurrency.syp && depositCollectedSyp > 0.001;
+
+  /// Fund of the Cash Boxes where the till cash physically lands.
+  String get cashFundCurrency => isCashCollectedSyp ? AppCurrency.syp : currency;
+  double get cashFundAmount =>
+      isCashCollectedSyp ? cashCollectedSyp : cashPaidNow;
+
+  /// Fund of the isolated Order Cash Box where the rolled-in deposit lives.
+  String get depositFundCurrency =>
+      isDepositCollectedSyp ? AppCurrency.syp : currency;
+  double get depositFundAmount =>
+      isDepositCollectedSyp ? depositCollectedSyp : depositDeducted;
 
   double get itemsSubtotal => items.isNotEmpty
       ? items.fold(0.0, (s, e) => s + e.agreedPrice)
@@ -2819,6 +2957,12 @@ class WorkshopInvoiceModel {
     'isGranite': isGranite,
     'isCashInvoice': isCashInvoice,
     'currency': currency,
+    'cashPaymentCurrency': cashPaymentCurrency,
+    'cashCollectedSyp': cashCollectedSyp,
+    'cashExchangeRate': cashExchangeRate,
+    'depositPaymentCurrency': depositPaymentCurrency,
+    'depositCollectedSyp': depositCollectedSyp,
+    'depositExchangeRate': depositExchangeRate,
   };
 
   factory WorkshopInvoiceModel.fromJson(Map<String, dynamic> json) {
@@ -2900,6 +3044,15 @@ class WorkshopInvoiceModel {
       isGranite: json['isGranite'] ?? false,
       isCashInvoice: json['isCashInvoice'] ?? false,
       currency: AppCurrency.normalize(json['currency']),
+      cashPaymentCurrency: json['cashPaymentCurrency'] as String? ?? '',
+      cashCollectedSyp: (json['cashCollectedSyp'] as num?)?.toDouble() ?? 0.0,
+      cashExchangeRate: (json['cashExchangeRate'] as num?)?.toDouble() ?? 0.0,
+      depositPaymentCurrency:
+          json['depositPaymentCurrency'] as String? ?? '',
+      depositCollectedSyp:
+          (json['depositCollectedSyp'] as num?)?.toDouble() ?? 0.0,
+      depositExchangeRate:
+          (json['depositExchangeRate'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }
@@ -2976,6 +3129,14 @@ class FactoryOrderModel {
   bool isCompleted;
   bool isSpecialRefund;
   final String currency; // AppCurrency.usd | AppCurrency.syp
+  // ---- Multi-currency Down Payment / Deposit (الدفعة الأولى / العربون) ----
+  // Order total and depositAmount stay USD-denominated; when the deposit was
+  // physically collected in Syrian Pounds the fields below record the real
+  // SYP amount and the قيمة الدولار اليوم used, and the money lives in the
+  // SYP fund of the isolated Order Cash Box (صندوق الطلبيات).
+  final String depositPaymentCurrency; // '' = legacy (order currency) | 'SYP'
+  final double depositCollectedSyp;
+  final double depositExchangeRate;
   String assignedInvoiceId;
   String assignedInvoiceNo;
 
@@ -2997,6 +3158,9 @@ class FactoryOrderModel {
     this.isCompleted = false,
     this.isSpecialRefund = false,
     this.currency = AppCurrency.usd,
+    this.depositPaymentCurrency = '',
+    this.depositCollectedSyp = 0.0,
+    this.depositExchangeRate = 0.0,
     this.assignedInvoiceId = '',
     this.assignedInvoiceNo = '',
     // Legacy support parameters:
@@ -3029,6 +3193,16 @@ class FactoryOrderModel {
   }
 
   String get currencySymbol => AppCurrency.symbol(currency);
+
+  /// True when the deposit was received in Syrian Pounds at today's rate.
+  bool get isDepositCollectedSyp =>
+      depositPaymentCurrency == AppCurrency.syp && depositCollectedSyp > 0.001;
+
+  /// Fund of the isolated Order Cash Box holding this deposit.
+  String get depositFundCurrency =>
+      isDepositCollectedSyp ? AppCurrency.syp : currency;
+  double get depositFundAmount =>
+      isDepositCollectedSyp ? depositCollectedSyp : depositAmount;
 
   // Backward compatibility getters
   String get warehouseItemId => items.isNotEmpty ? items.first.itemId : '';
@@ -3081,6 +3255,9 @@ class FactoryOrderModel {
     'isCompleted': isCompleted,
     'isSpecialRefund': isSpecialRefund,
     'currency': currency,
+    'depositPaymentCurrency': depositPaymentCurrency,
+    'depositCollectedSyp': depositCollectedSyp,
+    'depositExchangeRate': depositExchangeRate,
     'assignedInvoiceId': assignedInvoiceId,
     'assignedInvoiceNo': assignedInvoiceNo,
     // Redundant legacy fields for safe cross-version reads:
@@ -3143,6 +3320,11 @@ class FactoryOrderModel {
       isCompleted: json['isCompleted'] ?? false,
       isSpecialRefund: json['isSpecialRefund'] ?? false,
       currency: AppCurrency.normalize(json['currency']),
+      depositPaymentCurrency: json['depositPaymentCurrency'] as String? ?? '',
+      depositCollectedSyp:
+          (json['depositCollectedSyp'] as num?)?.toDouble() ?? 0.0,
+      depositExchangeRate:
+          (json['depositExchangeRate'] as num?)?.toDouble() ?? 0.0,
       assignedInvoiceId: json['assignedInvoiceId'] ?? '',
       assignedInvoiceNo: json['assignedInvoiceNo'] ?? '',
     );

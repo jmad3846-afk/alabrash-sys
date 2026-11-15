@@ -6170,6 +6170,19 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
         draft?['currency'] as String? ??
         initialOrder?.currency ??
         AppCurrency.usd;
+    // ---- Down Payment / Cash Collected currency (الدفعة الأولى / النقد المحصل) ----
+    // The invoice total stays USD-denominated; the collected cash may be
+    // received in USD ($) (classic behaviour) or in Syrian Pounds (ل.س),
+    // converted at قيمة الدولار اليوم so only its USD equivalent is deducted
+    // from the balance while the SYP notes go to the SYP Cash Register.
+    String posPayCurrency =
+        draft?['payCurrency'] as String? ?? AppCurrency.usd;
+    final posCashSypCtrl = TextEditingController(
+      text: draft?['paySyp'] as String? ?? '',
+    );
+    final posRateCtrl = TextEditingController(
+      text: draft?['payRate'] as String? ?? '',
+    );
     String selectedItemMeterUnit =
         draft?['meterUnit'] as String? ?? 'متر مربع';
 
@@ -6187,6 +6200,9 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
       'qty': qtyCtrl.text,
       'unitPrice': unitPriceCtrl.text,
       'downPay': downPayCtrl.text,
+      'payCurrency': posPayCurrency,
+      'paySyp': posCashSypCtrl.text,
+      'payRate': posRateCtrl.text,
       'salesDiscount': salesDiscountCtrl.text,
       'shipping': shippingCtrl.text,
       'photo': photoCtrl.text,
@@ -6453,9 +6469,48 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               );
               return;
             }
+            // ---- Down Payment currency handling (الدفعة الأولى / النقد المحصل) ----
+            final collectInSyp =
+                posCurrency == AppCurrency.usd &&
+                posPayCurrency == AppCurrency.syp;
+            final sypCollected =
+                double.tryParse(posCashSypCtrl.text.trim()) ?? 0.0;
+            final sypRate = double.tryParse(posRateCtrl.text.trim()) ?? 0.0;
+            if (collectInSyp && (sypCollected <= 0 || sypRate <= 0)) {
+              setSt(
+                () => formError =
+                    'خطأ: عند تحصيل الدفعة بالليرة السورية يجب إدخال المبلغ المحصل وقيمة الدولار اليوم معاً.',
+              );
+              return;
+            }
+            final reservedDep = assignedOrder?.depositAmount ?? 0.0;
             double advance = cashInvoice
                 ? grandTotal
                 : (double.tryParse(downPayCtrl.text) ?? 0.0);
+            if (collectInSyp) {
+              if (cashInvoice) {
+                // A cash invoice must settle the FULL balance: verify that
+                // the entered SYP notes convert back to the remaining USD.
+                advance = grandTotal;
+                final expectedSyp = (grandTotal - reservedDep) * sypRate;
+                if ((sypCollected - expectedSyp).abs() > 0.01 * sypRate + 1) {
+                  setSt(
+                    () => formError =
+                        'خطأ: الفاتورة النقدية تُحصَّل كاملة؛ المبلغ بالسوري (\$${sypCollected.fmt} ل.س) لا يعادل المتبقي (\$${(grandTotal - reservedDep).clamp(0.0, double.infinity).fmt}) بسعر الصرف الحالي. المتوقع: ${expectedSyp.fmt} ل.س.',
+                  );
+                  return;
+                }
+              } else {
+                // USD Equivalent = Collected SYP ÷ Exchange Rate; the reserved
+                // order deposit (if any) already sits in the Order Box in its
+                // own fund and is simply added to the invoice advance.
+                advance = (reservedDep + sypCollected / sypRate).clamp(
+                  0.0,
+                  double.infinity,
+                );
+                downPayCtrl.text = advance.fmt;
+              }
+            }
             if (advance < 0) {
               setSt(() => formError = 'خطأ: لا يمكن إدخال دفعة سالبة.');
               return;
@@ -6505,6 +6560,18 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
               isCashInvoice: cashInvoice,
               photoUrl: photoCtrl.text.trim(),
               currency: posCurrency,
+              // Record the physical collection currency of the down payment
+              // (SYP notes + the exchange rate used) alongside the USD total.
+              advancePaymentCurrency: collectInSyp ? AppCurrency.syp : '',
+              advanceCollectedSyp: collectInSyp ? sypCollected : 0.0,
+              advanceExchangeRate: collectInSyp ? sypRate : 0.0,
+              // Roll the reserved order deposit in with its own fund info.
+              depositAmount: assignedOrder?.depositAmount ?? 0.0,
+              depositCurrency: (assignedOrder?.isDepositCollectedSyp ?? false)
+                  ? AppCurrency.syp
+                  : '',
+              depositCollectedSyp: assignedOrder?.depositCollectedSyp ?? 0.0,
+              depositExchangeRate: assignedOrder?.depositExchangeRate ?? 0.0,
             );
             final created = assignedOrder != null
                 ? erp.assignFactoryOrderToPOSInvoice(assignedOrder!, newInvoice)
@@ -7004,7 +7071,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                       ),
                                                     ),
                                                     Text(
-                                                      '${assignedOrder!.depositAmount.fmt} ${assignedOrder!.currencySymbol}',
+                                                      '${assignedOrder!.depositAmount.fmt} ${assignedOrder!.currencySymbol}'
+                                                      '${assignedOrder!.isDepositCollectedSyp ? ' (محصل: ${assignedOrder!.depositCollectedSyp.fmt} ل.س بسعر ${assignedOrder!.depositExchangeRate.fmt})' : ''}',
                                                       style: const TextStyle(
                                                         fontWeight:
                                                             FontWeight.bold,
@@ -7169,15 +7237,6 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                 .map((c) => DropdownMenuItem(value: c.id, child: Text(c.name)))
                                                 .toList(),
                                             onChanged: (v) => setSt(() => selectedClientId = v),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        SizedBox(
-                                          width: 190,
-                                          child: CurrencySelector(
-                                            value: posCurrency,
-                                            dense: true,
-                                            onChanged: (v) => setSt(() => posCurrency = v),
                                           ),
                                         ),
                                       ],
@@ -8623,12 +8682,15 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                       TextField(
                                                         controller: downPayCtrl,
                                                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                                        readOnly: posCurrency == AppCurrency.usd && posPayCurrency == AppCurrency.syp,
                                                         decoration: InputDecoration(
                                                           labelText: assignedOrder != null
                                                               ? 'إجمالي الدفعات (العربون المحجوز + دفعة جديدة)'
                                                               : 'الدفعة المقدمة',
                                                           isDense: true,
-                                                          helperText: assignedOrder != null
+                                                          helperText: posCurrency == AppCurrency.usd && posPayCurrency == AppCurrency.syp
+                                                              ? 'المعادل بالدولار يُحسب تلقائياً من الليرة السورية'
+                                                              : assignedOrder != null
                                                               ? 'العربون: ${assignedOrder!.depositAmount.fmt} • الحد الأقصى: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}'
                                                               : 'الحد الأقصى: ${grandTotal.fmt} ${AppCurrency.symbol(posCurrency)}',
                                                         ),
@@ -8639,6 +8701,49 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                                           padding: const EdgeInsets.only(top: 6),
                                                           child: Text('المتبقي على المعتمد: ${(grandTotal - downPay).clamp(0.0, double.infinity).fmt} ${AppCurrency.symbol(posCurrency)}'),
                                                         ),
+                                                    ],
+                                                    // ---- Down Payment / Cash Collected currency (الدفعة الأولى / النقد المحصل) ----
+                                                    if (posCurrency == AppCurrency.usd) ...[
+                                                      const SizedBox(height: 8),
+                                                      SizedBox(
+                                                        width: 320,
+                                                        child: PaymentCurrencySelector(
+                                                          value: posPayCurrency,
+                                                          onChanged: (v) => setSt(() {
+                                                            posPayCurrency = v;
+                                                            if (v == AppCurrency.usd) {
+                                                              posCashSypCtrl.clear();
+                                                              posRateCtrl.clear();
+                                                            }
+                                                          }),
+                                                        ),
+                                                      ),
+                                                      if (posPayCurrency == AppCurrency.syp) ...[
+                                                        const SizedBox(height: 8),
+                                                        SypDownPaymentPanel(
+                                                          amountCtrl: posCashSypCtrl,
+                                                          rateCtrl: posRateCtrl,
+                                                          amountSyp: double.tryParse(posCashSypCtrl.text) ?? 0.0,
+                                                          rate: double.tryParse(posRateCtrl.text) ?? 0.0,
+                                                          amountLabel: cashInvoice
+                                                              ? 'النقد المحصل كاملاً (ل.س)'
+                                                              : 'النقد المحصل اليوم (ل.س)',
+                                                          helperText: cashInvoice
+                                                              ? 'يُحسب تلقائياً عند تغيير سعر الصرف'
+                                                              : (assignedOrder != null
+                                                                    ? 'عربون الطلبية (\$${assignedOrder!.depositAmount.fmt}) يُضاف تلقائياً للمعادل'
+                                                                    : 'يُخصم معادلها بالدولار من رصيد الفاتورة'),
+                                                          onChanged: (_) => setSt(() {
+                                                            if (cashInvoice) {
+                                                              final r = double.tryParse(posRateCtrl.text) ?? 0.0;
+                                                              final dep = assignedOrder?.depositAmount ?? 0.0;
+                                                              if (r > 0) {
+                                                                posCashSypCtrl.text = ((grandTotal - dep).clamp(0.0, double.infinity) * r).fmt;
+                                                              }
+                                                            }
+                                                          }),
+                                                        ),
+                                                      ],
                                                     ],
                                                     const SizedBox(height: 10),
                                                     AppImageAttachmentPicker(

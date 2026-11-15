@@ -7325,6 +7325,26 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
     final depositCtrl = TextEditingController(
       text: draft?['deposit'] as String? ?? existingOrder?.depositAmount.fmt ?? '',
     );
+    // ---- Down Payment / Deposit currency (الدفعة الأولى / العربون) ----
+    // The order total stays USD-denominated; depositAmount keeps the USD
+    // equivalent deducted from the order balance while the deposit itself
+    // can be physically collected in USD ($) or Syrian Pounds (ل.س) at
+    // قيمة الدولار اليوم — the SYP notes then rest in the SYP fund of the
+    // isolated Order Cash Box (صندوق الطلبيات).
+    String depPayCurrency = draft?['depPayCurrency'] as String? ??
+        ((existingOrder?.isDepositCollectedSyp ?? false)
+            ? AppCurrency.syp
+            : AppCurrency.usd);
+    final depSypCtrl = TextEditingController(
+      text: draft?['depSyp'] as String? ??
+          existingOrder?.depositCollectedSyp.fmt ??
+          '',
+    );
+    final depRateCtrl = TextEditingController(
+      text: draft?['depRate'] as String? ??
+          existingOrder?.depositExchangeRate.fmt ??
+          '',
+    );
     final photoCtrl = TextEditingController(
       text: draft?['photo'] as String? ?? existingOrder?.photoPath ?? '',
     );
@@ -7458,6 +7478,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
       'clientSearch': approvedClientSearch,
       'selectedApprovedClientId': selectedApprovedClientId,
       'deposit': depositCtrl.text,
+      'depPayCurrency': depPayCurrency,
+      'depSyp': depSypCtrl.text,
+      'depRate': depRateCtrl.text,
       'photo': photoCtrl.text,
       'showAdditional': showAdditionalInformation,
       'items': draftItems.map((it) => it.toJson()).toList(),
@@ -7582,7 +7605,15 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
             (s, i) => s + i.servicesTotal,
           );
           final double grandTotal = itemsTotal + servicesTotal;
-          final double depositAmount = double.tryParse(depositCtrl.text) ?? 0.0;
+          // ---- Down payment currency handling (USD $ / SYP ل.س) ----
+          final collectDepSyp =
+              orderCurrency == AppCurrency.usd &&
+              depPayCurrency == AppCurrency.syp;
+          final depSypAmt = double.tryParse(depSypCtrl.text) ?? 0.0;
+          final depRateVal = double.tryParse(depRateCtrl.text) ?? 0.0;
+          final double depositAmount = collectDepSyp
+              ? (depRateVal > 0 ? depSypAmt / depRateVal : 0.0)
+              : (double.tryParse(depositCtrl.text) ?? 0.0);
           final double remaining = (grandTotal - depositAmount).clamp(
             0.0,
             double.infinity,
@@ -8465,21 +8496,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                 ),
                                                 const SizedBox(width: 6),
                                                 const Text(
-                                                  'بيانات الزبون والعملة',
+                                                  'بيانات الزبون',
                                                   style: TextStyle(
                                                     fontWeight: FontWeight.bold,
                                                     fontSize: 13,
-                                                  ),
-                                                ),
-                                                const Spacer(),
-                                                SizedBox(
-                                                  width: 180,
-                                                  child: CurrencySelector(
-                                                    value: orderCurrency,
-                                                    dense: true,
-                                                    onChanged: (v) => setSt(
-                                                      () => orderCurrency = v,
-                                                    ),
                                                   ),
                                                 ),
                                               ],
@@ -9159,7 +9179,7 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                     CrossAxisAlignment.end,
                                                 children: [
                                                   Text(
-                                                    'العربون المقدم: ${depositAmount.fmt} ${AppCurrency.symbol(orderCurrency)}',
+                                                    'العربون المقدم: ${depositAmount.fmt} ${AppCurrency.symbol(orderCurrency)}${collectDepSyp ? ' (محصل: ${depSypAmt.fmt} ل.س بسعر ${depRateVal.fmt})' : ''}',
                                                     style: const TextStyle(
                                                       fontSize: 13,
                                                       fontWeight:
@@ -9243,15 +9263,46 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                         const TextInputType.numberWithOptions(
                                                           decimal: true,
                                                         ),
+                                                    readOnly: collectDepSyp,
                                                     decoration: InputDecoration(
-                                                      labelText:
-                                                          'مبلغ العربون / الدفعة الأولى (اختياري) (${AppCurrency.symbol(orderCurrency)})',
+                                                      labelText: collectDepSyp
+                                                          ? 'قيمة العربون المعادلة (\$ — محسوبة تلقائياً)'
+                                                          : 'مبلغ العربون / الدفعة الأولى (اختياري) (${AppCurrency.symbol(orderCurrency)})',
                                                       isDense: true,
                                                       helperText:
                                                           'يُودع في صندوق الطلبيات المعزول ولا يُرحل للصندوق الرئيسي إلا عند إصدار الفاتورة.',
                                                     ),
                                                     onChanged: (_) => setSt(() {}),
                                                   ),
+                                                  // ---- Down Payment currency selector (USD $ / SYP ل.س) ----
+                                                  if (orderCurrency == AppCurrency.usd) ...[
+                                                    const SizedBox(height: 8),
+                                                    SizedBox(
+                                                      width: 320,
+                                                      child: PaymentCurrencySelector(
+                                                        value: depPayCurrency,
+                                                        onChanged: (v) => setSt(() {
+                                                          depPayCurrency = v;
+                                                          if (v == AppCurrency.usd) {
+                                                            depSypCtrl.clear();
+                                                            depRateCtrl.clear();
+                                                          }
+                                                        }),
+                                                      ),
+                                                    ),
+                                                    if (depPayCurrency == AppCurrency.syp) ...[
+                                                      const SizedBox(height: 8),
+                                                      SypDownPaymentPanel(
+                                                        amountCtrl: depSypCtrl,
+                                                        rateCtrl: depRateCtrl,
+                                                        amountSyp: depSypAmt,
+                                                        rate: depRateVal,
+                                                        amountLabel: 'العربون المحصل (ل.س)',
+                                                        helperText: 'معادله بالدولار يُخصم من رصيد الطلبية، والورق السوري يودع بصندوق الطلبيات بالليرة',
+                                                        onChanged: (_) => setSt(() {}),
+                                                      ),
+                                                    ],
+                                                  ],
                                                   const SizedBox(height: 12),
                                                   AppImageAttachmentPicker(
                                                     initialPath: photoCtrl.text,
@@ -9412,11 +9463,25 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                   );
                                                   return;
                                                 }
-                                                final dep =
-                                                    double.tryParse(
-                                                      depositCtrl.text,
-                                                    ) ??
-                                                    0.0;
+                                                // ---- Down Payment currency: the USD
+                                                // equivalent actually collected ----
+                                                final double dep = collectDepSyp
+                                                    ? (depRateVal > 0
+                                                          ? depSypAmt / depRateVal
+                                                          : 0.0)
+                                                    : (double.tryParse(
+                                                          depositCtrl.text,
+                                                        ) ??
+                                                        0.0);
+                                                if (collectDepSyp &&
+                                                    depSypAmt > 0 &&
+                                                    depRateVal <= 0) {
+                                                  setSt(
+                                                    () => formError =
+                                                        'خطأ: عند تحصيل العربون بالليرة السورية يجب إدخال قيمة الدولار اليوم.',
+                                                  );
+                                                  return;
+                                                }
                                                 if (dep < 0) {
                                                   setSt(
                                                     () => formError =
@@ -9455,6 +9520,18 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                   status: existingOrder?.status ?? 'قيد التنفيذ',
                                                   currency: orderCurrency,
                                                   items: List.of(draftItems),
+                                                  // Physical collection record of the
+                                                  // deposit (SYP notes + the value of
+                                                  // الدولار اليوم used).
+                                                  depositPaymentCurrency: collectDepSyp
+                                                      ? AppCurrency.syp
+                                                      : '',
+                                                  depositCollectedSyp: collectDepSyp
+                                                      ? depSypAmt
+                                                      : 0.0,
+                                                  depositExchangeRate: collectDepSyp
+                                                      ? depRateVal
+                                                      : 0.0,
                                                 );
 
                                                 final bool saved;

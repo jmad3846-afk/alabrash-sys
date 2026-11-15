@@ -312,6 +312,19 @@ void showWorkshopInvoiceDialog(
   final cashCtrl = TextEditingController(
     text: draft?['cash'] as String? ?? '0',
   );
+  // ---- Down Payment / Cash Collected currency (الدفعة الأولى / النقد المحصل) ----
+  // Invoice total always stays USD-denominated; the received cash can be
+  // taken in USD ($) (classic behaviour) or in Syrian Pounds (ل.س), in
+  // which case the SYP amount is converted at قيمة الدولار اليوم and only
+  // its USD equivalent is deducted from the balance.
+  String cashPayCurrency =
+      draft?['cashPayCurrency'] as String? ?? AppCurrency.usd;
+  final cashSypCtrl = TextEditingController(
+    text: draft?['cashSyp'] as String? ?? '',
+  );
+  final cashRateCtrl = TextEditingController(
+    text: draft?['cashRate'] as String? ?? '',
+  );
   final photoCtrl = TextEditingController(
     text: draft?['photo'] as String? ?? '',
   );
@@ -355,6 +368,9 @@ void showWorkshopInvoiceDialog(
     'salesDiscount': salesDiscountCtrl.text,
     'deposit': depositCtrl.text,
     'cash': cashCtrl.text,
+    'cashPayCurrency': cashPayCurrency,
+    'cashSyp': cashSypCtrl.text,
+    'cashRate': cashRateCtrl.text,
     'photo': photoCtrl.text,
     'linkedOrderId': linkedOrderId,
     'rows': rows.map((r) => r.toDraft()).toList(),
@@ -414,6 +430,22 @@ void showWorkshopInvoiceDialog(
 
     if (cashInvoice) {
       cashCtrl.text = (grandTotal - curDeposit).clamp(0.0, double.infinity).fmt;
+      // SYP receipt on a cash invoice: the full remaining balance is
+      // collected, so auto-fill the SYP amount at today's rate.
+      if (cashPayCurrency == AppCurrency.syp) {
+        final rate = double.tryParse(cashRateCtrl.text) ?? 0.0;
+        if (rate > 0) {
+          cashSypCtrl.text =
+              ((grandTotal - curDeposit).clamp(0.0, double.infinity) * rate)
+                  .fmt;
+        }
+      }
+    } else if (cashPayCurrency == AppCurrency.syp) {
+      // Cash received in Syrian Pounds: the USD cash box keeps showing the
+      // automatically converted USD equivalent (SYP ÷ سعر الصرف).
+      final syp = double.tryParse(cashSypCtrl.text) ?? 0.0;
+      final rate = double.tryParse(cashRateCtrl.text) ?? 0.0;
+      cashCtrl.text = (rate > 0 ? syp / rate : 0.0).fmt;
     } else {
       if (cashCtrl.text.isEmpty || cashCtrl.text == '0') {
         cashCtrl.text = (grandTotal - curDeposit)
@@ -1426,15 +1458,6 @@ void showWorkshopInvoiceDialog(
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      width: 140,
-                      child: CurrencySelector(
-                        value: invCurrency,
-                        dense: true,
-                        onChanged: (v) => setSt(() => invCurrency = v),
-                      ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -2248,11 +2271,23 @@ void showWorkshopInvoiceDialog(
                           depError = 'العربون يتجاوز إجمالي الفاتورة';
                         }
                       }
-                      if (cashCtrl.text.isNotEmpty) {
+                      if (cashCtrl.text.isNotEmpty &&
+                          cashPayCurrency != AppCurrency.syp) {
                         if (curCash < 0) {
                           cashError = 'لا يمكن أن يكون سالباً';
                         } else if (curDep + curCash > gt + 0.01) {
                           cashError = 'المجموع يتجاوز الفاتورة (${gt.fmt})';
+                        }
+                      }
+                      // When the linked order deposit was collected in SYP,
+                      // its real receipt is shown under the USD equivalent.
+                      WorkshopOrderModel? linkedOrd;
+                      if (linkedOrderId != null) {
+                        for (final o in erp.workshopOrders) {
+                          if (o.id == linkedOrderId) {
+                            linkedOrd = o;
+                            break;
+                          }
                         }
                       }
                       return Row(
@@ -2268,7 +2303,10 @@ void showWorkshopInvoiceDialog(
                                 labelText: 'العربون المخصوم (\$)',
                                 isDense: true,
                                 errorText: depError,
-                                helperText: 'الحد الأقصى: ${gt.fmt}',
+                                helperText: linkedOrd != null &&
+                                        linkedOrd.isDepositCollectedSyp
+                                    ? 'محصل أصلاً: ${linkedOrd.depositCollectedSyp.fmt} ل.س بسعر ${linkedOrd.depositExchangeRate.fmt}'
+                                    : 'الحد الأقصى: ${gt.fmt}',
                               ),
                               onChanged: (_) =>
                                   setSt(() => recomputeInvoiceFinancials()),
@@ -2282,12 +2320,16 @@ void showWorkshopInvoiceDialog(
                                   const TextInputType.numberWithOptions(
                                     decimal: true,
                                   ),
+                              // In SYP mode the USD field mirrors the
+                              // auto-computed equivalent and is read-only.
+                              readOnly: cashPayCurrency == AppCurrency.syp,
                               decoration: InputDecoration(
                                 labelText: 'النقد المدفوع الآن (\$)',
                                 isDense: true,
                                 errorText: cashError,
-                                helperText:
-                                    'أقصى نقد إضافي: ${(gt - curDep).clamp(0.0, double.infinity).fmt}',
+                                helperText: cashPayCurrency == AppCurrency.syp
+                                    ? 'المعادل المحسوب من الليرة السورية'
+                                    : 'أقصى نقد إضافي: ${(gt - curDep).clamp(0.0, double.infinity).fmt}',
                               ),
                               onChanged: (_) => setSt(() {}),
                             ),
@@ -2296,6 +2338,44 @@ void showWorkshopInvoiceDialog(
                       );
                     },
                   ),
+                ],
+                // ---- Down Payment / Cash Collected currency (الدفعة الأولى /
+                // النقد المحصل): USD keeps the classic behaviour, SYP converts
+                // at قيمة الدولار اليوم into a USD equivalent deducted from the
+                // balance while the notes go to the SYP register.
+                if (invCurrency == AppCurrency.usd) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: 300,
+                    child: PaymentCurrencySelector(
+                      value: cashPayCurrency,
+                      onChanged: (v) => setSt(() {
+                        cashPayCurrency = v;
+                        if (v == AppCurrency.usd) {
+                          cashSypCtrl.clear();
+                          cashRateCtrl.clear();
+                          recomputeInvoiceFinancials();
+                        }
+                      }),
+                    ),
+                  ),
+                  if (cashPayCurrency == AppCurrency.syp) ...[
+                    const SizedBox(height: 8),
+                    SypDownPaymentPanel(
+                      amountCtrl: cashSypCtrl,
+                      rateCtrl: cashRateCtrl,
+                      amountSyp: double.tryParse(cashSypCtrl.text) ?? 0.0,
+                      rate: double.tryParse(cashRateCtrl.text) ?? 0.0,
+                      amountLabel: cashInvoice
+                          ? 'النقد المحصل كاملاً (ل.س)'
+                          : 'النقد المحصل الآن (ل.س)',
+                      helperText: cashInvoice
+                          ? 'يُحسب تلقائياً: المتبقي \$ × سعر الصرف'
+                          : 'يُخصم معادلها بالدولار من رصيد الفاتورة',
+                      onChanged: (_) =>
+                          setSt(() => recomputeInvoiceFinancials()),
+                    ),
+                  ],
                 ],
                 const SizedBox(height: 12),
                 AppImageAttachmentPicker(
@@ -2568,9 +2648,36 @@ void showWorkshopInvoiceDialog(
 
           final enteredDeposit = double.tryParse(depositCtrl.text) ?? 0.0;
           final deposit = enteredDeposit;
-          final cash = cashInvoice
+          // ---- Down Payment / Cash Collected currency handling ----
+          // When the cash was received in Syrian Pounds: USD Equivalent =
+          // Collected SYP ÷ قيمة الدولار اليوم, and that USD equivalent is
+          // what gets deducted from the (USD) invoice balance.
+          final sypCollected = double.tryParse(cashSypCtrl.text) ?? 0.0;
+          final sypRate = double.tryParse(cashRateCtrl.text) ?? 0.0;
+          final collectInSyp =
+              invCurrency == AppCurrency.usd &&
+              cashPayCurrency == AppCurrency.syp;
+          if (collectInSyp && (sypCollected <= 0 || sypRate <= 0)) {
+            setSt(
+              () => formError =
+                  'خطأ: عند تحصيل النقد بالليرة السورية يجب إدخال المبلغ المحصل وقيمة الدولار اليوم معاً.',
+            );
+            return;
+          }
+          double cash = cashInvoice
               ? (grandTotal - deposit).clamp(0.0, double.infinity)
               : (double.tryParse(cashCtrl.text) ?? 0.0);
+          if (collectInSyp) {
+            cash = (sypCollected / sypRate).clamp(0.0, double.infinity);
+            if (cashInvoice &&
+                (cash - (grandTotal - deposit)).abs() > 0.01) {
+              setSt(
+                () => formError =
+                    'خطأ: الفاتورة النقدية تُحصَّل كاملة؛ عدّل سعر الصرف أو المبلغ ليكون معادله (\$${cash.fmt}) مطابقاً للمتبقي (\$${(grandTotal - deposit).clamp(0.0, double.infinity).fmt}).',
+              );
+              return;
+            }
+          }
 
           if (deposit < 0) {
             setSt(() => formError = 'خطأ: قيمة العربون لا يمكن أن تكون سالبة.');
@@ -2600,6 +2707,18 @@ void showWorkshopInvoiceDialog(
                     ? 'طلب معمل'
                     : 'مصادر متعددة (${sourcesSet.join(" + ")})');
 
+          // Carry the linked order's deposit in its original collection
+          // currency so the Order Cash Box funds (USD/SYP) stay balanced.
+          WorkshopOrderModel? linkedOrdForDeposit;
+          if (linkedOrderId != null) {
+            for (final o in erp.workshopOrders) {
+              if (o.id == linkedOrderId) {
+                linkedOrdForDeposit = o;
+                break;
+              }
+            }
+          }
+
           final invoice = WorkshopInvoiceModel(
             id: 'wi_${DateTime.now().millisecondsSinceEpoch}',
             invoiceNo: 'WRK-INV-${erp.workshopInvoices.length + 101}',
@@ -2625,6 +2744,17 @@ void showWorkshopInvoiceDialog(
             isGranite: draftItems.any((i) => i.isGranite),
             isCashInvoice: cashInvoice,
             currency: invCurrency,
+            cashPaymentCurrency: collectInSyp ? AppCurrency.syp : '',
+            cashCollectedSyp: collectInSyp ? sypCollected : 0.0,
+            cashExchangeRate: collectInSyp ? sypRate : 0.0,
+            depositPaymentCurrency:
+                (linkedOrdForDeposit?.isDepositCollectedSyp ?? false)
+                ? AppCurrency.syp
+                : '',
+            depositCollectedSyp:
+                linkedOrdForDeposit?.depositCollectedSyp ?? 0.0,
+            depositExchangeRate:
+                linkedOrdForDeposit?.depositExchangeRate ?? 0.0,
           );
 
           final created = erp.createWorkshopInvoice(invoice);

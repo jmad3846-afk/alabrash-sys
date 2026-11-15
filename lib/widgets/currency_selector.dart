@@ -300,3 +300,150 @@ class SectionSearchAndFilterBar extends StatelessWidget {
   }
 }
 
+/// Currency picker dedicated to the Down Payment / Cash Collected section
+/// (الدفعة الأولى / النقد المحصل) of the invoice & order screens.
+/// The invoice/order total itself stays USD-denominated; this selector only
+/// decides in which currency the cash was PHYSICALLY received:
+///  - USD (\$): classic behaviour — deducted from the USD balance and added
+///    to the USD Cash Register.
+///  - SYP (ل.س): the [SypDownPaymentPanel] must be shown so the app can
+///    convert at قيمة الدولار اليوم and bank the notes in the SYP register.
+class PaymentCurrencySelector extends StatelessWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  const PaymentCurrencySelector({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: AppCurrency.normalize(value),
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'عملة الدفعة الأولى / النقد المحصل',
+        isDense: true,
+        prefixIcon: Icon(Icons.payments_outlined, size: 18),
+      ),
+      items: const [
+        DropdownMenuItem(
+          value: AppCurrency.usd,
+          child: Text('دولار (\$)'),
+        ),
+        DropdownMenuItem(
+          value: AppCurrency.syp,
+          child: Text('ليرة سورية (ل.س)'),
+        ),
+      ],
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
+    );
+  }
+}
+
+/// Syrian-Pound receipt panel for the down payment:
+///  - المبلغ المحصل (ل.س): the cash actually received.
+///  - قيمة الدولار اليوم: today's USD→SYP exchange rate.
+///  - المعادل بالدولار: auto-computed (SYP ÷ rate) — this USD equivalent is
+///    what gets deducted from the invoice balance, while the full SYP notes
+///    go into the SYP Cash Register.
+class SypDownPaymentPanel extends StatelessWidget {
+  final TextEditingController amountCtrl;
+  final TextEditingController rateCtrl;
+  final double amountSyp;
+  final double rate;
+  final ValueChanged<String> onChanged;
+  final String amountLabel;
+  final String? helperText;
+  final String? errorText;
+
+  const SypDownPaymentPanel({
+    super.key,
+    required this.amountCtrl,
+    required this.rateCtrl,
+    required this.amountSyp,
+    required this.rate,
+    required this.onChanged,
+    this.amountLabel = 'النقد المحصل اليوم (ل.س)',
+    this.helperText,
+    this.errorText,
+  });
+
+  /// USD Equivalent = Collected SYP / Exchange Rate.
+  double get usdEquivalent => rate > 0 ? amountSyp / rate : 0.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final numberKb = const TextInputType.numberWithOptions(decimal: true);
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFEA580C).withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: amountCtrl,
+                  keyboardType: numberKb,
+                  decoration: InputDecoration(
+                    labelText: amountLabel,
+                    isDense: true,
+                    helperText: helperText,
+                    errorText: errorText,
+                  ),
+                  onChanged: onChanged,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: rateCtrl,
+                  keyboardType: numberKb,
+                  decoration: const InputDecoration(
+                    labelText: 'قيمة الدولار اليوم (سعر الصرف)',
+                    isDense: true,
+                  ),
+                  onChanged: onChanged,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (amountSyp > 0 && rate > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFDBEAFE),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'المعادل بالدولار المحسوب: ${AppCurrency.fmt(usdEquivalent)} \$ '
+                '(= ${AppCurrency.fmt(amountSyp)} ل.س ÷ ${AppCurrency.fmt(rate)})',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: Color(0xFF1D4ED8),
+                ),
+              ),
+            )
+          else
+            const Text(
+              'أدخل المبلغ المحصل بالليرة وسعر صرف الدولار اليوم ليُحسب المعادل بالدولار ويُخصم من الرصيد.',
+              style: TextStyle(fontSize: 11, color: Color(0xFF9A3412)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+

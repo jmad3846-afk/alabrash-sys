@@ -167,6 +167,48 @@ class ERPProvider extends ChangeNotifier {
     return true;
   }
 
+  /// Re-bookmarks the isolated Order Cash Box when an in-progress order's
+  /// deposit is edited. Old and new deposits may sit in different funds
+  /// (USD fund vs SYP fund) depending on how each was physically collected
+  /// (الدفعة الأولى / العربون). Returns false when the box cannot cover the
+  /// withdrawal needed to release the previous deposit.
+  bool swapOrderDepositCash({
+    required String oldCurrency,
+    required double oldAmount,
+    required String newCurrency,
+    required double newAmount,
+  }) {
+    if (AppCurrency.normalize(oldCurrency) ==
+        AppCurrency.normalize(newCurrency)) {
+      final delta = newAmount - oldAmount;
+      if (delta > 0) {
+        addCash('order', newCurrency, delta);
+        return true;
+      }
+      if (delta < 0) return takeCash('order', newCurrency, -delta);
+      return true;
+    }
+    if (oldAmount > 0 && !takeCash('order', oldCurrency, oldAmount)) {
+      return false;
+    }
+    if (newAmount > 0) addCash('order', newCurrency, newAmount);
+    return true;
+  }
+
+  /// Moves a collected deposit between two boxes keeping its physical
+  /// currency fund intact (e.g. Order Box -> Main Box at invoice issuance).
+  void moveDepositCash({
+    required String fromBox,
+    required String toBox,
+    required String currency,
+    required double amount,
+  }) {
+    if (amount <= 0) return;
+    if (takeCash(fromBox, currency, amount)) {
+      addCash(toBox, currency, amount);
+    }
+  }
+
   // Printer Status
   bool isThermalPrinterConnected = true;
   String printerName = "Xprinter XP-N160II (Esc/POS Thermal)";
@@ -6988,8 +7030,24 @@ class ERPProvider extends ChangeNotifier {
     }
     inv.paymentStatus = inv.remainingBalance > .01 ? 'مستحق الدفع' : 'مدفوعة';
     factoryInvoices.add(inv);
-    if (inv.advancePayment > 0)
-      addCash('main', inv.currency, inv.advancePayment);
+    // Fund routing for the down payment / cash collected (الدفعة الأولى /
+    // النقد المحصل). advancePayment itself is always in the invoice base
+    // currency (USD) and was already deducted from the balance above; the
+    // physical money lands in the register of the currency it was received
+    // in: SYP receipts go to the SYP Cash Register (الصندوق بالليرة).
+    if (inv.advancePayment > 0) {
+      if (AppCurrency.isSyp(inv.currency)) {
+        // SYP-denominated invoice: legacy behaviour (single SYP fund).
+        addCash('main', inv.currency, inv.advancePayment);
+      } else {
+        if (inv.depositAmount > 0) {
+          addCash('main', inv.depositFundCurrency, inv.depositFundAmount);
+        }
+        if (inv.advanceBaseCashAmount > 0) {
+          addCash('main', inv.advanceFundCurrency, inv.advanceFundAmount);
+        }
+      }
+    }
     if (client == null && inv.partyName.trim().isNotEmpty) {
       client = ClientModel(
         id: inv.partyId.isNotEmpty
@@ -7205,8 +7263,10 @@ class ERPProvider extends ChangeNotifier {
     }
     workshopOrders.add(order);
     if (order.depositAmount > 0) {
-      // CRITICAL ACCOUNTING RULE: Down payment stored in isolated Order Cash Box
-      addCash('order', order.currency, order.depositAmount);
+      // CRITICAL ACCOUNTING RULE: Down payment stored in isolated Order Cash
+      // Box. SYP-collected deposits land in the SYP fund of that box while
+      // depositAmount itself stays the USD-equivalent of the order balance.
+      addCash('order', order.depositFundCurrency, order.depositFundAmount);
     }
     // Deduct stock for all order line items consumed
     for (final it in order.items) {
@@ -7224,10 +7284,11 @@ class ERPProvider extends ChangeNotifier {
     order.status = 'مكتملة ومرحلة';
     order.isCompleted = true;
 
-    // Transfer deposit from isolated Order Cash Box to Main Cash Box (same currency)
+    // Transfer deposit from isolated Order Cash Box to Main Cash Box in the
+    // exact physical fund it was collected in (USD fund or SYP fund).
     if (order.depositAmount > 0) {
-      if (takeCash('order', order.currency, order.depositAmount)) {
-        addCash('main', order.currency, order.depositAmount);
+      if (takeCash('order', order.depositFundCurrency, order.depositFundAmount)) {
+        addCash('main', order.depositFundCurrency, order.depositFundAmount);
       }
     }
     addCash('main', order.currency, cashPaidNow);
@@ -7250,6 +7311,9 @@ class ERPProvider extends ChangeNotifier {
           1,
         ),
         currency: order.currency,
+        depositPaymentCurrency: order.depositPaymentCurrency,
+        depositCollectedSyp: order.depositCollectedSyp,
+        depositExchangeRate: order.depositExchangeRate,
       ),
     );
 
@@ -7298,8 +7362,17 @@ class ERPProvider extends ChangeNotifier {
         updated.currency != old.currency || updated.depositAmount < 0 ||
         updated.depositAmount > updated.agreedPrice + .001 ||
         updated.items.isEmpty) return false;
-    final delta = updated.depositAmount - old.depositAmount;
-    if (delta < 0 && cashOf('order', old.currency) + .0001 < -delta) {
+    // Multi-currency deposit (الدفعة الأولى): the physically collected
+    // deposit may sit in the USD or the SYP fund of the isolated Order Box
+    // depending on the currency chosen on the order screen.
+    final oldDepFund = old.depositFundCurrency;
+    final newDepFund = updated.depositFundCurrency;
+    final oldDepAmt = old.depositFundAmount;
+    final newDepAmt = updated.depositFundAmount;
+    final depositSameFund = AppCurrency.normalize(oldDepFund) ==
+        AppCurrency.normalize(newDepFund);
+    final delta = depositSameFund ? newDepAmt - oldDepAmt : 0.0;
+    if (delta < 0 && cashOf('order', oldDepFund) + .0001 < -delta) {
       return false;
     }
 
@@ -7343,13 +7416,17 @@ class ERPProvider extends ChangeNotifier {
       required[key] = needed;
       replacementItems.add(_priceWorkshopItem(item, updated.currency));
     }
-    if (delta < 0 && !takeCash('order', old.currency, -delta)) {
+    if (!swapOrderDepositCash(
+      oldCurrency: oldDepFund,
+      oldAmount: oldDepAmt,
+      newCurrency: newDepFund,
+      newAmount: newDepAmt,
+    )) {
       for (final item in old.items) {
         _deductWorkshopOrderItemStock(item);
       }
       return false;
     }
-    if (delta > 0) addCash('order', old.currency, delta);
     updated.items
       ..clear()
       ..addAll(replacementItems);
@@ -7384,8 +7461,9 @@ class ERPProvider extends ChangeNotifier {
       // OPTION A: ORDER IS NOT COMPLETED
       // -------------------------------------------------------------
       // 1. Financial handling: Refund the Deposit (العربون) to the customer from Order Safe
+      // in the exact physical fund it was collected into (USD or SYP).
       if (order.depositAmount > 0) {
-        takeCash('order', order.currency, order.depositAmount);
+        takeCash('order', order.depositFundCurrency, order.depositFundAmount);
       }
 
       // 2. Inventory rollback: Return all consumed materials back to exact original locations
@@ -7647,8 +7725,15 @@ class ERPProvider extends ChangeNotifier {
             final orders = workshopOrders
                 .where((o) => o.id == item.sourceId)
                 .toList();
+            // Validate against the physical fund the deposit was collected
+            // into (SYP fund when the order down payment was in Syrian
+            // Pounds, otherwise the invoice/order currency fund).
+            final itemDepCash = inv.isDepositCollectedSyp && inv.depositDeducted > 0
+                ? inv.depositCollectedSyp * (item.depositAmount / inv.depositDeducted)
+                : item.depositAmount;
             if (orders.isNotEmpty &&
-                cashOf('order', inv.currency) + 0.0001 < item.depositAmount) {
+                cashOf('order', inv.depositFundCurrency) + 0.0001 <
+                    itemDepCash) {
               if (linkedOrders.isNotEmpty) {
                 for (final it in linkedOrders.first.items) {
                   _deductWorkshopOrderItemStock(it);
@@ -7772,10 +7857,12 @@ class ERPProvider extends ChangeNotifier {
         }
       }
 
-      // Transfer deposit from Orders Safe to Main Safe
+      // Transfer deposit from Orders Safe to Main Safe in its physical fund
+      // (the SYP fund when the order down payment was collected in Syrian
+      // Pounds, otherwise the invoice currency fund as before).
       if (inv.depositDeducted > 0) {
-        takeCash('order', inv.currency, inv.depositDeducted);
-        addCash('main', inv.currency, inv.depositDeducted);
+        takeCash('order', inv.depositFundCurrency, inv.depositFundAmount);
+        addCash('main', inv.depositFundCurrency, inv.depositFundAmount);
       }
 
       if (deductStockId.isNotEmpty && deductQty > 0) {
@@ -7790,8 +7877,23 @@ class ERPProvider extends ChangeNotifier {
 
       workshopInvoices.add(inv);
 
-      // Route cash
-      if (totalScrapValue > 0) {
+      // Route cash. When the cash collected at the till was received in
+      // Syrian Pounds (الدفعة الأولى / النقد المحصل بالسوري) the full SYP
+      // amount goes into the SYP register; the scrap share is converted at
+      // the same implied rate. The USD-equivalent itself was already
+      // deducted from the invoice balance via cashPaidNow.
+      if (inv.isCashCollectedSyp) {
+        if (totalScrapValue > 0 && inv.cashPaidNow > 0) {
+          final scrapTake = inv.cashPaidNow.clamp(0.0, totalScrapValue);
+          final scrapShareSyp = inv.cashCollectedSyp * (scrapTake / inv.cashPaidNow);
+          final mainShareSyp = (inv.cashCollectedSyp - scrapShareSyp)
+              .clamp(0.0, double.infinity);
+          if (scrapShareSyp > 0) addCash('scrap', AppCurrency.syp, scrapShareSyp);
+          if (mainShareSyp > 0) addCash('main', AppCurrency.syp, mainShareSyp);
+        } else {
+          addCash('main', AppCurrency.syp, inv.cashCollectedSyp);
+        }
+      } else if (totalScrapValue > 0) {
         final scrapTake = inv.cashPaidNow.clamp(0.0, totalScrapValue);
         final mainTake = (inv.cashPaidNow - scrapTake).clamp(
           0.0,
@@ -7889,8 +7991,11 @@ class ERPProvider extends ChangeNotifier {
       final orders = workshopOrders
           .where((order) => order.id == inv.sourceId)
           .toList();
+      final depCashCheckAmt = inv.isDepositCollectedSyp
+          ? inv.depositCollectedSyp
+          : inv.depositDeducted;
       if (orders.isNotEmpty &&
-          cashOf('order', inv.currency) + 0.0001 < inv.depositDeducted) {
+          cashOf('order', inv.depositFundCurrency) + 0.0001 < depCashCheckAmt) {
         return false;
       }
     }
@@ -7908,9 +8013,20 @@ class ERPProvider extends ChangeNotifier {
         final matches = scrapItems.where((s) => s.id == inv.sourceId).toList();
         if (matches.isNotEmpty) matches.first.isSold = true;
       }
-      addCash('scrap', inv.currency, inv.cashPaidNow + inv.depositDeducted);
+      if (inv.isCashCollectedSyp) {
+        addCash('scrap', AppCurrency.syp, inv.cashCollectedSyp);
+        if (inv.depositFundAmount > 0) {
+          addCash('scrap', inv.depositFundCurrency, inv.depositFundAmount);
+        }
+      } else {
+        addCash('scrap', inv.currency, inv.cashPaidNow + inv.depositDeducted);
+      }
     } else {
-      addCash('main', inv.currency, inv.cashPaidNow);
+      if (inv.isCashCollectedSyp) {
+        addCash('main', AppCurrency.syp, inv.cashCollectedSyp);
+      } else {
+        addCash('main', inv.currency, inv.cashPaidNow);
+      }
       if (inv.depositDeducted > 0) {
         if (isOrd && inv.sourceId.isNotEmpty) {
           final orders = workshopOrders
@@ -7918,10 +8034,10 @@ class ERPProvider extends ChangeNotifier {
               .toList();
           if (orders.isNotEmpty) {
             orders.first.status = 'مكتملة ومرحلة';
-            takeCash('order', inv.currency, inv.depositDeducted);
+            takeCash('order', inv.depositFundCurrency, inv.depositFundAmount);
           }
         }
-        addCash('main', inv.currency, inv.depositDeducted);
+        addCash('main', inv.depositFundCurrency, inv.depositFundAmount);
       }
     }
     if (deductStockId.isNotEmpty && deductQty > 0) {
@@ -8034,7 +8150,10 @@ class ERPProvider extends ChangeNotifier {
     }
     factoryOrders.add(order);
     if (order.depositAmount > 0) {
-      addCash('order', order.currency, order.depositAmount);
+      // CRITICAL ACCOUNTING RULE: Down payment stored in isolated Order Cash
+      // Box. SYP-collected deposits land in the SYP fund of that box while
+      // depositAmount itself stays the USD-equivalent of the order balance.
+      addCash('order', order.depositFundCurrency, order.depositFundAmount);
     }
     // Deduct stock consumed in order line items from Factory Warehouse
     for (final it in order.items) {
@@ -8053,8 +8172,15 @@ class ERPProvider extends ChangeNotifier {
         updated.depositAmount < 0 ||
         updated.depositAmount > updated.grandTotal + .001 ||
         updated.items.isEmpty) return false;
-    final delta = updated.depositAmount - old.depositAmount;
-    if (delta < 0 && cashOf('order', old.currency) + .0001 < -delta) {
+    // Physical deposit funds (SYP-collected deposits live in the SYP fund).
+    final oldDepFund = old.depositFundCurrency;
+    final oldDepAmt = old.depositFundAmount;
+    final newDepFund = updated.depositFundCurrency;
+    final newDepAmt = updated.depositFundAmount;
+    final depositSameFund =
+        AppCurrency.normalize(oldDepFund) == AppCurrency.normalize(newDepFund);
+    final fundDelta = depositSameFund ? newDepAmt - oldDepAmt : 0.0;
+    if (fundDelta < 0 && cashOf('order', oldDepFund) + .0001 < -fundDelta) {
       return false;
     }
 
@@ -8085,13 +8211,17 @@ class ERPProvider extends ChangeNotifier {
         batchUnitsPerUnit: Map.of(stock.batchUnitsPerUnit),
       ));
     }
-    if (delta < 0 && !takeCash('order', old.currency, -delta)) {
+    if (!swapOrderDepositCash(
+      oldCurrency: oldDepFund,
+      oldAmount: oldDepAmt,
+      newCurrency: newDepFund,
+      newAmount: newDepAmt,
+    )) {
       for (final item in old.items) {
         _deductFactoryOrderItemStock(item);
       }
       return false;
     }
-    if (delta > 0) addCash('order', old.currency, delta);
     updated.items
       ..clear()
       ..addAll(replacementItems);
@@ -8114,8 +8244,9 @@ class ERPProvider extends ChangeNotifier {
     order.isSpecialRefund = refundDeposit;
 
     // If not completed and refund requested: refund deposit to customer from Order Safe
+    // in the physical fund it was collected into (SYP or USD/order currency).
     if (!isCompleted && refundDeposit && order.depositAmount > 0) {
-      takeCash('order', order.currency, order.depositAmount);
+      takeCash('order', order.depositFundCurrency, order.depositFundAmount);
     }
     // If completed: deposit is NOT refunded and remains in the Orders Safe.
     // If not completed and refundDeposit == false: deposit remains in Orders Safe.
@@ -8152,8 +8283,10 @@ class ERPProvider extends ChangeNotifier {
     }
 
     // 2. Transfer deposit out of isolated Order Cash Box (it enters Main Cash Box via invoice.advancePayment)
+    //    in the physical fund it was collected in (SYP fund for Syrian
+    //    Pound deposits, USD fund otherwise).
     if (order.depositAmount > 0) {
-      takeCash('order', order.currency, order.depositAmount);
+      takeCash('order', order.depositFundCurrency, order.depositFundAmount);
     }
 
     // 3. Mark the order as completed & link invoice
@@ -8203,6 +8336,12 @@ class ERPProvider extends ChangeNotifier {
       advancePayment: order.depositAmount + cashPaidNow,
       photoUrl: order.photoPath,
       currency: order.currency,
+      // Carry the reserved deposit with its original collection currency so
+      // the Order Box / Main Box funds stay balanced when it rolls in.
+      depositAmount: order.depositAmount,
+      depositCurrency: order.depositPaymentCurrency,
+      depositCollectedSyp: order.depositCollectedSyp,
+      depositExchangeRate: order.depositExchangeRate,
     );
     assignFactoryOrderToPOSInvoice(order, invoice);
   }
@@ -9108,6 +9247,12 @@ class ERPProvider extends ChangeNotifier {
         isGranite: old.isGranite,
         isCashInvoice: old.isCashInvoice,
         currency: old.currency,
+        cashPaymentCurrency: old.cashPaymentCurrency,
+        cashCollectedSyp: old.cashCollectedSyp,
+        cashExchangeRate: old.cashExchangeRate,
+        depositPaymentCurrency: old.depositPaymentCurrency,
+        depositCollectedSyp: old.depositCollectedSyp,
+        depositExchangeRate: old.depositExchangeRate,
       );
     }
     final client = clients
@@ -9264,6 +9409,12 @@ class ERPProvider extends ChangeNotifier {
             isGranite: old.isGranite,
             isCashInvoice: old.isCashInvoice,
             currency: old.currency,
+            cashPaymentCurrency: old.cashPaymentCurrency,
+            cashCollectedSyp: old.cashCollectedSyp,
+            cashExchangeRate: old.cashExchangeRate,
+            depositPaymentCurrency: old.depositPaymentCurrency,
+            depositCollectedSyp: old.depositCollectedSyp,
+            depositExchangeRate: old.depositExchangeRate,
           );
         }
         allocations[inv.id] = settlePart;
@@ -9398,6 +9549,12 @@ class ERPProvider extends ChangeNotifier {
           isGranite: old.isGranite,
           isCashInvoice: old.isCashInvoice,
           currency: old.currency,
+          cashPaymentCurrency: old.cashPaymentCurrency,
+          cashCollectedSyp: old.cashCollectedSyp,
+          cashExchangeRate: old.cashExchangeRate,
+          depositPaymentCurrency: old.depositPaymentCurrency,
+          depositCollectedSyp: old.depositCollectedSyp,
+          depositExchangeRate: old.depositExchangeRate,
         );
       }
       remainingToSettle -= settlePart;
@@ -11326,24 +11483,85 @@ class ERPProvider extends ChangeNotifier {
 
       if (isSales) {
         sales.add(entry);
+        // Multi-currency down payment (الدفعة الأولى / النقد المحصل):
+        // keep the invoice totals in USD and log the SYP receipts into the
+        // SYP cash register columns, describing collected amount + سعر الصرف.
+        final sypIn =
+            (inv.isDepositCollectedSyp ? inv.depositCollectedSyp : 0.0) +
+            (inv.isAdvanceCollectedSyp ? inv.advanceCollectedSyp : 0.0);
+        // USD equivalents of the SYP receipts computed from the recorded
+        // rate (later balance collections then correctly fall into usdIn).
+        final tillUsdEq = inv.isAdvanceCollectedSyp
+            ? (inv.advanceExchangeRate > 0
+                  ? inv.advanceCollectedSyp / inv.advanceExchangeRate
+                  : inv.advanceBaseCashAmount)
+            : 0.0;
+        final sypUsdEq =
+            (inv.isDepositCollectedSyp ? inv.depositAmount : 0.0) +
+            tillUsdEq;
+        final usdIn =
+            (inv.advancePayment - sypUsdEq).clamp(0.0, double.infinity);
+        final hasSypReceipt = sypIn > 0.01 && !isSyp;
         if (isSyp) {
           totalSalesSyp += inv.grandTotal;
           totalCashInSyp += inv.advancePayment;
         } else {
           totalSalesUsd += inv.grandTotal;
-          totalCashInUsd += inv.advancePayment;
+          totalCashInUsd += usdIn;
+          totalCashInSyp += sypIn;
         }
         if (inv.advancePayment > 0) {
-          movements.add(
-            DailyReportCashMovementSummary(
-              type: 'قبض مبيعات مصنع',
-              description: 'فاتورة #${inv.invoiceNo} - ${entry.partyName}',
-              cashBox: 'main',
-              amount: inv.advancePayment,
-              currency: inv.currency,
-              time: inv.date,
-            ),
-          );
+          if (!hasSypReceipt) {
+            movements.add(
+              DailyReportCashMovementSummary(
+                type: 'قبض مبيعات مصنع',
+                description: 'فاتورة #${inv.invoiceNo} - ${entry.partyName}',
+                cashBox: 'main',
+                amount: inv.advancePayment,
+                currency: inv.currency,
+                time: inv.date,
+              ),
+            );
+          } else {
+            if (inv.isDepositCollectedSyp) {
+              movements.add(
+                DailyReportCashMovementSummary(
+                  type: 'قبض مبيعات مصنع',
+                  description:
+                      'فاتورة #${inv.invoiceNo} - ${entry.partyName} • عربون محصل ${inv.depositCollectedSyp.fmt} ل.س بسعر ${inv.depositExchangeRate.fmt} (= ${inv.depositAmount.fmt} \$)',
+                  cashBox: 'main',
+                  amount: inv.depositCollectedSyp,
+                  currency: AppCurrency.syp,
+                  time: inv.date,
+                ),
+              );
+            }
+            if (inv.isAdvanceCollectedSyp) {
+              movements.add(
+                DailyReportCashMovementSummary(
+                  type: 'قبض مبيعات مصنع',
+                  description:
+                      'فاتورة #${inv.invoiceNo} - ${entry.partyName} • دفعة محصلة ${inv.advanceCollectedSyp.fmt} ل.س بسعر ${inv.advanceExchangeRate.fmt} (= ${tillUsdEq.fmt} \$)',
+                  cashBox: 'main',
+                  amount: inv.advanceCollectedSyp,
+                  currency: AppCurrency.syp,
+                  time: inv.date,
+                ),
+              );
+            }
+            if (usdIn > 0.01) {
+              movements.add(
+                DailyReportCashMovementSummary(
+                  type: 'قبض مبيعات مصنع',
+                  description: 'فاتورة #${inv.invoiceNo} - ${entry.partyName} (دولار)',
+                  cashBox: 'main',
+                  amount: usdIn,
+                  currency: AppCurrency.usd,
+                  time: inv.date,
+                ),
+              );
+            }
+          }
         }
       } else {
         purchases.add(entry);
@@ -11429,24 +11647,94 @@ class ERPProvider extends ChangeNotifier {
       );
 
       sales.add(entry);
+      // Multi-currency down payment (الدفعة الأولى / النقد المحصل): when the
+      // workshop invoice cash or the rolled-in order deposit was received in
+      // Syrian Pounds, log the real SYP receipt + سعر الصرف into the SYP
+      // register columns while the USD-equivalent deduction stays per-total.
+      final depSypAmt = inv.isDepositCollectedSyp ? inv.depositCollectedSyp : 0.0;
+      final cashSypAmt = inv.isCashCollectedSyp ? inv.cashCollectedSyp : 0.0;
+      final sypIn = depSypAmt + cashSypAmt;
+      final depUsdEq = inv.isDepositCollectedSyp ? inv.depositDeducted : 0.0;
+      final cashUsdEq = inv.isCashCollectedSyp
+          ? (inv.cashExchangeRate > 0
+                ? cashSypAmt / inv.cashExchangeRate
+                : cashSypAmt)
+          : 0.0;
+      final usdIn = (paidAmt - depUsdEq - cashUsdEq).clamp(0.0, double.infinity);
+      final hasSypReceipt = sypIn > 0.01 && !isSyp;
       if (isSyp) {
         totalSalesSyp += inv.grandTotal;
         totalCashInSyp += paidAmt;
       } else {
         totalSalesUsd += inv.grandTotal;
-        totalCashInUsd += paidAmt;
+        totalCashInUsd += usdIn;
+        totalCashInSyp += sypIn;
       }
       if (paidAmt > 0) {
-        movements.add(
-          DailyReportCashMovementSummary(
-            type: 'قبض مبيعات معمل',
-            description: 'فاتورة معمل #${inv.invoiceNo} - ${inv.clientName}',
-            cashBox: 'order',
-            amount: paidAmt,
-            currency: inv.currency,
-            time: inv.date,
-          ),
-        );
+        if (!hasSypReceipt) {
+          movements.add(
+            DailyReportCashMovementSummary(
+              type: 'قبض مبيعات معمل',
+              description: 'فاتورة معمل #${inv.invoiceNo} - ${inv.clientName}',
+              cashBox: 'order',
+              amount: paidAmt,
+              currency: inv.currency,
+              time: inv.date,
+            ),
+          );
+        } else {
+          if (inv.isDepositCollectedSyp) {
+            movements.add(
+              DailyReportCashMovementSummary(
+                type: 'قبض مبيعات معمل',
+                description:
+                    'فاتورة معمل #${inv.invoiceNo} - ${inv.clientName} • عربون محصل ${inv.depositCollectedSyp.fmt} ل.س بسعر ${inv.depositExchangeRate.fmt} (= ${inv.depositDeducted.fmt} \$)',
+                cashBox: 'order',
+                amount: inv.depositCollectedSyp,
+                currency: AppCurrency.syp,
+                time: inv.date,
+              ),
+            );
+          } else if (inv.depositDeducted > 0.01) {
+            movements.add(
+              DailyReportCashMovementSummary(
+                type: 'قبض مبيعات معمل',
+                description:
+                    'فاتورة معمل #${inv.invoiceNo} - ${inv.clientName} (عربون محجوز)',
+                cashBox: 'order',
+                amount: inv.depositDeducted,
+                currency: inv.currency,
+                time: inv.date,
+              ),
+            );
+          }
+          if (inv.isCashCollectedSyp) {
+            movements.add(
+              DailyReportCashMovementSummary(
+                type: 'قبض مبيعات معمل',
+                description:
+                    'فاتورة معمل #${inv.invoiceNo} - ${inv.clientName} • نقد محصل ${inv.cashCollectedSyp.fmt} ل.س بسعر ${inv.cashExchangeRate.fmt} (= ${cashUsdEq.fmt} \$)',
+                cashBox: 'main',
+                amount: inv.cashCollectedSyp,
+                currency: AppCurrency.syp,
+                time: inv.date,
+              ),
+            );
+          }
+          if (usdIn > 0.01) {
+            movements.add(
+              DailyReportCashMovementSummary(
+                type: 'قبض مبيعات معمل',
+                description:
+                    'فاتورة معمل #${inv.invoiceNo} - ${inv.clientName} (دولار)',
+                cashBox: 'main',
+                amount: usdIn,
+                currency: AppCurrency.usd,
+                time: inv.date,
+              ),
+            );
+          }
+        }
       }
     }
 

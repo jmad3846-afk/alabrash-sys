@@ -83,6 +83,24 @@ void showAddFactoryOrderDialog(
     text:
         draft?['deposit'] as String? ?? existingOrder?.depositAmount.fmt ?? '',
   );
+  // ---- Down Payment / Deposit currency (الدفعة الأولى / العربون) ----
+  // The order total stays USD-denominated; depositAmount keeps the USD
+  // equivalent deducted from the order balance, while the deposit can be
+  // physically collected in USD ($) or Syrian Pounds (ل.س) at today's rate.
+  String depPayCurrency = draft?['depPayCurrency'] as String? ??
+      ((existingOrder?.isDepositCollectedSyp ?? false)
+          ? AppCurrency.syp
+          : AppCurrency.usd);
+  final depSypCtrl = TextEditingController(
+    text: draft?['depSyp'] as String? ??
+        existingOrder?.depositCollectedSyp.fmt ??
+        '',
+  );
+  final depRateCtrl = TextEditingController(
+    text: draft?['depRate'] as String? ??
+        existingOrder?.depositExchangeRate.fmt ??
+        '',
+  );
   final salesDiscountCtrl = TextEditingController(
     text:
         draft?['salesDiscount'] as String? ??
@@ -170,6 +188,9 @@ void showAddFactoryOrderDialog(
     'selectedWhId': selectedWhId,
     'goodsSearch': goodsSearch,
     'deposit': depositCtrl.text,
+    'depPayCurrency': depPayCurrency,
+    'depSyp': depSypCtrl.text,
+    'depRate': depRateCtrl.text,
     'salesDiscount': salesDiscountCtrl.text,
     'shipping': shippingCtrl.text,
     'photo': photoCtrl.text,
@@ -304,7 +325,16 @@ void showAddFactoryOrderDialog(
               0.0,
               double.infinity,
             );
-        final double deposit = double.tryParse(depositCtrl.text) ?? 0.0;
+        // Deposit USD equivalent: either the directly entered USD amount, or
+        // the auto-converted SYP receipt (Collected SYP ÷ Exchange Rate).
+        final collectDepSyp =
+            orderCurrency == AppCurrency.usd &&
+            depPayCurrency == AppCurrency.syp;
+        final depSypAmt = double.tryParse(depSypCtrl.text) ?? 0.0;
+        final depRateVal = double.tryParse(depRateCtrl.text) ?? 0.0;
+        final double deposit = collectDepSyp
+            ? (depRateVal > 0 ? depSypAmt / depRateVal : 0.0)
+            : (double.tryParse(depositCtrl.text) ?? 0.0);
         final double remaining = (grandTotal - deposit).clamp(
           0.0,
           double.infinity,
@@ -685,15 +715,6 @@ void showAddFactoryOrderDialog(
                               )
                               .toList(),
                           onChanged: (v) => setSt(() => selectedClientId = v),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      SizedBox(
-                        width: 150,
-                        child: CurrencySelector(
-                          value: orderCurrency,
-                          dense: true,
-                          onChanged: (v) => setSt(() => orderCurrency = v),
                         ),
                       ),
                     ],
@@ -1167,7 +1188,7 @@ void showAddFactoryOrderDialog(
                         const Divider(height: 18),
                         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('إجمالي قيمة الطلبية', style: TextStyle(fontWeight: FontWeight.bold)), Text('${grandTotal.fmt} ${AppCurrency.symbol(orderCurrency)}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: AppColors.accentPrimary))]),
                         const SizedBox(height: 6),
-                        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('العربون / الدفعة المقدمة'), Text('${deposit.fmt} ${AppCurrency.symbol(orderCurrency)}')]),
+                        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('العربون / الدفعة المقدمة'), Text('${deposit.fmt} ${AppCurrency.symbol(orderCurrency)}${collectDepSyp ? ' (محصل: ${depSypAmt.fmt} ل.س بسعر ${depRateVal.fmt})' : ''}')]),
                         const SizedBox(height: 4),
                         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('المتبقي عند الاستلام', style: TextStyle(fontWeight: FontWeight.bold)), Text('${remaining.fmt} ${AppCurrency.symbol(orderCurrency)}', style: TextStyle(fontWeight: FontWeight.bold, color: remaining > 0 ? AppColors.dangerWaste : AppColors.successGreen))]),
                       ],
@@ -1200,7 +1221,27 @@ void showAddFactoryOrderDialog(
                             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                               const Text('العربون / الدفعة المقدمة', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.orderDepositBoxAccent)),
                               const SizedBox(height: 6),
-                              TextField(controller: depositCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: 'قيمة العربون (${AppCurrency.symbol(orderCurrency)})', isDense: true), onChanged: (_) => setSt(() {})),
+                              TextField(controller: depositCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true), readOnly: collectDepSyp, decoration: InputDecoration(labelText: collectDepSyp ? 'قيمة العربون المعادلة (\$ — محسوبة تلقائياً)' : 'قيمة العربون (${AppCurrency.symbol(orderCurrency)})', isDense: true), onChanged: (_) => setSt(() {})),
+                              // ---- Down Payment currency selector (USD $ / SYP ل.س) ----
+                              if (orderCurrency == AppCurrency.usd) ...[
+                                const SizedBox(height: 8),
+                                SizedBox(width: 320, child: PaymentCurrencySelector(value: depPayCurrency, onChanged: (v) => setSt(() {
+                                  depPayCurrency = v;
+                                  if (v == AppCurrency.usd) { depSypCtrl.clear(); depRateCtrl.clear(); }
+                                }))),
+                                if (depPayCurrency == AppCurrency.syp) ...[
+                                  const SizedBox(height: 8),
+                                  SypDownPaymentPanel(
+                                    amountCtrl: depSypCtrl,
+                                    rateCtrl: depRateCtrl,
+                                    amountSyp: depSypAmt,
+                                    rate: depRateVal,
+                                    amountLabel: 'العربون المحصل (ل.س)',
+                                    helperText: 'معادله بالدولار يُخصم من رصيد الطلبية، والورق السوري يودع بصندوق الطلبيات بالليرة',
+                                    onChanged: (_) => setSt(() {}),
+                                  ),
+                                ],
+                              ],
                               const SizedBox(height: 6),
                               Text('يُودع في صندوق الطلبيات المعزول. المتبقي: ${remaining.fmt} ${AppCurrency.symbol(orderCurrency)}', style: const TextStyle(fontSize: 11, color: Color(0xFF475569))),
                             ]),
@@ -1248,6 +1289,13 @@ void showAddFactoryOrderDialog(
                         return;
                       }
 
+                      if (collectDepSyp && depSypAmt > 0 && depRateVal <= 0) {
+                        setSt(
+                          () => formError =
+                              'خطأ: عند تحصيل العربون بالليرة السورية يجب إدخال قيمة الدولار اليوم.',
+                        );
+                        return;
+                      }
                       if (deposit < 0) {
                         setSt(() => formError = 'أدخل عربوناً صحيحاً.');
                         return;
@@ -1281,6 +1329,11 @@ void showAddFactoryOrderDialog(
                         photoPath: photoCtrl.text.trim(),
                         currency: orderCurrency,
                         status: existingOrder?.status ?? 'قيد التنفيذ',
+                        // Physical collection record of the deposit.
+                        depositPaymentCurrency:
+                            collectDepSyp ? AppCurrency.syp : '',
+                        depositCollectedSyp: collectDepSyp ? depSypAmt : 0.0,
+                        depositExchangeRate: collectDepSyp ? depRateVal : 0.0,
                       );
 
                       final bool saved;
