@@ -4742,6 +4742,121 @@ class ERPProvider extends ChangeNotifier {
       staffList.fold(0.0, (s, stf) => s + stf.netRemainingBalance);
   double get workersTotalDebtsSyp =>
       staffList.fold(0.0, (s, stf) => s + stf.netRemainingBalanceSyp);
+
+  // ---------------------------------------------------------------------------
+  // Unified Receivable / Payable totals — STRICT SCOPE: suppliers (الموردون)
+  // and distributors/agents (المعتمدون 'معتمد مصنع') ONLY. Workers and retail/
+  // regular customers (الزبائن) are completely excluded from both metrics and
+  // their drill-down lists. Each counterparty is classified individually by
+  // the direction of its REMAINING NET balance (current dues + carried
+  // forward opening records):
+  //   • owed TO the company   → Receivables (لنا)
+  //   • owed BY the company   → Payables  (علينا)
+  // ---------------------------------------------------------------------------
+
+  /// Builds both unified drill-down lists. Each row's amount is the party's
+  /// positive net balance in the requested direction, per currency.
+  ({List<PartyBalanceModel> receivables, List<PartyBalanceModel> payables})
+  partyBalances() {
+    final recv = <PartyBalanceModel>[];
+    final paid = <PartyBalanceModel>[];
+
+    void add(String id, String name, String role, double netUsd, double netSyp) {
+      final rUsd = netUsd > 0.01 ? netUsd : 0.0;
+      final rSyp = netSyp > 0.01 ? netSyp : 0.0;
+      final pUsd = netUsd < -0.01 ? -netUsd : 0.0;
+      final pSyp = netSyp < -0.01 ? -netSyp : 0.0;
+      if (rUsd > 0 || rSyp > 0) {
+        recv.add(
+          PartyBalanceModel(
+            id: id,
+            name: name,
+            role: role,
+            usdAmount: AppCurrency.money(rUsd),
+            sypAmount: AppCurrency.money(rSyp),
+          ),
+        );
+      }
+      if (pUsd > 0 || pSyp > 0) {
+        paid.add(
+          PartyBalanceModel(
+            id: id,
+            name: name,
+            role: role,
+            usdAmount: AppCurrency.money(pUsd),
+            sypAmount: AppCurrency.money(pSyp),
+          ),
+        );
+      }
+    }
+
+    // Approved agents/distributors: positive net = they owe us (لنا).
+    for (final c in clients) {
+      if (c.clientType != 'معتمد مصنع') continue; // retail customers excluded
+      final lUsd = legacyBalanceForParty('clients', c.id, c.name, AppCurrency.usd);
+      final lSyp = legacyBalanceForParty('clients', c.id, c.name, AppCurrency.syp);
+      add(c.id, c.name, 'معتمد مصنع', c.debtBalance + lUsd, c.debtBalanceSyp + lSyp);
+    }
+
+    // Suppliers: a POSITIVE supplier debtBalance means the company owes the
+    // supplier (payable). Flip the sign so `add`'s net convention (positive
+    // = owed TO the company) holds for suppliers too.
+    for (final s in suppliers) {
+      final lUsd = legacyBalanceForParty('suppliers', s.id, s.name, AppCurrency.usd);
+      final lSyp = legacyBalanceForParty('suppliers', s.id, s.name, AppCurrency.syp);
+      add(
+        s.id,
+        s.name,
+        'مورد',
+        -(s.debtBalance + lUsd),
+        -(s.debtBalanceSyp + lSyp),
+      );
+    }
+
+    // Suppliers' opening records not tied to any live supplier row still
+    // count as payables (mirrors legacyFinancialTotal('suppliers', ...)).
+    for (final r in openingEntry.legacyFinancials) {
+      if (r.category != 'suppliers' || r.amount <= 0) continue;
+      if (suppliers.any((s) => r.belongsTo(s.id, s.name))) continue;
+      final usd = AppCurrency.isUsd(r.currency) ? r.amount : 0.0;
+      final syp = AppCurrency.isSyp(r.currency) ? r.amount : 0.0;
+      paid.add(
+        PartyBalanceModel(
+          id: r.id,
+          name: r.name,
+          role: 'مورد — قيد افتتاحي',
+          usdAmount: usd,
+          sypAmount: syp,
+        ),
+      );
+    }
+
+    int byMagnitude(PartyBalanceModel a, PartyBalanceModel b) =>
+        (b.usdAmount + b.sypAmount).compareTo(a.usdAmount + a.sypAmount);
+    recv.sort(byMagnitude);
+    paid.sort(byMagnitude);
+    return (receivables: recv, payables: paid);
+  }
+
+  /// Total Receivables (لنا): positive net balances owed to the company by
+  /// suppliers or distributors/agents only, in the given currency.
+  double totalReceivablesOf(String? currency) {
+    final syp = AppCurrency.isSyp(currency);
+    final list = partyBalances().receivables;
+    return AppCurrency.money(
+      list.fold(0.0, (sum, r) => sum + (syp ? r.sypAmount : r.usdAmount)),
+    );
+  }
+
+  /// Total Payables (علينا): net balances the company owes to suppliers or
+  /// distributors/agents only, in the given currency.
+  double totalPayablesOf(String? currency) {
+    final syp = AppCurrency.isSyp(currency);
+    final list = partyBalances().payables;
+    return AppCurrency.money(
+      list.fold(0.0, (sum, r) => sum + (syp ? r.sypAmount : r.usdAmount)),
+    );
+  }
   double get clientsRetailDebts => clients
       .where((c) => c.clientType == 'زبون معمل')
       .fold(0.0, (s, c) => s + c.debtBalance);

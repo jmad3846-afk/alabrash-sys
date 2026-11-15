@@ -59,6 +59,33 @@ extension SmartNumberFormat on num {
   String get fmt => AppCurrency.fmt(this);
 }
 
+/// One row of the unified Home-screen "لنا / علينا" drill-down list.
+/// Restricted by design to Suppliers (الموردون) and distributors/agents
+/// (المعتمدون) — each counterparty classified individually by the direction
+/// of its remaining NET balance. Amounts are always positive (the row lives
+/// on exactly one side of the balance sheet).
+class PartyBalanceModel {
+  final String id;
+  final String name;
+  final String role; // 'مورد' | 'معتمد مصنع' | 'مورد — قيد افتتاحي'
+  final double usdAmount;
+  final double sypAmount;
+
+  const PartyBalanceModel({
+    required this.id,
+    required this.name,
+    required this.role,
+    required this.usdAmount,
+    required this.sypAmount,
+  });
+
+  bool get isSupplier => role.startsWith('مورد');
+
+  String get roleLabel => isSupplier ? 'مورد' : 'معتمد مصنع';
+
+  String get dualText => AppCurrency.dual(usdAmount, sypAmount);
+}
+
 // ==========================================
 // 1. OPENING ENTRY MODEL
 // ==========================================

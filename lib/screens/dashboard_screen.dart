@@ -6,8 +6,7 @@ import '../core/theme/app_theme.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../widgets/metric_card.dart';
-import '../widgets/client_debt_modal.dart';
-import '../widgets/supplier_worker_debt_modal.dart';
+import '../widgets/party_balances_modal.dart';
 import '../widgets/partner_management_modal.dart';
 import '../widgets/system_reset_modal.dart';
 import '../widgets/backup_restore_modal.dart';
@@ -98,9 +97,12 @@ class DashboardScreen extends StatelessWidget {
             _buildBackupProtectionCard(context),
             const SizedBox(height: 24),
 
-            // SECTION 1: FACTORY & WORKSHOP ANALYTICS CARDS
+            // SECTION 1: UNIFIED RECEIVABLE / PAYABLE SUMMARY CARDS
+            // Strict scope: Suppliers & distributors/agents ONLY (workers and
+            // retail customers excluded); each counterparty is classified by
+            // its remaining NET balance direction. Tap = drill-down list.
             const Text(
-              '1. تحليلات وذمم المصنع والمعمل',
+              '1. إجمالي الذمم — لنا وعلينا (الموردون والمعتمدون)',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -109,96 +111,45 @@ class DashboardScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             GridView.count(
-              crossAxisCount: 3,
+              crossAxisCount: 2,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
-              childAspectRatio: 1.3,
+              childAspectRatio: 1.5,
               children: [
-                // Card 1: المصنع - لنا من معتمدين
+                // Card 1: Total Receivables (لنا) — suppliers & agents whose
+                // net balances are owed TO the company.
                 MetricCard(
-                  title: 'تحليلات المصنع • لنا من معتمدين',
+                  title:
+                      'إجمالي المستحقات لنا (Total Receivables) • الموردون والمعتمدون فقط',
                   value: AppCurrency.dual(
-                    erp.clientsApprovedDebtsOf(AppCurrency.usd) +
-                        erp.legacyFinancialTotal(
-                          'clients',
-                          AppCurrency.usd,
-                          clientType: 'معتمد مصنع',
-                        ),
-                    erp.clientsApprovedDebtsOf(AppCurrency.syp) +
-                        erp.legacyFinancialTotal(
-                          'clients',
-                          AppCurrency.syp,
-                          clientType: 'معتمد مصنع',
-                        ),
+                    erp.totalReceivablesOf(AppCurrency.usd),
+                    erp.totalReceivablesOf(AppCurrency.syp),
                   ),
-                  subtitle: 'انقر لفتح القائمة التفصيلية للمعتمدين',
-                  icon: Icons.factory_rounded,
-                  iconColor: AppColors.accentPrimary,
-                  bgColor: AppColors.chipBgBlue,
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) =>
-                          const ClientDebtModal(titleFilter: 'معتمد مصنع'),
-                    );
-                  },
+                  subtitle: 'انقر لعرض قائمة من لنا عندهم أرصدة',
+                  icon: Icons.trending_up_rounded,
+                  iconColor: AppColors.successGreen,
+                  bgColor: AppColors.chipBgGreen,
+                  onTap: () =>
+                      PartyBalancesModal.show(context, receivableSide: true),
                 ),
 
-                // Card 2: علينا عمال وموردين
+                // Card 2: Total Payables (علينا) — suppliers & agents to whom
+                // the company owes money.
                 MetricCard(
-                  title: 'المستحقات • علينا عمال وموردين',
+                  title:
+                      'إجمالي المستحقات علينا (Total Payables) • الموردون والمعتمدون فقط',
                   value: AppCurrency.dual(
-                    erp.suppliersTotalDebts +
-                        erp.legacyFinancialTotal('suppliers', AppCurrency.usd) +
-                        erp.workersTotalDebts +
-                        erp.legacyFinancialTotal('employees', AppCurrency.usd),
-                    erp.suppliersTotalDebtsSyp +
-                        erp.legacyFinancialTotal('suppliers', AppCurrency.syp) +
-                        erp.workersTotalDebtsSyp +
-                        erp.legacyFinancialTotal('employees', AppCurrency.syp),
+                    erp.totalPayablesOf(AppCurrency.usd),
+                    erp.totalPayablesOf(AppCurrency.syp),
                   ),
-                  subtitle: 'انقر لفتح تبويبات الموردين والعمالة',
-                  icon: Icons.outbox_rounded,
+                  subtitle: 'انقر لعرض قائمة من علينا لهم أرصدة',
+                  icon: Icons.trending_down_rounded,
                   iconColor: AppColors.dangerWaste,
                   bgColor: AppColors.chipBgRed,
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => const SupplierWorkerDebtModal(),
-                    );
-                  },
-                ),
-
-                // Card 3: المعمل - لنا زبائن
-                MetricCard(
-                  title: 'تحليلات المعمل • لنا زبائن',
-                  value: AppCurrency.dual(
-                    erp.clientsRetailDebts +
-                        erp.legacyFinancialTotal(
-                          'clients',
-                          AppCurrency.usd,
-                          clientType: 'زبون معمل',
-                        ),
-                    erp.clientsRetailDebtsSyp +
-                        erp.legacyFinancialTotal(
-                          'clients',
-                          AppCurrency.syp,
-                          clientType: 'زبون معمل',
-                        ),
-                  ),
-                  subtitle: 'انقر لعرض ديون الزبائن الجزافية',
-                  icon: Icons.storefront_rounded,
-                  iconColor: AppColors.orderDepositBoxAccent,
-                  bgColor: AppColors.chipBgSky,
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) =>
-                          const ClientDebtModal(titleFilter: 'زبون معمل'),
-                    );
-                  },
+                  onTap: () =>
+                      PartyBalancesModal.show(context, receivableSide: false),
                 ),
               ],
             ),
