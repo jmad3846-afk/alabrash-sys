@@ -5235,12 +5235,15 @@ class ERPProvider extends ChangeNotifier {
       !expense.isInformational &&
       expenseTreatmentOf(expense) == ExpenseRecordModel.operational;
 
-  /// Core operational pool membership for the dynamic overhead engine:
-  /// ONLY worker wages (the auto-created wage types) and expense types the
-  /// user explicitly designated as «مصروف تشغيلي أساسي» enter the pool.
-  /// Cutting-processing expenses are core by designation. Any newly created
-  /// custom/general type defaults to a standard expense and NEVER affects
-  /// the overhead percentage or the deficit/surplus formula.
+  /// Core operational pool membership for the dynamic overhead engine.
+  /// STRICT, hardcoded classification: ONLY the two designated core
+  /// families enter the pool:
+  ///   1) Direct Cutting & Manufacturing (مصاريف / القص والتصنيع المباشر)
+  ///   2) Salaries & Worker Wages (الرواتب والأجور)
+  /// Every other expense type — including any custom type the user
+  /// creates — is automatically a non-operational / general expense and
+  /// NEVER affects the overhead percentage or the deficit/surplus
+  /// formula. There is no user-facing switch for this classification.
   bool isCoreOperationalExpense(ExpenseRecordModel expense) {
     if (!isOperatingExpense(expense)) return false;
     if (expense.typeId == cuttingExpenseTypeId ||
@@ -5248,17 +5251,38 @@ class ERPProvider extends ChangeNotifier {
         expense.typeId == 'salaries_and_wages_expense') {
       return true;
     }
+    // Name-based recognition for legacy wage/cutting types created under
+    // different IDs. The label itself decides — never a user toggle.
     final type = _firstOrNull(
       expenseTypes.where((t) => t.id == expense.typeId),
     );
-    if (type != null && type.isOperational) return true;
-    // Wage payments recorded under a wage-named type created before the
-    // dedicated IDs existed.
     final label = (type?.name ?? '').trim();
     return label == 'أجور العمال' ||
         label.contains('الرواتب والأجور') ||
-        label.contains('Salaries & Wages');
+        label.contains('Salaries & Wages') ||
+        label.contains('مصاريف القص') ||
+        label.contains('القص والتصنيع') ||
+        label.contains('Cutting');
   }
+
+  /// Locked classification evaluated from the type itself (id/canonical
+  /// name). Used for display badges so the UI always mirrors the strict
+  /// pool rule; there is no manual override anywhere.
+  bool isLockedOperationalType(ExpenseTypeModel type) {
+    if (type.id == cuttingExpenseTypeId ||
+        type.id == 'workforce_wages_expense' ||
+        type.id == 'salaries_and_wages_expense') {
+      return true;
+    }
+    final label = type.name.trim();
+    return label == 'أجور العمال' ||
+        label.contains('الرواتب والأجور') ||
+        label.contains('Salaries & Wages') ||
+        label.contains('مصاريف القص') ||
+        label.contains('القص والتصنيع') ||
+        label.contains('Cutting');
+  }
+
   double expenseRecordsTotalOf(String? currency) => expenseRecords
       .where(
         (e) =>
@@ -5711,12 +5735,6 @@ class ERPProvider extends ChangeNotifier {
 
   double get dynamicOverheadRate => dynamicOverheadRateOf(AppCurrency.usd);
   double get dynamicOverheadRateSyp => dynamicOverheadRateOf(AppCurrency.syp);
-
-  void setExpenseTypeOperational(ExpenseTypeModel type, bool value) {
-    if (type.isOperational == value) return;
-    type.isOperational = value;
-    refresh();
-  }
 
   /// Positive values are operating-cost savings; negative values are deficits.
   /// The comparison pool combines the recovered cutting overhead allocations
@@ -9446,9 +9464,6 @@ class ERPProvider extends ChangeNotifier {
           id: wageTypeId,
           name: 'أجور العمال',
           description: 'تسديد مستحقات العمال والمعلمين والإداريين',
-          // Worker wages are core operational expenses by definition:
-          // they always feed the dynamic overhead pool.
-          isOperational: true,
         ),
       );
     }
@@ -9502,9 +9517,6 @@ class ERPProvider extends ChangeNotifier {
           id: wageTypeId,
           name: 'الرواتب والأجور (Salaries & Wages)',
           description: 'رواتب وأجور العمال والمعلمين والإداريين',
-          // Worker wages are core operational expenses by definition:
-          // they always feed the dynamic overhead pool.
-          isOperational: true,
         ),
       );
     }

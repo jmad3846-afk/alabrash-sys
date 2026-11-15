@@ -1438,66 +1438,78 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
   Future<void> _addType(ERPProvider erp) async {
     final name = TextEditingController();
     final description = TextEditingController();
-    var isOperational = false;
     final result = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, update) => AlertDialog(
-          title: const Text('إضافة نوع مصروف'),
-          content: SizedBox(
-            width: 460,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: name,
-                  decoration: const InputDecoration(labelText: 'اسم النوع'),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('إضافة نوع مصروف'),
+        content: SizedBox(
+          width: 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: name,
+                decoration: const InputDecoration(labelText: 'اسم النوع'),
+              ),
+              TextField(
+                controller: description,
+                decoration: const InputDecoration(labelText: 'الوصف'),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
                 ),
-                TextField(
-                  controller: description,
-                  decoration: const InputDecoration(labelText: 'الوصف'),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: isOperational,
-                  onChanged: (v) => update(() => isOperational = v),
-                  title: const Text(
-                    'مصروف تشغيلي مباشر أساسي',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  subtitle: const Text(
-                    'عند التفعيل تدخل قيود هذا النوع في مجمّع المصاريف التشغيلية الفعلية وفي نسبة التحميل الديناميكية ومقارنة العجز/الفايض. الأنواع المخصصة الجديدة تبقى مصاريف عادية ولا تؤثر على المعادلة افتراضياً.',
-                    style: TextStyle(fontSize: 11),
-                  ),
-                  activeColor: AppColors.successGreen,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('إلغاء'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (name.text.trim().isNotEmpty) {
-                  erp.addExpenseType(
-                    ExpenseTypeModel(
-                      id: 'expense_type_${DateTime.now().microsecondsSinceEpoch}',
-                      name: name.text.trim(),
-                      description: description.text.trim(),
-                      isOperational: isOperational,
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.lock_outline_rounded,
+                      size: 15,
+                      color: AppColors.brandSecondaryText,
                     ),
-                  );
-                  Navigator.pop(dialogContext, true);
-                }
-              },
-              child: const Text('حفظ'),
-            ),
-          ],
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'التصنيف التشغيلي مقفل تلقائياً: فقط «القص والتصنيع المباشر» و«الرواتب والأجور» يدخلان مجمّع المصاريف التشغيلية ونسبة التحميل ومقارنة العجز/الفايض؛ كل نوع جديد يُصنَّف مصروفاً عادياً بشكل دائم.',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: AppColors.brandSecondaryText,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (name.text.trim().isNotEmpty) {
+                erp.addExpenseType(
+                  ExpenseTypeModel(
+                    id: 'expense_type_${DateTime.now().microsecondsSinceEpoch}',
+                    name: name.text.trim(),
+                    description: description.text.trim(),
+                  ),
+                );
+                Navigator.pop(dialogContext, true);
+              }
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
       ),
     );
     name.dispose();
@@ -1980,50 +1992,41 @@ class _ExpensesManagementScreenState extends State<ExpensesManagementScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            // شارة الوضع + تبديل: تشغيلي أساسي يدخل معادلة التحميل،
-            // أو عادي لا يؤثر على نسبة القص والعجز/الفايض.
-            PopupMenuButton<String>(
-              tooltip: 'تصنيف النوع في معادلة التحميل التشغيلي',
-              icon: Icon(
-                type.isOperational
-                    ? Icons.verified_user_rounded
-                    : Icons.remove_circle_outline_rounded,
-                color: type.isOperational
-                    ? AppColors.successGreen
-                    : AppColors.brandSecondaryText,
-              ),
-              onSelected: (v) =>
-                  erp.setExpenseTypeOperational(type, v == 'core'),
-              itemBuilder: (menuContext) => [
-                PopupMenuItem(
-                  value: 'core',
-                  enabled: !type.isOperational,
-                  child: const Text('تعيين كمصروف تشغيلي أساسي'),
-                ),
-                PopupMenuItem(
-                  value: 'regular',
-                  enabled: type.isOperational,
-                  child: const Text('إعادة كمصروف عادي (خارج المعادلة)'),
-                ),
-              ],
-            ),
+            // شارة تصنيف ثابتة (مقفلة): لا يوجد أي تبديل يدوي — فقط
+            // «القص والتصنيع المباشر» و«الرواتب والأجور» تشغيليتان، وكل
+            // نوع آخر مصروف عام خارج معادلة التحميل التشغيلي تلقائياً.
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: type.isOperational
+                color: erp.isLockedOperationalType(type)
                     ? AppColors.chipBgGreen
                     : const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Text(
-                type.isOperational ? 'تشغيلي أساسي' : 'عادي',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.bold,
-                  color: type.isOperational
-                      ? AppColors.successGreen
-                      : AppColors.brandSecondaryText,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: 11,
+                    color: erp.isLockedOperationalType(type)
+                        ? AppColors.successGreen
+                        : AppColors.brandSecondaryText,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    erp.isLockedOperationalType(type)
+                        ? 'تشغيلي (مقفل)'
+                        : 'مصروف عام (خارج المعادلة)',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      color: erp.isLockedOperationalType(type)
+                          ? AppColors.successGreen
+                          : AppColors.brandSecondaryText,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

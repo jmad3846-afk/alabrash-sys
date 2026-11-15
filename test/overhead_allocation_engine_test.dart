@@ -36,10 +36,8 @@ void main() {
     return erp;
   }
 
-  void coreType(ERPProvider erp, String id, String name, bool core) {
-    erp.expenseTypes.add(
-      ExpenseTypeModel(id: id, name: name, isOperational: core),
-    );
+  void customType(ERPProvider erp, String id, String name) {
+    erp.expenseTypes.add(ExpenseTypeModel(id: id, name: name));
   }
 
   ExpenseRecordModel rec(
@@ -55,9 +53,9 @@ void main() {
   );
 
   group('Controlled operational expense pool', () {
-    test('custom general types stay OUT of the overhead pool', () async {
+    test('custom general types are permanently OUT of the overhead pool', () async {
       final erp = await freshErp();
-      coreType(erp, 't_general', 'ضيافة ومشاوير', false);
+      customType(erp, 't_general', 'ضيافة ومشاوير');
       erp.mainCashBox = 5000;
       erp.addExpenseRecord(rec('e1', 't_general', 500));
 
@@ -65,15 +63,17 @@ void main() {
       expect(erp.coreOperationalExpensesTotalOf(AppCurrency.usd), 0);
       expect(erp.mainCashBox, 4500);
 
-      // Designating the type as core operational moves its entries in
-      // retroactively — real-time, no re-recording needed.
-      erp.setExpenseTypeOperational(
-        erp.expenseTypes.firstWhere((t) => t.id == 't_general'),
-        true,
+      // Classification is strictly locked to the two designated families;
+      // a custom type can never join the pool (no toggle exists).
+      expect(
+        erp.isLockedOperationalType(
+          erp.expenseTypes.firstWhere((t) => t.id == 't_general'),
+        ),
+        isFalse,
       );
       expect(
         erp.coreOperationalExpensesTotalOf(AppCurrency.usd),
-        closeTo(500, 0.001),
+        0,
       );
     });
 
@@ -94,13 +94,35 @@ void main() {
       );
     });
 
-    test('cutting-processing type is core by designation', () async {
+    test('only the two locked types (cutting & wages) are operational', () async {
       final erp = await freshErp();
       erp.mainCashBox = 5000;
       erp.addExpenseRecord(rec('c1', 'cutting_processing_expense', 150));
       expect(
         erp.coreOperationalExpensesTotalOf(AppCurrency.usd),
         closeTo(150, 0.001),
+      );
+      expect(
+        erp.isLockedOperationalType(
+          ExpenseTypeModel(
+            id: ERPProvider.cuttingExpenseTypeId,
+            name: 'مصاريف القص',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        erp.isLockedOperationalType(
+          ExpenseTypeModel(id: 'workforce_wages_expense', name: 'أجور العمال'),
+        ),
+        isTrue,
+      );
+      // A lookalike custom type is NOT operational.
+      expect(
+        erp.isLockedOperationalType(
+          ExpenseTypeModel(id: 't_x', name: 'كهرباء ومياه المعمل'),
+        ),
+        isFalse,
       );
     });
   });
@@ -205,17 +227,17 @@ void main() {
       );
       expect(erp.dynamicOverheadRateOf(AppCurrency.usd), closeTo(0, 0.0001));
 
-      // Core expense of 100$ -> suggestion 10%.
+      // Core expense of 100$ -> suggestion 10%. Under the locked rule
+      // only wages/cutting qualify, so the entry uses the wage type.
       erp.mainCashBox = 5000;
-      coreType(erp, 't_core', 'كهرباء ومياه المعمل', true);
-      erp.addExpenseRecord(rec('ce1', 't_core', 100));
+      erp.addExpenseRecord(rec('ce1', 'workforce_wages_expense', 100));
       expect(
         erp.dynamicOverheadRateOf(AppCurrency.usd),
         closeTo(0.10, 0.0001),
       );
 
       // A general (non-core) expense of 500$ must NOT move the rate.
-      coreType(erp, 't_gen', 'ضيافة', false);
+      customType(erp, 't_gen', 'ضيافة');
       erp.addExpenseRecord(rec('ge1', 't_gen', 500));
       expect(
         erp.dynamicOverheadRateOf(AppCurrency.usd),
@@ -254,8 +276,7 @@ void main() {
         () async {
       final erp = await erpWithCut(fee: 0.12);
       erp.mainCashBox = 5000;
-      coreType(erp, 't_core', 'كهرباء', true);
-      erp.addExpenseRecord(rec('v1', 't_core', 100));
+      erp.addExpenseRecord(rec('v1', 'salaries_and_wages_expense', 100));
       // Nothing sold => coverage 0, core 100 => deficit variance.
       expect(
         erp.operatingCostVarianceOf(AppCurrency.usd),
