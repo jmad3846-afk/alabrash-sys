@@ -128,6 +128,12 @@ class OpeningEntryModel {
   bool isLocked;
   DateTime? lockedAt;
   bool openingStockApplied;
+  // Per-item tracking of which opening stock lines have already been
+  // materialized into the operational inventory. This lets an entry that
+  // was approved once still apply NEWLY added stock items when it is
+  // reopened for editing and approved again (previously the whole pass was
+  // skipped once openingStockApplied was true).
+  final List<String> appliedOpeningStockIds;
 
   OpeningEntryModel({
     this.landValue = 120000.0,
@@ -159,10 +165,12 @@ class OpeningEntryModel {
     this.isLocked = true,
     this.lockedAt,
     this.openingStockApplied = false,
+    List<String>? appliedOpeningStockIds,
   }) : retainedWithdrawals = retainedWithdrawals ?? [],
        fixedAssets = fixedAssets ?? [],
        openingStock = openingStock ?? [],
-       legacyFinancials = legacyFinancials ?? [];
+       legacyFinancials = legacyFinancials ?? [],
+       appliedOpeningStockIds = appliedOpeningStockIds ?? [];
 
   double get totalFixedAssets => (fixedAssets.isEmpty
       ? landValue +
@@ -277,11 +285,12 @@ class OpeningEntryModel {
     'isLocked': isLocked,
     'lockedAt': lockedAt?.toIso8601String(),
     'openingStockApplied': openingStockApplied,
+    'appliedOpeningStockIds': appliedOpeningStockIds,
   };
 
-  factory OpeningEntryModel.fromJson(Map<String, dynamic> json) =>
-      OpeningEntryModel(
-        landValue: (json['landValue'] ?? 0.0).toDouble(),
+  factory OpeningEntryModel.fromJson(Map<String, dynamic> json) {
+    final model = OpeningEntryModel(
+      landValue: (json['landValue'] ?? 0.0).toDouble(),
         buildingsValue: (json['buildingsValue'] ?? 0.0).toDouble(),
         machineryValue: (json['machineryValue'] ?? 0.0).toDouble(),
         vehiclesValue: (json['vehiclesValue'] ?? 0.0).toDouble(),
@@ -325,7 +334,16 @@ class OpeningEntryModel {
             ? DateTime.parse(json['lockedAt'])
             : null,
         openingStockApplied: json['openingStockApplied'] ?? false,
-      );
+        appliedOpeningStockIds: (json['appliedOpeningStockIds'] as List? ??
+                const [])
+            .map((e) => e.toString())
+            .toList(),
+    );
+    // NOTE: legacy saves (flag true, empty ledger) are migrated by the
+    // provider where the operational inventory lists are visible:
+    // ERPProvider._migrateLegacyAppliedOpeningStockLedger().
+    return model;
+  }
 }
 
 class FixedAssetModel {

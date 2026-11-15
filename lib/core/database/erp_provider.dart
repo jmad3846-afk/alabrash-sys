@@ -1230,6 +1230,12 @@ class ERPProvider extends ChangeNotifier {
       isLocked: lockOpeningEntry,
       lockedAt: lockOpeningEntry ? DateTime.now() : null,
       openingStockApplied: lockOpeningEntry,
+      // The comprehensive seed claims its opening stock as already applied
+      // when it locks the entry, so record those lines in the per-item
+      // ledger to keep future re-approvals duplicate-free.
+      appliedOpeningStockIds: lockOpeningEntry
+          ? openingStockList.map((item) => item.id).toList()
+          : const [],
     );
     isOpeningEntryCompleted = lockOpeningEntry;
 
@@ -6112,9 +6118,64 @@ class ERPProvider extends ChangeNotifier {
     return true;
   }
 
-  void _applyOpeningStockToOperationalInventory() {
-    if (openingEntry.openingStockApplied) return;
+  /// Evidence check for the legacy one-shot flag: does a materialized
+  /// operational row still carry this opening stock line's id (directly or
+  /// as a consolidated source alias)? Tailoring lines merge into existing
+  /// product quantities and cannot be traced, so the approved flag vouches
+  /// for them.
+  bool _openingStockLineAlreadyApplied(OpeningStockItemModel item) {
+    switch (item.category) {
+      case 'بلوكات خام المصنع':
+        return factoryBlocks.any((b) => b.id == item.id);
+      case 'أمتار المصنع':
+        return factoryWarehouse.any(
+          (w) => w.id == item.id || w.sourceIds.contains(item.id),
+        );
+      case 'أمتار المعمل':
+        return workshopStock.any((w) => w.id == item.id);
+      case 'قطع زائدة وخردة':
+        return scrapItems.any((s) => s.id == item.id);
+      case 'تفصيل بسيط':
+      case 'تفصيل معقد':
+        return true;
+      default:
+        return true;
+    }
+  }
+
+  /// One-time migration for saves approved before per-item tracking existed.
+  /// Lines still visible in the operational inventory are recorded in the
+  /// applied ledger (so a re-approval never duplicates them); lines with no
+  /// trace left — the ones silently dropped by the old one-shot flag when
+  /// stock was added to an already-approved entry — stay pending and get
+  /// materialized automatically on the next approval/startup pass.
+  void _migrateLegacyAppliedOpeningStockLedger() {
+    if (!openingEntry.openingStockApplied) return;
+    if (openingEntry.appliedOpeningStockIds.isNotEmpty) return;
     for (final item in openingEntry.openingStock) {
+      if (_openingStockLineAlreadyApplied(item)) {
+        openingEntry.appliedOpeningStockIds.add(item.id);
+      }
+    }
+  }
+
+  void _applyOpeningStockToOperationalInventory() {
+    _migrateLegacyAppliedOpeningStockLedger();
+    // Incremental per-item application: only stock lines that were never
+    // materialized before are validated and pushed. This fixes reopened-and-
+    // reapproved entries where NEW opening stock items (e.g. factory meter
+    // types given an opening quantity after the first approval) were
+    // silently skipped because the global applied flag was already true.
+    final pending = openingEntry.openingStock
+        .where(
+          (item) => !openingEntry.appliedOpeningStockIds.contains(item.id),
+        )
+        .toList();
+    if (pending.isEmpty) {
+      openingEntry.openingStockApplied = true;
+      return;
+    }
+    for (final item in pending) {
       if (!const {
         'بلوكات خام المصنع',
         'أمتار المصنع',
@@ -6182,7 +6243,7 @@ class ERPProvider extends ChangeNotifier {
         );
       }
     }
-    for (final item in openingEntry.openingStock) {
+    for (final item in pending) {
       switch (item.category) {
         case 'بلوكات خام المصنع':
           final type = _firstOrNull(
@@ -6316,6 +6377,9 @@ class ERPProvider extends ChangeNotifier {
             'Unsupported opening stock category: ${item.category}.',
           );
       }
+      // Remember this line as materialized so a future re-approval of a
+      // reopened entry never adds it twice.
+      openingEntry.appliedOpeningStockIds.add(item.id);
     }
     openingEntry.openingStockApplied = true;
   }
@@ -10947,11 +11011,18 @@ class ERPProvider extends ChangeNotifier {
         } catch (_) {}
       }
 
-      if (openingEntry.isLocked &&
-          openingEntry.openingStock.isNotEmpty &&
-          !openingEntry.openingStockApplied) {
-        _applyOpeningStockToOperationalInventory();
-        await saveToDisk();
+      if (openingEntry.isLocked && openingEntry.openingStock.isNotEmpty) {
+        // Catch-up pass: covers never-applied lines, first approvals that
+        // predate persistence of the applied flag, and legacy saves whose
+        // stock lines were dropped by the old one-shot gate.
+        final ledger = openingEntry.appliedOpeningStockIds;
+        final needsPass =
+            !openingEntry.openingStockApplied ||
+            openingEntry.openingStock.any((i) => !ledger.contains(i.id));
+        if (needsPass) {
+          _applyOpeningStockToOperationalInventory();
+          await saveToDisk();
+        }
       }
       syncCuttingBatchCatalog();
       notifyListeners();
