@@ -78,8 +78,6 @@ class _CustomerCreditPayoutDialogState
     final erp = widget.erp;
     final isAgent = client.clientType == 'معتمد مصنع';
     final roleLabel = isAgent ? 'المعتمد' : 'العميل';
-    final hasUsdCredit = client.debtBalance < -0.01;
-    final hasSypCredit = client.debtBalanceSyp < -0.01;
     final currentCredit = client.creditOf(_selectedCurrency);
     final sym = AppCurrency.symbol(_selectedCurrency);
     final boxCash = erp.cashOf('main', _selectedCurrency);
@@ -138,42 +136,43 @@ class _CustomerCreditPayoutDialogState
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (hasUsdCredit && hasSypCredit) ...[
-                const Text(
-                  'اختر عملة الصرف:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: RadioListTile<String>(
-                        value: AppCurrency.usd,
-                        groupValue: _selectedCurrency,
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          'دولار (${client.creditOf(AppCurrency.usd).fmt}\$)',
-                        ),
-                        onChanged: _onCurrencyChanged,
+              // Bidirectional payout: currency is always selectable, and the
+              // amount may exceed the client's credit (أمانة) — the surplus
+              // is then booked as an advance/refund that the client owes back.
+              const Text(
+                'اختر عملة الصرف:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: RadioListTile<String>(
+                      value: AppCurrency.usd,
+                      groupValue: _selectedCurrency,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'دولار (رصيد دائن: ${client.creditOf(AppCurrency.usd).fmt}\$)',
                       ),
+                      onChanged: _onCurrencyChanged,
                     ),
-                    Expanded(
-                      child: RadioListTile<String>(
-                        value: AppCurrency.syp,
-                        groupValue: _selectedCurrency,
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          'ليرة (${client.creditOf(AppCurrency.syp).fmt} ل.س)',
-                        ),
-                        onChanged: _onCurrencyChanged,
+                  ),
+                  Expanded(
+                    child: RadioListTile<String>(
+                      value: AppCurrency.syp,
+                      groupValue: _selectedCurrency,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'ليرة (رصيد دائن: ${client.creditOf(AppCurrency.syp).fmt} ل.س)',
                       ),
+                      onChanged: _onCurrencyChanged,
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-              ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -271,7 +270,7 @@ class _CustomerCreditPayoutDialogState
                 decoration: InputDecoration(
                   labelText: 'مبلغ الصرف / الدفع ($sym)',
                   prefixIcon: const Icon(Icons.outbox_rounded),
-                  helperText: 'الحد الأقصى المسموح: ${currentCredit.fmt} $sym',
+                  helperText: 'الرصيد الدائن الحالي: ${currentCredit.fmt} $sym — يمكن الصرف لأي مبلغ (تسوية أمانة، عمولة، أو دفعة تُخصم من حسابه)',
                   suffixIcon: currentCredit > 0
                       ? TextButton(
                           onPressed: () {
@@ -331,11 +330,8 @@ class _CustomerCreditPayoutDialogState
               setState(() => _errorMessage = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.');
               return;
             }
-            if (amount > currentCredit + 0.001) {
-              setState(() => _errorMessage =
-                  'لا يمكن صرف مبلغ أكبر من الرصيد الدائن المستحق (${currentCredit.fmt} $sym)!');
-              return;
-            }
+            // Bidirectional: paying beyond the current credit is allowed —
+            // the surplus increases what the client owes the company.
 
             final ok = erp.payCustomerCredit(
               client: client,

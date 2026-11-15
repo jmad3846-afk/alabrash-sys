@@ -620,6 +620,58 @@ class A4StatementData {
       );
     }
 
+    // ---- Bidirectional Pay / Collect cash transactions (دفع / تحصيل) ----
+    // Every payment or collection executed from the supplier's financial
+    // card appears here as its own chronological row, moving the running
+    // balance in the right direction (pay = cash out, collect = cash in).
+    for (final payment in supplier.payments) {
+      final amount = (payment['amount'] as num? ?? 0).toDouble();
+      if (amount <= 0.001) continue;
+      final isPay = (payment['direction'] as String? ?? 'pay') == 'pay';
+      if (isPay) {
+        // Un-allocate the FIFO invoice settlements carried by this payment
+        // so the invoice rows show their original dues and the payment row
+        // itself carries the cash-out credit (mirrors the agent statement).
+        final allocations = Map<String, dynamic>.from(
+          payment['allocations'] as Map? ?? {},
+        );
+        if (allocations.isNotEmpty) {
+          for (var n = 0; n < items.length; n++) {
+            final item = items[n];
+            if (item.category != 'فاتورة شراء') continue;
+            final factory =
+                invs.where((i) => i.invoiceNo == item.documentNo).firstOrNull;
+            final amt = (allocations[factory?.id] as num? ?? 0).toDouble();
+            if (amt > 0) {
+              items[n] = item.copyWith(
+                paidAmount: item.paidAmount - amt,
+                remainingAmount: item.remainingAmount + amt,
+              );
+            }
+          }
+        }
+      }
+      final note = (payment['note'] as String? ?? '').trim().isNotEmpty
+          ? ' — ${(payment['note'] as String).trim()}'
+          : '';
+      items.add(
+        A4StatementLineItem(
+          index: idx++,
+          date: DateTime.parse(payment['date'] as String),
+          documentNo: isPay ? 'دفع' : 'قبض',
+          description: isPay
+              ? 'دفعة مدفوعة للمورد$note'
+              : 'تحصيل واسترداد نقدي من المورد$note',
+          category: isPay ? 'دفعة دفع' : 'دفعة قبض',
+          currency: payment['currency'] as String? ?? AppCurrency.usd,
+          totalAmount: 0,
+          paidAmount: isPay ? amount : 0,
+          remainingAmount: isPay ? -amount : amount,
+          status: isPay ? 'مدفوعة' : 'مقبوضة',
+        ),
+      );
+    }
+
     items.sort((a, b) {
       final cmp = a.date.compareTo(b.date);
       if (cmp != 0) return cmp;
@@ -833,47 +885,57 @@ class A4StatementData {
       );
     }
     for (final payment in client.payments) {
-      final allocations = Map<String, dynamic>.from(
-        payment['allocations'] as Map? ?? {},
-      );
-      for (var n = 0; n < items.length; n++) {
-        final item = items[n];
-        if (item.category == 'فاتورة خدمات - أجور قص مصنع') continue;
-        final factory = invs
-            .where((i) => i.invoiceNo == item.documentNo)
-            .firstOrNull;
-        final lab = workshop
-            .where((i) => i.invoiceNo == item.documentNo)
-            .firstOrNull;
-        final service = serviceInvoices
-            .where((invoice) => invoice.invoiceNumber == item.documentNo)
-            .firstOrNull;
-        final id = item.category == 'فاتورة مبيعات - مصنع'
-            ? factory?.id
-            : item.category == 'فاتورة خدمات - أجور قص مصنع'
-            ? service?.id
-            : lab?.id;
-        final amount = (allocations[id] as num? ?? 0).toDouble();
-        if (amount > 0) {
-          items[n] = item.copyWith(
-            paidAmount: item.paidAmount - amount,
-            remainingAmount: item.remainingAmount + amount,
-          );
+      final amount = (payment['amount'] as num? ?? 0).toDouble();
+      if (amount <= 0.001) continue;
+      // Bidirectional actions: 'payout' rows (دفع للمعتمد - refunds,
+      // commissions or credit settlements) move the balance up, while the
+      // classic collection rows (تحصيل) move it down.
+      final isPayout = payment['direction'] == 'payout';
+      if (!isPayout) {
+        final allocations = Map<String, dynamic>.from(
+          payment['allocations'] as Map? ?? {},
+        );
+        for (var n = 0; n < items.length; n++) {
+          final item = items[n];
+          if (item.category == 'فاتورة خدمات - أجور قص مصنع') continue;
+          final factory = invs
+              .where((i) => i.invoiceNo == item.documentNo)
+              .firstOrNull;
+          final lab = workshop
+              .where((i) => i.invoiceNo == item.documentNo)
+              .firstOrNull;
+          final service = serviceInvoices
+              .where((invoice) => invoice.invoiceNumber == item.documentNo)
+              .firstOrNull;
+          final id = item.category == 'فاتورة مبيعات - مصنع'
+              ? factory?.id
+              : item.category == 'فاتورة خدمات - أجور قص مصنع'
+              ? service?.id
+              : lab?.id;
+          final allocAmt = (allocations[id] as num? ?? 0).toDouble();
+          if (allocAmt > 0) {
+            items[n] = item.copyWith(
+              paidAmount: item.paidAmount - allocAmt,
+              remainingAmount: item.remainingAmount + allocAmt,
+            );
+          }
         }
       }
-      final amount = (payment['amount'] as num).toDouble();
+      final payNote = (payment['note'] as String? ?? '').trim();
       items.add(
         A4StatementLineItem(
           index: idx++,
           date: DateTime.parse(payment['date'] as String),
-          documentNo: 'قبض',
-          description: 'دفعة من المعتمد',
-          category: 'دفعة قبض',
-          currency: payment['currency'] as String,
+          documentNo: isPayout ? 'صرف' : 'قبض',
+          description: isPayout
+              ? 'دفعة مدفوعة للمعتمد${payNote.isNotEmpty ? ' — $payNote' : ''}'
+              : 'دفعة من المعتمد',
+          category: isPayout ? 'دفعة دفع' : 'دفعة قبض',
+          currency: payment['currency'] as String? ?? AppCurrency.usd,
           totalAmount: 0,
-          paidAmount: amount,
-          remainingAmount: -amount,
-          status: 'مقبوضة',
+          paidAmount: isPayout ? 0 : amount,
+          remainingAmount: isPayout ? amount : -amount,
+          status: isPayout ? 'مدفوعة' : 'مقبوضة',
         ),
       );
     }

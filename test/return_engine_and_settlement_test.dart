@@ -1591,7 +1591,7 @@ void main() {
       supplier.debtBalance += (inv.grandTotal - inv.advancePayment);
       expect(supplier.debtBalance, 400.0);
       expect(supplier.hasDebt, isTrue);
-      expect(supplier.hasCredit, isFalse); // Under normal debt: Collect button strictly hidden
+      expect(supplier.hasCredit, isFalse); // Normal debt direction (both Pay & Collect buttons stay visible)
 
       // 2. Return 7 tons ($700 value) settled via debt reduction / credit balance
       // Unpaid debt was $400, so $400 clears the debt and $300 flips the supplier balance to -$300!
@@ -1627,7 +1627,7 @@ void main() {
 
       // 3. Verify Supplier Account Balance Flipped to Debtor (مدين - لنا عنده رصيد دائن)
       expect(supplier.debtBalance, -300.0);
-      expect(supplier.hasCredit, isTrue); // "تحصيل من هذا المورد" button is now ACTIVE!
+      expect(supplier.hasCredit, isTrue); // Supplier account flipped to credit (Collect consumes it)
       expect(supplier.hasDebt, isFalse);  // "دفع للمورد" is STRICTLY HIDDEN!
       expect(supplier.creditOf(AppCurrency.usd), 300.0);
 
@@ -1686,7 +1686,7 @@ void main() {
       client.debtBalance += (inv.grandTotal - inv.advancePayment);
       expect(client.debtBalance, 600.0);
       expect(client.hasDebt, isTrue);
-      expect(client.hasCredit, isFalse); // Under normal debt: Pay to Customer is strictly hidden
+      expect(client.hasCredit, isFalse); // Normal debt direction (both Pay & Collect buttons stay visible)
 
       // 2. Full return ($1,000) with account settlement (debt reduction / permanent credit balance)
       // Unpaid debt was $600, so $600 clears customer debt and $400 surplus flips account to -$400 (Creditor)
@@ -1722,7 +1722,7 @@ void main() {
 
       // 3. Verify Customer Account Balance Flipped to Creditor (دائن - الشركة مدينة له)
       expect(client.debtBalance, -400.0);
-      expect(client.hasCredit, isTrue); // "دفع للمعتمد" button is now ACTIVE!
+      expect(client.hasCredit, isTrue); // Agent account flipped to credit (Payout consumes it)
       expect(client.hasDebt, isFalse);  // "تحصيل" button is STRICTLY HIDDEN!
       expect(client.creditOf(AppCurrency.usd), 400.0);
 

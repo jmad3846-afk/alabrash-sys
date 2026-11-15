@@ -76,8 +76,6 @@ class _SupplierCreditCollectionDialogState
   Widget build(BuildContext context) {
     final supplier = widget.supplier;
     final erp = widget.erp;
-    final hasUsdCredit = supplier.debtBalance < -0.01;
-    final hasSypCredit = supplier.debtBalanceSyp < -0.01;
     final currentCredit = supplier.creditOf(_selectedCurrency);
     final sym = AppCurrency.symbol(_selectedCurrency);
     final boxCash = erp.cashOf('main', _selectedCurrency);
@@ -136,42 +134,42 @@ class _SupplierCreditCollectionDialogState
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (hasUsdCredit && hasSypCredit) ...[
-                const Text(
-                  'اختر عملة التحصيل:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: RadioListTile<String>(
-                        value: AppCurrency.usd,
-                        groupValue: _selectedCurrency,
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          'دولار (${supplier.creditOf(AppCurrency.usd).fmt}\$)',
-                        ),
-                        onChanged: _onCurrencyChanged,
+              // Bidirectional collection: the currency choice is always
+              // available, even when the account currently holds no credit.
+              const Text(
+                'اختر عملة التحصيل:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: RadioListTile<String>(
+                      value: AppCurrency.usd,
+                      groupValue: _selectedCurrency,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'دولار (رصيد دائن: ${supplier.creditOf(AppCurrency.usd).fmt}\$)',
                       ),
+                      onChanged: _onCurrencyChanged,
                     ),
-                    Expanded(
-                      child: RadioListTile<String>(
-                        value: AppCurrency.syp,
-                        groupValue: _selectedCurrency,
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          'ليرة (${supplier.creditOf(AppCurrency.syp).fmt} ل.س)',
-                        ),
-                        onChanged: _onCurrencyChanged,
+                  ),
+                  Expanded(
+                    child: RadioListTile<String>(
+                      value: AppCurrency.syp,
+                      groupValue: _selectedCurrency,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'ليرة (رصيد دائن: ${supplier.creditOf(AppCurrency.syp).fmt} ل.س)',
                       ),
+                      onChanged: _onCurrencyChanged,
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-              ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -244,7 +242,7 @@ class _SupplierCreditCollectionDialogState
                 decoration: InputDecoration(
                   labelText: 'مبلغ التحصيل / الاسترداد ($sym)',
                   prefixIcon: const Icon(Icons.download_rounded),
-                  helperText: 'الحد الأقصى المسموح: ${currentCredit.fmt} $sym',
+                  helperText: 'الرصيد الدائن الحالي: ${currentCredit.fmt} $sym — يمكن التحصيل أكثر ليُسجَّل ما يُستلم فوقه كمبلغ مقطون لحساب المورد',
                   suffixIcon: currentCredit > 0
                       ? TextButton(
                           onPressed: () {
@@ -304,11 +302,9 @@ class _SupplierCreditCollectionDialogState
               setState(() => _errorMessage = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.');
               return;
             }
-            if (amount > currentCredit + 0.001) {
-              setState(() => _errorMessage =
-                  'لا يمكن تحصيل مبلغ أكبر من الرصيد الدائن المستحق لنا (${currentCredit.fmt} $sym)!');
-              return;
-            }
+            // Bidirectional: collecting beyond the existing credit is allowed;
+            // the surplus is registered as funds received/held on the
+            // supplier's account (payable grows accordingly).
 
             final ok = erp.collectFromSupplierCredit(
               supplier: supplier,

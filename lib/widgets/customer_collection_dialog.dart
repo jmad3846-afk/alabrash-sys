@@ -670,19 +670,13 @@ class _CustomerCollectionDialogState extends State<CustomerCollectionDialog> {
               setState(() => _errorMessage = 'يرجى إدخال مبلغ تحصيل صحيح أكبر من الصفر.');
               return;
             }
-            if (isSameCurrency) {
-              if (enteredAmount > dueInAccountCurrency + 0.001) {
-                setState(() => _errorMessage =
-                    'لا يمكن تحصيل مبلغ أكبر من المستحق المطلوب (${dueInAccountCurrency.fmt} ${AppCurrency.symbol(accountCurrency)})!');
-                return;
-              }
-            } else {
-              if (convertedAmount > dueInAccountCurrency + 0.001) {
-                setState(() => _errorMessage =
-                    'المبلغ المعادل (${convertedAmount.fmt} ${AppCurrency.symbol(accountCurrency)}) أكبر من المستحق المطلوب (${dueInAccountCurrency.fmt} ${AppCurrency.symbol(accountCurrency)})! لا يمكن تحصيل أكثر من المستحق.');
-                return;
-              }
+            if (!isSameCurrency && exchangeRate <= 0) {
+              setState(() => _errorMessage = 'يرجى إدخال سعر الصرف (قيمة الدولار اليوم) لإتمام التحصيل بعملة مختلفة.');
+              return;
             }
+            // Bidirectional: collecting beyond the due balance is allowed —
+            // the surplus registers a credit (أمانة) for the client, settled
+            // later through his "دفع" button.
 
             final success = erp.collectCustomerPayment(
               client: client,

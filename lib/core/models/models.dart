@@ -994,6 +994,10 @@ class CapitalInjectionRecordModel {
 // 3. SUPPLIER & CLIENT MODELS
 // ==========================================
 class SupplierModel {
+  // Chronological Pay / Collect cash transactions logged for the account
+  // statement (كشف الحساب): {'date','currency','amount','direction':
+  // 'pay'|'collect','allocations':{invoiceId: settledAmount}, 'note'?}.
+  final List<Map<String, dynamic>> payments;
   final String id;
   final String name;
   final String phone;
@@ -1002,13 +1006,14 @@ class SupplierModel {
   double debtBalanceSyp; // SYP — same person can hold both currencies
 
   SupplierModel({
+    List<Map<String, dynamic>>? payments,
     required this.id,
     required this.name,
     required this.phone,
     required this.location,
     this.debtBalance = 0.0,
     this.debtBalanceSyp = 0.0,
-  });
+  }) : payments = payments ?? [];
 
   double debtOf(String? currency) =>
       AppCurrency.isSyp(currency) ? debtBalanceSyp : debtBalance;
@@ -1058,9 +1063,13 @@ class SupplierModel {
     'location': location,
     'debtBalance': debtBalance,
     'debtBalanceSyp': debtBalanceSyp,
+    'payments': payments,
   };
 
   factory SupplierModel.fromJson(Map<String, dynamic> json) => SupplierModel(
+    payments: (json['payments'] as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList(),
     id: json['id'],
     name: json['name'],
     phone: json['phone'] ?? '',

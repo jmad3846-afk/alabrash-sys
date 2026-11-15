@@ -1517,46 +1517,57 @@ class _FinancialsScreenState extends State<FinancialsScreen>
     );
   }
 
-  /// Pay / Collect button dedicated to Supplier Accounts in Factory Suppliers Financials.
-  /// Dynamically flips between "دفع للمورد" when we owe the supplier,
-  /// and "تحصيل من هذا المورد" when the supplier's balance flips to debtor.
+  /// Pay / Collect actions for Supplier Accounts in Factory Suppliers
+  /// Financials. BOTH buttons are permanently visible and active regardless
+  /// of the current balance direction (debit or credit):
+  ///  - "دفع" pays cash out to the supplier (settles dues; any excess becomes
+  ///    an advance/claim on the supplier).
+  ///  - "تحصيل" collects cash in from the supplier (refunds, returns or
+  ///    advance settlements; funds received beyond an existing credit are
+  ///    registered as held on the supplier's account).
   Widget _buildSupplierPayButton(ERPProvider erp, SupplierModel supplier) {
-    if (supplier.hasCredit) {
-      return ElevatedButton.icon(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.successGreen,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      alignment: WrapAlignment.end,
+      children: [
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.dangerWaste,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          icon: const Icon(Icons.payment_rounded, size: 15),
+          label: const Text(
+            'دفع',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          onPressed: () => _showSupplierPaymentDialog(erp, supplier),
         ),
-        icon: const Icon(Icons.download_rounded, size: 16),
-        label: const Text(
-          'تحصيل من هذا المورد',
-          style: TextStyle(fontWeight: FontWeight.bold),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.successGreen,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          icon: const Icon(Icons.download_rounded, size: 15),
+          label: const Text(
+            'تحصيل',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          onPressed: () => SupplierCreditCollectionDialog.show(
+            context,
+            supplier: supplier,
+            erp: erp,
+          ),
         ),
-        onPressed: () => SupplierCreditCollectionDialog.show(
-          context,
-          supplier: supplier,
-          erp: erp,
-        ),
-      );
-    }
-    final hasDebt =
-        supplier.debtBalance > 0.01 || supplier.debtBalanceSyp > 0.01;
-    if (!hasDebt) return const Chip(label: Text('خالص'));
-    return ElevatedButton.icon(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.dangerWaste,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-      icon: const Icon(Icons.payment_rounded, size: 16),
-      label: const Text(
-        'دفع للمورد',
-        style: TextStyle(fontWeight: FontWeight.bold),
-      ),
-      onPressed: () => _showSupplierPaymentDialog(erp, supplier),
+      ],
     );
   }
 
@@ -1633,67 +1644,59 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (hasUsd && hasSyp) ...[
-                      const Text(
-                        'اختر عملة الدفع:',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
+                    // Bidirectional Pay: currency is always selectable, and
+                    // the amount may exceed the current due — the surplus is
+                    // booked as an advance (claim) on the supplier.
+                    const Text(
+                      'اختر عملة الدفع:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: RadioListTile<String>(
+                            value: AppCurrency.usd,
+                            groupValue: selectedCurrency,
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              'دولار (مستحق: ${supplier.debtBalance.fmt}\$)',
+                            ),
+                            onChanged: (v) {
+                              if (v != null) {
+                                setSt(() {
+                                  selectedCurrency = v;
+                                  currentDue = supplier.debtOf(v);
+                                  errorMsg = null;
+                                });
+                              }
+                            },
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: RadioListTile<String>(
-                              value: AppCurrency.usd,
-                              groupValue: selectedCurrency,
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(
-                                'دولار (${supplier.debtBalance.fmt}\$)',
-                              ),
-                              onChanged: (v) {
-                                if (v != null) {
-                                  setSt(() {
-                                    selectedCurrency = v;
-                                    currentDue = supplier.debtOf(v);
-                                    ctrl.text = currentDue > 0
-                                        ? currentDue.fmt
-                                        : '';
-                                    errorMsg = null;
-                                  });
-                                }
-                              },
+                        Expanded(
+                          child: RadioListTile<String>(
+                            value: AppCurrency.syp,
+                            groupValue: selectedCurrency,
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              'ليرة (مستحق: ${supplier.debtBalanceSyp.fmt} ل.س)',
                             ),
+                            onChanged: (v) {
+                              if (v != null) {
+                                setSt(() {
+                                  selectedCurrency = v;
+                                  currentDue = supplier.debtOf(v);
+                                  errorMsg = null;
+                                });
+                              }
+                            },
                           ),
-                          Expanded(
-                            child: RadioListTile<String>(
-                              value: AppCurrency.syp,
-                              groupValue: selectedCurrency,
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(
-                                'ليرة (${supplier.debtBalanceSyp.fmt} ل.س)',
-                              ),
-                              onChanged: (v) {
-                                if (v != null) {
-                                  setSt(() {
-                                    selectedCurrency = v;
-                                    currentDue = supplier.debtOf(v);
-                                    ctrl.text = currentDue > 0
-                                        ? currentDue.fmt
-                                        : '';
-                                    errorMsg = null;
-                                  });
-                                }
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                    ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -1776,7 +1779,7 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                         labelText: 'مبلغ الدفع ($sym)',
                         prefixIcon: const Icon(Icons.money_off_rounded),
                         helperText:
-                            'الحد الأقصى المسموح: ${currentDue.fmt} $sym',
+                            'المستحق الحالي: ${currentDue.fmt} $sym — يمكن الدفع أكثر ليُسجَّل الفرق كدفعة مقدمة (رصيد لنا على المورد)',
                         suffixIcon: currentDue > 0
                             ? TextButton(
                                 onPressed: () {
@@ -1847,13 +1850,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     );
                     return;
                   }
-                  if (amount > currentDue + 0.001) {
-                    setSt(
-                      () => errorMsg =
-                          'لا يمكن دفع مبلغ أكبر من المستحق المطلوب للمورد (${currentDue.fmt} $sym)!',
-                    );
-                    return;
-                  }
+                  // Bidirectional: paying beyond the current due is allowed —
+                  // the surplus is booked as an advance (claim) on the supplier.
 
                   final ok = erp.paySupplierDebt(
                     supplier: supplier,
@@ -1886,38 +1884,56 @@ class _FinancialsScreenState extends State<FinancialsScreen>
     );
   }
 
-  /// Collect / Pay button dedicated to Customer / Dealer Accounts.
-  /// Dynamically flips between "تحصيل" when the customer owes the company,
-  /// and "دفع للمعتمد" / "دفع للزبون" when the customer's balance flips to creditor.
+  /// Collect / Pay actions for Customer & Dealer (معتمد) Accounts.
+  /// BOTH buttons are permanently visible and active regardless of the
+  /// current balance direction (debit or credit):
+  ///  - "تحصيل" collects cash in from the client (settles invoices FIFO;
+  ///    collecting beyond the due registers a credit/أمانة for him).
+  ///  - "دفع" pays cash out to the client (refunds, commissions or credit
+  ///    settlements; consumes his credit or opens a new receivable).
   Widget _buildCustomerCollectButton(ERPProvider erp, ClientModel client) {
-    if (client.hasCredit) {
-      final isAgent = client.clientType == 'معتمد مصنع';
-      return ElevatedButton.icon(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.dangerWaste,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      alignment: WrapAlignment.end,
+      children: [
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.successGreen,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          onPressed: () =>
+              CustomerCollectionDialog.show(context, client: client, erp: erp),
+          child: const Text(
+            'تحصيل',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
         ),
-        icon: const Icon(Icons.outbox_rounded, size: 16),
-        label: Text(
-          isAgent ? 'دفع للمعتمد' : 'دفع للزبون',
-          style: const TextStyle(fontWeight: FontWeight.bold),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.dangerWaste,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          icon: const Icon(Icons.outbox_rounded, size: 15),
+          label: const Text(
+            'دفع',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          onPressed: () => CustomerCreditPayoutDialog.show(
+            context,
+            client: client,
+            erp: erp,
+          ),
         ),
-        onPressed: () =>
-            CustomerCreditPayoutDialog.show(context, client: client, erp: erp),
-      );
-    }
-    final hasDebt = client.debtBalance > 0.01 || client.debtBalanceSyp > 0.01;
-    if (!hasDebt) return const Chip(label: Text('خالص'));
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.successGreen,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      ),
-      onPressed: () =>
-          CustomerCollectionDialog.show(context, client: client, erp: erp),
-      child: const Text('تحصيل', style: TextStyle(fontWeight: FontWeight.bold)),
+      ],
     );
   }
 

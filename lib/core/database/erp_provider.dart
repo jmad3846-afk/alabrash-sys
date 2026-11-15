@@ -8922,22 +8922,28 @@ class ERPProvider extends ChangeNotifier {
   /// [currency]: currency to pay in (USD or SYP).
   /// Strictly prevents paying more than the supplier's due balance or available cash.
   /// Settles the supplier's open purchase invoices in that currency FIFO.
+  /// Pays cash OUT to a supplier from the Main Cash Box. Fully bidirectional:
+  /// the payment settles open purchase invoices FIFO, and any excess beyond
+  /// the current due is kept as an advance / claim on the supplier (account
+  /// flips to credit). Every payment is logged to supplier.payments so it
+  /// appears as a chronological row in the account statement.
   bool paySupplierDebt({
     required SupplierModel supplier,
     required double amount,
     required String currency,
+    String? notes,
   }) {
-    if (amount <= 0) return false;
+    if (!amount.isFinite || amount <= 0) return false;
     final c = AppCurrency.normalize(currency);
-    final due = supplier.debtOf(c);
-    if (amount > due + 0.001) return false;
-    final pay = amount.clamp(0.0, due).toDouble();
-    if (pay <= 0) return false;
+    final pay = amount;
     if (!takeCash('main', c, pay, allowNegative: true)) return false;
 
+    // Reduce the payable (or create/increase the advance claim when the
+    // payment exceeds what we owe — the balance is allowed to flip sign).
     supplier.reduceDebt(c, pay);
 
     // Settle supplier open invoices FIFO in that currency
+    final allocations = <String, double>{};
     double remainingToSettle = pay;
     final openInvs = factoryInvoices
         .where(
@@ -8958,82 +8964,119 @@ class ERPProvider extends ChangeNotifier {
       inv.paymentStatus = inv.remainingBalance > 0.01
           ? 'مستحق الدفع'
           : 'مدفوعة';
+      allocations[inv.id] = settlePart;
       remainingToSettle -= settlePart;
     }
+
+    // Statement log: the full cash-out movement with its invoice allocations.
+    supplier.payments.add({
+      'date': DateTime.now().toIso8601String(),
+      'currency': c,
+      'amount': pay,
+      'direction': 'pay',
+      'allocations': allocations,
+      if (notes != null && notes.trim().isNotEmpty) 'note': notes.trim(),
+    });
 
     notifyListeners();
     saveToDisk();
     return true;
   }
 
-  /// Collects cash back from a supplier who holds a credit/surplus balance
-  /// (account flipped to debtor after purchase return + previous deposit).
-  /// Puts the cash into the Main Cash Box and adjusts the supplier's balance back towards zero.
+  /// Collects cash IN from a supplier into the Main Cash Box. Fully
+  /// bidirectional: collecting up to the supplier's credit/recallable surplus
+  /// releases it (and any deferred purchase returns); collecting beyond the
+  /// current credit simply registers the received funds as held on the
+  /// supplier's account (the payable grows). Logged to supplier.payments for
+  /// the account statement.
   bool collectFromSupplierCredit({
     required SupplierModel supplier,
     required double amount,
     required String currency,
     String? notes,
   }) {
-    if (amount <= 0) return false;
+    if (!amount.isFinite || amount <= 0) return false;
     final c = AppCurrency.normalize(currency);
     final creditDue = supplier.creditOf(c);
-    if (creditDue <= 0.001) return false;
-    if (amount > creditDue + 0.001) return false;
-    final take = amount.clamp(0.0, creditDue).toDouble();
-    if (take <= 0) return false;
+    final take = amount;
 
     // Deposit the cash into the Main Safe
     addCash('main', c, take);
 
-    // Reduce the credit balance towards zero (debtBalance was negative, so addDebt increases it towards zero)
+    // Move the balance towards zero when consuming a claim, or towards a
+    // payable when the supplier hands us funds held on their account.
     supplier.addDebt(c, take);
 
-    // Release deferred purchase returns to Income Summary
-    _releaseDeferredAdjustments(
-      kind: 'purchase_return',
-      partyName: supplier.name,
-      partyId: supplier.id,
-      currency: c,
-      amount: take,
-    );
+    // Release deferred purchase returns to Income Summary (only what the
+    // existing credit could actually cover).
+    if (creditDue > 0.001) {
+      _releaseDeferredAdjustments(
+        kind: 'purchase_return',
+        partyName: supplier.name,
+        partyId: supplier.id,
+        currency: c,
+        amount: math.min(take, creditDue),
+      );
+    }
+
+    // Statement log.
+    supplier.payments.add({
+      'date': DateTime.now().toIso8601String(),
+      'currency': c,
+      'amount': take,
+      'direction': 'collect',
+      'allocations': <String, double>{},
+      if (notes != null && notes.trim().isNotEmpty) 'note': notes.trim(),
+    });
 
     notifyListeners();
     saveToDisk();
     return true;
   }
 
-  /// Pays out cash to a customer / accredited agent who holds a credit balance
-  /// (account flipped to creditor after sales return + previous deposit).
-  /// Takes the cash from the Main Cash Box and adjusts the customer's balance back towards zero.
+  /// Pays cash OUT from the Main Cash Box to a customer / accredited agent.
+  /// Fully bidirectional: paying consumes the client's credit (أمانة) when he
+  /// has one, or — when he has none — records an advance/fee/refund that
+  /// increases the amount he owes the company. Logged to client.payments with
+  /// direction 'payout' so it appears as a chronological statement row.
   bool payCustomerCredit({
     required ClientModel client,
     required double amount,
     required String currency,
     String? notes,
+    DateTime? transactionDate,
   }) {
-    if (amount <= 0) return false;
+    if (!amount.isFinite || amount <= 0) return false;
     final c = AppCurrency.normalize(currency);
     final creditDue = client.creditOf(c);
-    if (creditDue <= 0.001) return false;
-    if (amount > creditDue + 0.001) return false;
-    final pay = amount.clamp(0.0, creditDue).toDouble();
-    if (pay <= 0) return false;
+    final pay = amount;
 
     // Withdraw the cash from the Main Safe (allow overdraft if needed)
     if (!takeCash('main', c, pay, allowNegative: true)) return false;
 
-    // Reduce the customer's credit balance towards zero (debtBalance was negative, so addDebt increases it towards zero)
+    // Credit consumed toward zero, or new receivable created on the client.
     client.addDebt(c, pay);
 
-    // Release deferred sales returns to Income Summary
-    _releaseDeferredAdjustments(
-      kind: 'sales_return',
-      partyName: client.name,
-      partyId: client.id,
-      currency: c,
-      amount: pay,
-    );
+    // Release deferred sales returns to Income Summary (covered portion only).
+    if (creditDue > 0.001) {
+      _releaseDeferredAdjustments(
+        kind: 'sales_return',
+        partyName: client.name,
+        partyId: client.id,
+        currency: c,
+        amount: math.min(pay, creditDue),
+      );
+    }
+
+    // Statement log.
+    client.payments.add({
+      'date': (transactionDate ?? DateTime.now()).toIso8601String(),
+      'currency': c,
+      'amount': pay,
+      'direction': 'payout',
+      'allocations': <String, double>{},
+      if (notes != null && notes.trim().isNotEmpty) 'note': notes.trim(),
+    });
 
     notifyListeners();
     saveToDisk();
@@ -9279,7 +9322,9 @@ class ERPProvider extends ChangeNotifier {
   /// Multi-currency customer debt collection method.
   /// Supports direct payment (same currency) and cross-currency payment with exchange rate.
   /// Accurate double-entry accounting between Customer Account and Main Safe vaults.
-  /// Strictly prevents overcollection beyond due debt balance and settles invoices FIFO.
+  /// Settles open invoices FIFO; collecting beyond the due balance is allowed
+  /// and registers the surplus as a credit (أمانة) for the client, visible as
+  /// a statement row and reversible through the "Pay" button.
   bool collectCustomerPayment({
     required ClientModel client,
     required String paymentCurrency,
@@ -9290,15 +9335,15 @@ class ERPProvider extends ChangeNotifier {
     if (!paymentAmount.isFinite || paymentAmount <= 0) return false;
     final payCurr = AppCurrency.normalize(paymentCurrency);
     final acctCurr = AppCurrency.normalize(client.currencyClassification);
-    final currentDebt = client.debtOf(acctCurr);
 
     double convertedAcctAmount = 0.0;
 
     if (payCurr == acctCurr) {
-      // Case A: Direct Payment (Same Currency)
-      if (paymentAmount > currentDebt + 0.001) return false;
-      final take = paymentAmount.clamp(0.0, currentDebt).toDouble();
-      if (take <= 0) return false;
+      // Case A: Direct Payment (Same Currency). Collecting beyond the due
+      // is allowed: the surplus simply flips the account to a credit
+      // (أمانة/وديعة تُرد للمعتمد لاحقاً أو تُسحب بزر الدفع).
+      if (paymentAmount <= 0) return false;
+      final take = paymentAmount;
       client.reduceDebt(acctCurr, take);
       addCash('main', payCurr, take);
       convertedAcctAmount = take;
@@ -9312,7 +9357,6 @@ class ERPProvider extends ChangeNotifier {
         final amountSyp = paymentAmount;
         final convertedUsd = amountSyp / exchangeRate;
         if (convertedUsd <= 0) return false;
-        if (convertedUsd > currentDebt + 0.001) return false;
 
         client.reduceDebt(AppCurrency.usd, convertedUsd);
         addCash('main', AppCurrency.syp, amountSyp);
@@ -9323,7 +9367,6 @@ class ERPProvider extends ChangeNotifier {
         final amountUsd = paymentAmount;
         final convertedSyp = amountUsd * exchangeRate;
         if (convertedSyp <= 0) return false;
-        if (convertedSyp > currentDebt + 0.001) return false;
 
         client.reduceDebt(AppCurrency.syp, convertedSyp);
         addCash('main', AppCurrency.usd, amountUsd);
@@ -9472,6 +9515,7 @@ class ERPProvider extends ChangeNotifier {
       'date': (transactionDate ?? DateTime.now()).toIso8601String(),
       'currency': acctCurr,
       'amount': convertedAcctAmount,
+      'direction': 'collection',
       'paymentCurrency': payCurr,
       'paymentAmount': paymentAmount,
       'allocations': allocations,

@@ -11,7 +11,7 @@ void main() {
 
   group('ERPProvider - External Payments & Collections Logic', () {
     test(
-      'paySupplierDebt strictly prevents overpaying and settles invoices FIFO',
+      'paySupplierDebt is bidirectional: overpaying is allowed, creates an advance, and is logged for the statement',
       () {
         final erp = ERPProvider();
         final supplier = erp.suppliers.first;
@@ -43,17 +43,25 @@ void main() {
         );
         erp.factoryInvoices.addAll([inv1, inv2]);
 
-        // 1. Strict overpayment prevention:
+        // 1. Overpayment beyond the due is now ALLOWED (fully bidirectional
+        //    Pay/Collect): 500 paid vs 300 due -> 200 advance (claim) on the
+        //    supplier; cash register debited by the full amount.
         expect(
           erp.paySupplierDebt(
             supplier: supplier,
             amount: 500.0, // greater than 300
             currency: AppCurrency.usd,
           ),
-          isFalse,
+          isTrue,
         );
-        // Supplier debt should remain untouched
-        expect(supplier.debtBalance, closeTo(300.0, 0.001));
+        expect(supplier.debtBalance, closeTo(-200.0, 0.001));
+        expect(supplier.hasCredit, isTrue);
+        expect(erp.mainCashBox, closeTo(500.0, 0.001));
+
+        // The transaction is logged for the account statement.
+        expect(supplier.payments.length, 1);
+        expect(supplier.payments.last['direction'], 'pay');
+        expect(supplier.payments.last['amount'], closeTo(500.0, 0.001));
 
         // 2. Reject non-positive amounts
         expect(
@@ -73,22 +81,25 @@ void main() {
           isFalse,
         );
 
-        // 3. Partial payment of $150
+        // 3. Collecting the surplus back closes the account and is logged
+        //    with the opposite direction.
         expect(
-          erp.paySupplierDebt(
+          erp.collectFromSupplierCredit(
             supplier: supplier,
-            amount: 150.0,
+            amount: 200.0,
             currency: AppCurrency.usd,
           ),
           isTrue,
         );
-        expect(supplier.debtBalance, closeTo(150.0, 0.001));
-        expect(erp.mainCashBox, closeTo(850.0, 0.001));
+        expect(supplier.debtBalance, closeTo(0.0, 0.001));
+        expect(erp.mainCashBox, closeTo(700.0, 0.001));
+        expect(supplier.payments.length, 2);
+        expect(supplier.payments.last['direction'], 'collect');
       },
     );
 
     test(
-      'collectCustomerPayment strictly prevents overcollection and settles invoices FIFO',
+      'collectCustomerPayment is bidirectional: overcollection creates a credit and the payout button settles it back',
       () {
         final erp = ERPProvider();
         final client = erp.clients.firstWhere(
@@ -97,38 +108,38 @@ void main() {
         client.debtBalance = 250.0;
         erp.mainCashBox = 0.0;
 
-        // 1. Strict overcollection prevention (Same Currency)
+        // 1. Overcollection is now ALLOWED: 400 collected vs 250 due ->
+        //    150 credit (أمانة) for the client; cash register credited.
         expect(
           erp.collectCustomerPayment(
             client: client,
             paymentCurrency: AppCurrency.usd,
             paymentAmount: 400.0,
           ),
-          isFalse,
+          isTrue,
         );
-        expect(client.debtBalance, closeTo(250.0, 0.001));
+        expect(client.debtBalance, closeTo(-150.0, 0.001));
+        expect(client.hasCredit, isTrue);
+        expect(erp.mainCashBox, closeTo(400.0, 0.001));
 
-        // 2. Exact or valid payment
+        // 2. The "دفع" payout action settles the credit fully back out.
         expect(
-          erp.collectCustomerPayment(
+          erp.payCustomerCredit(
             client: client,
-            paymentCurrency: AppCurrency.usd,
-            paymentAmount: 250.0,
+            amount: 150.0,
+            currency: AppCurrency.usd,
           ),
           isTrue,
         );
         expect(client.debtBalance, closeTo(0.0, 0.001));
         expect(erp.mainCashBox, closeTo(250.0, 0.001));
 
-        // 3. Further collection now rejected because debt is 0
-        expect(
-          erp.collectCustomerPayment(
-            client: client,
-            paymentCurrency: AppCurrency.usd,
-            paymentAmount: 10.0,
-          ),
-          isFalse,
-        );
+        // 3. Both directions are logged as statement rows.
+        final payoutLogged = client.payments
+            .where((p) => p['direction'] == 'payout')
+            .toList();
+        expect(payoutLogged.length, greaterThanOrEqualTo(1));
+        expect(payoutLogged.last['amount'], closeTo(150.0, 0.001));
       },
     );
 
@@ -251,15 +262,18 @@ void main() {
         await tester.tap(find.textContaining('مالية موردي المصنع'));
         await tester.pumpAndSettle();
 
-        // Verify the external "دفع للمورد" button exists
-        expect(find.text('دفع للمورد'), findsWidgets);
+        // Verify BOTH external buttons ("دفع" & "تحصيل") are visible for
+        // every supplier regardless of the balance direction.
+        expect(find.text('دفع'), findsWidgets);
+        expect(find.text('تحصيل'), findsWidgets);
 
         // Both branches share the approved clients category (index 3).
         await tester.tap(find.text('4. مالية المعتمدين'));
         await tester.pumpAndSettle();
 
-        // Verify the external "تحصيل" button exists
+        // Verify BOTH external "تحصيل" and "دفع" buttons exist for agents too.
         expect(find.text('تحصيل'), findsWidgets);
+        expect(find.text('دفع'), findsWidgets);
         expect(find.text('المعتمد: Factory client'), findsOneWidget);
         expect(find.text('المعتمد: Workshop client'), findsOneWidget);
 
