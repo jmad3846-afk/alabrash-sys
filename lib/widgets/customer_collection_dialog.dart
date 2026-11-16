@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
+import 'transaction_date_field.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 
@@ -97,10 +98,14 @@ class _CustomerCollectionDialogState extends State<CustomerCollectionDialog> {
   late final TextEditingController _paymentAmountCtrl;
   late final TextEditingController _exchangeRateCtrl;
   String? _errorMessage;
+  late DateTime _transactionDate;
+  late final TextEditingController _notesCtrl;
 
   @override
   void initState() {
     super.initState();
+    _transactionDate = DateTime.now();
+    _notesCtrl = TextEditingController();
     // Default payment currency matches the customer's account currency classification
     _selectedPaymentCurrency = widget.client.currencyClassification;
 
@@ -115,6 +120,7 @@ class _CustomerCollectionDialogState extends State<CustomerCollectionDialog> {
   void dispose() {
     _paymentAmountCtrl.dispose();
     _exchangeRateCtrl.dispose();
+    _notesCtrl.dispose();
     super.dispose();
   }
 
@@ -472,6 +478,23 @@ class _CustomerCollectionDialogState extends State<CustomerCollectionDialog> {
                   ),
                 ),
 
+                TransactionDateField(
+                  value: _transactionDate,
+                  onChanged: (date) => setState(() => _transactionDate = date),
+                  label: 'تاريخ التحصيل',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _notesCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'الوصف / ملاحظات (اختياري)',
+                    hintText: 'مثال: تحصيل دفعة، تسوية، أو عربون',
+                    prefixIcon: Icon(Icons.notes_rounded),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
                 // Field 1: payment_amount
                 TextField(
                   controller: _paymentAmountCtrl,
@@ -683,6 +706,8 @@ class _CustomerCollectionDialogState extends State<CustomerCollectionDialog> {
               paymentCurrency: _selectedPaymentCurrency,
               paymentAmount: enteredAmount,
               exchangeRate: !isSameCurrency ? exchangeRate : null,
+              transactionDate: _transactionDate,
+              notes: _notesCtrl.text,
             );
 
             if (!success) {

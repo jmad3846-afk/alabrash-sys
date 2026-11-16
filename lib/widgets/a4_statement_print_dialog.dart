@@ -654,14 +654,23 @@ class A4StatementData {
       final note = (payment['note'] as String? ?? '').trim().isNotEmpty
           ? ' — ${(payment['note'] as String).trim()}'
           : '';
+      final rate = (payment['exchangeRate'] as num?)?.toDouble();
+      final rateNote = rate != null && rate > 0
+          ? ' • سعر الصرف: ${rate.fmt}'
+          : '';
+      final receivedCurrency = payment['paymentCurrency'] as String?;
+      final receivedAmount = (payment['paymentAmount'] as num?)?.toDouble();
+      final receivedNote = receivedCurrency != null && receivedAmount != null
+          ? ' • المحصل فعلياً: ${receivedAmount.fmt} ${AppCurrency.symbol(receivedCurrency)}'
+          : '';
       items.add(
         A4StatementLineItem(
           index: idx++,
           date: DateTime.parse(payment['date'] as String),
           documentNo: isPay ? 'دفع' : 'قبض',
           description: isPay
-              ? 'دفعة مدفوعة للمورد$note'
-              : 'تحصيل واسترداد نقدي من المورد$note',
+              ? 'دفعة مدفوعة للمورد$note$rateNote$receivedNote'
+              : 'تحصيل واسترداد نقدي من المورد$note$rateNote$receivedNote',
           category: isPay ? 'دفعة دفع' : 'دفعة قبض',
           currency: payment['currency'] as String? ?? AppCurrency.usd,
           totalAmount: 0,
@@ -922,14 +931,23 @@ class A4StatementData {
         }
       }
       final payNote = (payment['note'] as String? ?? '').trim();
+      final paymentRate = (payment['exchangeRate'] as num?)?.toDouble();
+      final rateNote = paymentRate != null && paymentRate > 0
+          ? ' • سعر الصرف: ${paymentRate.fmt}'
+          : '';
+      final receivedCurrency = payment['paymentCurrency'] as String?;
+      final receivedAmount = (payment['paymentAmount'] as num?)?.toDouble();
+      final receivedNote = receivedCurrency != null && receivedAmount != null
+          ? ' • المحصل فعلياً: ${receivedAmount.fmt} ${AppCurrency.symbol(receivedCurrency)}'
+          : '';
       items.add(
         A4StatementLineItem(
           index: idx++,
           date: DateTime.parse(payment['date'] as String),
           documentNo: isPayout ? 'صرف' : 'قبض',
           description: isPayout
-              ? 'دفعة مدفوعة للمعتمد${payNote.isNotEmpty ? ' — $payNote' : ''}'
-              : 'دفعة من المعتمد',
+              ? 'دفعة مدفوعة للمعتمد${payNote.isNotEmpty ? ' — $payNote' : ''}$rateNote$receivedNote'
+              : 'دفعة من المعتمد${payNote.isNotEmpty ? ' — $payNote' : ''}$rateNote$receivedNote',
           category: isPayout ? 'دفعة دفع' : 'دفعة قبض',
           currency: payment['currency'] as String? ?? AppCurrency.usd,
           totalAmount: 0,

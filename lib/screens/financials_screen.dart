@@ -11,6 +11,7 @@ import '../widgets/customer_collection_dialog.dart';
 import '../widgets/supplier_credit_collection_dialog.dart';
 import '../widgets/customer_credit_payout_dialog.dart';
 import '../widgets/party_balances_modal.dart';
+import '../widgets/transaction_date_field.dart';
 import 'accounting_screens.dart';
 
 class FinancialsScreen extends StatefulWidget {
@@ -1580,6 +1581,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
     final ctrl = TextEditingController(
       text: currentDue > 0 ? currentDue.fmt : '',
     );
+    final notesCtrl = TextEditingController();
+    DateTime transactionDate = DateTime.now();
     String? errorMsg;
 
     showDialog(
@@ -1771,6 +1774,21 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                       ),
                     ),
                     const SizedBox(height: 14),
+                    TransactionDateField(
+                      value: transactionDate,
+                      onChanged: (date) => setSt(() => transactionDate = date),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: notesCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'الوصف / ملاحظات (اختياري)',
+                        hintText: 'مثال: دفعة مقدمة، تسوية، أو استرداد',
+                        prefixIcon: Icon(Icons.notes_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
                     TextField(
                       controller: ctrl,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -1858,6 +1876,8 @@ class _FinancialsScreenState extends State<FinancialsScreen>
                     supplier: supplier,
                     amount: amount,
                     currency: selectedCurrency,
+                    transactionDate: transactionDate,
+                    notes: notesCtrl.text,
                   );
 
                   if (ok) {

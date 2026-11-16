@@ -9111,6 +9111,7 @@ class ERPProvider extends ChangeNotifier {
     required double amount,
     required String currency,
     String? notes,
+    DateTime? transactionDate,
   }) {
     if (!amount.isFinite || amount <= 0) return false;
     final c = AppCurrency.normalize(currency);
@@ -9149,7 +9150,7 @@ class ERPProvider extends ChangeNotifier {
 
     // Statement log: the full cash-out movement with its invoice allocations.
     supplier.payments.add({
-      'date': DateTime.now().toIso8601String(),
+      'date': (transactionDate ?? DateTime.now()).toIso8601String(),
       'currency': c,
       'amount': pay,
       'direction': 'pay',
@@ -9173,18 +9174,53 @@ class ERPProvider extends ChangeNotifier {
     required double amount,
     required String currency,
     String? notes,
+    DateTime? transactionDate,
+    double? exchangeRate,
   }) {
     if (!amount.isFinite || amount <= 0) return false;
-    final c = AppCurrency.normalize(currency);
-    final creditDue = supplier.creditOf(c);
+    final paymentCurrency = AppCurrency.normalize(currency);
+    // The remaining statement balance determines the supplier account
+    // currency. If both ledgers exist, settle against the dominant balance.
+    final netUsd = supplier.debtBalance +
+        legacyBalanceForParty(
+          'suppliers',
+          supplier.id,
+          supplier.name,
+          AppCurrency.usd,
+        );
+    final netSyp = supplier.debtBalanceSyp +
+        legacyBalanceForParty(
+          'suppliers',
+          supplier.id,
+          supplier.name,
+          AppCurrency.syp,
+        );
+    final accountCurrency = netSyp.abs() > netUsd.abs()
+        ? AppCurrency.syp
+        : AppCurrency.usd;
+    final isCrossCurrency = paymentCurrency != accountCurrency;
+    if (isCrossCurrency && (exchangeRate == null || exchangeRate <= 0)) {
+      return false;
+    }
+    // Convert only for the account ledger; cash remains in its received
+    // currency and amount.
+    final deductedAccountAmount = !isCrossCurrency
+        ? amount
+        : accountCurrency == AppCurrency.syp
+            ? amount * exchangeRate!
+            : amount / exchangeRate!;
+    if (!deductedAccountAmount.isFinite || deductedAccountAmount <= 0) {
+      return false;
+    }
+    final creditDue = supplier.creditOf(accountCurrency);
     final take = amount;
 
     // Deposit the cash into the Main Safe
-    addCash('main', c, take);
+    addCash('main', paymentCurrency, take);
 
     // Move the balance towards zero when consuming a claim, or towards a
     // payable when the supplier hands us funds held on their account.
-    supplier.addDebt(c, take);
+    supplier.addDebt(accountCurrency, deductedAccountAmount);
 
     // Release deferred purchase returns to Income Summary (only what the
     // existing credit could actually cover).
@@ -9193,17 +9229,22 @@ class ERPProvider extends ChangeNotifier {
         kind: 'purchase_return',
         partyName: supplier.name,
         partyId: supplier.id,
-        currency: c,
-        amount: math.min(take, creditDue),
+        currency: accountCurrency,
+        amount: math.min(deductedAccountAmount, creditDue),
       );
     }
 
     // Statement log.
     supplier.payments.add({
-      'date': DateTime.now().toIso8601String(),
-      'currency': c,
-      'amount': take,
+      'date': (transactionDate ?? DateTime.now()).toIso8601String(),
+      // Statement/account currency and exact deducted account amount.
+      'currency': accountCurrency,
+      'amount': deductedAccountAmount,
       'direction': 'collect',
+      'paymentCurrency': paymentCurrency,
+      'paymentAmount': take,
+      if (exchangeRate != null && exchangeRate > 0)
+        'exchangeRate': exchangeRate,
       'allocations': <String, double>{},
       if (notes != null && notes.trim().isNotEmpty) 'note': notes.trim(),
     });
@@ -9510,6 +9551,7 @@ class ERPProvider extends ChangeNotifier {
     required double paymentAmount,
     double? exchangeRate,
     DateTime? transactionDate,
+    String? notes,
   }) {
     if (!paymentAmount.isFinite || paymentAmount <= 0) return false;
     final payCurr = AppCurrency.normalize(paymentCurrency);
@@ -9698,6 +9740,9 @@ class ERPProvider extends ChangeNotifier {
       'paymentCurrency': payCurr,
       'paymentAmount': paymentAmount,
       'allocations': allocations,
+      if (exchangeRate != null && exchangeRate > 0)
+        'exchangeRate': exchangeRate,
+      if (notes != null && notes.trim().isNotEmpty) 'note': notes.trim(),
     });
     notifyListeners();
     saveToDisk();

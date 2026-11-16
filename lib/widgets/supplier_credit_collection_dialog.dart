@@ -1,10 +1,80 @@
 import 'package:flutter/material.dart';
+import '../core/theme/app_theme.dart';
+import 'transaction_date_field.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
-import '../core/theme/app_theme.dart';
 
-/// Cash collection voucher dialog when a supplier's account balance has flipped
-/// to Debtor (مدين - لنا عنده رصيد دائن / فائض ناتج عن مرتجع مشتريات ودفعات سابقة).
+/// Clean visual badge indicating the supplier account's inherited currency
+/// classification: "USD Supplier" or "SYP Supplier".
+class SupplierClassificationBadge extends StatelessWidget {
+  final SupplierModel supplier;
+  final String currencyClassification;
+  final bool compact;
+
+  const SupplierClassificationBadge({
+    super.key,
+    required this.supplier,
+    required this.currencyClassification,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isSyp = AppCurrency.isSyp(currencyClassification);
+    final color = isSyp ? const Color(0xFF1D4ED8) : const Color(0xFF047857);
+    final bgColor = isSyp ? const Color(0xFFEFF6FF) : const Color(0xFFECFDF5);
+    final borderColor = isSyp
+        ? const Color(0xFFBFDBFE)
+        : const Color(0xFFA7F3D0);
+    final icon = isSyp
+        ? Icons.account_balance_wallet_outlined
+        : Icons.monetization_on_outlined;
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 10,
+        vertical: compact ? 3 : 5,
+      ),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor, width: 1.2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: compact ? 13 : 15, color: color),
+          const SizedBox(width: 5),
+          Text(
+            isSyp ? 'SYP Supplier' : 'USD Supplier',
+            style: TextStyle(
+              fontSize: compact ? 11 : 12,
+              fontWeight: FontWeight.bold,
+              color: color,
+              letterSpacing: 0.3,
+            ),
+          ),
+          if (!compact) ...[
+            const SizedBox(width: 4),
+            Text(
+              isSyp ? '(مورّد ليرة)' : '(مورّد دولار)',
+              style: TextStyle(
+                fontSize: 10,
+                color: color.withValues(alpha: 0.85),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Multi-currency supplier collection modal — visually and behaviourally
+/// identical to [CustomerCollectionDialog] (التحصيل من معتمد): same field
+/// ordering, same layout, direct payment (same currency) and cross-currency
+/// payment with real-time conversion rates.
 class SupplierCreditCollectionDialog extends StatefulWidget {
   final SupplierModel supplier;
   final ERPProvider erp;
@@ -37,38 +107,83 @@ class SupplierCreditCollectionDialog extends StatefulWidget {
 
 class _SupplierCreditCollectionDialogState
     extends State<SupplierCreditCollectionDialog> {
-  late String _selectedCurrency;
-  late final TextEditingController _amountCtrl;
+  late String _selectedPaymentCurrency;
+  late final String _accountCurrency;
+  late final TextEditingController _paymentAmountCtrl;
+  late final TextEditingController _exchangeRateCtrl;
   String? _errorMessage;
+  late DateTime _transactionDate;
+  late final TextEditingController _notesCtrl;
+
+  /// Statement balance (including legacy opening entries) in one currency.
+  /// Mirrors exactly the account-currency rule used by
+  /// `ERPProvider.collectFromSupplierCredit`.
+  double _netOf(String currency) {
+    final erp = widget.erp;
+    final supplier = widget.supplier;
+    final base = AppCurrency.isSyp(currency)
+        ? supplier.debtBalanceSyp
+        : supplier.debtBalance;
+    return base +
+        erp.legacyBalanceForParty(
+          'suppliers',
+          supplier.id,
+          supplier.name,
+          currency,
+        );
+  }
+
+  /// The supplier account currency = dominant statement balance.
+  String _computeAccountCurrency() {
+    final usd = _netOf(AppCurrency.usd);
+    final syp = _netOf(AppCurrency.syp);
+    return syp.abs() > usd.abs() ? AppCurrency.syp : AppCurrency.usd;
+  }
+
+  /// Amount still collectible from the supplier in the given currency
+  /// (the supplier's credit / surplus). Negative balances (we owe the
+  /// supplier) are shown as zero — collection stays bidirectional.
+  double _dueIn(String currency) =>
+      (-_netOf(currency)).clamp(0.0, double.infinity);
 
   @override
   void initState() {
     super.initState();
-    final hasUsdCredit = widget.supplier.debtBalance < -0.01;
-    final hasSypCredit = widget.supplier.debtBalanceSyp < -0.01;
-    _selectedCurrency = hasUsdCredit
-        ? AppCurrency.usd
-        : (hasSypCredit ? AppCurrency.syp : AppCurrency.usd);
+    _transactionDate = DateTime.now();
+    _notesCtrl = TextEditingController();
+    // Default payment currency matches the supplier's account currency
+    // classification (same rule as the distributor/agent dialog).
+    _accountCurrency = _computeAccountCurrency();
+    _selectedPaymentCurrency = _accountCurrency;
 
-    final initialCredit = widget.supplier.creditOf(_selectedCurrency);
-    _amountCtrl = TextEditingController(
-      text: initialCredit > 0 ? initialCredit.fmt : '',
+    final initialDue = _dueIn(_accountCurrency);
+    _paymentAmountCtrl = TextEditingController(
+      text: initialDue > 0 ? initialDue.fmt : '',
     );
+    _exchangeRateCtrl = TextEditingController();
   }
 
   @override
   void dispose() {
-    _amountCtrl.dispose();
+    _paymentAmountCtrl.dispose();
+    _exchangeRateCtrl.dispose();
+    _notesCtrl.dispose();
     super.dispose();
   }
 
-  void _onCurrencyChanged(String? newCurrency) {
-    if (newCurrency == null || newCurrency == _selectedCurrency) return;
+  void _onPaymentCurrencyChanged(String? newCurrency) {
+    if (newCurrency == null || newCurrency == _selectedPaymentCurrency) return;
     setState(() {
-      _selectedCurrency = newCurrency;
+      _selectedPaymentCurrency = newCurrency;
       _errorMessage = null;
-      final credit = widget.supplier.creditOf(_selectedCurrency);
-      _amountCtrl.text = credit > 0 ? credit.fmt : '';
+
+      final isSame = _selectedPaymentCurrency == _accountCurrency;
+      if (isSame) {
+        final due = _dueIn(_selectedPaymentCurrency);
+        _paymentAmountCtrl.text = due > 0 ? due.fmt : '';
+      } else {
+        _paymentAmountCtrl.clear();
+      }
     });
   }
 
@@ -76,158 +191,187 @@ class _SupplierCreditCollectionDialogState
   Widget build(BuildContext context) {
     final supplier = widget.supplier;
     final erp = widget.erp;
-    final currentCredit = supplier.creditOf(_selectedCurrency);
-    final sym = AppCurrency.symbol(_selectedCurrency);
-    final boxCash = erp.cashOf('main', _selectedCurrency);
+    final accountCurrency = _accountCurrency;
+    final isSameCurrency = _selectedPaymentCurrency == accountCurrency;
+    final isSyp = AppCurrency.isSyp(accountCurrency);
+
+    final double enteredAmount =
+        double.tryParse(_paymentAmountCtrl.text.trim()) ?? 0.0;
+    final double exchangeRate =
+        double.tryParse(_exchangeRateCtrl.text.trim()) ?? 0.0;
+
+    // Calculation variables
+    double convertedAmount = 0.0;
+    if (!isSameCurrency && exchangeRate > 0 && enteredAmount > 0) {
+      if (accountCurrency == AppCurrency.usd &&
+          _selectedPaymentCurrency == AppCurrency.syp) {
+        // Scenario 1: USD Supplier Paying in SYP
+        // Converted USD Amount = amount_syp / exchange_rate
+        convertedAmount = enteredAmount / exchangeRate;
+      } else if (accountCurrency == AppCurrency.syp &&
+          _selectedPaymentCurrency == AppCurrency.usd) {
+        // Scenario 2: SYP Supplier Paying in USD
+        // Converted SYP Amount = amount_usd * exchange_rate
+        convertedAmount = enteredAmount * exchangeRate;
+      }
+    } else if (isSameCurrency) {
+      convertedAmount = enteredAmount;
+    }
+
+    final double dueInAccountCurrency = _dueIn(accountCurrency);
+    final supplierClassificationLabel = isSyp ? 'SYP Supplier' : 'USD Supplier';
+    final supplierClassificationLabelAr = isSyp
+        ? 'مورّد ليرة سورية'
+        : 'مورّد دولار';
 
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppColors.successGreen.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
+      titlePadding: EdgeInsets.zero,
+      title: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        decoration: const BoxDecoration(
+          color: Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          border: Border(bottom: BorderSide(color: AppColors.panelBorder)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.successGreen.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.payments_rounded,
+                color: AppColors.successGreen,
+                size: 24,
+              ),
             ),
-            child: const Icon(
-              Icons.move_to_inbox_rounded,
-              color: AppColors.successGreen,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'تحصيل واسترداد نقدي من المورد: ${supplier.name}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'تحصيل دفعة: ${supplier.name}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 17,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SupplierClassificationBadge(
+                        supplier: supplier,
+                        currencyClassification: accountCurrency,
+                        compact: true,
+                      ),
+                    ],
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'الرصيد الدائن المستحق لنا (فائض): ${supplier.dualCredit}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.successGreen,
-                    fontWeight: FontWeight.bold,
+                  const SizedBox(height: 2),
+                  Text(
+                    'القسم: مورد • الرصيد الدائن الحالي: ${dueInAccountCurrency.fmt} ${AppCurrency.symbol(accountCurrency)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.brandSecondaryText,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 20),
-            onPressed: () => Navigator.pop(context, false),
-          ),
-        ],
+            IconButton(
+              icon: const Icon(Icons.close, size: 20),
+              onPressed: () => Navigator.pop(context, false),
+            ),
+          ],
+        ),
       ),
       content: SizedBox(
-        width: 440,
+        width: 520,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Bidirectional collection: the currency choice is always
-              // available, even when the account currently holds no credit.
-              const Text(
-                'اختر عملة التحصيل:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: RadioListTile<String>(
-                      value: AppCurrency.usd,
-                      groupValue: _selectedCurrency,
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        'دولار (رصيد دائن: ${supplier.creditOf(AppCurrency.usd).fmt}\$)',
-                      ),
-                      onChanged: _onCurrencyChanged,
-                    ),
-                  ),
-                  Expanded(
-                    child: RadioListTile<String>(
-                      value: AppCurrency.syp,
-                      groupValue: _selectedCurrency,
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        'ليرة (رصيد دائن: ${supplier.creditOf(AppCurrency.syp).fmt} ل.س)',
-                      ),
-                      onChanged: _onCurrencyChanged,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
+              // 1. Account Currency Info Card
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDF4),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                  color: isSyp
+                      ? const Color(0xFFEFF6FF)
+                      : const Color(0xFFECFDF5),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isSyp
+                        ? const Color(0xFFBFDBFE)
+                        : const Color(0xFFA7F3D0),
+                  ),
                 ),
-                child: Column(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'الرصيد الدائن المسترد لنا في هذه العملة:',
-                          style: TextStyle(fontSize: 12),
+                        Icon(
+                          isSyp
+                              ? Icons.account_balance_wallet_outlined
+                              : Icons.monetization_on_outlined,
+                          size: 20,
+                          color: isSyp
+                              ? const Color(0xFF1D4ED8)
+                              : const Color(0xFF047857),
                         ),
-                        Text(
-                          '${currentCredit.fmt} $sym',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: AppColors.successGreen,
-                          ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'تصنيف حساب المورد في المالية:',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isSyp
+                                    ? const Color(0xFF1D4ED8)
+                                    : const Color(0xFF047857),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              '$supplierClassificationLabel ($supplierClassificationLabelAr)',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: isSyp
+                                    ? const Color(0xFF1E3A8A)
+                                    : const Color(0xFF064E3B),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         const Text(
-                          'جهة التوريد والإيداع:',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        Text(
-                          'الصندوق الرئيسي ($sym)',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            color: AppColors.accentPrimary,
+                          'الذمة المستحقة:',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: AppColors.brandSecondaryText,
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'رصيد الصندوق قبل التوريد:',
-                          style: TextStyle(fontSize: 12),
-                        ),
                         Text(
-                          '${boxCash.fmt} $sym',
-                          style: const TextStyle(
+                          '${dueInAccountCurrency.fmt} ${AppCurrency.symbol(accountCurrency)}',
+                          style: TextStyle(
+                            fontSize: 15,
                             fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: Color(0xFF0F172A),
+                            color: dueInAccountCurrency > 0
+                                ? AppColors.dangerWaste
+                                : AppColors.successGreen,
                           ),
                         ),
                       ],
@@ -235,44 +379,457 @@ class _SupplierCreditCollectionDialogState
                   ],
                 ),
               ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: _amountCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: 'مبلغ التحصيل / الاسترداد ($sym)',
-                  prefixIcon: const Icon(Icons.download_rounded),
-                  helperText: 'الرصيد الدائن الحالي: ${currentCredit.fmt} $sym — يمكن التحصيل أكثر ليُسجَّل ما يُستلم فوقه كمبلغ مقطون لحساب المورد',
-                  suffixIcon: currentCredit > 0
-                      ? TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _amountCtrl.text = currentCredit.fmt;
-                              _errorMessage = null;
-                            });
-                          },
-                          child: const Text('كامل المستحق', style: TextStyle(fontSize: 12)),
-                        )
-                      : null,
-                ),
-                onChanged: (_) => setState(() => _errorMessage = null),
+              const SizedBox(height: 16),
+
+              // 2. Payment Currency Selection Options
+              const Text(
+                'عملة الدفع الفعلية (Payment Currency):',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               ),
-              if (_errorMessage != null) ...[
-                const SizedBox(height: 10),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _onPaymentCurrencyChanged(AppCurrency.usd),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                          horizontal: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _selectedPaymentCurrency == AppCurrency.usd
+                              ? const Color(0xFFECFDF5)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _selectedPaymentCurrency == AppCurrency.usd
+                                ? const Color(0xFF059669)
+                                : AppColors.panelBorder,
+                            width:
+                                _selectedPaymentCurrency == AppCurrency.usd
+                                ? 2
+                                : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Radio<String>(
+                              value: AppCurrency.usd,
+                              groupValue: _selectedPaymentCurrency,
+                              activeColor: const Color(0xFF059669),
+                              onChanged: _onPaymentCurrencyChanged,
+                            ),
+                            Expanded(
+                              child: Text(
+                                'دولار أمريكي (USD \$)',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _onPaymentCurrencyChanged(AppCurrency.syp),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                          horizontal: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _selectedPaymentCurrency == AppCurrency.syp
+                              ? const Color(0xFFEFF6FF)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _selectedPaymentCurrency == AppCurrency.syp
+                                ? const Color(0xFF2563EB)
+                                : AppColors.panelBorder,
+                            width:
+                                _selectedPaymentCurrency == AppCurrency.syp
+                                ? 2
+                                : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Radio<String>(
+                              value: AppCurrency.syp,
+                              groupValue: _selectedPaymentCurrency,
+                              activeColor: const Color(0xFF2563EB),
+                              onChanged: _onPaymentCurrencyChanged,
+                            ),
+                            Expanded(
+                              child: Text(
+                                'ليرة سورية (SYP ل.س)',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // 3. Dynamic Conditional Inputs
+              if (isSameCurrency) ...[
+                // Case A: Direct Payment (Same Currency)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.check_circle_outline,
+                        size: 16,
+                        color: Color(0xFF475569),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'دفع مباشر بنفس عملة الحساب (${AppCurrency.label(accountCurrency)})',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF475569),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextField(
+                  controller: _paymentAmountCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText:
+                        'مبلغ الدفعة المسدد (${AppCurrency.symbol(_selectedPaymentCurrency)})',
+                    prefixIcon: const Icon(Icons.attach_money_rounded),
+                    helperText:
+                        'الحد الأقصى للمستحق: ${dueInAccountCurrency.fmt} ${AppCurrency.symbol(accountCurrency)}',
+                    suffixIcon: dueInAccountCurrency > 0
+                        ? TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _paymentAmountCtrl.text =
+                                    dueInAccountCurrency.fmt;
+                                _errorMessage = null;
+                              });
+                            },
+                            child: const Text(
+                              'كامل المستحق',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          )
+                        : null,
+                  ),
+                  onChanged: (_) => setState(() => _errorMessage = null),
+                ),
+              ] else ...[
+                // Case B: Cross-Currency Payment (Different Currency)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFFDE68A)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.currency_exchange_rounded,
+                        size: 16,
+                        color: Color(0xFFB45309),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          accountCurrency == AppCurrency.usd
+                              ? 'حالة خاصة: مورد دولار يدفع بالليرة السورية (USD Supplier Paying in SYP)'
+                              : 'حالة خاصة: مورد ليرة يدفع بالدولار الأمريكي (SYP Supplier Paying in USD)',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF92400E),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                TransactionDateField(
+                  value: _transactionDate,
+                  onChanged: (date) => setState(() => _transactionDate = date),
+                  label: 'تاريخ التحصيل',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _notesCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'الوصف / ملاحظات (اختياري)',
+                    hintText: 'مثال: تحصيل دفعة، تسوية، أو عربون',
+                    prefixIcon: Icon(Icons.notes_rounded),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Field 1: payment_amount
+                TextField(
+                  controller: _paymentAmountCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: _selectedPaymentCurrency == AppCurrency.syp
+                        ? 'المبلغ الفعلي المدفوع بالليرة السورية (amount_syp)'
+                        : 'المبلغ الفعلي المدفوع بالدولار الأمريكي (amount_usd)',
+                    prefixIcon: const Icon(Icons.price_check_rounded),
+                    helperText:
+                        'المبلغ المستلم فعلياً من المورد لتوريده بالصندوق',
+                  ),
+                  onChanged: (_) => setState(() => _errorMessage = null),
+                ),
+                const SizedBox(height: 12),
+
+                // Field 2: daily_exchange_rate
+                TextField(
+                  controller: _exchangeRateCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText:
+                        'سعر الصرف المعتمد اليوم (daily_exchange_rate)',
+                    prefixIcon: Icon(Icons.currency_exchange_rounded),
+                    helperText:
+                        'سعر صرف 1 دولار = ... ليرة سورية (مثال: 15000)',
+                  ),
+                  onChanged: (_) => setState(() => _errorMessage = null),
+                ),
+              ],
+
+              const SizedBox(height: 16),
+
+              // 4. Live Real-Time Conversion & Double-Entry Accounting Card
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.panelBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(
+                          Icons.account_balance_outlined,
+                          size: 16,
+                          color: AppColors.accentPrimary,
+                        ),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'الأثر المحاسبي وفق القيد المزدوج (Double-Entry Impact):',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 16),
+
+                    if (!isSameCurrency) ...[
+                      // Conversion Formula Details
+                      if (exchangeRate > 0 && enteredAmount > 0) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          margin: const EdgeInsets.only(bottom: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEEF2FF),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: const Color(0xFFC7D2FE),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                accountCurrency == AppCurrency.usd
+                                    ? 'معادلة التحويل: Converted USD = amount_syp / exchange_rate'
+                                    : 'معادلة التحويل: Converted SYP = amount_usd * exchange_rate',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF4338CA),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                accountCurrency == AppCurrency.usd
+                                    ? '${enteredAmount.fmt} ل.س ÷ ${exchangeRate.fmt} = ${convertedAmount.fmt} \$'
+                                    : '${enteredAmount.fmt} \$ × ${exchangeRate.fmt} = ${convertedAmount.fmt} ل.س',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF312E81),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+
+                    // Leg 1: Supplier Account (Credit / Deduct)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.remove_circle_outline,
+                                color: AppColors.dangerWaste,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'حساب المورد ($supplierClassificationLabel):',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'خصم / دائن ${convertedAmount.fmt} ${AppCurrency.symbol(accountCurrency)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: AppColors.dangerWaste,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+
+                    // Leg 2: Main Safe Vault (Debit / Deposit)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.add_circle_outline,
+                                color: AppColors.successGreen,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'الصندوق الرئيسي (خزينة ${AppCurrency.label(_selectedPaymentCurrency)}):',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'إيداع / مدين ${enteredAmount.fmt} ${AppCurrency.symbol(_selectedPaymentCurrency)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: AppColors.successGreen,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFEE2E2),
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: const Color(0xFFFCA5A5)),
                   ),
-                  child: Text(
-                    _errorMessage!,
-                    style: const TextStyle(
-                      color: Color(0xFF991B1B),
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        color: AppColors.dangerWaste,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(
+                            color: Color(0xFF991B1B),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -280,6 +837,7 @@ class _SupplierCreditCollectionDialogState
           ),
         ),
       ),
+      actionsPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
@@ -289,42 +847,65 @@ class _SupplierCreditCollectionDialogState
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.successGreen,
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
           icon: const Icon(Icons.check_circle_rounded, size: 18),
           label: const Text(
-            'تأكيد التحصيل والتوريد',
+            'تأكيد التحصيل (Confirm)',
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
           onPressed: () {
-            final amount = double.tryParse(_amountCtrl.text.trim()) ?? 0.0;
-            if (amount <= 0) {
-              setState(() => _errorMessage = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.');
+            if (enteredAmount <= 0) {
+              setState(
+                () => _errorMessage = 'يرجى إدخال مبلغ تحصيل صحيح أكبر من الصفر.',
+              );
+              return;
+            }
+            if (!isSameCurrency && exchangeRate <= 0) {
+              setState(
+                () =>
+                    _errorMessage =
+                        'يرجى إدخال سعر الصرف (قيمة الدولار اليوم) لإتمام التحصيل بعملة مختلفة.',
+              );
               return;
             }
             // Bidirectional: collecting beyond the existing credit is allowed;
             // the surplus is registered as funds received/held on the
-            // supplier's account (payable grows accordingly).
+            // supplier's account (the payable grows accordingly).
 
-            final ok = erp.collectFromSupplierCredit(
+            final messenger = ScaffoldMessenger.of(context);
+            final success = erp.collectFromSupplierCredit(
               supplier: supplier,
-              amount: amount,
-              currency: _selectedCurrency,
+              amount: enteredAmount,
+              currency: _selectedPaymentCurrency,
+              transactionDate: _transactionDate,
+              notes: _notesCtrl.text,
+              exchangeRate: !isSameCurrency ? exchangeRate : null,
             );
 
-            if (ok) {
-              Navigator.pop(context, true);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  backgroundColor: AppColors.successGreen,
-                  content: Text(
-                    'تم تحصيل واسترداد ${amount.fmt} $sym من المورد ${supplier.name} وتوريدها للصندوق الرئيسي بنجاح.',
-                  ),
-                ),
+            if (!success) {
+              setState(
+                () =>
+                    _errorMessage =
+                        'تعذر تنفيذ عملية التحصيل. تحقق من صحة المدخلات.',
               );
-            } else {
-              setState(() => _errorMessage = 'تعذر تنفيذ عملية التحصيل. تحقق من المدخلات.');
+              return;
             }
+
+            Navigator.pop(context, true);
+            messenger.showSnackBar(
+              SnackBar(
+                backgroundColor: AppColors.successGreen,
+                content: Text(
+                  isSameCurrency
+                      ? 'تم تحصيل ${enteredAmount.fmt} ${AppCurrency.symbol(_selectedPaymentCurrency)} من حساب ${supplier.name} وإيداعها في خزينة ${AppCurrency.label(_selectedPaymentCurrency)} بالصندوق الرئيسي بنجاح.'
+                      : 'تم تحصيل ${enteredAmount.fmt} ${AppCurrency.symbol(_selectedPaymentCurrency)} بسعر صرف ${exchangeRate.fmt}، وتم خصم المعادل (${convertedAmount.fmt} ${AppCurrency.symbol(accountCurrency)}) من حساب ${supplier.name} وإيداع المبلغ بالكامل في خزينة ${AppCurrency.label(_selectedPaymentCurrency)} بالصندوق الرئيسي بنجاح.',
+                ),
+              ),
+            );
           },
         ),
       ],

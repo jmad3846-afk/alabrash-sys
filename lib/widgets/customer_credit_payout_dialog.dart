@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/database/erp_provider.dart';
 import '../core/models/models.dart';
 import '../core/theme/app_theme.dart';
+import 'transaction_date_field.dart';
 
 /// Cash payout voucher dialog when a customer / dealer's account balance has flipped
 /// to Creditor (دائن - له رصيد دائن / أمانة بذمة الشركة ناتجة عن مرتجع مبيعات ودفعات سابقة).
@@ -40,10 +41,14 @@ class _CustomerCreditPayoutDialogState
   late String _selectedCurrency;
   late final TextEditingController _amountCtrl;
   String? _errorMessage;
+  late DateTime _transactionDate;
+  late final TextEditingController _notesCtrl;
 
   @override
   void initState() {
     super.initState();
+    _transactionDate = DateTime.now();
+    _notesCtrl = TextEditingController();
     final hasUsdCredit = widget.client.debtBalance < -0.01;
     final hasSypCredit = widget.client.debtBalanceSyp < -0.01;
     _selectedCurrency = hasUsdCredit
@@ -59,6 +64,7 @@ class _CustomerCreditPayoutDialogState
   @override
   void dispose() {
     _amountCtrl.dispose();
+    _notesCtrl.dispose();
     super.dispose();
   }
 
@@ -264,6 +270,22 @@ class _CustomerCreditPayoutDialogState
                 ),
               ),
               const SizedBox(height: 14),
+              TransactionDateField(
+                value: _transactionDate,
+                onChanged: (date) => setState(() => _transactionDate = date),
+                label: 'تاريخ الدفع',
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _notesCtrl,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'الوصف / ملاحظات (اختياري)',
+                  hintText: 'مثال: استرداد عربون أو عمولة',
+                  prefixIcon: Icon(Icons.notes_rounded),
+                ),
+              ),
+              const SizedBox(height: 14),
               TextField(
                 controller: _amountCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -337,6 +359,8 @@ class _CustomerCreditPayoutDialogState
               client: client,
               amount: amount,
               currency: _selectedCurrency,
+              transactionDate: _transactionDate,
+              notes: _notesCtrl.text,
             );
 
             if (ok) {
