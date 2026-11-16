@@ -7,6 +7,7 @@ import '../core/models/models.dart';
 import '../core/theme/app_theme.dart';
 import 'app_image_attachment.dart';
 import 'currency_selector.dart';
+import 'styled_item_dropdown.dart';
 
 // ==========================================
 // WORKSHOP INVOICE (فاتورة المعمل) — DUAL-PANE BUILDER
@@ -1771,28 +1772,24 @@ void showWorkshopInvoiceDialog(
                     onChanged: (v) => setSt(() => rawSearch = v.trim()),
                   ),
                   const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    value: rawValue,
+                  StyledItemDropdown<WorkshopStockModel>(
+                    selectedValue: rawValue,
                     isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'اختر المادة الخام من مواد المعمل',
                       isDense: true,
                     ),
-                    items: rawFiltered
-                        .map(
-                          (w) => DropdownMenuItem(
-                            value: w.id,
-                            child: Text(
-                               '${w.typeName} ${w.grade}${w.thicknessCm > 0 ? " • سماكة ${w.thicknessCm.fmt} سم" : ""} — المتاح: ${getAvailableStockForRaw(w).fmt} ${w.category == "متر مكعب" ? "م³" : "م²"} (سعر المتر: ${w.recommendedSalePrice.fmt}\$)',
-                            ),
-                          ),
-                        )
-                        .toList(),
+                    items: rawFiltered,
+                    valueOf: (w) => w.id,
+                    labelOf: (w) =>
+                        '${w.typeName} ${w.grade}${w.thicknessCm > 0 ? " • سماكة ${w.thicknessCm.fmt} سم" : ""} — المتاح: ${getAvailableStockForRaw(w).fmt} ${w.category == "متر مكعب" ? "م³" : "م²"} (سعر المتر: ${w.recommendedSalePrice.fmt}\$)',
+                    icon: Icons.layers_outlined,
                     onChanged: (v) => setSt(() => assignRecordId = v),
                   ),
                 ] else if (assignType == 'بيع تجهيزات') ...[
-                  DropdownButtonFormField<String>(
-                    value: erp.equipmentStock.any((e) => e.id == assignRecordId)
+                  StyledItemDropdown<EquipmentStockModel>(
+                    selectedValue:
+                        erp.equipmentStock.any((e) => e.id == assignRecordId)
                         ? assignRecordId
                         : null,
                     isExpanded: true,
@@ -1801,37 +1798,26 @@ void showWorkshopInvoiceDialog(
                       isDense: true,
                       prefixIcon: Icon(Icons.construction_outlined, size: 18),
                     ),
-                    items: erp.equipmentStock
-                        .where((e) => e.availableQty > 0)
-                        .map(
-                          (e) => DropdownMenuItem(
-                            value: e.id,
-                            child: Text(
-                              '${e.name} — المتاح: ${e.availableQty.fmt} قطعة (سعر البيع: ${e.sellingPrice.fmt}\$)',
-                            ),
-                          ),
-                        )
-                        .toList(),
+                    items: erp.equipmentStock.where((e) => e.availableQty > 0),
+                    valueOf: (e) => e.id,
+                    labelOf: (e) =>
+                        '${e.name} — المتاح: ${e.availableQty.fmt} قطعة (سعر البيع: ${e.sellingPrice.fmt}\$)',
+                    icon: Icons.construction_outlined,
                     onChanged: (v) => setSt(() => assignRecordId = v),
                   ),
                 ] else if (assignType == 'بيع خياطة بسيطة') ...[
-                  DropdownButtonFormField<String>(
-                    value: assignRecordId,
+                  StyledItemDropdown<WorkshopTailoringModel>(
+                    selectedValue: assignRecordId,
                     isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'اختر الخياطة البسيطة',
                       isDense: true,
                     ),
-                    items: erp.simpleTailorings
-                        .map(
-                          (t) => DropdownMenuItem(
-                            value: t.id,
-                            child: Text(
-                              '${t.name} (المتاح: ${getAvailableForTailoring(t).fmt} ${t.unitSymbol})',
-                            ),
-                          ),
-                        )
-                        .toList(),
+                    items: erp.simpleTailorings,
+                    valueOf: (t) => t.id,
+                    labelOf: (t) =>
+                        '${t.name} (المتاح: ${getAvailableForTailoring(t).fmt} ${t.unitSymbol})',
+                    icon: Icons.content_cut_outlined,
                     onChanged: (v) => setSt(() {
                       assignRecordId = v;
                       assignLineItemId = null;
@@ -1852,71 +1838,58 @@ void showWorkshopInvoiceDialog(
                         final t = erp.simpleTailorings.firstWhere(
                           (x) => x.id == assignRecordId,
                         );
-                        return DropdownButtonFormField<String>(
-                          value: assignLineItemId,
+                        return StyledItemDropdown<TailoringLineItem>(
+                          selectedValue: assignLineItemId,
                           isExpanded: true,
                           decoration: const InputDecoration(
                             labelText:
                                 'اختر البند المحدد من داخل هذه الخياطة للبيع (اختياري)',
                             isDense: true,
                           ),
-                          items: t.lineItems.map((li) {
+                          items: t.lineItems,
+                          valueOf: (li) => li.id,
+                          labelOf: (li) {
                             final pieceMeters =
                                 (li.lengthCm > 0 && li.widthCm > 0)
                                 ? (li.lengthCm / 100.0) * (li.widthCm / 100.0)
                                 : 1.0;
                             final totalLiMeters = pieceMeters * li.quantity;
-                            return DropdownMenuItem(
-                              value: li.id,
-                              child: Text(
-                                '${li.description} • الأبعاد: ${li.lengthCm}×${li.widthCm}سم • المتاح: ${totalLiMeters.fmt} م² (${li.quantity.fmt} قطع)',
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (lv) => setSt(() => assignLineItemId = lv),
+                            return '${li.description} • الأبعاد: ${li.lengthCm}×${li.widthCm}سم • المتاح: ${totalLiMeters.fmt} م² (${li.quantity.fmt} قطع)';
+                          },
+                          icon: Icons.aspect_ratio_outlined,
+                          onChanged: (lv) =>
+                              setSt(() => assignLineItemId = lv),
                         );
                       },
                     ),
                   ],
                 ] else if (assignType == 'بيع خياطة معقدة') ...[
-                  DropdownButtonFormField<String>(
-                    value: assignRecordId,
+                  StyledItemDropdown<WorkshopTailoringModel>(
+                    selectedValue: assignRecordId,
                     isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'اختر الخياطة المعقدة',
                       isDense: true,
                     ),
-                    items: erp.complexTailorings
-                        .map(
-                          (t) => DropdownMenuItem(
-                            value: t.id,
-                            child: Text(
-                              '${t.name} • المتاح: ${getAvailableForTailoring(t).fmt} قطع (سعر القطعة: ${t.sellingPrice.fmt}\$)',
-                            ),
-                          ),
-                        )
-                        .toList(),
+                    items: erp.complexTailorings,
+                    valueOf: (t) => t.id,
+                    labelOf: (t) =>
+                        '${t.name} • المتاح: ${getAvailableForTailoring(t).fmt} قطع (سعر القطعة: ${t.sellingPrice.fmt}\$)',
+                    icon: Icons.widgets_outlined,
                     onChanged: (v) => setSt(() => assignRecordId = v),
                   ),
                 ] else if (assignType == 'بيع قطع إضافية') ...[
-                  DropdownButtonFormField<String>(
-                    value: assignRecordId,
+                  StyledItemDropdown<ScrapItemModel>(
+                    selectedValue: assignRecordId,
                     isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'اختر القطعة الإضافية',
                       isDense: true,
                     ),
-                    items: erp.scrapItems
-                        .where((s) => !s.isSold)
-                        .map(
-                          (s) => DropdownMenuItem(
-                            value: s.id,
-                            child: Text(
-                              '${s.description} (${s.sellingPrice.fmt}\$)',
-                            ),
-                          ),
-                        )
-                        .toList(),
+                    items: erp.scrapItems.where((s) => !s.isSold),
+                    valueOf: (s) => s.id,
+                    labelOf: (s) => '${s.description} (${s.sellingPrice.fmt}\$)',
+                    icon: Icons.recycling_outlined,
                     onChanged: (v) => setSt(() => assignRecordId = v),
                   ),
                 ],

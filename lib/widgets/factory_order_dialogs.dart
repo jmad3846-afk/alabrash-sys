@@ -6,6 +6,7 @@ import '../core/database/form_draft_store.dart';
 import '../core/models/models.dart';
 import 'currency_selector.dart';
 import 'app_image_attachment.dart';
+import 'styled_item_dropdown.dart';
 import 'a4_invoice_print_dialog.dart';
 
 /// Per-row field controllers and Tab focus nodes for the factory order
@@ -736,22 +737,17 @@ void showAddFactoryOrderDialog(
                     onChanged: (v) => setSt(() => goodsSearch = v.trim()),
                   ),
                   const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: goodsValue,
+                  StyledItemDropdown<FactoryWarehouseModel>(
+                    selectedValue: goodsValue,
                     isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'نوع البضاعة حسب مستودع المصنع',
                     ),
-                    items: goodsFiltered
-                        .map(
-                          (g) => DropdownMenuItem(
-                            value: g.id,
-                            child: Text(
-                              '${g.typeName} ${g.grade} ${g.thicknessCm}سم (${g.category}) — المتاح: ${g.availableQty} — سعر المتر: ${g.recommendedSalePrice.fmt} \$',
-                            ),
-                          ),
-                        )
-                        .toList(),
+                    items: goodsFiltered,
+                    valueOf: (g) => g.id,
+                    labelOf: (g) =>
+                        '${g.typeName} ${g.grade} ${g.thicknessCm}سم (${g.category}) — المتاح: ${g.availableQty} — سعر المتر: ${g.recommendedSalePrice.fmt} \$',
+                    icon: Icons.warehouse_outlined,
                     onChanged: (v) {
                       setSt(() {
                         selectedWhId = v;

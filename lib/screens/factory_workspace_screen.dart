@@ -12,6 +12,7 @@ import '../widgets/thermal_receipt_dialog.dart';
 import '../widgets/a4_invoice_print_dialog.dart';
 import '../widgets/app_image_attachment.dart';
 import '../widgets/factory_order_dialogs.dart';
+import '../widgets/styled_item_dropdown.dart';
 import 'accounting_screens.dart';
 import 'factory_service_invoices_screen.dart';
 
@@ -4359,24 +4360,19 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         ],
                                       ),
                                       const SizedBox(height: 8),
-                                      DropdownButtonFormField<String>(
-                                        initialValue: blockValue,
+                                      StyledItemDropdown<BlockTypeModel>(
+                                        selectedValue: blockValue,
                                         isExpanded: true,
                                         decoration: const InputDecoration(
                                           labelText:
                                               'نوع البلوك حسب النوع والدرجة',
                                         ),
-                                        items: optionsFiltered
-                                            .map(
-                                              (b) => DropdownMenuItem(
-                                                value:
-                                                    '${b.typeName}||${b.grade}',
-                                                child: Text(
-                                                  '${b.typeName} • ${b.grade}',
-                                                ),
-                                              ),
-                                            )
-                                            .toList(),
+                                        items: optionsFiltered,
+                                        valueOf: (b) =>
+                                            '${b.typeName}||${b.grade}',
+                                        labelOf: (b) =>
+                                            '${b.typeName} • ${b.grade}',
+                                        icon: Icons.inventory_2_outlined,
                                         onChanged: (v) =>
                                             setSt(() => selectedBlockKey = v),
                                       ),
@@ -4540,8 +4536,8 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                         ],
                                       ),
                                       const SizedBox(height: 8),
-                                      DropdownButtonFormField<String>(
-                                        initialValue: meterValue,
+                                      StyledItemDropdown<MeterTypeModel>(
+                                        selectedValue: meterValue,
                                         isExpanded: true,
                                         decoration: InputDecoration(
                                           labelText:
@@ -4549,16 +4545,11 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                               ? 'نوع المتر (النوع • الدرجة)'
                                               : 'نوع المتر (النوع • الدرجة • السماكة • الفئة)',
                                         ),
-                                        items: meterOptionsFiltered
-                                            .map(
-                                              (m) => DropdownMenuItem(
-                                                value: m.id,
-                                                child: Text(
-                                                  '${m.typeName} • ${m.grade}${selectedMeterUnit == "متر مكعب" ? "" : " • ${m.thicknessCm.fmt} سم"} • ${m.category} ${m.isGranite ? "(غرانيت)" : "(رخام)"}',
-                                                ),
-                                              ),
-                                            )
-                                            .toList(),
+                                        items: meterOptionsFiltered,
+                                        valueOf: (m) => m.id,
+                                        labelOf: (m) =>
+                                            '${m.typeName} • ${m.grade}${selectedMeterUnit == "متر مكعب" ? "" : " • ${m.thicknessCm.fmt} سم"} • ${m.category} ${m.isGranite ? "(غرانيت)" : "(رخام)"}',
+                                        icon: Icons.straighten_outlined,
                                         onChanged: (v) {
                                           setSt(() {
                                             selectedMeterTypeId = v;
@@ -7262,23 +7253,18 @@ class _FactoryWorkspaceScreenState extends State<FactoryWorkspaceScreen>
                                           setSt(() => goodsSearch = v.trim()),
                                     ),
                                     const SizedBox(height: 8),
-                                    DropdownButtonFormField<String>(
-                                      initialValue: goodsValue,
+                                    StyledItemDropdown<FactoryWarehouseModel>(
+                                      selectedValue: goodsValue,
                                       isExpanded: true,
                                       decoration: const InputDecoration(
                                         labelText:
                                             'نوع البضاعة حسب مستودع المصنع',
                                       ),
-                                      items: goodsFiltered
-                                          .map(
-                                            (g) => DropdownMenuItem(
-                                              value: g.id,
-                                              child: Text(
-                                                '${g.typeName} ${g.grade} ${g.thicknessCm}سم (${g.category}) — المتاح: ${g.availableQty} — سعر بيع المتر: ${g.recommendedSalePrice.fmt} \$',
-                                              ),
-                                            ),
-                                          )
-                                          .toList(),
+                                      items: goodsFiltered,
+                                      valueOf: (g) => g.id,
+                                      labelOf: (g) =>
+                                          '${g.typeName} ${g.grade} ${g.thicknessCm}سم (${g.category}) — المتاح: ${g.availableQty} — سعر بيع المتر: ${g.recommendedSalePrice.fmt} \$',
+                                      icon: Icons.warehouse_outlined,
                                       onChanged: (v) {
                                         setSt(() {
                                           selectedWhId = v;

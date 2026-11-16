@@ -13,6 +13,7 @@ import '../widgets/a4_statement_print_dialog.dart';
 import '../widgets/app_image_attachment.dart';
 import '../widgets/workshop_order_dialogs.dart';
 import '../widgets/workshop_invoice_dialog.dart';
+import '../widgets/styled_item_dropdown.dart';
 import 'accounting_screens.dart';
 
 class _TailoringStockOption {
@@ -8700,24 +8701,21 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                 ),
                                               ),
                                               const SizedBox(height: 8),
-                                              DropdownButtonFormField<String>(
-                                                value: rawValue,
+                                              StyledItemDropdown<
+                                                WorkshopStockModel
+                                              >(
+                                                selectedValue: rawValue,
                                                 isExpanded: true,
                                                 decoration: const InputDecoration(
                                                   labelText:
                                                       'اختر المادة الخام من مواد المعمل',
                                                   isDense: true,
                                                 ),
-                                                items: rawFiltered
-                                                    .map(
-                                                      (w) => DropdownMenuItem(
-                                                        value: w.id,
-                                                        child: Text(
-                                                           '${w.typeName} ${w.grade}${w.thicknessCm > 0 ? " • سماكة ${w.thicknessCm.fmt} سم" : ""} — المتاح: ${w.availableQty.fmt} ${w.category == "متر مكعب" ? "م³" : "م²"} (سعر المتر: ${w.recommendedSalePrice.fmt}\$)',
-                                                        ),
-                                                      ),
-                                                    )
-                                                    .toList(),
+                                                items: rawFiltered,
+                                                valueOf: (w) => w.id,
+                                                labelOf: (w) =>
+                                                    '${w.typeName} ${w.grade}${w.thicknessCm > 0 ? " • سماكة ${w.thicknessCm.fmt} سم" : ""} — المتاح: ${w.availableQty.fmt} ${w.category == "متر مكعب" ? "م³" : "م²"} (سعر المتر: ${w.recommendedSalePrice.fmt}\$)',
+                                                icon: Icons.layers_outlined,
                                                 onChanged: (v) => setSt(
                                                   () => selectedRawId = v,
                                                 ),
@@ -8725,8 +8723,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                             ] else if (itemSourceType ==
                                                 'بيع خياطة بسيطة') ...[
                                               // Select Simple Tailoring
-                                              DropdownButtonFormField<String>(
-                                                value: selectedRecordId,
+                                              StyledItemDropdown<
+                                                WorkshopTailoringModel
+                                              >(
+                                                selectedValue: selectedRecordId,
                                                 isExpanded: true,
                                                 decoration:
                                                     const InputDecoration(
@@ -8734,16 +8734,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                           'اختر الخياطة البسيطة',
                                                       isDense: true,
                                                     ),
-                                                items: erp.simpleTailorings
-                                                    .map(
-                                                      (t) => DropdownMenuItem(
-                                                        value: t.id,
-                                                        child: Text(
-                                                          '${t.name} (المتاح: ${t.quantity.fmt} ${t.unitSymbol})',
-                                                        ),
-                                                      ),
-                                                    )
-                                                    .toList(),
+                                                items: erp.simpleTailorings,
+                                                valueOf: (t) => t.id,
+                                                labelOf: (t) =>
+                                                    '${t.name} (المتاح: ${t.quantity.fmt} ${t.unitSymbol})',
+                                                icon: Icons.content_cut_outlined,
                                                 onChanged: (v) => setSt(() {
                                                   selectedRecordId = v;
                                                   selectedLineItemId = null;
@@ -8760,10 +8755,11 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                               x.id ==
                                                               selectedRecordId,
                                                         );
-                                                    return DropdownButtonFormField<
-                                                      String
+                                                    return StyledItemDropdown<
+                                                      TailoringLineItem
                                                     >(
-                                                      value: selectedLineItemId,
+                                                      selectedValue:
+                                                          selectedLineItemId,
                                                       isExpanded: true,
                                                       decoration:
                                                           const InputDecoration(
@@ -8771,9 +8767,9 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                                 'اختر البند المحدد من داخل هذه الخياطة',
                                                             isDense: true,
                                                           ),
-                                                      items: t.lineItems.map((
-                                                        li,
-                                                      ) {
+                                                      items: t.lineItems,
+                                                      valueOf: (li) => li.id,
+                                                      labelOf: (li) {
                                                         final pieceMeters =
                                                             (li.lengthCm > 0 &&
                                                                 li.widthCm > 0)
@@ -8785,13 +8781,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                         final totalLiMeters =
                                                             pieceMeters *
                                                             li.quantity;
-                                                        return DropdownMenuItem(
-                                                          value: li.id,
-                                                          child: Text(
-                                                            '${li.description} • الأبعاد: ${li.lengthCm}×${li.widthCm}سم • المتاح: ${totalLiMeters.fmt} م² (${li.quantity.fmt} قطع)',
-                                                          ),
-                                                        );
-                                                      }).toList(),
+                                                        return '${li.description} • الأبعاد: ${li.lengthCm}×${li.widthCm}سم • المتاح: ${totalLiMeters.fmt} م² (${li.quantity.fmt} قطع)';
+                                                      },
+                                                      icon: Icons
+                                                          .aspect_ratio_outlined,
                                                       onChanged: (lv) => setSt(
                                                         () => selectedLineItemId =
                                                             lv,
@@ -8803,8 +8796,10 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                             ] else if (itemSourceType ==
                                                 'بيع خياطة معقدة') ...[
                                               // Complex tailoring is treated as pieces
-                                              DropdownButtonFormField<String>(
-                                                value: selectedRecordId,
+                                              StyledItemDropdown<
+                                                WorkshopTailoringModel
+                                              >(
+                                                selectedValue: selectedRecordId,
                                                 isExpanded: true,
                                                 decoration:
                                                     const InputDecoration(
@@ -8812,24 +8807,21 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                           'اختر الخياطة المعقدة',
                                                       isDense: true,
                                                     ),
-                                                items: erp.complexTailorings
-                                                    .map(
-                                                      (t) => DropdownMenuItem(
-                                                        value: t.id,
-                                                        child: Text(
-                                                          '${t.name} • المتاح: ${t.quantity.fmt} قطع (سعر القطعة: ${t.sellingPrice.fmt}\$)',
-                                                        ),
-                                                      ),
-                                                    )
-                                                    .toList(),
+                                                items: erp.complexTailorings,
+                                                valueOf: (t) => t.id,
+                                                labelOf: (t) =>
+                                                    '${t.name} • المتاح: ${t.quantity.fmt} قطع (سعر القطعة: ${t.sellingPrice.fmt}\$)',
+                                                icon: Icons.widgets_outlined,
                                                 onChanged: (v) => setSt(
                                                   () => selectedRecordId = v,
                                                 ),
                                               ),
                                             ] else if (itemSourceType ==
                                                 'بيع قطع إضافية') ...[
-                                              DropdownButtonFormField<String>(
-                                                value: selectedRecordId,
+                                              StyledItemDropdown<
+                                                ScrapItemModel
+                                              >(
+                                                selectedValue: selectedRecordId,
                                                 isExpanded: true,
                                                 decoration:
                                                     const InputDecoration(
@@ -8837,17 +8829,14 @@ class _WorkshopWorkspaceScreenState extends State<WorkshopWorkspaceScreen>
                                                           'اختر القطعة الإضافية',
                                                       isDense: true,
                                                     ),
-                                                items: erp.scrapItems
-                                                    .where((s) => !s.isSold)
-                                                    .map(
-                                                      (s) => DropdownMenuItem(
-                                                        value: s.id,
-                                                        child: Text(
-                                                          '${s.description} (${s.sellingPrice.fmt}\$)',
-                                                        ),
-                                                      ),
-                                                    )
-                                                    .toList(),
+                                                items:
+                                                    erp.scrapItems.where(
+                                                      (s) => !s.isSold,
+                                                    ),
+                                                valueOf: (s) => s.id,
+                                                labelOf: (s) =>
+                                                    '${s.description} (${s.sellingPrice.fmt}\$)',
+                                                icon: Icons.recycling_outlined,
                                                 onChanged: (v) => setSt(
                                                   () => selectedRecordId = v,
                                                 ),
